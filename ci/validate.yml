@@ -1,0 +1,105 @@
+# Headless in-game validation on CI: build the mod, run the unit harness,
+# then boot a real Valheim dedicated server (anonymous depot download) with
+# the mod installed and assert on the self-test report it writes during
+# world generation. No 3D client, no Steam account.
+#
+# Note: this cannot run on Apple Silicon (Valheim's Mono JIT asserts under
+# Rosetta x86 emulation) — x86_64 Linux runners only.
+name: validate
+
+on:
+  push:
+    branches: [integration/upstream-prs, feature/**]
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Run harness (net10 only; Mono leg is local-dev)
+        run: dotnet test -f net10.0 ProceduralRoads.Tests
+
+  server-selftest:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Cache Valheim server depot
+        id: depot-cache
+        uses: actions/cache@v4
+        with:
+          path: server
+          key: valheim-server-depot-v1
+
+      - name: Download Valheim dedicated server (anonymous)
+        if: steps.depot-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL "$(curl -s https://api.github.com/repos/SteamRE/DepotDownloader/releases/latest \
+            | grep browser_download_url | grep linux-x64 | cut -d '"' -f4)" -o dd.zip
+          unzip -oq dd.zip -d dd && chmod +x dd/DepotDownloader
+          ./dd/DepotDownloader -app 896660 -os linux -dir server
+
+      - name: Install BepInEx + Jotunn
+        run: |
+          curl -sL "https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/5.4.2202/" -o bepinex.zip
+          unzip -oq bepinex.zip -d bepinex-pack
+          cp -R bepinex-pack/BepInExPack_Valheim/* server/
+          curl -sL "https://thunderstore.io/package/download/ValheimModding/Jotunn/2.29.1/" -o jotunn.zip
+          unzip -oq jotunn.zip -d jotunn-pack
+          find jotunn-pack -name "Jotunn.dll" -exec cp {} server/BepInEx/plugins/ \;
+
+      # The mod needs game + publicized assemblies to compile; publicize from
+      # the freshly downloaded server depot.
+      - name: Publicize assemblies and build mod
+        run: |
+          dotnet tool install --global BepInEx.AssemblyPublicizer.Cli
+          MANAGED=server/valheim_server_Data/Managed
+          mkdir -p "$MANAGED/publicized_assemblies"
+          for a in assembly_valheim assembly_guiutils assembly_utils SoftReferenceableAssets Splatform; do
+            ~/.dotnet/tools/assembly-publicizer "$MANAGED/$a.dll" \
+              -o "$MANAGED/publicized_assemblies/${a}_publicized.dll" || true
+          done
+          dotnet build ProceduralRoads/ProceduralRoads.csproj -c Release \
+            -p:VALHEIM_INSTALL="$PWD/server" \
+            -p:VALHEIM_MANAGED="$PWD/server/valheim_server_Data/Managed" \
+            -p:BEPINEX_PATH="$PWD/server/BepInEx" \
+            -p:CopyOutputDLLPath=/nonexistent
+          cp ProceduralRoads/bin/Release/ProceduralRoads.dll server/BepInEx/plugins/
+
+      - name: Run server until self-test reports
+        run: |
+          mkdir -p server/BepInEx/config
+          printf '[Roads]\nIslandRoadPercentage = 100\n\n[Debug]\nDebugValidation = true\n' \
+            > server/BepInEx/config/warpalicious.ProceduralRoads.cfg
+          cd server && chmod +x start_server_bepinex.sh valheim_server.x86_64
+          ./start_server_bepinex.sh ./valheim_server.x86_64 \
+            -name CI -port 2456 -world RoadCI -password citest123 -public 0 \
+            -batchmode -nographics > server.log 2>&1 &
+          SERVER_PID=$!
+          for i in $(seq 1 360); do
+            grep -q "\[SELFTEST\]" server.log && break
+            kill -0 $SERVER_PID 2>/dev/null || { echo "server died"; tail -40 server.log; exit 1; }
+            sleep 5
+          done
+          kill $SERVER_PID 2>/dev/null || true
+          grep "\[SELFTEST\]" server.log || { echo "no selftest in 30m"; tail -40 server.log; exit 1; }
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selftest-report
+          path: |
+            server/BepInEx/config/ProceduralRoads.selftest.json
+            server/BepInEx/config/ProceduralRoads.routes.csv
+
+      - name: Assert passed
+        run: grep -q '"passed": true' server/BepInEx/config/ProceduralRoads.selftest.json

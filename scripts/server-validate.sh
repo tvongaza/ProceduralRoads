@@ -3,6 +3,12 @@
 # No 3D client, no Steam login, no in-container steamcmd (whose 32-bit
 # bootstrapper cannot run under Rosetta-for-Linux on Apple Silicon).
 #
+# VERDICT 2026-08-31: does NOT work on Apple Silicon at all — Valheim's
+# Mono JIT asserts under Rosetta (x86-codegen.h offset assertion) even for
+# the vanilla server. Use on x86_64 Linux hosts only; on this Mac use
+# scripts/ingame-validate.sh (client route) instead. The CI equivalent is
+# .github/workflows/validate.yml.
+#
 #   ./scripts/server-validate.sh [WorldName]
 #
 # Layout (created by this script + the one-time host download):
