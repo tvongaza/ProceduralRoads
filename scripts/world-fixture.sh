@@ -14,7 +14,7 @@
 # zones' TerrainComp ZDOs, which a force-regen alone cannot undo.
 set -e
 
-WORLDS="$HOME/Library/Application Support/Valheim/worlds_local"
+WORLDS="$HOME/Library/Application Support/IronGate/Valheim/worlds_local"
 FIXTURES="$(cd "$(dirname "$0")/.." && pwd)/validation-fixtures"
 CMD="$1"
 WORLD="$2"
