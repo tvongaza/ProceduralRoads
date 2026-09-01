@@ -1,5 +1,43 @@
 # Fresh-Start Plan (2026-08-31)
 
+## Operating model (2026-09-01)
+
+- **NAS = hub**: development AND coordination run from the always-on NAS
+  (dev happens in a container: dotnet SDK, git, harness; publicize
+  assemblies from the server depot in /data/server as ci/validate.yml
+  does). The NAS also runs headless regression validation natively and
+  wakes the gaming PC on demand (touch /data/wake-requests/gaming-pc;
+  marker consumed = packet sent; ~45s boot; verify via ARP not ping).
+- **Gaming PC = visual station**: native Windows client runs the game,
+  photographs ruins, iterates on visual/composition work. Pushes pc/*
+  branches to the fork. May sleep; NAS wakes it.
+- **Mac = occasional cockpit**: not required online. Historical context
+  lives in this file, the tests, and the git history — not in any session.
+- **Upstream (jneb802/ProceduralRoads)**: PR #18 (test harness) is open
+  with the enriched core-behavior tests; a comment on #16 asks about
+  branch stability. HOLD further upstream PRs/comments until the author
+  responds, then follow the PR ladder (cost model+fords -> crossings ->
+  cross-section -> stairs -> placement), each from its feature branch.
+- **Baselines**: fixture world RoadTestAuto1 selftest hash 6d63bd64
+  (0 violations, PASS). The NAS's RoadHeadless1 and the PC's RoadTestPC1
+  worlds carry their own hashes as machine-local baselines.
+- **Secrets discipline**: private infra details (tailnet names, hosts,
+  paths, schedules, MACs) stay in gitignored files (scripts/.nas.env
+  pattern) — never in tracked files of this public fork.
+
+## Next up (2026-09-01)
+
+- **Bridge & stair composition pass** (from first in-game screenshots):
+  solver emits per-station ASSEMBLIES, not single prefabs — paired posts
+  + cross-beam + deck resting on beam + side rails; deck height GRADES
+  bank-to-bank (no stilt towers from bank-height max); stairs hug terrain
+  (allow narrow terrain-cut ribbon under steps, cap stair grade ~0.8,
+  switchback the stair path itself when steeper); dress stairs with side
+  posts/rails. Iterate on the PC with road_regen_island + close-up
+  screenshots; gate merges on NAS selftest PASS (hash may change — routes
+  don't, assemblies do not touch geometry, so 6d63bd64 should hold).
+
+
 Strategy: upstream now owns network topology (anchor/endpoint selection,
 location priority API, route export). We own **path quality and crossings**
 (`RoadPathfinder`, `RoadTerrainModifier`, debug tooling) — areas upstream is
