@@ -41,8 +41,11 @@ echo "== 4/6 starting local world '$WORLD' (generation runs self-test) =="
 "$CLI" cli_start_local_world "$WORLD"
 "$CLI" wait --for inworld --timeout 600s
 
-echo "== 5/6 running road_selftest =="
+echo "== 5/6 running road_selftest and saving world =="
 "$CLI" road_selftest
+# Persist the world so future runs reuse placed locations (a hard-killed
+# game never writes the world file and re-generates everything next time).
+"$CLI" save
 
 echo "== 6/6 collecting reports =="
 mkdir -p "$OUT_DIR"
