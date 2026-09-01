@@ -150,6 +150,14 @@ path, greedy-vs-MST length, orphan roads after failed edges).
   the contour — procedural placement writes ZDO transforms directly, so we
   get exact per-piece yaw/height alignment for free (no build-UI snap), and
   unmodded clients render arbitrary rotations fine.
+  Support grammar (2026-08-31): contour stairs cantilever on the downhill
+  edge by construction (piece is level, terrain falls away) and WearNTear
+  would demolish floating pieces — solver samples terrain under each
+  piece's corners: uphill edge may clip into the slope, and any downhill
+  gap > ~0.5m emits a support column to ground (wood poles / stacked stone
+  / dvergr supports by kit). Ruin removal takes column AND the stairs it
+  carried together — never leave a floating span. Tall columns on cliff
+  faces are the drama: stilted flights are the signature epic-build look.
 - [ ] **Mountain boulders vs roads** (designed 2026-08-31): boulders are
   per-zone vegetation spawned AFTER road generation, so pathfind-time
   avoidance requires replicating zone RNG — deferred as a research item
