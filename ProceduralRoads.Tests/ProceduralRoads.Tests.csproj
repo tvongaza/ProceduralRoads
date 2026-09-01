@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <LangVersion>10</LangVersion>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <RootNamespace>ProceduralRoads.Tests</RootNamespace>
+    </PropertyGroup>
+
+    <!--
+      Compile real mod sources against the shims in Shims/ instead of the
+      Unity/Valheim/BepInEx assemblies. Only pure-logic files can be listed
+      here; anything touching Harmony patches or engine runtime cannot.
+    -->
+    <ItemGroup>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadConstants.cs" Link="ModSrc/RoadConstants.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadPathfinder.cs" Link="ModSrc/RoadPathfinder.cs"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0"/>
+        <PackageReference Include="xunit" Version="2.8.1"/>
+        <PackageReference Include="xunit.runner.visualstudio" Version="2.8.1"/>
+    </ItemGroup>
+
+</Project>

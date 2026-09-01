@@ -26,6 +26,23 @@ June work. Do NOT port its two known bugs:
    implicitly converts to `Vector3` with z=0 — tests the wrong world point.
    (Moot anyway: superseded by warp-71 anchors.)
 
+## Test harness (spiked 2026-08-31 — `ProceduralRoads.Tests/`)
+
+Headless xunit project (net10.0) that compiles the real mod sources against
+tiny shims for Unity math, `Vector2i`/`Heightmap.Biome`/`WorldGenerator`, and
+BepInEx logging — no game, no Unity, runs in <1 s. `SyntheticWorld` provides a
+deterministic pseudo-Valheim island (dome + mountain ridge + meandering
+river); `WorldRenderer` draws world + paths + markers to a BMP for visual
+inspection. Includes a characterization test pinning the current "river makes
+far side unreachable" behavior — flip it when the cost-model rework lands.
+
+- [ ] Extend harness to cover `RoadSpatialGrid` smoothing and
+  `RoadTerrainModifier` blend math (add shims as needed).
+- [ ] Grow `SyntheticWorld` scenarios per feature (swamp lowlands for wading,
+  narrow-vs-wide river for crossings, steep dome for switchbacks).
+- [ ] Later: dump real-seed height/river/biome samples from the game once and
+  replay as a fixture world for real-world regression tests.
+
 ## Tier 1 — differentiated core
 
 - [ ] **Port `road_pin_start` / `road_test` console commands first**
