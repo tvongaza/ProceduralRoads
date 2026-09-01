@@ -34,7 +34,11 @@ public static class RoadValidationRunner
         }
 
         var routes = RoadNetworkGenerator.GetRoadRoutes();
+        System.DateTime validateStart = System.DateTime.Now;
         var report = RoadNetworkValidator.Validate(routes, WorldGenerator.instance);
+        Log.LogInfo(
+            $"[TIMING] validator ms={(System.DateTime.Now - validateStart).TotalMilliseconds:F0} " +
+            $"pathfinderIterations={RoadPathfinder.TotalIterations} terrainSamples={RoadPathfinder.TotalTerrainSamples}");
 
         Log.LogInfo(
             $"[SELFTEST] {(report.Passed ? "PASS" : "FAIL")}: {report.RouteCount} routes, " +

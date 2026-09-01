@@ -72,6 +72,8 @@ scp -q "$NAS:$SRV/BepInEx/config/ProceduralRoads.selftest.json" \
     "$REPO_DIR/validation-results/$WORLD.nas.selftest.json"
 scp -q "$NAS:$SRV/BepInEx/config/ProceduralRoads.routes.csv" \
     "$REPO_DIR/validation-results/$WORLD.nas.routes.csv" 2>/dev/null || true
+scp -q "$NAS:$SRV/selftest-run.log" \
+    "$REPO_DIR/validation-results/$WORLD.nas.server.log" 2>/dev/null || true
 
 echo "Report: validation-results/$WORLD.nas.selftest.json"
 grep -E '"passed"|"routeCount"|"networkComponents"|"fordCount"|"pointsHash"' \

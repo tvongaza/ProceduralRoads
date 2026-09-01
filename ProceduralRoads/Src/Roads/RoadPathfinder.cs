@@ -16,6 +16,12 @@ public class RoadPathfinder
 
     private const float ImpassableCost = float.PositiveInfinity;
 
+    /// <summary>Cumulative A* iterations across all searches (profiling).</summary>
+    public static long TotalIterations;
+
+    /// <summary>Cumulative world-terrain samples (profiling; interior sampling multiplies these).</summary>
+    public static long TotalTerrainSamples;
+
     public float SlopeMultiplier = RoadConstants.DefaultSlopeMultiplier;
     public float RiverPenalty = RoadConstants.DefaultRiverPenalty;
     public float SwampShallowWaterPenalty = RoadConstants.DefaultSwampShallowWaterPenalty;
@@ -80,6 +86,7 @@ public class RoadPathfinder
         while (openSet.Count > 0 && iterations < MaxIterations)
         {
             iterations++;
+            TotalIterations++;
 
             var current = openSet.Min;
             openSet.Remove(current);
@@ -177,6 +184,7 @@ public class RoadPathfinder
         Vector2 toWorld = GridToWorld(to);
 
         float dist = DirectionCosts[directionIndex] * CellSize;
+        TotalTerrainSamples += 2;
         float h1 = m_worldGen.GetHeight(fromWorld.x, fromWorld.y);
         float h2 = m_worldGen.GetHeight(toWorld.x, toWorld.y);
         float slope = Mathf.Abs(h2 - h1) / dist;
@@ -215,6 +223,7 @@ public class RoadPathfinder
             float ix = fromWorld.x + (toWorld.x - fromWorld.x) * t;
             float iy = fromWorld.y + (toWorld.y - fromWorld.y) * t;
 
+            TotalTerrainSamples += 3;
             m_worldGen.GetRiverWeight(ix, iy, out float interiorRiver, out _);
             if (interiorRiver > RoadConstants.RiverImpassableThreshold)
                 return ImpassableCost;

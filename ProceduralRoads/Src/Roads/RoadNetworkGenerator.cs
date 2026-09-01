@@ -323,15 +323,25 @@ public static class RoadNetworkGenerator
                 $"Island {island.Id}: {islandLocations.Count} candidates -> {selected.Count} selected " +
                 $"(max {maxLocs}, area {island.ApproxArea/1_000_000:F1}km², ring {candidate.Ring})");
             
+            DateTime islandStart = DateTime.Now;
+            long iterationsBefore = RoadPathfinder.TotalIterations;
+            int roadsBefore = m_roadsGeneratedCount;
+
             if (candidate.IsStarterIsland)
             {
-                GenerateIslandRoads(island, selected, 
+                GenerateIslandRoads(island, selected,
                     locations.Value.SpawnPoint, locations.Value.SpawnRadius);
             }
             else
             {
                 GenerateIslandRoads(island, selected);
             }
+
+            Log.LogInfo(
+                $"[TIMING] island={island.Id} ms={(DateTime.Now - islandStart).TotalMilliseconds:F0} " +
+                $"roads={m_roadsGeneratedCount - roadsBefore}/{selected.Count} " +
+                $"iterations={RoadPathfinder.TotalIterations - iterationsBefore} " +
+                $"area={island.ApproxArea / 1_000_000f:F1}km2 ring={candidate.Ring}");
         }
 
         TimeSpan elapsed = DateTime.Now - startTime;
