@@ -49,6 +49,7 @@ namespace ProceduralRoads
         public static ConfigEntry<int> MaxLocationsPerIsland = null!;
         public static ConfigEntry<bool> DebugValidation = null!;
         public static ConfigEntry<bool> ForceRegenerate = null!;
+        public static ConfigEntry<bool> SpawnRuinsHeadless = null!;
 
         private float m_nextDeferredRetry;
 
@@ -100,6 +101,13 @@ namespace ProceduralRoads
                 "Run automatic road-network validation after generation and write " +
                 "ProceduralRoads.selftest.json plus ProceduralRoads.routes.csv to the config folder. " +
                 "Also available on demand via the road_selftest console command.");
+
+            SpawnRuinsHeadless = Config.Bind("Debug", "SpawnRuinsHeadless", false,
+                "Spawn every planned ruin piece as ZDOs immediately after road generation, " +
+                "without waiting for zones to generate around a player. For headless validation: " +
+                "a dedicated server has no console input and never spawns zones, so this is the " +
+                "only way its census can compare spawned pieces against plans. Leave off for " +
+                "normal play (zones spawn lazily as players explore).");
 
             CustomLocations = Config.Bind("Locations", "CustomLocations", "",
                 "Comma-separated list of location names to include in road generation. " +

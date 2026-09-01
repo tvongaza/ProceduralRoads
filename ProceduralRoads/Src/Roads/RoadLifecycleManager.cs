@@ -89,6 +89,14 @@ public static class RoadLifecycleManager
             }
 
             RoadValidationRunner.MaybeRunAfterGeneration();
+
+            if (ProceduralRoadsPlugin.SpawnRuinsHeadless != null && ProceduralRoadsPlugin.SpawnRuinsHeadless.Value)
+            {
+                int zones = RuinPlacement.RespawnAllZones();
+                ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo(
+                    $"[RUINS] headless spawn: {zones} zone(s) spawned from plans");
+            }
+
             return true;
         }
         else
