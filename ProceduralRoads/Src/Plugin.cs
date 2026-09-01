@@ -49,6 +49,7 @@ namespace ProceduralRoads
         public static ConfigEntry<int> MaxLocationsPerIsland = null!;
         public static ConfigEntry<bool> DebugValidation = null!;
         public static ConfigEntry<bool> ForceRegenerate = null!;
+        public static ConfigEntry<bool> ScaledPathfindingBudget = null!;
 
         private float m_nextDeferredRetry;
 
@@ -90,6 +91,10 @@ namespace ProceduralRoads
                 new ConfigDescription("Maximum number of locations that can be connected by roads on a single island. " +
                     "Higher values allow more roads on large islands.",
                     new AcceptableValueRange<int>(2, 30)));
+
+            ScaledPathfindingBudget = Config.Bind("Debug", "ScaledPathfindingBudget", false,
+                "EXPERIMENTAL: scale each pathfinding search's iteration budget with distance " +
+                "so short unreachable edges fail fast. May change which roads generate.");
 
             ForceRegenerate = Config.Bind("Debug", "ForceRegenerate", false,
                 "Ignore roads persisted in the world and regenerate the network from " +
@@ -150,6 +155,7 @@ namespace ProceduralRoads
             RoadNetworkGenerator.IslandRoadPercentage = IslandRoadPercentage.Value;
             RoadNetworkGenerator.MaxLocationsPerIsland = MaxLocationsPerIsland.Value;
             RoadPathfinder.MaxIterations = PathfindingMaxIterations.Value;
+            RoadPathfinder.UseScaledBudget = ScaledPathfindingBudget.Value;
             // CustomLocations is parsed at generation time to preserve API registrations
         }
 

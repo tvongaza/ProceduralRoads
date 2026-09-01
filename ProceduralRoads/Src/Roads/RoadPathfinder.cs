@@ -14,6 +14,16 @@ public class RoadPathfinder
     public const float CellSize = RoadConstants.PathfindingCellSize;
     public static int MaxIterations = RoadConstants.PathfindingMaxIterations;
 
+    /// <summary>
+    /// EXPERIMENT (off by default): scale each search's iteration budget with
+    /// straight-line distance so short hopeless searches give up early
+    /// instead of burning the full flat cap. Profiling: failed searches
+    /// consume 76% of all A* work.
+    /// </summary>
+    public static bool UseScaledBudget = false;
+    public static int ScaledBudgetBase = 2000;
+    public static int ScaledBudgetPerCell = 40;
+
     private const float ImpassableCost = float.PositiveInfinity;
 
     /// <summary>Cumulative A* iterations across all searches (profiling).</summary>
@@ -115,8 +125,15 @@ public class RoadPathfinder
         gCosts[startGrid] = 0;
 
         int iterations = 0;
+        int budget = MaxIterations;
+        if (UseScaledBudget)
+        {
+            float straightCells = Heuristic(startGrid, endGrid) / CellSize;
+            budget = Mathf.Min(MaxIterations,
+                ScaledBudgetBase + Mathf.RoundToInt(straightCells * ScaledBudgetPerCell));
+        }
 
-        while (openSet.Count > 0 && iterations < MaxIterations)
+        while (openSet.Count > 0 && iterations < budget)
         {
             iterations++;
             TotalIterations++;
@@ -171,7 +188,9 @@ public class RoadPathfinder
         }
 
         string reason = openSet.Count == 0 ? "no reachable path" : "max iterations reached";
-        Log.LogWarning($"Pathfinding failed: {reason} after {iterations} iterations");
+        Log.LogWarning(
+            $"Pathfinding failed: {reason} after {iterations} iterations " +
+            $"(budget {budget}, distance {Vector2.Distance(start, end):F0}m)");
         return null;
     }
 
