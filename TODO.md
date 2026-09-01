@@ -25,7 +25,16 @@ edits, which sync and persist for all clients. Keep it that way:
 
 ## Base
 
-- [ ] Branch from `origin/master`, then evaluate merging upstream branches:
+DECIDED (2026-08-31): build feature work off warp-71. Probe results: both
+upstream branches merge cleanly onto master with zero conflicts; the harness
+compiles against the merged code with minor shim additions (committed); the
+pathfinder tests pass unchanged. `integration/upstream-prs` = this branch +
+PR #16 + PR #17 — Tier 1 work happens there. The harness-first PR still
+targets master (tests what master has today); its tests are base-agnostic
+(legacy Chain/MST tests no-op post-warp-71, GenerateReachableRoads tests
+no-op pre-warp-71). Watch PRs #16/#17 for rebases before building further.
+
+- [x] Branch from `origin/master`, then evaluate merging upstream branches:
   - `origin/feature/warp-71-mwl-road-api` — island anchor selection,
     nearest-pathable-point, priority-registered locations (Jul 2026).
     Supersedes our old "POI as island root" / "safe start point" work.
