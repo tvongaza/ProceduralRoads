@@ -136,7 +136,14 @@ path, greedy-vs-MST length, orphan roads after failed edges).
 - [x] **Switchback shaping** — DONE (ea37bca): MaxTraversableGrade cap +
   per-meter quadratic grade cost. Real-world result: cliff-climb violations
   eliminated (24 -> 9 total), one network component per island.
-- [ ] **Stair runs on steep sections** (designed 2026-08-31): three grade
+- [x] **Stair runs on steep sections** — DONE 2026-09-01: detection at
+  spline-scale grading, layout solver (terrain-tracking, support columns,
+  deterministic ruin), terrain untouched under runs, validator exemption.
+  Result: FIRST CLEAN PASS on the fixture world (0 violations, hash
+  6d63bd64, 83 routes) — the NAS loop is now a binary regression gate.
+  Emergent bonus: steep riverbanks become staircases descending to fords.
+  Placement in-game ships with the bridge placement feature.
+- [ ] (superseded design notes) **Stair runs**: three grade
   bands — 0-0.35 road (terrain modified), 0.35-0.5 STAIRS (no terrain mod:
   record StairRun metadata, place stair pieces hugging the slope at zone
   spawn — vanilla stairs are exactly 2m run / 1m rise = grade 0.5), >1.0
