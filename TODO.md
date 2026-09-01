@@ -93,10 +93,12 @@ path, greedy-vs-MST length, orphan roads after failed edges).
 - [ ] **Port `road_pin_start` / `road_test` console commands first**
   (from wip branch, `ConsoleCommands.cs` + `GenerateTestRoad`). The
   30-second in-game test loop makes every other item cheap to iterate on.
-- [ ] **Pathfinder cost-model rework** (port from wip branch, minus bug #1):
-  additive costs instead of first-match-wins; `float.PositiveInfinity` for
-  true blockers (deep water, wide river); swamp shallow-water wading at a
-  penalty. Fixes the real root cause of islands failing to generate roads.
+- [x] **Pathfinder cost-model rework** — DONE on `integration/upstream-prs`
+  (06abd0d): additive costs, `float.PositiveInfinity` blockers, swamp
+  wading, mountain slopes expensive-not-impassable, ford crossings <= 48m
+  at RiverCrossingPenalty, A* open-set fix, RiverPenalty 100000 -> 4000.
+  21/21 tests. This is the PR 2 payload (targets master; pathfinder files
+  identical on both bases).
 - [ ] **River crossings with `RoadCrossing` metadata.** June version proved
   A* can jump rivers (≤6 cells / 48 m at a penalty). Missing piece: record
   `{ type, center, fromBank, toBank, direction, width, biome }` and **split
