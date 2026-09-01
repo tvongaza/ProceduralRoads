@@ -33,6 +33,18 @@ deterministic on this world. `c4d6271b` is the Windows-station baseline hash.
 | swamp-crossing3-station-closeup.jpg | Bare pole cluster at one station: no beams, no deck; persistent white square particles hover around ruin pieces |
 | mistlands-crossing5-stairs3.jpg | Mistlands ravine: ruin blocks wedged between rock spires; path threads a dark crevice |
 
+## Round 2 shots (decay investigation + vegetation clearing)
+
+| file | what it shows |
+|---|---|
+| crossing4-arrival.jpg | Virgin-zone arrival seconds after spawn (87/87 pieces standing); gorge ramp reads semi-plausibly |
+| wear-test-t0.jpg / wear-test-t3min.jpg | Same swamp station minutes apart; compare right-side frame group |
+| crossing0-clear-34view.jpg | Crossing 0 after `cli_destroy_nearby_prefabs` cleared 138 trees/shrubs: open view of the bank, T-post + leaning pole + downed pole where session 1's stair assembly stood |
+| crossing0-clear-remains.jpg | DEFINITIVE side exhibit, clear sightline: ruined approach ramp (left, reads well), pier march with descending pole heights, lone T-frames, no deck spans |
+
+Vegetation clearing for photography: `cli_destroy_nearby_prefabs <pattern> [radius]`
+(new valheimCLI command, branch pc/teleport-instant-and-state).
+
 ## Visual assessment (blunt)
 
 1. **Scaffolding, confirmed on every crossing.** Piers are single skinny poles
@@ -57,4 +69,18 @@ deterministic on this world. `c4d6271b` is the Windows-station baseline hash.
    Mistlands harbour route.
 6. **[PREFABS] missing: stone_stairs, dvergrprops_stairs** — two kit names don't
    exist in the live game; whatever assembly references them silently loses
-   pieces.
+   pieces. (Superseded in part by the NAS enumeration: piece_dvergr_spiralstair,
+   piece_dvergr_spiralstair_right, dvergrprops_wood_stair, blackmarble_stair_corner
+   and blackmarble_stair_corner_left all exist and were spawn-verified on the
+   native client. The prefix mapping is inconsistent — enumerate, never guess.)
+7. **CONFIRMED: unsupported pieces self-demolish in front of the player.**
+   Controlled test at crossing 4 (BlackForest 3976,2720, virgin zone): zones
+   (62,43)+(62,42) spawned 87 pieces; immediate census within 40 m found all 87
+   (61 wood_pole2, 18 wood_stair, 8 wood_floor). After ~6 minutes of loaded
+   time: 61 poles, **10** wood_stair, 8 wood_floor — 8 stairs collapsed. The
+   white square particles in the tour shots are vanilla WearNTear support-
+   collapse debris, and players will watch (and hear) assemblies crumble on
+   first visit. Poles survive because they ground; stairs placed floating die.
+   Fix direction is the same snap-point work: snapped, grounded chains are how
+   vanilla support propagates. Health-fraction ruining is fine; support-invalid
+   placement is not.
