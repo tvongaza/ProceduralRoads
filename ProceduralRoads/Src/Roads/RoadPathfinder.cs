@@ -51,9 +51,42 @@ public class RoadPathfinder
 
     private WorldGenerator m_worldGen;
 
+    // Per-cell terrain cache: terrain is a pure function of position, and A*
+    // re-touches the same cells from up to 16 directions across every search
+    // on an island. Caching the variance probe alone replaces 9 height
+    // queries with a lookup. Values are identical to uncached — results
+    // cannot change, only speed.
+    private struct CellSample
+    {
+        public float Height;
+        public float RiverWeight;
+        public float Variance;
+        public Heightmap.Biome Biome;
+    }
+
+    private readonly Dictionary<Vector2i, CellSample> m_cellCache = new();
+
     public RoadPathfinder(WorldGenerator worldGen)
     {
         m_worldGen = worldGen;
+    }
+
+    private CellSample GetCellSample(Vector2i grid)
+    {
+        if (m_cellCache.TryGetValue(grid, out CellSample cached))
+            return cached;
+
+        Vector2 world = GridToWorld(grid);
+        TotalTerrainSamples += 2 + RoadConstants.TerrainVarianceSampleCount;
+        CellSample sample = new()
+        {
+            Height = m_worldGen.GetHeight(world.x, world.y),
+            Biome = m_worldGen.GetBiome(world.x, world.y),
+            Variance = GetTerrainVariance(world),
+        };
+        m_worldGen.GetRiverWeight(world.x, world.y, out sample.RiverWeight, out _);
+        m_cellCache[grid] = sample;
+        return sample;
     }
 
     public List<Vector2>? FindPath(Vector2 start, Vector2 end)
@@ -184,12 +217,13 @@ public class RoadPathfinder
         Vector2 toWorld = GridToWorld(to);
 
         float dist = DirectionCosts[directionIndex] * CellSize;
-        TotalTerrainSamples += 2;
-        float h1 = m_worldGen.GetHeight(fromWorld.x, fromWorld.y);
-        float h2 = m_worldGen.GetHeight(toWorld.x, toWorld.y);
+        CellSample fromCell = GetCellSample(from);
+        CellSample toCell = GetCellSample(to);
+        float h1 = fromCell.Height;
+        float h2 = toCell.Height;
         float slope = Mathf.Abs(h2 - h1) / dist;
 
-        m_worldGen.GetRiverWeight(toWorld.x, toWorld.y, out float riverWeight, out _);
+        float riverWeight = toCell.RiverWeight;
         if (riverWeight > RoadConstants.RiverImpassableThreshold)
             return ImpassableCost;
 
@@ -198,7 +232,7 @@ public class RoadPathfinder
         if (slope > RoadConstants.MaxTraversableGrade)
             return ImpassableCost;
 
-        Heightmap.Biome biome = m_worldGen.GetBiome(toWorld.x, toWorld.y);
+        Heightmap.Biome biome = toCell.Biome;
 
         // Additive model: every passable hazard adds cost instead of
         // replacing it, so A* weighs slopes, rough ground, and water
@@ -242,7 +276,7 @@ public class RoadPathfinder
         if (biome == Heightmap.Biome.Mountain && slope > RoadConstants.MountainSlopeThreshold)
             cost += MountainSteepSlopePenalty;
 
-        if (GetTerrainVariance(toWorld) > TerrainVarianceThreshold)
+        if (toCell.Variance > TerrainVarianceThreshold)
         {
             // Swamps are uniformly lumpy; halve the penalty so they don't
             // become de-facto blockers.
@@ -278,9 +312,7 @@ public class RoadPathfinder
 
     private bool IsRiverBlocked(Vector2i grid)
     {
-        Vector2 world = GridToWorld(grid);
-        m_worldGen.GetRiverWeight(world.x, world.y, out float riverWeight, out _);
-        return riverWeight > RoadConstants.RiverImpassableThreshold;
+        return GetCellSample(grid).RiverWeight > RoadConstants.RiverImpassableThreshold;
     }
 
     private bool IsValidFordLanding(Vector2i grid)
