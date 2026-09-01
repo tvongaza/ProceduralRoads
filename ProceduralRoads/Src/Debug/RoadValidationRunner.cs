@@ -48,6 +48,7 @@ public static class RoadValidationRunner
             $"{report.TotalLengthMeters:F0}m total, {report.NetworkComponents} network component(s), " +
             $"{report.FordCount} ford(s), {RoadNetworkGenerator.GetRoadCrossings().Count} crossing(s), " +
             $"{RoadNetworkGenerator.GetStairRuns().Count} stair run(s), " +
+            $"{RuinPlacement.GetPlannedPieceCount()} ruin piece(s) planned, " +
             $"hash {report.PointsHash}, {report.Violations.Count} violation(s)");
 
         foreach (string violation in report.Violations)

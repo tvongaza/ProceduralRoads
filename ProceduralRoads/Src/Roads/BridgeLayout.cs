@@ -53,6 +53,16 @@ public sealed class BridgeStyle
         AbutmentPrefab = "wood_floor",
         DebrisPrefab = "wood_pole2",
     };
+
+    public static readonly BridgeStyle MountainStone = new()
+    {
+        PilingPrefab = "stone_wall_1x1",
+        DeckPrefab = "stone_floor_2x2",
+        AbutmentPrefab = "stone_floor_2x2",
+        DebrisPrefab = "stone_wall_1x1",
+        BankSurvival = 0.9f,   // stone endures better than wood
+        MidSurvival = 0.5f,
+    };
 }
 
 /// <summary>
