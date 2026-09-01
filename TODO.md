@@ -166,9 +166,17 @@ path, greedy-vs-MST length, orphan roads after failed edges).
      ZNetView on first zone spawn, set health, register clear-areas.
   4. Blending: abutment floors sunk ~0.3m below road surface at the banks so
      terrain/paint lap onto the stone; paint paved onto the abutment
-     footprint. Replace the dry ford causeway with a submerged rubble line
-     (~0.5m below water) between the piers — wadeable, reads as collapse.
-  5. Verify exact vanilla prefab names + WearNTear thresholds against game
+     footprint.
+  5. SAILING IS SACRED (decided 2026-08-31): do NOT modify the riverbed —
+     no causeway, no rubble line; the channel keeps full depth. `RoadCrossing`
+     gains a `fairway` (channel center + width from the deepest part of the
+     river profile) and the solver keeps piers AND debris out of it; the
+     missing deck section goes over the fairway (bridge collapsed exactly
+     where boats pass). Ruin debris = tilted stone blocks in random
+     orientations, settled into the bed near pier bases/banks only —
+     visible underwater, never in the fairway (they are real colliders).
+     Road users wade/swim the gap or rebuild the deck on the piers.
+  6. Verify exact vanilla prefab names + WearNTear thresholds against game
      data first (DecompilerServer). Biome variants later: black marble
      (Mistlands), rotten wood piles (Swamp).
 - [ ] Gully crossings: detect via height-profile dip along the path (reuse
