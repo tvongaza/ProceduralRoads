@@ -49,15 +49,18 @@ public static class RoadLifecycleManager
             ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(
                 $"WorldGenerator and locations available ({ZoneSystem.instance!.GetLocationList()!.Count} locations)...");
             
-            if (RoadNetworkGenerator.TryLoadGlobalRoadData())
+            bool forceRegen = ProceduralRoadsPlugin.ForceRegenerate != null && ProceduralRoadsPlugin.ForceRegenerate.Value;
+            if (!forceRegen && RoadNetworkGenerator.TryLoadGlobalRoadData())
             {
                 RoadNetworkGenerator.MarkRoadsLoadedFromZDO();
                 ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug("Loaded roads from global persistence");
             }
             else
             {
-                ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug("No persisted roads found, generating...");
-                RoadNetworkGenerator.GenerateRoads();
+                ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(forceRegen
+                    ? "ForceRegenerate set, regenerating roads..."
+                    : "No persisted roads found, generating...");
+                RoadNetworkGenerator.GenerateRoads(force: forceRegen);
             }
 
             RoadValidationRunner.MaybeRunAfterGeneration();
@@ -80,7 +83,8 @@ public static class RoadLifecycleManager
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(
             $"Player spawning at {spawnPoint}, attempting to load global road data...");
 
-        if (RoadNetworkGenerator.TryLoadGlobalRoadData())
+        bool forceRegenOnSpawn = ProceduralRoadsPlugin.ForceRegenerate != null && ProceduralRoadsPlugin.ForceRegenerate.Value;
+        if (!forceRegenOnSpawn && RoadNetworkGenerator.TryLoadGlobalRoadData())
         {
             RoadNetworkGenerator.MarkRoadsLoadedFromZDO();
             ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug("Roads loaded from global persistence");

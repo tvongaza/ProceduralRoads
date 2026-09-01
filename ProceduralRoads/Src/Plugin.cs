@@ -48,6 +48,7 @@ namespace ProceduralRoads
         public static ConfigEntry<int> PathfindingMaxIterations = null!;
         public static ConfigEntry<int> MaxLocationsPerIsland = null!;
         public static ConfigEntry<bool> DebugValidation = null!;
+        public static ConfigEntry<bool> ForceRegenerate = null!;
 
         public void Awake()
         {
@@ -77,6 +78,11 @@ namespace ProceduralRoads
                 new ConfigDescription("Maximum number of locations that can be connected by roads on a single island. " +
                     "Higher values allow more roads on large islands.",
                     new AcceptableValueRange<int>(2, 30)));
+
+            ForceRegenerate = Config.Bind("Debug", "ForceRegenerate", false,
+                "Ignore roads persisted in the world and regenerate the network from " +
+                "scratch on every load. For validation/testing against fixture worlds " +
+                "with pre-placed locations; leave off for normal play.");
 
             DebugValidation = Config.Bind("Debug", "DebugValidation", false,
                 "Run automatic road-network validation after generation and write " +

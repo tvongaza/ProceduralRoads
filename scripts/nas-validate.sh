@@ -13,6 +13,11 @@
 #   NAS_SERVER_DIR remote dir holding the dedicated server + BepInEx
 #   NAS_SAVES_DIR  remote dir for persistent worlds
 # The box must already hold the server depot + BepInEx + Jotunn.
+#
+# Fixture mode: pass a world name that exists in validation-fixtures/ and
+# the world files are uploaded once (if absent remotely) and reused — POI
+# placement is skipped and every run regenerates roads on identical
+# terrain (ForceRegenerate=true), so pointsHash values compare exactly.
 set -e
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,9 +32,18 @@ echo "== 1/4 building mod =="
 dotnet build "$REPO_DIR/ProceduralRoads/ProceduralRoads.csproj" -c Release \
     -p:CopyOutputDLLPath=/nonexistent-skip-copy >/dev/null
 
-echo "== 2/4 deploying mod + config =="
+echo "== 2/4 deploying mod + config (and fixture world if available) =="
 scp -q "$REPO_DIR/ProceduralRoads/bin/Release/ProceduralRoads.dll" "$NAS:$SRV/BepInEx/plugins/"
-ssh "$NAS" "mkdir -p '$SRV/BepInEx/config' && printf '[Roads]\nIslandRoadPercentage = 100\n\n[Debug]\nDebugValidation = true\n' > '$SRV/BepInEx/config/warpalicious.ProceduralRoads.cfg'"
+ssh "$NAS" "mkdir -p '$SRV/BepInEx/config' && printf '[Roads]\nIslandRoadPercentage = 100\n\n[Debug]\nDebugValidation = true\nForceRegenerate = true\n' > '$SRV/BepInEx/config/warpalicious.ProceduralRoads.cfg'"
+
+if [ -f "$REPO_DIR/validation-fixtures/$WORLD.fwl" ]; then
+    if ! ssh "$NAS" "test -f '$SAVES/worlds_local/$WORLD.fwl'"; then
+        echo "uploading fixture world $WORLD (one-time)"
+        ssh "$NAS" "mkdir -p '$SAVES/worlds_local'"
+        scp -q "$REPO_DIR/validation-fixtures/$WORLD.fwl" "$NAS:$SAVES/worlds_local/"
+        [ -f "$REPO_DIR/validation-fixtures/$WORLD.db" ] &&             scp -q "$REPO_DIR/validation-fixtures/$WORLD.db" "$NAS:$SAVES/worlds_local/"
+    fi
+fi
 
 echo "== 3/4 running server until self-test (world: $WORLD) =="
 ssh "$NAS" "WORLD='$WORLD' SRV='$SRV' SAVES='$SAVES' sh -s" <<'REMOTE'
