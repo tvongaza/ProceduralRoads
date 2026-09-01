@@ -15,3 +15,4 @@ WARP.md
 validation-fixtures/
 server-test/
 validation-results/
+scripts/.nas.env
