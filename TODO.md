@@ -108,6 +108,20 @@ Two follow-ups, in order of value:
    or by prefab name -- so a tie can never inherit input order. If the
    divergence disappears, the mechanism is confirmed and fixed in one
    change. This is cheap and worth trying BEFORE instrumenting.
+   **Every baseline resets the moment this lands.** A deterministic
+   tiebreak changes the network for any world where priority ties exist,
+   which is probably all of them -- so the Windows station's 49748415,
+   the NAS fixture's f0d424fc, and any historical number all become
+   stale simultaneously. A hash change after that commit is the fix
+   WORKING, not a regression, and the first person to run the gate
+   afterwards will see a mismatch warning that means the opposite of
+   what it usually means. Correct post-fix procedure: apply, generate a
+   fresh world, RELOAD it, take the reload hash as the new baseline, and
+   then verify creation and reload now AGREE. That agreement is the
+   actual proof the fix worked -- it is a stronger claim than any single
+   hash value, because it tests the invariant rather than a sample of
+   it.
+
 2. **Discriminating experiment** (Windows station's design): log a digest
    of the location list at generation time -- count plus an ordered
    position hash -- and compare creation against reload. Digest differs
