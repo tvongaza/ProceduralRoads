@@ -88,6 +88,16 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_spots",
+            "List coordinates of generated river crossings and the longest stair runs (for teleport/visual checks).",
+            (args) => ListRuinSpots(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_selftest",
             "Validate the generated road network (dry land, ford lengths, slopes, connectivity) and write a JSON report + routes CSV to the config folder.",
             (args) => RunSelfTest(args),
@@ -326,6 +336,29 @@ public static class ConsoleCommands
         }
 
         return zonesWithRoads;
+    }
+
+    private static void ListRuinSpots(Terminal.ConsoleEventArgs args)
+    {
+        var crossings = RoadNetworkGenerator.GetRoadCrossings();
+        for (int i = 0; i < crossings.Count; i++)
+        {
+            var c = crossings[i];
+            args.Context.AddString(
+                $"CROSSING {i} x={c.Center.x:F0} z={c.Center.y:F0} width={c.Width:F0} biome={c.Biome}");
+        }
+
+        var runs = new List<StairRun>(RoadNetworkGenerator.GetStairRuns());
+        runs.Sort((a, b) => b.Length.CompareTo(a.Length));
+        for (int i = 0; i < Mathf.Min(5, runs.Count); i++)
+        {
+            var r = runs[i];
+            Vector2 mid = (r.FromPos + r.ToPos) * 0.5f;
+            args.Context.AddString(
+                $"STAIRS {i} x={mid.x:F0} z={mid.y:F0} len={r.Length:F0} grade={r.MaxGrade:F1} biome={r.Biome}");
+        }
+
+        args.Context.AddString($"total: {crossings.Count} crossings, {runs.Count} stair runs");
     }
 
     private static void RunSelfTest(Terminal.ConsoleEventArgs args)
