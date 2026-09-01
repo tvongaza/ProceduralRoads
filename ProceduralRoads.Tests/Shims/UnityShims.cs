@@ -81,6 +81,18 @@ public struct Vector3
         return (float)System.Math.Sqrt(dx * dx + dy * dy + dz * dz);
     }
 
+    public static float SqrMagnitude(Vector3 a) => a.x * a.x + a.y * a.y + a.z * a.z;
+
+    public static Vector3 Lerp(Vector3 a, Vector3 b, float t)
+    {
+        t = Mathf.Clamp01(t);
+        return new Vector3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
+    }
+
+    public static Vector3 operator +(Vector3 a, Vector3 b) => new(a.x + b.x, a.y + b.y, a.z + b.z);
+    public static Vector3 operator -(Vector3 a, Vector3 b) => new(a.x - b.x, a.y - b.y, a.z - b.z);
+    public static Vector3 operator *(Vector3 a, float d) => new(a.x * d, a.y * d, a.z * d);
+
     public override string ToString() => $"({x:F1}, {y:F1}, {z:F1})";
 }
 

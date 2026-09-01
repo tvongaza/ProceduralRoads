@@ -16,6 +16,14 @@ public static class RoadNetworkPersistence
     public static void Reset() { }
     public static void SaveGlobalRoadData(List<(Vector2 position, string label)> roadStartPoints) { }
     public static bool TryLoadGlobalRoadData(List<(Vector2 position, string label)> roadStartPoints) => false;
+
+    // Post-warp-71/route-export signatures (routes parameter is object-typed
+    // via generics so the shim compiles both before and after the merge).
+    public static void SaveGlobalRoadData<TRoute>(
+        List<(Vector2 position, string label)> roadStartPoints, List<TRoute> routes) { }
+
+    public static bool TryLoadGlobalRoadData<TRoute>(
+        List<(Vector2 position, string label)> roadStartPoints, List<TRoute> routes) => false;
 }
 
 /// <summary>
