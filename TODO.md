@@ -25,6 +25,49 @@
   paths, schedules, MACs) stay in gitignored files (scripts/.nas.env
   pattern) — never in tracked files of this public fork.
 
+## Validation gap: the gate scores the plan, never the survivors (2026-09-01)
+
+The NAS selftest can report PASS with 0 violations on a network that
+visibly falls apart in game. Measured, not suspected:
+
+- The Windows station instrumented a virgin Black Forest crossing:
+  87 pieces spawned across two zones, and after ~6 minutes of loaded
+  time 8 of 18 `wood_stair` pieces had self-demolished. The 61 poles
+  (grounded) all survived. A crossing built in an earlier session had
+  decayed to a T-post and two downed poles. This is vanilla WearNTear
+  support collapse on the spawned ZDOs -- NOT gated behind
+  DebugValidation, so unmodded clients get the same demolition show, and
+  the network gets uglier on every visit.
+- The headless gate cannot see any of it. A NAS run logs
+  `[RUINS] planned 1592 pieces across 149 zones` and then zero
+  `[RUINS] zone N: spawned ...` lines, because that message fires only
+  from the `ZoneSystem.SpawnZone` postfix and a dedicated server with no
+  players never spawns a zone. The gate observes a PLAN for 1592 pieces
+  and never observes one existing, let alone surviving.
+
+Stated plainly: "NAS selftest PASS" currently means "the layout solver
+produced a plan it is happy with". It is not evidence that anything
+stands up. Necessary, not sufficient -- keep requiring a visual pass
+from the Windows station before believing a crossing or stair run is
+good.
+
+Two follow-ups, and they converge rather than compete:
+
+1. The decay fix IS the snap-point work already queued below. Snapped,
+   grounded chains are how vanilla propagates support, so supporting the
+   pieces and aligning them are the same job, not two.
+2. Closing the gate's blindness needs headless zone spawning -- the SAME
+   capability `road_bake` needs in Tier 1 (iterate zones and write ZDOs
+   with no player present). Once zones spawn headlessly, a piece census
+   becomes a real assertion: spawn the zones a route crosses, hold them
+   loaded, and require the survivor count to match the planned count.
+
+Also note the selftest hash is seed-dependent, not a coverage measure:
+the RoadTestAuto1 fixture and the NAS organic world RoadHeadless1 both
+pass with 0 violations, while the Windows organic world RoadTestPC1
+fails with 3 (two slope, one dry-land). One world is a sample. Catching
+this class needs several seeds, not a different world type.
+
 ## Next up (2026-09-01)
 
 - **Bridge & stair composition pass** (from first in-game screenshots):
