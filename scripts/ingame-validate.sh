@@ -29,8 +29,9 @@ if ! "$CLI" --status | grep -q "process=true"; then
     "$CLI" --launch --timeout 240s
 fi
 
-echo "== 2/6 waiting for CLI terminal bridge =="
+echo "== 2/6 waiting for CLI terminal bridge and main menu =="
 "$CLI" wait --for terminal --timeout 240s
+"$CLI" wait --for mainmenu --timeout 240s
 
 echo "== 3/6 selecting character '$CHAR' =="
 "$CLI" cli_select_character "$CHAR" 2>/dev/null | grep -qi "selected" \

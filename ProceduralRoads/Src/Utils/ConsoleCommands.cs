@@ -78,6 +78,16 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_regen_island",
+            "Clear all roads and regenerate ONLY the island at your position (or road_regen_island <x> <z>). Fast debug loop; applies terrain to loaded zones.",
+            (args) => RegenerateIslandHere(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_selftest",
             "Validate the generated road network (dry land, ford lengths, slopes, connectivity) and write a JSON report + routes CSV to the config folder.",
             (args) => RunSelfTest(args),
@@ -258,6 +268,66 @@ public static class ConsoleCommands
     /// <summary>
     /// Show road start points on the map.
     /// </summary>
+    private static void RegenerateIslandHere(Terminal.ConsoleEventArgs args)
+    {
+        Vector3 pos;
+        if (args.Length >= 3 &&
+            float.TryParse(args[1], out float x) && float.TryParse(args[2], out float z))
+        {
+            pos = new Vector3(x, 0f, z);
+        }
+        else if (Player.m_localPlayer != null)
+        {
+            pos = Player.m_localPlayer.transform.position;
+        }
+        else
+        {
+            args.Context.AddString("No local player; use road_regen_island <x> <z>");
+            return;
+        }
+
+        args.Context.AddString($"Regenerating island at ({pos.x:F0},{pos.z:F0})...");
+
+        if (!RoadNetworkGenerator.RegenerateIslandAt(pos, out string summary))
+        {
+            args.Context.AddString($"Failed: {summary}");
+            return;
+        }
+
+        int zones = ApplyRoadsToLoadedZones();
+        args.Context.AddString(summary);
+        args.Context.AddString($"Applied to {zones} loaded zone(s). Run road_selftest to validate.");
+    }
+
+    private static int ApplyRoadsToLoadedZones()
+    {
+        var heightmaps = Heightmap.GetAllHeightmaps();
+        int zonesWithRoads = 0;
+
+        if (heightmaps == null)
+            return 0;
+
+        foreach (var heightmap in heightmaps)
+        {
+            if (heightmap == null)
+                continue;
+
+            Vector2i zoneID = ZoneSystem.GetZone(heightmap.transform.position);
+            var roadPoints = RoadSpatialGrid.GetRoadPointsInZone(zoneID);
+            if (roadPoints.Count == 0)
+                continue;
+
+            TerrainComp terrainComp = heightmap.GetAndCreateTerrainCompiler();
+            if (terrainComp == null || !terrainComp.m_nview.IsOwner())
+                continue;
+
+            RoadTerrainModifier.ApplyRoadTerrainModsWithContext(zoneID, roadPoints, heightmap, terrainComp);
+            zonesWithRoads++;
+        }
+
+        return zonesWithRoads;
+    }
+
     private static void RunSelfTest(Terminal.ConsoleEventArgs args)
     {
         var report = RoadValidationRunner.Run();
