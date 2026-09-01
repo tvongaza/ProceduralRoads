@@ -29,6 +29,11 @@
         <Compile Include="../ProceduralRoads/Src/Utils/IslandDetector.cs" Link="ModSrc/IslandDetector.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadRoute.cs" Link="ModSrc/RoadRoute.cs"
                  Condition="Exists('../ProceduralRoads/Src/Roads/RoadRoute.cs')"/>
+        <Compile Include="../ProceduralRoads/Src/Debug/RoadNetworkValidator.cs" Link="ModSrc/RoadNetworkValidator.cs"
+                 Condition="Exists('../ProceduralRoads/Src/Debug/RoadNetworkValidator.cs')"/>
+        <!-- Validator tests need RoadRoute + RoadNetworkValidator (post-#17 bases only) -->
+        <Compile Remove="ValidatorTests.cs"
+                 Condition="!Exists('../ProceduralRoads/Src/Debug/RoadNetworkValidator.cs') Or !Exists('../ProceduralRoads/Src/Roads/RoadRoute.cs')"/>
     </ItemGroup>
 
     <ItemGroup>

@@ -47,6 +47,7 @@ namespace ProceduralRoads
         public static ConfigEntry<int> IslandRoadPercentage = null!;
         public static ConfigEntry<int> PathfindingMaxIterations = null!;
         public static ConfigEntry<int> MaxLocationsPerIsland = null!;
+        public static ConfigEntry<bool> DebugValidation = null!;
 
         public void Awake()
         {
@@ -76,6 +77,11 @@ namespace ProceduralRoads
                 new ConfigDescription("Maximum number of locations that can be connected by roads on a single island. " +
                     "Higher values allow more roads on large islands.",
                     new AcceptableValueRange<int>(2, 30)));
+
+            DebugValidation = Config.Bind("Debug", "DebugValidation", false,
+                "Run automatic road-network validation after generation and write " +
+                "ProceduralRoads.selftest.json plus ProceduralRoads.routes.csv to the config folder. " +
+                "Also available on demand via the road_selftest console command.");
 
             CustomLocations = Config.Bind("Locations", "CustomLocations", "",
                 "Comma-separated list of location names to include in road generation. " +

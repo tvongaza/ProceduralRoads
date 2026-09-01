@@ -1,0 +1,235 @@
+using System.Collections.Generic;
+using System.Text;
+using UnityEngine;
+
+namespace ProceduralRoads;
+
+/// <summary>
+/// Machine-checkable validation of a generated road network against the
+/// world it was generated for. Pure logic: no BepInEx, no game singletons —
+/// callers pass routes and a WorldGenerator, so the same checks run in-game
+/// (via RoadValidationRunner) and in the headless test harness.
+/// </summary>
+public static class RoadNetworkValidator
+{
+    public const float FordLengthCap = RoadConstants.MaxRiverCrossingCells * RoadConstants.PathfindingCellSize;
+    public const float SlopeSanityCap = 1.5f;
+    public const float EndpointJoinRadius = 24f;
+    private const int MaxViolationsPerCheck = 12;
+
+    public sealed class Report
+    {
+        public int RouteCount;
+        public float TotalLengthMeters;
+        public int PointCount;
+        public int NetworkComponents;
+        public int FordCount;
+        public string PointsHash = "";
+        public readonly List<string> Violations = new();
+        public bool Passed => Violations.Count == 0;
+    }
+
+    public static Report Validate(IReadOnlyList<RoadRoute> routes, WorldGenerator world)
+    {
+        Report report = new();
+        if (routes == null || world == null)
+        {
+            report.Violations.Add("validator: routes or world unavailable");
+            return report;
+        }
+
+        uint hash = 2166136261;
+        int dryLandViolations = 0, fordViolations = 0, slopeViolations = 0;
+
+        foreach (RoadRoute route in routes)
+        {
+            report.RouteCount++;
+            report.TotalLengthMeters += route.Length;
+            report.PointCount += route.Points.Count;
+
+            int fordRunStart = -1;
+
+            for (int i = 0; i < route.Points.Count; i++)
+            {
+                Vector3 p = route.Points[i];
+                hash = HashPoint(hash, p);
+
+                float height = world.GetHeight(p.x, p.z);
+                world.GetRiverWeight(p.x, p.z, out float riverWeight, out _);
+                bool inRiverCore = riverWeight > RoadConstants.RiverImpassableThreshold;
+
+                // Dry-land invariant: a wet point is legal only as part of a
+                // ford (river core) or as wadeable swamp shallows.
+                if (height < RoadConstants.ShallowWaterHeight - 0.25f && !inRiverCore)
+                {
+                    bool swampWade = world.GetBiome(p.x, p.z) == Heightmap.Biome.Swamp
+                                     && height >= RoadConstants.DeepWaterHeight;
+                    if (!swampWade && dryLandViolations++ < MaxViolationsPerCheck)
+                        report.Violations.Add(
+                            $"dry-land: {route.Label} point {i} ({p.x:F0},{p.z:F0}) height {height:F1}");
+                }
+
+                // Ford-length invariant: consecutive river-core points must
+                // span no more than the ford cap.
+                if (inRiverCore)
+                {
+                    if (fordRunStart < 0)
+                        fordRunStart = i;
+                }
+                else if (fordRunStart >= 0)
+                {
+                    report.FordCount++;
+                    int startIdx = fordRunStart > 0 ? fordRunStart - 1 : fordRunStart;
+                    float span = Vector3.Distance(route.Points[startIdx], route.Points[i]);
+                    if (span > FordLengthCap + 16f && fordViolations++ < MaxViolationsPerCheck)
+                        report.Violations.Add(
+                            $"ford-length: {route.Label} spans {span:F0}m across river core (cap {FordLengthCap:F0}m)");
+                    fordRunStart = -1;
+                }
+
+                // Slope sanity between consecutive centerline points.
+                if (i > 0)
+                {
+                    Vector3 prev = route.Points[i - 1];
+                    float dx = p.x - prev.x, dz = p.z - prev.z;
+                    float horizontal = Mathf.Sqrt(dx * dx + dz * dz);
+                    if (horizontal > 0.01f)
+                    {
+                        float slope = Mathf.Abs(p.y - prev.y) / horizontal;
+                        if (slope > SlopeSanityCap && slopeViolations++ < MaxViolationsPerCheck)
+                            report.Violations.Add(
+                                $"slope: {route.Label} point {i} grade {slope:F2} over {horizontal:F1}m");
+                    }
+                }
+            }
+
+            if (fordRunStart >= 0)
+                report.Violations.Add($"ford-open: {route.Label} ends inside a river core");
+        }
+
+        report.PointsHash = hash.ToString("x8");
+        report.NetworkComponents = CountComponents(routes);
+        return report;
+    }
+
+    /// <summary>
+    /// Union-find over route endpoints: routes whose endpoints touch (within
+    /// EndpointJoinRadius) belong to one network component.
+    /// </summary>
+    private static int CountComponents(IReadOnlyList<RoadRoute> routes)
+    {
+        int n = routes.Count;
+        if (n == 0) return 0;
+
+        int[] parent = new int[n];
+        for (int i = 0; i < n; i++) parent[i] = i;
+
+        int Find(int x)
+        {
+            while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+            return x;
+        }
+
+        for (int a = 0; a < n; a++)
+        {
+            for (int b = a + 1; b < n; b++)
+            {
+                if (RoutesTouch(routes[a], routes[b]))
+                {
+                    int ra = Find(a), rb = Find(b);
+                    if (ra != rb) parent[ra] = rb;
+                }
+            }
+        }
+
+        HashSet<int> roots = new();
+        for (int i = 0; i < n; i++) roots.Add(Find(i));
+        return roots.Count;
+    }
+
+    private static bool RoutesTouch(RoadRoute a, RoadRoute b)
+    {
+        if (a.Points.Count == 0 || b.Points.Count == 0) return false;
+
+        Vector3[] endsA = { a.Points[0], a.Points[a.Points.Count - 1] };
+        Vector3[] endsB = { b.Points[0], b.Points[b.Points.Count - 1] };
+
+        foreach (Vector3 ea in endsA)
+        {
+            // An endpoint may join mid-route (T junction), so compare against
+            // every point of the other route, not just its ends.
+            foreach (Vector3 pb in b.Points)
+            {
+                float dx = ea.x - pb.x, dz = ea.z - pb.z;
+                if (dx * dx + dz * dz <= EndpointJoinRadius * EndpointJoinRadius)
+                    return true;
+            }
+        }
+
+        foreach (Vector3 eb in endsB)
+        {
+            foreach (Vector3 pa in a.Points)
+            {
+                float dx = eb.x - pa.x, dz = eb.z - pa.z;
+                if (dx * dx + dz * dz <= EndpointJoinRadius * EndpointJoinRadius)
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static uint HashPoint(uint hash, Vector3 p)
+    {
+        unchecked
+        {
+            hash = (hash ^ (uint)Mathf.RoundToInt(p.x * 10f)) * 16777619;
+            hash = (hash ^ (uint)Mathf.RoundToInt(p.y * 10f)) * 16777619;
+            hash = (hash ^ (uint)Mathf.RoundToInt(p.z * 10f)) * 16777619;
+            return hash;
+        }
+    }
+
+    public static string ToJson(Report report)
+    {
+        StringBuilder sb = new();
+        sb.Append("{\n");
+        sb.Append($"  \"passed\": {(report.Passed ? "true" : "false")},\n");
+        sb.Append($"  \"routeCount\": {report.RouteCount},\n");
+        sb.Append($"  \"totalLengthMeters\": {report.TotalLengthMeters:F0},\n");
+        sb.Append($"  \"pointCount\": {report.PointCount},\n");
+        sb.Append($"  \"networkComponents\": {report.NetworkComponents},\n");
+        sb.Append($"  \"fordCount\": {report.FordCount},\n");
+        sb.Append($"  \"pointsHash\": \"{report.PointsHash}\",\n");
+        sb.Append("  \"violations\": [\n");
+        for (int i = 0; i < report.Violations.Count; i++)
+        {
+            sb.Append("    \"").Append(Escape(report.Violations[i])).Append('"');
+            sb.Append(i < report.Violations.Count - 1 ? ",\n" : "\n");
+        }
+        sb.Append("  ]\n}\n");
+        return sb.ToString();
+    }
+
+    public static string ToRoutesCsv(IReadOnlyList<RoadRoute> routes)
+    {
+        StringBuilder sb = new();
+        sb.Append("route_index,label,point_index,x,y,z\n");
+        foreach (RoadRoute route in routes)
+        {
+            for (int i = 0; i < route.Points.Count; i++)
+            {
+                Vector3 p = route.Points[i];
+                sb.Append(route.Index).Append(',')
+                  .Append('"').Append(Escape(route.Label)).Append('"').Append(',')
+                  .Append(i).Append(',')
+                  .Append(p.x.ToString("F1")).Append(',')
+                  .Append(p.y.ToString("F1")).Append(',')
+                  .Append(p.z.ToString("F1")).Append('\n');
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static string Escape(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+}

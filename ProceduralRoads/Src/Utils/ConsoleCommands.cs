@@ -78,6 +78,16 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_selftest",
+            "Validate the generated road network (dry land, ford lengths, slopes, connectivity) and write a JSON report + routes CSV to the config folder.",
+            (args) => RunSelfTest(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_routes",
             "List generated road routes for actor pathing.",
             (args) => ListRoadRoutes(args),
@@ -248,6 +258,22 @@ public static class ConsoleCommands
     /// <summary>
     /// Show road start points on the map.
     /// </summary>
+    private static void RunSelfTest(Terminal.ConsoleEventArgs args)
+    {
+        var report = RoadValidationRunner.Run();
+        if (report == null)
+        {
+            args.Context.AddString("Self-test unavailable (no world loaded)");
+            return;
+        }
+
+        args.Context.AddString(
+            $"Road self-test {(report.Passed ? "PASS" : "FAIL")}: {report.RouteCount} routes, " +
+            $"{report.TotalLengthMeters:F0}m, {report.NetworkComponents} component(s), " +
+            $"{report.FordCount} ford(s), {report.Violations.Count} violation(s)");
+        args.Context.AddString($"Report: {RoadValidationRunner.ReportPath}");
+    }
+
     private static void ShowRoadStartPins(Terminal.ConsoleEventArgs args)
     {
         // Debug: show current state
