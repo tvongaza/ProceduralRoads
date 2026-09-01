@@ -50,7 +50,7 @@ ssh "$NAS" "WORLD='$WORLD' SRV='$SRV' SAVES='$SAVES' sh -s" <<'REMOTE'
 set -e
 cd "$SRV"
 rm -f selftest-run.log
-./start_server_bepinex.sh ./valheim_server.x86_64 \
+sh ./start_server_bepinex.sh ./valheim_server.x86_64 \
     -name RoadValidate -port 24560 -world "$WORLD" -password roadtest123 \
     -public 0 -batchmode -nographics -savedir "$SAVES" > selftest-run.log 2>&1 &
 SERVER_PID=$!
