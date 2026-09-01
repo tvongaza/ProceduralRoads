@@ -28,12 +28,15 @@ June work. Do NOT port its two known bugs:
 
 ## Test harness (spiked 2026-08-31 — `ProceduralRoads.Tests/`)
 
-Headless xunit project (net10.0) that compiles the real mod sources against
+Headless xunit project (net48 under Mono + net10.0) that compiles the real mod sources against
 tiny shims for Unity math, `Vector2i`/`Heightmap.Biome`/`WorldGenerator`, and
 BepInEx logging — no game, no Unity, runs in <1 s. `SyntheticWorld` provides a
 deterministic pseudo-Valheim island (dome + mountain ridge + meandering
 river); `WorldRenderer` draws world + paths + markers to a BMP for visual
-inspection. Includes a characterization test pinning the current "river makes
+inspection. Run via `ProceduralRoads.Tests/run-tests.sh` (both runtimes) or
+`dotnet test -f net10.0` (fast loop; bare `dotnet test` aborts on the net48
+target on macOS). net48 runs under Homebrew Mono 6.14 — closest available
+match to Valheim's in-game Unity Mono runtime. Includes a characterization test pinning the current "river makes
 far side unreachable" behavior — flip it when the cost-model rework lands.
 
 - [ ] Extend harness to cover `RoadSpatialGrid` smoothing and

@@ -1,7 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
+        <!--
+          net48 matches the mod's own target and runs under Mono (closest to
+          Valheim's in-game runtime); net10.0 is the fast local loop that
+          `dotnet test` uses. Run net48 via run-tests.sh (mono + xunit console).
+        -->
+        <TargetFrameworks>net48;net10.0</TargetFrameworks>
         <LangVersion>10</LangVersion>
         <Nullable>enable</Nullable>
         <IsPackable>false</IsPackable>
@@ -22,6 +27,9 @@
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0"/>
         <PackageReference Include="xunit" Version="2.8.1"/>
         <PackageReference Include="xunit.runner.visualstudio" Version="2.8.1"/>
+        <PackageReference Include="xunit.runner.console" Version="2.8.1">
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
     </ItemGroup>
 
 </Project>
