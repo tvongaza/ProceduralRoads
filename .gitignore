@@ -1,0 +1,14 @@
+bin/
+obj/
+/packages/
+riderModule.iml
+/_ReSharper.Caches/
+.idea
+.cursor
+ProceduralRoads/features
+
+# Warp agent instructions (local-only)
+WARP.md
+
+.claude
+.claude/

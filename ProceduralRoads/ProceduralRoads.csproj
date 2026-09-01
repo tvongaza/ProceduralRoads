@@ -1,0 +1,139 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <Import Project="environment.props" />
+
+    <PropertyGroup>
+        <TargetFramework>net48</TargetFramework>
+        <RootNamespace>ProceduralRoads</RootNamespace>
+        <AssemblyName>ProceduralRoads</AssemblyName>
+        <LangVersion>10</LangVersion>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+        <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+        <DisableImplicitNuGetFallbackFolder>true</DisableImplicitNuGetFallbackFolder>
+        <!-- Keep existing AssemblyInfo.cs -->
+        <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+        <DebugSymbols>true</DebugSymbols>
+        <DebugType>full</DebugType>
+        <Optimize>false</Optimize>
+        <DefineConstants>DEBUG;TRACE</DefineConstants>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+        <DebugType>pdbonly</DebugType>
+        <Optimize>true</Optimize>
+        <DefineConstants>TRACE</DefineConstants>
+    </PropertyGroup>
+
+
+    <!-- Additional Content Files to Include in Project -->
+    <ItemGroup>
+        <None Include="App.config"/>
+        <None Include="assets/**" CopyToOutputDirectory="PreserveNewest"/>
+        <None Include="icons/**"/>
+        <None Include="Thunderstore/**"/>
+        <None Include="*.md"/>
+        <None Include="*.ps1"/>
+    </ItemGroup>
+
+    <!-- Build Targets -->
+    <Target Name="GetAssemblyVersion" AfterTargets="Build">
+        <GetAssemblyIdentity AssemblyFiles="$(TargetPath)">
+            <Output TaskParameter="Assemblies" ItemName="Targets"/>
+        </GetAssemblyIdentity>
+        <ItemGroup>
+            <AssemblyVersions Include="@(Targets->'%(Version)')"/>
+        </ItemGroup>
+        <PropertyGroup>
+            <AssemblyVersion>%(AssemblyVersions.Identity)</AssemblyVersion>
+            <Major>$(AssemblyVersion.Split('.')[0])</Major>
+            <Minor>$(AssemblyVersion.Split('.')[1])</Minor>
+            <Patch>$(AssemblyVersion.Split('.')[2])</Patch>
+            <PackageName>$(AssemblyName)_v$(Major).$(Minor).$(Patch)</PackageName>
+            <PackageVersion>$(Major).$(Minor).$(Patch)</PackageVersion>
+            <VersionString>$(Major).$(Minor).$(Patch)</VersionString>
+            <PackageDir>$(ProjectDir)/Thunderstore/$(PackageName)</PackageDir>
+        </PropertyGroup>
+    </Target>
+    
+    <Target Name="CopyOutputDLL" AfterTargets="GetAssemblyVersion" Condition="Exists('$(CopyOutputDLLPath)')">
+        <Error Text="DLL not found in target directory." Condition="!Exists('$(TargetDir)$(AssemblyName).dll')"/>
+        <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath)" OverwriteReadOnlyFiles="true"/>
+        <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath2)" OverwriteReadOnlyFiles="true" Condition="Exists('$(CopyOutputDLLPath2)')"/>
+        <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath3)" OverwriteReadOnlyFiles="true" Condition="Exists('$(CopyOutputDLLPath3)')"/>
+    </Target>
+    
+    <Target Name="CopyReadMeToTSFolder" AfterTargets="CopyOutputDLL" Condition=" ('$(Configuration)' == 'Release') And ('$(OS)' == 'Windows_NT') ">
+        <Warning Text="README.md not found in project directory. A default README.md file will be created for the Thunderstore package" Condition="!Exists('README.md')"/>
+        <WriteLinesToFile File="README.md" Lines="Default Readme file from one of Azumatt's Templates. Replace this with actual content." Overwrite="false" Condition="!Exists('README.md')"/>
+        <Copy SourceFiles="README.md" DestinationFolder="$(PackageDir)" OverwriteReadOnlyFiles="true"/>
+        <Copy SourceFiles="README.md" DestinationFolder="$(ProjectDir)/Thunderstore" OverwriteReadOnlyFiles="true"/>
+    </Target>
+    
+    <UsingTask TaskName="WriteManifestFile" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll" Condition="'$(OS)' == 'Windows_NT'">
+        <ParameterGroup>
+            <ManifestFile ParameterType="System.String" Required="true"/>
+            <AssemblyName ParameterType="System.String" Required="true"/>
+        </ParameterGroup>
+        <Task>
+            <Code Type="Fragment" Language="cs">
+                <![CDATA[
+if (!System.IO.File.Exists(ManifestFile))
+{
+string content = @"{
+  ""name"": """ + AssemblyName + @""",
+  ""version_number"": ""1.0.0"",
+  ""website_url"": ""https://discord.gg/pdHgy6Bsng"",
+  ""description"": ""Your mod description goes here. Do not forget to replace the icon.png file with your own. Must be 256x256. Your Readme.md file will be copied from the one in your project folder."",
+  ""dependencies"": [
+    ""denikson-BepInExPack_Valheim-5.4.2105""
+]
+}";
+System.IO.File.WriteAllText(ManifestFile, content);
+}
+]]>
+            </Code>
+        </Task>
+    </UsingTask>
+    
+    <Target Name="UpdateManifestVersion" AfterTargets="CopyReadmeToTSFolder" Condition=" ('$(Configuration)' == 'Release') And ('$(OS)' == 'Windows_NT') ">
+        <WriteManifestFile ManifestFile="$(ProjectDir)Thunderstore/manifest.json" AssemblyName="$(AssemblyName)"/>
+        <ItemGroup>
+            <ManifestFile Include="$(ProjectDir)Thunderstore/manifest.json"/>
+        </ItemGroup>
+        <Message Text="ManifestFile is @(ManifestFile)"/>
+        <Message Text="Updating version number in Thunderstore/manifest.json" Condition="Exists(@(ManifestFile))"/>
+        <Exec Command="powershell.exe -ExecutionPolicy Bypass -Command &quot;&amp; { &amp; '$(ProjectDir)UpdateManifest.ps1' -manifestFile '@(ManifestFile)' -versionString '$(PackageVersion)' }&quot;"/>
+    </Target>
+    
+    <Target Name="MakeThunderstorePackage" AfterTargets="UpdateManifestVersion" Condition=" '$(Configuration)' == 'Release' ">
+        <Error Text="manifest.json not found in Thunderstore directory." Condition="!Exists('$(ProjectDir)/Thunderstore/manifest.json')"/>
+        <Error Text="icon.png not found in Thunderstore directory. Please note that Thunderstore requires this image to be 256x256 in dimension" Condition="!Exists('$(ProjectDir)/Thunderstore/icon.png')"/>
+        <ItemGroup>
+            <PackageFiles Include="$(TargetDir)$(AssemblyName).dll" Condition="Exists('$(TargetDir)$(AssemblyName).dll')"/>
+            <PackageFiles Include="$(ProjectDir)/Thunderstore/CHANGELOG.md" Condition="Exists('$(ProjectDir)/Thunderstore/CHANGELOG.md')"/>
+            <PackageFiles Include="$(ProjectDir)/Thunderstore/manifest.json" Condition="Exists('$(ProjectDir)/Thunderstore/manifest.json')"/>
+            <PackageFiles Include="$(ProjectDir)/Thunderstore/icon.png" Condition="Exists('$(ProjectDir)/Thunderstore/icon.png')"/>
+        </ItemGroup>
+        <MakeDir Directories="$(PackageDir)"/>
+        <Copy SourceFiles="@(PackageFiles)" DestinationFolder="$(PackageDir)"/>
+        <ZipDirectory SourceDirectory="$(PackageDir)" DestinationFile="Thunderstore/$(PackageName).zip" Overwrite="true"/>
+        <RemoveDir Directories="$(PackageDir)"/>
+    </Target>
+    
+    <Target Name="MakeNexusPackage" AfterTargets="MakeThunderstorePackage" Condition=" '$(Configuration)' == 'Release' ">
+        <MakeDir Directories="$(ProjectDir)/Nexus"/>
+        <ItemGroup>
+            <NexusPackageFiles Include="$(TargetDir)$(AssemblyName).dll;"/>
+        </ItemGroup>
+        <MakeDir Directories="$(PackageDir)"/>
+        <Copy SourceFiles="@(NexusPackageFiles)" DestinationFolder="$(PackageDir)"/>
+        <ZipDirectory SourceDirectory="$(PackageDir)" DestinationFile="Nexus/$(PackageName).zip" Overwrite="true"/>
+        <RemoveDir Directories="$(PackageDir)"/>
+    </Target>
+
+</Project>
