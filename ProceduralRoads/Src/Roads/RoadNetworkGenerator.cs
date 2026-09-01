@@ -164,6 +164,7 @@ public static class RoadNetworkGenerator
     private static int m_roadsGeneratedCount = 0;
     private static List<(Vector2 position, string label)> m_roadStartPoints = new();
     private static List<RoadRoute> m_roadRoutes = new List<RoadRoute>();
+    private static List<RoadCrossing> m_roadCrossings = new List<RoadCrossing>();
 
     public static bool RoadsGenerated => m_roadsGenerated;
     public static bool IsLocationsReady => m_locationsReady;
@@ -179,6 +180,8 @@ public static class RoadNetworkGenerator
     /// Get ordered centerlines for generated roads.
     /// </summary>
     public static IReadOnlyList<RoadRoute> GetRoadRoutes() => m_roadRoutes;
+
+    public static IReadOnlyList<RoadCrossing> GetRoadCrossings() => m_roadCrossings;
 
     public static string GetRoadRouteLabel(int routeIndex)
     {
@@ -388,7 +391,30 @@ public static class RoadNetworkGenerator
             return false;
         }
 
-        RoadSpatialGrid.AddRoadPath(path, width, WorldGenerator.instance);
+        // Rivers are crossed but never paved: record crossing metadata (for
+        // future bridge ruins) and paint/level only the land segments, so
+        // the road stops at one bank and resumes at the other.
+        List<RoadCrossing> crossings = RoadCrossingDetector.Detect(path, WorldGenerator.instance);
+        if (crossings.Count == 0)
+        {
+            RoadSpatialGrid.AddRoadPath(path, width, WorldGenerator.instance);
+        }
+        else
+        {
+            int cursor = 0;
+            foreach (RoadCrossing crossing in crossings)
+            {
+                List<Vector2> landSegment = path.GetRange(cursor, crossing.FromIndex - cursor + 1);
+                if (landSegment.Count >= 2)
+                    RoadSpatialGrid.AddRoadPath(landSegment, width, WorldGenerator.instance);
+                cursor = crossing.ToIndex;
+            }
+
+            List<Vector2> tail = path.GetRange(cursor, path.Count - cursor);
+            if (tail.Count >= 2)
+                RoadSpatialGrid.AddRoadPath(tail, width, WorldGenerator.instance);
+        }
+
         m_roadsGeneratedCount++;
 
         if (path.Count > 0)
@@ -397,6 +423,12 @@ public static class RoadNetworkGenerator
             m_roadStartPoints.Add((path[0], pinLabel));
             RoadRoute route = RoadRoute.FromWaypoints(m_roadRoutes.Count, pinLabel, width, path, WorldGenerator.instance);
             m_roadRoutes.Add(route);
+
+            foreach (RoadCrossing crossing in crossings)
+            {
+                crossing.RouteIndex = route.Index;
+                m_roadCrossings.Add(crossing);
+            }
         }
 
         if (label != null)
@@ -962,6 +994,7 @@ public static class RoadNetworkGenerator
         m_roadsGeneratedCount = 0;
         m_roadStartPoints.Clear();
         m_roadRoutes.Clear();
+        m_roadCrossings.Clear();
         RoadNetworkPersistence.Reset();
         RoadSpatialGrid.Clear();
     }
@@ -1073,7 +1106,7 @@ public static class RoadNetworkGenerator
             return;
         }
 
-        RoadNetworkPersistence.SaveGlobalRoadData(m_roadStartPoints, m_roadRoutes);
+        RoadNetworkPersistence.SaveGlobalRoadData(m_roadStartPoints, m_roadRoutes, m_roadCrossings);
     }
 
     /// <summary>
@@ -1083,7 +1116,7 @@ public static class RoadNetworkGenerator
     /// <returns>True if road data was found and loaded</returns>
     public static bool TryLoadGlobalRoadData()
     {
-        return RoadNetworkPersistence.TryLoadGlobalRoadData(m_roadStartPoints, m_roadRoutes);
+        return RoadNetworkPersistence.TryLoadGlobalRoadData(m_roadStartPoints, m_roadRoutes, m_roadCrossings);
     }
 
     #endregion

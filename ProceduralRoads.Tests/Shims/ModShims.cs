@@ -24,6 +24,14 @@ public static class RoadNetworkPersistence
 
     public static bool TryLoadGlobalRoadData<TRoute>(
         List<(Vector2 position, string label)> roadStartPoints, List<TRoute> routes) => false;
+
+    public static void SaveGlobalRoadData<TRoute, TCrossing>(
+        List<(Vector2 position, string label)> roadStartPoints,
+        List<TRoute> routes, List<TCrossing> crossings) { }
+
+    public static bool TryLoadGlobalRoadData<TRoute, TCrossing>(
+        List<(Vector2 position, string label)> roadStartPoints,
+        List<TRoute> routes, List<TCrossing> crossings) => false;
 }
 
 /// <summary>

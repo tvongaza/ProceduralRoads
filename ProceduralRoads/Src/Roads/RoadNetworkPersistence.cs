@@ -37,6 +37,11 @@ public static class RoadNetworkPersistence
     private static readonly int RoadRoutesHash = "ProceduralRoads_Routes".GetStableHashCode();
 
     /// <summary>
+    /// Hash key for storing river crossing metadata on the ZDO.
+    /// </summary>
+    private static readonly int RoadCrossingsHash = "ProceduralRoads_Crossings".GetStableHashCode();
+
+    /// <summary>
     /// Hash key for storing global road network data on the ZDO.
     /// </summary>
     private static readonly int GlobalRoadDataHash = "ProceduralRoads_GlobalData".GetStableHashCode();
@@ -100,7 +105,8 @@ public static class RoadNetworkPersistence
     /// </summary>
     public static void SaveGlobalRoadData(
         IReadOnlyList<(Vector2 position, string label)> roadStartPoints,
-        IReadOnlyList<RoadRoute> roadRoutes)
+        IReadOnlyList<RoadRoute> roadRoutes,
+        IReadOnlyList<RoadCrossing> roadCrossings)
     {
         Log.LogDebug($"[SAVE] SaveGlobalRoadData called");
 
@@ -145,6 +151,13 @@ public static class RoadNetworkPersistence
             metadataZdo.Set(RoadRoutesHash, routesData);
             Log.LogDebug($"[SAVE] Saved {roadRoutes.Count} road routes ({routesData.Length} bytes)");
         }
+
+        byte[] crossingsData = SerializeRoadCrossings(roadCrossings);
+        if (crossingsData.Length > 0)
+        {
+            metadataZdo.Set(RoadCrossingsHash, crossingsData);
+            Log.LogDebug($"[SAVE] Saved {roadCrossings.Count} road crossings ({crossingsData.Length} bytes)");
+        }
     }
 
     /// <summary>
@@ -154,7 +167,8 @@ public static class RoadNetworkPersistence
     /// <returns>True if road data was found and loaded</returns>
     public static bool TryLoadGlobalRoadData(
         List<(Vector2 position, string label)> roadStartPoints,
-        List<RoadRoute> roadRoutes)
+        List<RoadRoute> roadRoutes,
+        List<RoadCrossing> roadCrossings)
     {
         Log.LogDebug("[LOAD] TryLoadGlobalRoadData called");
 
@@ -188,6 +202,7 @@ public static class RoadNetworkPersistence
 
             TryLoadRoadMetadata(roadStartPoints);
             TryLoadRoadRoutes(roadRoutes);
+            TryLoadRoadCrossings(roadCrossings);
 
             return true;
         }
@@ -385,6 +400,110 @@ public static class RoadNetworkPersistence
         catch (Exception ex)
         {
             Log.LogWarning($"Failed to deserialize road start points: {ex.Message}");
+            return false;
+        }
+    }
+
+    public static bool TryLoadRoadCrossings(List<RoadCrossing> roadCrossings)
+    {
+        if (ZDOMan.instance == null)
+            return false;
+
+        ZDO? metadataZdo = FindMetadataZDO();
+        if (metadataZdo == null)
+            return false;
+
+        byte[]? data = metadataZdo.GetByteArray(RoadCrossingsHash, null);
+        if (data == null || data.Length == 0)
+            return false;
+
+        if (DeserializeRoadCrossings(data, roadCrossings))
+        {
+            Log.LogDebug($"Loaded {roadCrossings.Count} road crossings from ZDO");
+            return true;
+        }
+
+        return false;
+    }
+
+    private static byte[] SerializeRoadCrossings(IReadOnlyList<RoadCrossing> roadCrossings)
+    {
+        using MemoryStream ms = new MemoryStream();
+        using BinaryWriter writer = new BinaryWriter(ms);
+
+        writer.Write(1);
+        writer.Write(roadCrossings.Count);
+
+        for (int i = 0; i < roadCrossings.Count; i++)
+        {
+            RoadCrossing crossing = roadCrossings[i];
+            writer.Write(crossing.RouteIndex);
+            writer.Write(crossing.FromBank.x);
+            writer.Write(crossing.FromBank.y);
+            writer.Write(crossing.ToBank.x);
+            writer.Write(crossing.ToBank.y);
+            writer.Write(crossing.WaterLevel);
+            writer.Write(crossing.RiverbedHeight);
+            writer.Write(crossing.FairwayCenter.x);
+            writer.Write(crossing.FairwayCenter.y);
+            writer.Write(crossing.FairwayWidth);
+            writer.Write((int)crossing.Biome);
+        }
+
+        return ms.ToArray();
+    }
+
+    private static bool DeserializeRoadCrossings(byte[] data, List<RoadCrossing> roadCrossings)
+    {
+        try
+        {
+            using MemoryStream ms = new MemoryStream(data);
+            using BinaryReader reader = new BinaryReader(ms);
+
+            int version = reader.ReadInt32();
+            if (version != 1)
+            {
+                Log.LogWarning($"Unknown road crossing data version: {version}");
+                return false;
+            }
+
+            int count = reader.ReadInt32();
+            if (count < 0 || count > 10000)
+            {
+                Log.LogWarning($"Invalid road crossing count: {count}");
+                return false;
+            }
+
+            roadCrossings.Clear();
+
+            for (int i = 0; i < count; i++)
+            {
+                RoadCrossing crossing = new RoadCrossing
+                {
+                    RouteIndex = reader.ReadInt32(),
+                    FromBank = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
+                    ToBank = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
+                    WaterLevel = reader.ReadSingle(),
+                    RiverbedHeight = reader.ReadSingle(),
+                    FairwayCenter = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
+                    FairwayWidth = reader.ReadSingle(),
+                    Biome = (Heightmap.Biome)reader.ReadInt32(),
+                };
+
+                crossing.Center = (crossing.FromBank + crossing.ToBank) * 0.5f;
+                Vector2 direction = crossing.ToBank - crossing.FromBank;
+                direction.Normalize();
+                crossing.Direction = direction;
+                crossing.Width = Vector2.Distance(crossing.FromBank, crossing.ToBank);
+
+                roadCrossings.Add(crossing);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning($"Failed to deserialize road crossings: {ex.Message}");
             return false;
         }
     }

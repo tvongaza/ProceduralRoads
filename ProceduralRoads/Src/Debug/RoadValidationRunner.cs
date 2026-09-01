@@ -39,7 +39,8 @@ public static class RoadValidationRunner
         Log.LogInfo(
             $"[SELFTEST] {(report.Passed ? "PASS" : "FAIL")}: {report.RouteCount} routes, " +
             $"{report.TotalLengthMeters:F0}m total, {report.NetworkComponents} network component(s), " +
-            $"{report.FordCount} ford(s), hash {report.PointsHash}, {report.Violations.Count} violation(s)");
+            $"{report.FordCount} ford(s), {RoadNetworkGenerator.GetRoadCrossings().Count} crossing(s), " +
+            $"hash {report.PointsHash}, {report.Violations.Count} violation(s)");
 
         foreach (string violation in report.Violations)
             Log.LogWarning($"[SELFTEST] VIOLATION {violation}");
