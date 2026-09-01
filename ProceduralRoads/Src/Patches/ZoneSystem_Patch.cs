@@ -31,6 +31,7 @@ public static class ZoneSystem_Patch
 
             List<ZoneSystem.ClearArea> roadClearAreas = RoadClearAreaManager.GetOrCreateClearAreas(zoneID);
             clearAreas.AddRange(roadClearAreas);
+            clearAreas.AddRange(RuinPlacement.GetClearAreas(zoneID));
         }
     }
 
@@ -42,6 +43,8 @@ public static class ZoneSystem_Patch
         {
             if (!__result || !RoadNetworkGenerator.RoadsGenerated)
                 return;
+
+            RuinPlacement.SpawnRuinsInZone(zoneID, mode);
 
             List<RoadSpatialGrid.RoadPoint> roadPoints = RoadSpatialGrid.GetRoadPointsInZone(zoneID);
             if (roadPoints.Count == 0)

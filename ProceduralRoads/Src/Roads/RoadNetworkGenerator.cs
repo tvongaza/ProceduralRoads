@@ -1027,6 +1027,7 @@ public static class RoadNetworkGenerator
         m_roadRoutes.Clear();
         m_roadCrossings.Clear();
         m_stairRuns.Clear();
+        RuinPlacement.Reset();
         RoadNetworkPersistence.Reset();
         RoadSpatialGrid.Clear();
     }
@@ -1138,7 +1139,7 @@ public static class RoadNetworkGenerator
             return;
         }
 
-        RoadNetworkPersistence.SaveGlobalRoadData(m_roadStartPoints, m_roadRoutes, m_roadCrossings);
+        RoadNetworkPersistence.SaveGlobalRoadData(m_roadStartPoints, m_roadRoutes, m_roadCrossings, m_stairRuns, RuinPlacement.SpawnedZones);
     }
 
     /// <summary>
@@ -1148,7 +1149,12 @@ public static class RoadNetworkGenerator
     /// <returns>True if road data was found and loaded</returns>
     public static bool TryLoadGlobalRoadData()
     {
-        return RoadNetworkPersistence.TryLoadGlobalRoadData(m_roadStartPoints, m_roadRoutes, m_roadCrossings);
+        var spawnedRuinZones = new HashSet<Vector2i>();
+        bool loaded = RoadNetworkPersistence.TryLoadGlobalRoadData(
+            m_roadStartPoints, m_roadRoutes, m_roadCrossings, m_stairRuns, spawnedRuinZones);
+        if (loaded)
+            RuinPlacement.MarkZonesSpawned(spawnedRuinZones);
+        return loaded;
     }
 
     #endregion

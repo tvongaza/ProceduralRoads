@@ -32,6 +32,31 @@ public static class RoadNetworkPersistence
     public static bool TryLoadGlobalRoadData<TRoute, TCrossing>(
         List<(Vector2 position, string label)> roadStartPoints,
         List<TRoute> routes, List<TCrossing> crossings) => false;
+
+    public static void SaveGlobalRoadData<TRoute, TCrossing, TStair>(
+        List<(Vector2 position, string label)> roadStartPoints,
+        List<TRoute> routes, List<TCrossing> crossings,
+        List<TStair> stairRuns, IReadOnlyCollection<Vector2i> spawnedZones) { }
+
+    public static bool TryLoadGlobalRoadData<TRoute, TCrossing, TStair>(
+        List<(Vector2 position, string label)> roadStartPoints,
+        List<TRoute> routes, List<TCrossing> crossings,
+        List<TStair> stairRuns, HashSet<Vector2i> spawnedZones) => false;
+}
+
+/// <summary>
+/// Shim for RuinPlacement (real one instantiates prefabs via ZNetScene).
+/// Only the members RoadNetworkGenerator touches.
+/// </summary>
+public static class RuinPlacement
+{
+    private static readonly HashSet<Vector2i> s_zones = new();
+    public static IReadOnlyCollection<Vector2i> SpawnedZones => s_zones;
+    public static void Reset() => s_zones.Clear();
+    public static void MarkZonesSpawned(IEnumerable<Vector2i> zones)
+    {
+        foreach (Vector2i z in zones) s_zones.Add(z);
+    }
 }
 
 /// <summary>
