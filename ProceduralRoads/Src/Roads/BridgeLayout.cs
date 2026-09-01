@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -79,7 +78,7 @@ public static class BridgeLayout
         if (crossing == null || world == null || style == null || crossing.Width < style.DeckSpan)
             return pieces;
 
-        Random rng = new Random(worldSeed ^ StableSeed(crossing));
+        System.Random rng = new System.Random(worldSeed ^ StableSeed(crossing));
 
         Vector2 from = crossing.FromBank;
         Vector2 to = crossing.ToBank;
@@ -170,7 +169,7 @@ public static class BridgeLayout
     }
 
     private static void EmitPilingColumn(List<BridgePiece> pieces, BridgeStyle style,
-        Vector2 pos, float ground, float topHeight, float yaw, Random rng, bool full)
+        Vector2 pos, float ground, float topHeight, float yaw, System.Random rng, bool full)
     {
         float health = full ? RuinHealth(rng) : 0.25f + NextFloat(rng) * 0.15f;
         for (float h = ground; h < topHeight - 0.01f; h += style.PilingSegment)
@@ -187,7 +186,7 @@ public static class BridgeLayout
     }
 
     private static void EmitDebris(List<BridgePiece> pieces, BridgeStyle style,
-        Vector2 station, Vector2 dir, WorldGenerator world, Random rng)
+        Vector2 station, Vector2 dir, WorldGenerator world, System.Random rng)
     {
         // Settle a tilted piece into the bed, displaced to the side of the
         // crossing line (never along it toward the fairway).
@@ -210,9 +209,9 @@ public static class BridgeLayout
         });
     }
 
-    private static float RuinHealth(Random rng) => 0.3f + NextFloat(rng) * 0.4f;
+    private static float RuinHealth(System.Random rng) => 0.3f + NextFloat(rng) * 0.4f;
 
-    private static float NextFloat(Random rng) => (float)rng.NextDouble();
+    private static float NextFloat(System.Random rng) => (float)rng.NextDouble();
 
     private static int StableSeed(RoadCrossing crossing)
     {
