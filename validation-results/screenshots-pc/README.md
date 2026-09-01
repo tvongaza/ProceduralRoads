@@ -45,6 +45,26 @@ deterministic on this world. `c4d6271b` is the Windows-station baseline hash.
 Vegetation clearing for photography: `cli_destroy_nearby_prefabs <pattern> [radius]`
 (new valheimCLI command, branch pc/teleport-instant-and-state).
 
+## Snap-chain rework verification (2026-09-01, branch pc/snap-point-composition)
+
+Fixture world RoadTestPC3 (hash c9c3014e, 81 routes, 5 crossings, 296 stair
+runs, 2146 pieces, 1 dry-land violation). Anchored censuses (cli_prefabs_at):
+
+- Wood crossing (BlackForest 9105,-822): **108/108 surviving** after 10+ min
+  loaded across a session restart — zero attrition, surviving a fresh support
+  evaluation. Old grammar lost 44% of stairs in 6 min at a comparable site.
+- Stone crossing (Mistlands 1664,7268): **168/168 surviving** after a 5-min
+  dwell, positionally byte-identical.
+- The RoadTestPC2 "stone kit lost 8" number is RETRACTED: player-relative
+  census sphere drifted during the dwell. Anchored measurement kills that
+  error class.
+
+| file | what it shows |
+|---|---|
+| freecam-topdown3.jpg | Top-down (freefly camera): road -> stair cascade -> continuous deck on piers -> far bank, one coherent structure |
+| freecam-bridge-side.jpg | THE exhibit: complete ruined trestle in profile — deck on marching post pairs, collapsed span at the far abutment |
+| newbridge-wood-ondeck.jpg | Station assembly close-up: portal frame (paired posts + beam) with the deck plank seated through it |
+
 ## Visual assessment (blunt)
 
 1. **Scaffolding, confirmed on every crossing.** Piers are single skinny poles
