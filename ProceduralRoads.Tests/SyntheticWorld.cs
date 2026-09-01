@@ -24,6 +24,16 @@ public class SyntheticWorld : WorldGenerator
     public float IslandPeakHeight = 18f; // above sea level at the island center
 
     /// <summary>
+    /// Optional field of small waterline puddles: narrow dips (~5m wide) whose
+    /// centers fall BETWEEN the 8m pathfinding cell centers, reproducing the
+    /// real-world failure where a splined road dips underwater between two
+    /// dry-sampled cells.
+    /// </summary>
+    public bool HasPuddleField = false;
+    public float PuddleFieldMinX = -120f;
+    public float PuddleFieldMaxX = 40f;
+
+    /// <summary>
     /// Optional north-south lowland band flooded to just below the shallow-water
     /// threshold — a swamp margin (biome Swamp) or a plain flooded cut (Meadows).
     /// </summary>
@@ -63,6 +73,28 @@ public class SyntheticWorld : WorldGenerator
         // but above deep water (28), so it is wadeable terrain, not ocean.
         if (HasWetBand && Mathf.Abs(wx - WetBandX) < WetBandHalfWidth)
             height = Mathf.Min(height, 30.0f);
+
+        // Puddles centered at odd multiples of 4 on both axes — exactly the
+        // midpoints between 8m cell centers, so cell sampling stays dry while
+        // the ground between cells dips below the waterline. ~70% of midpoints
+        // carry a puddle (deterministic), leaving dry lanes to thread through.
+        if (HasPuddleField && wx >= PuddleFieldMinX && wx <= PuddleFieldMaxX)
+        {
+            int cellX = Mathf.FloorToInt((wx + 4f) / 8f);
+            int cellZ = Mathf.FloorToInt((wy + 4f) / 8f);
+            if (Hash(cellX * 7 + 13, cellZ * 11 + 5) < 0.7f)
+            {
+                float lx = ((wx % 8f) + 8f) % 8f - 4f;
+                float lz = ((wy % 8f) + 8f) % 8f - 4f;
+                float d = Mathf.Sqrt(lx * lx + lz * lz);
+                const float puddleRadius = 2.6f;
+                if (d < puddleRadius)
+                {
+                    float depth = (1f - d / puddleRadius) * 4f;
+                    height = Mathf.Min(height, 31.5f) - depth;
+                }
+            }
+        }
 
         return height;
     }

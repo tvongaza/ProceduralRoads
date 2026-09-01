@@ -38,6 +38,20 @@ public static class RoadConstants
     // (capped by world distance, so long diagonal directions don't stretch it).
     public const int MaxRiverCrossingCells = 6; // 6 * 8m = 48m max ford
     public const float RiverCrossingPenalty = 5000f;
+
+    // Terrain-quality guarantees (added after real-world selftest findings):
+    // roads must keep this much height above the shallow-water threshold —
+    // splined centerlines dip between 8m cell samples, so cells barely above
+    // the waterline produce underwater road points. Moves are also sampled
+    // at interior points so narrow dips between cell centers are seen.
+    public const float WaterlineClearance = 0.75f;
+    public const float MoveInteriorSampleSpacing = 4.5f;
+
+    // Along-path grade shaping: grades above the comfort threshold get
+    // per-meter quadratic cost (forcing contouring/switchbacks on steep
+    // faces); grades above the traversable cap are impassable outright.
+    public const float GradeComfortThreshold = 0.25f;
+    public const float MaxTraversableGrade = 1.0f;
     
     public const float SpatialGridSize = 64f;
     public const float DefaultRoadWidth = 4f;

@@ -12,7 +12,9 @@ public class RoadPathfinderTests
         var world = new SyntheticWorld { HasRiver = false, HasMountain = false };
         var pathfinder = new RoadPathfinder(world);
 
-        var path = pathfinder.FindPath(new Vector2(-400f, -200f), new Vector2(300f, 250f));
+        // Start inland: with WaterlineClearance the beach itself (height ~30)
+        // is correctly no longer valid road ground.
+        var path = pathfinder.FindPath(new Vector2(-350f, -150f), new Vector2(300f, 250f));
 
         Assert.NotNull(path);
         Assert.True(path!.Count > 10, $"Expected a dense path, got {path.Count} points");

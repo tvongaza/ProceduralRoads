@@ -185,7 +185,9 @@ public class RoadPathfinder
         if (riverWeight > RoadConstants.RiverImpassableThreshold)
             return ImpassableCost;
 
-        if (h2 < RoadConstants.DeepWaterHeight)
+        // Along-path grades above the traversable cap are unroadable; A* is
+        // forced to zigzag/contour steep faces, which produces switchbacks.
+        if (slope > RoadConstants.MaxTraversableGrade)
             return ImpassableCost;
 
         Heightmap.Biome biome = m_worldGen.GetBiome(toWorld.x, toWorld.y);
@@ -193,14 +195,36 @@ public class RoadPathfinder
         // Additive model: every passable hazard adds cost instead of
         // replacing it, so A* weighs slopes, rough ground, and water
         // together rather than seeing only the first hazard checked.
-        float cost = BaseCost * dist + (slope * slope * SlopeMultiplier);
+        // Grade cost is per-meter and quadratic in grade relative to the
+        // comfort threshold, so long gentle contours beat short steep climbs.
+        float gradeRatio = slope / RoadConstants.GradeComfortThreshold;
+        float cost = BaseCost * dist + dist * SlopeMultiplier * gradeRatio * gradeRatio;
 
-        if (h2 < RoadConstants.ShallowWaterHeight)
+        float waterCost = GetWaterCost(h2, biome);
+        if (float.IsPositiveInfinity(waterCost))
+            return ImpassableCost;
+        cost += waterCost;
+
+        // Splined roads travel the ground BETWEEN cell centers, so sample the
+        // move's interior too — otherwise narrow dips or river edges between
+        // two dry cells put the finished road underwater.
+        int interiorSamples = Mathf.Max(1, Mathf.RoundToInt(dist / RoadConstants.MoveInteriorSampleSpacing) - 1);
+        for (int s = 1; s <= interiorSamples; s++)
         {
-            if (biome == Heightmap.Biome.Swamp)
-                cost += SwampShallowWaterPenalty; // knee-deep swamp is wadeable
-            else
+            float t = (float)s / (interiorSamples + 1);
+            float ix = fromWorld.x + (toWorld.x - fromWorld.x) * t;
+            float iy = fromWorld.y + (toWorld.y - fromWorld.y) * t;
+
+            m_worldGen.GetRiverWeight(ix, iy, out float interiorRiver, out _);
+            if (interiorRiver > RoadConstants.RiverImpassableThreshold)
                 return ImpassableCost;
+
+            float interiorCost = GetWaterCost(
+                m_worldGen.GetHeight(ix, iy),
+                m_worldGen.GetBiome(ix, iy));
+            if (float.IsPositiveInfinity(interiorCost))
+                return ImpassableCost;
+            cost += interiorCost;
         }
 
         if (slope > SteepSlopeThreshold)
@@ -224,6 +248,25 @@ public class RoadPathfinder
         return cost;
     }
 
+    /// <summary>
+    /// Water cost for one terrain sample: impassable below deep water or
+    /// (outside swamps) below the waterline clearance margin; wadeable at a
+    /// penalty in swamp shallows.
+    /// </summary>
+    private float GetWaterCost(float height, Heightmap.Biome biome)
+    {
+        if (height < RoadConstants.DeepWaterHeight)
+            return ImpassableCost;
+
+        if (biome == Heightmap.Biome.Swamp)
+            return height < RoadConstants.ShallowWaterHeight ? SwampShallowWaterPenalty : 0f;
+
+        if (height < RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance)
+            return ImpassableCost;
+
+        return 0f;
+    }
+
     private bool IsRiverBlocked(Vector2i grid)
     {
         Vector2 world = GridToWorld(grid);
@@ -239,7 +282,8 @@ public class RoadPathfinder
         if (riverWeight > RoadConstants.RiverImpassableThreshold)
             return false;
 
-        return m_worldGen.GetHeight(world.x, world.y) >= RoadConstants.ShallowWaterHeight;
+        return m_worldGen.GetHeight(world.x, world.y)
+            >= RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
     }
 
     /// <summary>
