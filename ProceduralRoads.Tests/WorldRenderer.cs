@@ -78,7 +78,10 @@ public static class WorldRenderer
             float wy = a.y + (b.y - a.y) * t;
             int ix = (int)((wx - worldMin) / mpp);
             int iy = (int)((wy - worldMin) / mpp);
+            // 2px-thick stroke so roads stay readable at map scale
             SetPixel(px, size, ix, iy, r, g, bl);
+            SetPixel(px, size, ix + 1, iy, r, g, bl);
+            SetPixel(px, size, ix, iy + 1, r, g, bl);
         }
     }
 

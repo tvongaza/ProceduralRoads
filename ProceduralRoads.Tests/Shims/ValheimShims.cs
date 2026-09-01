@@ -3,6 +3,27 @@
 
 // ReSharper disable InconsistentNaming
 
+/// <summary>Mirror of Valheim's string.GetStableHashCode extension (Utils).</summary>
+public static class StringExtensionMethods
+{
+    public static int GetStableHashCode(this string str)
+    {
+        unchecked
+        {
+            int hash1 = 5381;
+            int hash2 = hash1;
+            for (int i = 0; i < str.Length && str[i] != '\0'; i += 2)
+            {
+                hash1 = ((hash1 << 5) + hash1) ^ str[i];
+                if (i == str.Length - 1 || str[i + 1] == '\0')
+                    break;
+                hash2 = ((hash2 << 5) + hash2) ^ str[i + 1];
+            }
+            return hash1 + hash2 * 1566083941;
+        }
+    }
+}
+
 /// <summary>Mirror of Valheim's global Vector2i (integer grid coordinate).</summary>
 public struct Vector2i
 {
@@ -61,4 +82,53 @@ public class WorldGenerator
         weight = 0f;
         width = 0f;
     }
+
+    public virtual int GetSeed() => 0;
+
+    public virtual float GetBaseHeight(float wx, float wy, bool menuTerrain) => GetHeight(wx, wy);
+
+    public virtual float GetBiomeHeight(Heightmap.Biome biome, float wx, float wy, out UnityEngine.Color mask)
+    {
+        mask = default;
+        return GetHeight(wx, wy);
+    }
+}
+
+/// <summary>
+/// Shim for Valheim's ZoneSystem exposing only the members the road code
+/// references. GetLocationList returns an empty list unless a test fills it.
+/// </summary>
+public class ZoneSystem
+{
+    public const float ZoneSize = 64f;
+
+    public static ZoneSystem? instance;
+
+    public class ZoneLocation
+    {
+        public PrefabEntry m_prefab = new();
+        public float m_exteriorRadius;
+
+        public class PrefabEntry
+        {
+            public string Name = "";
+        }
+    }
+
+    public struct LocationInstance
+    {
+        public ZoneLocation m_location;
+        public UnityEngine.Vector3 m_position;
+    }
+
+    public System.Collections.Generic.List<LocationInstance> Locations = new();
+
+    public System.Collections.Generic.List<LocationInstance> GetLocationList() => Locations;
+
+    public static Vector2i GetZone(UnityEngine.Vector3 point) =>
+        new(UnityEngine.Mathf.FloorToInt((point.x + ZoneSize / 2f) / ZoneSize),
+            UnityEngine.Mathf.FloorToInt((point.z + ZoneSize / 2f) / ZoneSize));
+
+    public static UnityEngine.Vector3 GetZonePos(Vector2i id) =>
+        new(id.x * ZoneSize, 0f, id.y * ZoneSize);
 }
