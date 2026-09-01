@@ -88,12 +88,23 @@ public class CrossingMetadataTests
                 crossing.FairwayCenter.x, crossing.FairwayCenter.y, out float wetWeight, out _);
             Assert.Equal(0f, wetWeight);
 
-            var nearFrom = RoadSpatialGrid.GetRoadPointsNearPosition(
-                new Vector3(crossing.FromBank.x, 0, crossing.FromBank.y), 12f);
-            var nearTo = RoadSpatialGrid.GetRoadPointsNearPosition(
-                new Vector3(crossing.ToBank.x, 0, crossing.ToBank.y), 12f);
-            Assert.True(nearFrom.Count > 0, "No road points at FromBank");
-            Assert.True(nearTo.Count > 0, "No road points at ToBank");
+            // Each bank is served either by painted road or by a stair run
+            // descending to the ford (steep banks become staircases).
+            var stairRuns = RoadNetworkGenerator.GetStairRuns();
+            bool Served(Vector2 bank)
+            {
+                var near = RoadSpatialGrid.GetRoadPointsNearPosition(
+                    new Vector3(bank.x, 0, bank.y), 12f);
+                if (near.Count > 0)
+                    return true;
+                foreach (var run in stairRuns)
+                    foreach (var rp in run.Points)
+                        if (Vector2.Distance(rp, bank) < 12f)
+                            return true;
+                return false;
+            }
+            Assert.True(Served(crossing.FromBank), "FromBank has neither road nor stairs");
+            Assert.True(Served(crossing.ToBank), "ToBank has neither road nor stairs");
         }
         finally
         {

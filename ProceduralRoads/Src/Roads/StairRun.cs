@@ -51,11 +51,34 @@ public static class StairRunDetector
     /// <summary>Adjacent runs closer than this merge into one staircase.</summary>
     public const float MergeGapLength = 6f;
 
-    public static List<StairRun> Detect(List<Vector2> path, WorldGenerator world)
+    /// <summary>Segments longer than this are subdivided for grading, so
+    /// spline-scale terrain spikes between waypoints are not missed.</summary>
+    public const float GradeSampleSpacing = 4f;
+
+    public static List<StairRun> Detect(List<Vector2> rawPath, WorldGenerator world)
     {
         List<StairRun> runs = new();
-        if (path == null || path.Count < 2 || world == null)
+        if (rawPath == null || rawPath.Count < 2 || world == null)
             return runs;
+
+        // Resample long segments so grades are measured at spline scale,
+        // keeping a map back to original waypoint indices (the generator
+        // splits the ORIGINAL path by FromIndex/ToIndex).
+        List<Vector2> path = new() { rawPath[0] };
+        List<int> origFloor = new() { 0 };
+        List<int> origCeil = new() { 0 };
+        for (int i = 1; i < rawPath.Count; i++)
+        {
+            float len = Vector2.Distance(rawPath[i - 1], rawPath[i]);
+            int pieces = Mathf.Max(1, Mathf.CeilToInt(len / GradeSampleSpacing));
+            for (int k = 1; k <= pieces; k++)
+            {
+                float t = (float)k / pieces;
+                path.Add(rawPath[i - 1] + (rawPath[i] - rawPath[i - 1]) * t);
+                origFloor.Add(k == pieces ? i : i - 1);
+                origCeil.Add(i);
+            }
+        }
 
         // Classify each segment by along-path grade of the natural terrain.
         int n = path.Count;
@@ -99,6 +122,15 @@ public static class StairRunDetector
         }
         if (runStart >= 0)
             EmitRun(runs, path, grade, segLen, world, runStart, n - 1, 0f);
+
+        // Map run endpoints back to original waypoint indices (conservative:
+        // expand to the enclosing original waypoints).
+        foreach (StairRun run in runs)
+        {
+            int f = run.FromIndex, t = run.ToIndex;
+            run.FromIndex = origFloor[f];
+            run.ToIndex = origCeil[t];
+        }
 
         return runs;
     }
