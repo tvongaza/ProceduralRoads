@@ -75,7 +75,9 @@ public class StairTests
             }
         }
 
-        // Consecutive surviving steps never jump more than one rise.
+        // Consecutive surviving steps never exceed the chain's max grade of
+        // one rise per half-run (the stacked steep-stair pattern), so nothing
+        // teleports between levels.
         for (int i = 1; i < steps.Count; i++)
         {
             float rise = Mathf.Abs(steps[i].Position.y - steps[i - 1].Position.y);
@@ -83,7 +85,7 @@ public class StairTests
                 new Vector2(steps[i].Position.x, steps[i].Position.z),
                 new Vector2(steps[i - 1].Position.x, steps[i - 1].Position.z));
             if (dist < StairStyle.MountainStone.StepRun * 1.5f)
-                Assert.True(rise <= StairStyle.MountainStone.StepRise + 0.01f,
+                Assert.True(rise <= dist + 0.01f,
                     $"Step {i} rises {rise:F2}m over {dist:F1}m");
         }
     }

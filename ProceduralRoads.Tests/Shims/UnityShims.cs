@@ -45,6 +45,21 @@ public struct Vector2
 
     public static float Dot(Vector2 a, Vector2 b) => a.x * b.x + a.y * b.y;
 
+    public static Vector2 Lerp(Vector2 a, Vector2 b, float t)
+    {
+        t = Mathf.Clamp01(t);
+        return new Vector2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+    }
+
+    /// <summary>Signed angle in degrees from one vector to another
+    /// (positive counter-clockwise), matching Unity's implementation.</summary>
+    public static float SignedAngle(Vector2 from, Vector2 to)
+    {
+        float cross = from.x * to.y - from.y * to.x;
+        float dot = from.x * to.x + from.y * to.y;
+        return (float)System.Math.Atan2(cross, dot) * 180f / Mathf.PI;
+    }
+
     public static Vector2 operator +(Vector2 a, Vector2 b) => new(a.x + b.x, a.y + b.y);
     public static Vector2 operator -(Vector2 a, Vector2 b) => new(a.x - b.x, a.y - b.y);
     public static Vector2 operator -(Vector2 a) => new(-a.x, -a.y);
@@ -189,6 +204,17 @@ public static class Mathf
         value < min ? min : value > max ? max : value;
 
     public static float Lerp(float a, float b, float t) => a + (b - a) * Clamp01(t);
+
+    public static float Repeat(float t, float length) =>
+        Clamp(t - (float)System.Math.Floor(t / length) * length, 0f, length);
+
+    /// <summary>Shortest signed difference between two angles in degrees.</summary>
+    public static float DeltaAngle(float current, float target)
+    {
+        float delta = Repeat(target - current, 360f);
+        if (delta > 180f) delta -= 360f;
+        return delta;
+    }
 
     public static float SmoothStep(float from, float to, float t)
     {

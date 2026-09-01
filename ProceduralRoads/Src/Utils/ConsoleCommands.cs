@@ -98,6 +98,35 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_snap_probe",
+            "Dump snap points and collider bounds for a prefab (or the ruin kit prefabs when no arg): road_snap_probe [prefab]",
+            (args) =>
+            {
+                if (args.Length >= 2)
+                {
+                    PrefabProbe.ProbeSnapPoints(args[1], args.Context.AddString);
+                    return;
+                }
+                foreach (string name in new[]
+                {
+                    "wood_stair", "stone_stair", "blackmarble_stair",
+                    "blackmarble_stair_corner", "blackmarble_stair_corner_left",
+                    "dvergrtown_stair_corner_wood_left",
+                    "wood_pole2", "wood_beam", "wood_floor",
+                    "stone_wall_1x1", "stone_wall_2x1", "stone_wall_4x2",
+                    "stone_floor_2x2", "stone_arch",
+                })
+                {
+                    PrefabProbe.ProbeSnapPoints(name, args.Context.AddString);
+                }
+            },
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_selftest",
             "Validate the generated road network (dry land, ford lengths, slopes, connectivity) and write a JSON report + routes CSV to the config folder.",
             (args) => RunSelfTest(args),
