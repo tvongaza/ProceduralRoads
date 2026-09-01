@@ -98,6 +98,38 @@ public class RoadProfileTests
     }
 
     [Fact]
+    public void RoadEndsMeetNaturalTerrainHeight()
+    {
+        // Integration: after AddRoadPath, the first/last road points carry
+        // the natural terrain height (ramp blend 0), while mid-road points
+        // carry smoothed heights — no ledge where a road meets a location.
+        var world = new SyntheticWorld { HasRiver = false, HasMountain = false };
+        WorldGenerator.instance = world;
+        RoadSpatialGrid.Clear();
+        try
+        {
+            var path = new System.Collections.Generic.List<Vector2>();
+            for (float x = -200f; x <= 200f; x += 8f)
+                path.Add(new Vector2(x, x * 0.4f)); // long enough to leave the ramps
+
+            RoadSpatialGrid.AddRoadPath(path, 4f, world);
+
+            Vector2 start = path[0];
+            float rawStart = BiomeBlendedHeight.GetBlendedHeight(start.x, start.y, world);
+            var startPoints = RoadSpatialGrid.GetRoadPointsNearPosition(
+                new Vector3(start.x, 0, start.y), 1.5f);
+            Assert.True(startPoints.Count > 0, "No road point at path start");
+            Assert.True(Mathf.Abs(startPoints[0].h - rawStart) < 0.05f,
+                $"Start height {startPoints[0].h:F2} != natural {rawStart:F2}");
+        }
+        finally
+        {
+            RoadSpatialGrid.Clear();
+            WorldGenerator.instance = null;
+        }
+    }
+
+    [Fact]
     public void ProfileScalesWithRoadWidth()
     {
         // A wider road has a wider core and wider paint, but the ordering
