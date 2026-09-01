@@ -165,6 +165,7 @@ public static class RoadNetworkGenerator
     private static List<(Vector2 position, string label)> m_roadStartPoints = new();
     private static List<RoadRoute> m_roadRoutes = new List<RoadRoute>();
     private static List<RoadCrossing> m_roadCrossings = new List<RoadCrossing>();
+    private static List<StairRun> m_stairRuns = new List<StairRun>();
 
     public static bool RoadsGenerated => m_roadsGenerated;
     public static bool IsLocationsReady => m_locationsReady;
@@ -182,6 +183,8 @@ public static class RoadNetworkGenerator
     public static IReadOnlyList<RoadRoute> GetRoadRoutes() => m_roadRoutes;
 
     public static IReadOnlyList<RoadCrossing> GetRoadCrossings() => m_roadCrossings;
+
+    public static IReadOnlyList<StairRun> GetStairRuns() => m_stairRuns;
 
     public static string GetRoadRouteLabel(int routeIndex)
     {
@@ -401,23 +404,35 @@ public static class RoadNetworkGenerator
             return false;
         }
 
-        // Rivers are crossed but never paved: record crossing metadata (for
-        // future bridge ruins) and paint/level only the land segments, so
-        // the road stops at one bank and resumes at the other.
+        // Rivers are crossed but never paved (crossings become bridge ruins)
+        // and steep sections become staircases with untouched ground: paint
+        // and level only the ordinary road spans between those exclusions.
         List<RoadCrossing> crossings = RoadCrossingDetector.Detect(path, WorldGenerator.instance);
-        if (crossings.Count == 0)
+        List<StairRun> stairRuns = StairRunDetector.Detect(path, WorldGenerator.instance);
+
+        List<(int from, int to)> exclusions = new();
+        foreach (RoadCrossing crossing in crossings)
+            exclusions.Add((crossing.FromIndex, crossing.ToIndex));
+        foreach (StairRun stairRun in stairRuns)
+            exclusions.Add((stairRun.FromIndex, stairRun.ToIndex));
+        exclusions.Sort((x, y) => x.from.CompareTo(y.from));
+
+        if (exclusions.Count == 0)
         {
             RoadSpatialGrid.AddRoadPath(path, width, WorldGenerator.instance);
         }
         else
         {
             int cursor = 0;
-            foreach (RoadCrossing crossing in crossings)
+            foreach ((int from, int to) in exclusions)
             {
-                List<Vector2> landSegment = path.GetRange(cursor, crossing.FromIndex - cursor + 1);
-                if (landSegment.Count >= 2)
-                    RoadSpatialGrid.AddRoadPath(landSegment, width, WorldGenerator.instance);
-                cursor = crossing.ToIndex;
+                if (from > cursor)
+                {
+                    List<Vector2> landSegment = path.GetRange(cursor, from - cursor + 1);
+                    if (landSegment.Count >= 2)
+                        RoadSpatialGrid.AddRoadPath(landSegment, width, WorldGenerator.instance);
+                }
+                cursor = Mathf.Max(cursor, to);
             }
 
             List<Vector2> tail = path.GetRange(cursor, path.Count - cursor);
@@ -438,6 +453,12 @@ public static class RoadNetworkGenerator
             {
                 crossing.RouteIndex = route.Index;
                 m_roadCrossings.Add(crossing);
+            }
+
+            foreach (StairRun stairRun in stairRuns)
+            {
+                stairRun.RouteIndex = route.Index;
+                m_stairRuns.Add(stairRun);
             }
         }
 
@@ -1005,6 +1026,7 @@ public static class RoadNetworkGenerator
         m_roadStartPoints.Clear();
         m_roadRoutes.Clear();
         m_roadCrossings.Clear();
+        m_stairRuns.Clear();
         RoadNetworkPersistence.Reset();
         RoadSpatialGrid.Clear();
     }

@@ -9,6 +9,8 @@ public enum BridgePieceKind
     Deck,          // walkable span resting on two pilings
     Abutment,      // bank platform, sunk into the road surface
     Debris,        // collapsed piece settled on the riverbed, outside the fairway
+    StairStep,     // one staircase step following a stair run's centerline
+    StairSupport,  // vertical support under a floating stair step
 }
 
 /// <summary>One placed piece of a ruined bridge (a persistent ZDO once spawned).</summary>
