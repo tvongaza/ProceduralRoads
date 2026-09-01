@@ -90,12 +90,9 @@ public static class RoadLifecycleManager
 
             RoadValidationRunner.MaybeRunAfterGeneration();
 
+            // RespawnAllZones logs the "[RUINS] respawn total" aggregate itself.
             if (ProceduralRoadsPlugin.SpawnRuinsHeadless != null && ProceduralRoadsPlugin.SpawnRuinsHeadless.Value)
-            {
-                int zones = RuinPlacement.RespawnAllZones();
-                ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo(
-                    $"[RUINS] headless spawn: {zones} zone(s) spawned from plans");
-            }
+                RuinPlacement.RespawnAllZones();
 
             return true;
         }

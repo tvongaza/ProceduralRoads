@@ -43,13 +43,19 @@ public static class RuinPlacement
             return 0;
 
         int zones = 0;
+        int pieces = 0;
         foreach (Vector2i zone in new List<Vector2i>(m_plansByZone.Keys))
         {
             if (m_spawnedZones.Contains(zone))
                 continue;
-            SpawnRuinsInZone(zone, ZoneSystem.SpawnMode.Ghost);
+            pieces += SpawnRuinsInZone(zone, ZoneSystem.SpawnMode.Ghost);
             zones++;
         }
+
+        // One authoritative aggregate for headless checkers: pieces compare
+        // against "planned N pieces", zones against "across M zones" — no
+        // per-zone summation (log lines mirror twice per LogOutput.log).
+        Log.LogInfo($"[RUINS] respawn total: {zones} zone(s), {pieces} piece(s) spawned from plans");
         return zones;
     }
 
@@ -127,18 +133,18 @@ public static class RuinPlacement
     /// persistent ZDOs, once ever per zone. Ghost mode wraps instantiation
     /// in ghost-init like vanilla generation does.
     /// </summary>
-    public static void SpawnRuinsInZone(Vector2i zoneID, ZoneSystem.SpawnMode mode)
+    public static int SpawnRuinsInZone(Vector2i zoneID, ZoneSystem.SpawnMode mode)
     {
         if (mode == ZoneSystem.SpawnMode.Client)
-            return;
+            return 0;
         if (m_spawnedZones.Contains(zoneID))
-            return;
+            return 0;
 
         EnsurePlans();
         if (m_plansByZone == null || !m_plansByZone.TryGetValue(zoneID, out List<BridgePiece>? pieces))
-            return;
+            return 0;
         if (ZNetScene.instance == null)
-            return;
+            return 0;
 
         m_spawnedZones.Add(zoneID);
 
@@ -182,6 +188,7 @@ public static class RuinPlacement
 
         if (spawned > 0)
             Log.LogInfo($"[RUINS] zone {zoneID}: spawned {spawned} ruin pieces");
+        return spawned;
     }
 
     /// <summary>
