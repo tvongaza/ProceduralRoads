@@ -49,6 +49,7 @@ namespace ProceduralRoads
         public static ConfigEntry<int> MaxLocationsPerIsland = null!;
         public static ConfigEntry<bool> DebugValidation = null!;
         public static ConfigEntry<bool> ForceRegenerate = null!;
+        public static ConfigEntry<bool> ReachabilityPrepass = null!;
 
         private float m_nextDeferredRetry;
 
@@ -90,6 +91,11 @@ namespace ProceduralRoads
                 new ConfigDescription("Maximum number of locations that can be connected by roads on a single island. " +
                     "Higher values allow more roads on large islands.",
                     new AcceptableValueRange<int>(2, 30)));
+
+            ReachabilityPrepass = Config.Bind("Debug", "ReachabilityPrepass", false,
+                "EXPERIMENTAL: flood-fill the target's passable pocket before pathfinding so " +
+                "edges into small unreachable pockets fail fast instead of burning the full " +
+                "iteration cap. Falls back to normal pathfinding for large areas.");
 
             ForceRegenerate = Config.Bind("Debug", "ForceRegenerate", false,
                 "Ignore roads persisted in the world and regenerate the network from " +
@@ -150,6 +156,7 @@ namespace ProceduralRoads
             RoadNetworkGenerator.IslandRoadPercentage = IslandRoadPercentage.Value;
             RoadNetworkGenerator.MaxLocationsPerIsland = MaxLocationsPerIsland.Value;
             RoadPathfinder.MaxIterations = PathfindingMaxIterations.Value;
+            RoadPathfinder.UseReachabilityPrepass = ReachabilityPrepass.Value;
             // CustomLocations is parsed at generation time to preserve API registrations
         }
 

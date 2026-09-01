@@ -34,7 +34,8 @@ dotnet build "$REPO_DIR/ProceduralRoads/ProceduralRoads.csproj" -c Release \
 
 echo "== 2/4 deploying mod + config (and fixture world if available) =="
 scp -q "$REPO_DIR/ProceduralRoads/bin/Release/ProceduralRoads.dll" "$NAS:$SRV/BepInEx/plugins/"
-ssh "$NAS" "mkdir -p '$SRV/BepInEx/config' && printf '[Roads]\nIslandRoadPercentage = 100\n\n[Debug]\nDebugValidation = true\nForceRegenerate = true\n' > '$SRV/BepInEx/config/warpalicious.ProceduralRoads.cfg'"
+PREPASS="${REACH_PREPASS:-false}"
+ssh "$NAS" "mkdir -p '$SRV/BepInEx/config' && printf '[Roads]\nIslandRoadPercentage = 100\n\n[Debug]\nDebugValidation = true\nForceRegenerate = true\nReachabilityPrepass = $PREPASS\n' > '$SRV/BepInEx/config/warpalicious.ProceduralRoads.cfg'"
 
 if [ -f "$REPO_DIR/validation-fixtures/$WORLD.fwl" ]; then
     if ! ssh "$NAS" "test -f '$SAVES/worlds_local/$WORLD.fwl'"; then

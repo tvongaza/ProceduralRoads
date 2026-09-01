@@ -22,6 +22,18 @@ public class RoadPathfinder
     /// <summary>Cumulative world-terrain samples (profiling; interior sampling multiplies these).</summary>
     public static long TotalTerrainSamples;
 
+    /// <summary>
+    /// EXPERIMENT (off by default): before running A*, flood-fill the TARGET's
+    /// passable pocket (same move rules, capped). Unreachable targets usually
+    /// sit in small pockets behind rivers/cliffs: the fill exhausts quickly
+    /// without containing the start -> fail in O(pocket) instead of burning
+    /// the full A* cap, and the pocket is memoized so later edges into it
+    /// fail O(1). A capped fill means "large component, unknown" and falls
+    /// through to normal A*, so reachable searches are never affected.
+    /// </summary>
+    public static bool UseReachabilityPrepass = false;
+    public static int PrepassFillCap = 3000;
+
     public float SlopeMultiplier = RoadConstants.DefaultSlopeMultiplier;
     public float RiverPenalty = RoadConstants.DefaultRiverPenalty;
     public float SwampShallowWaterPenalty = RoadConstants.DefaultSwampShallowWaterPenalty;
@@ -110,6 +122,13 @@ public class RoadPathfinder
         Dictionary<Vector2i, float> gCosts = new Dictionary<Vector2i, float>();
         Dictionary<Vector2i, Vector2i> cameFrom = new Dictionary<Vector2i, Vector2i>();
         HashSet<Vector2i> closedSet = new HashSet<Vector2i>();
+
+        if (UseReachabilityPrepass && !PrepassReachable(startGrid, endGrid))
+        {
+            Log.LogWarning(
+                $"Pathfinding failed: unreachable (prepass) distance {Vector2.Distance(start, end):F0}m");
+            return null;
+        }
 
         openSet.Add((Heuristic(startGrid, endGrid), startGrid));
         gCosts[startGrid] = 0;
@@ -308,6 +327,61 @@ public class RoadPathfinder
             return ImpassableCost;
 
         return 0f;
+    }
+
+    private readonly List<HashSet<Vector2i>> m_pockets = new();
+    private readonly Dictionary<Vector2i, int> m_pocketOf = new();
+
+    /// <summary>
+    /// True unless the target provably sits in a small passable pocket that
+    /// does not contain the start. Fills with the same edge rules as A*
+    /// (including fords), capped; memoizes completed pockets.
+    /// </summary>
+    private bool PrepassReachable(Vector2i startGrid, Vector2i endGrid)
+    {
+        if (m_pocketOf.TryGetValue(endGrid, out int knownPocket))
+            return m_pockets[knownPocket].Contains(startGrid);
+
+        HashSet<Vector2i> visited = new() { endGrid };
+        Queue<Vector2i> frontier = new();
+        frontier.Enqueue(endGrid);
+        bool foundStart = false;
+
+        while (frontier.Count > 0)
+        {
+            if (visited.Count > PrepassFillCap)
+                return true; // large component — unknown, let A* decide
+
+            Vector2i current = frontier.Dequeue();
+            if (current == startGrid)
+                foundStart = true;
+
+            for (int i = 0; i < Directions.Length; i++)
+            {
+                Vector2i neighbor = new(current.x + Directions[i].x, current.y + Directions[i].y);
+                float moveCost = GetMoveCost(current, neighbor, i);
+
+                if (float.IsPositiveInfinity(moveCost))
+                {
+                    if (!IsRiverBlocked(neighbor))
+                        continue;
+                    if (!TryGetShortRiverCrossing(current, Directions[i], out Vector2i landing, out _))
+                        continue;
+                    neighbor = landing;
+                }
+
+                if (visited.Add(neighbor))
+                    frontier.Enqueue(neighbor);
+            }
+        }
+
+        // Fill completed under the cap: this is a closed pocket. Memoize it.
+        int pocketId = m_pockets.Count;
+        m_pockets.Add(visited);
+        foreach (Vector2i cell in visited)
+            m_pocketOf[cell] = pocketId;
+
+        return foundStart;
     }
 
     private bool IsRiverBlocked(Vector2i grid)
