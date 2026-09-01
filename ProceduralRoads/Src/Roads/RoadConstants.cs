@@ -19,11 +19,15 @@ public static class RoadConstants
     public const int TerrainVarianceSampleCount = 8;
     public const float MountainSlopeThreshold = 0.4f;
     public const float RiverImpassableThreshold = 0.5f;
-    
+
     public const float DefaultBaseCost = 1f;
     public const float DefaultSlopeMultiplier = 10f;
+
+    // True blockers should now use float.PositiveInfinity in RoadPathfinder.
+    // These are penalties only.
     public const float DefaultRiverPenalty = 100000f;
-    public const float DefaultWaterPenalty = 100000f;
+    public const float DefaultWaterPenalty = 250f;
+    public const float DefaultSwampShallowWaterPenalty = 500f;
     public const float DefaultSteepSlopePenalty = 2000f;
     public const float DefaultSteepSlopeThreshold = 0.6f;
     public const float DefaultTerrainVariancePenalty = 1000f;
@@ -47,4 +51,11 @@ public static class RoadConstants
     
     public const int MaxCoordDebugLogs = 3;
     public const int MaxVertexModificationLogs = 3;
+
+    public const int MaxRiverCrossingCells = 6; // 6 * 8m = 48m
+    public const float RiverCrossingPenalty = 5000f;
+    public const float EndpointRampLength = 40f;
+
+    public const float RoadFlatCoreRatio = 0.65f;
+    public const float RoadShoulderOuterRatio = 1.0f;
 }

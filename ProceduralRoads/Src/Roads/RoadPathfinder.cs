@@ -14,9 +14,12 @@ public class RoadPathfinder
     public const float CellSize = RoadConstants.PathfindingCellSize;
     public static int MaxIterations = RoadConstants.PathfindingMaxIterations;
 
+    private const float ImpassableCost = float.PositiveInfinity;
+
     public float SlopeMultiplier = RoadConstants.DefaultSlopeMultiplier;
     public float RiverPenalty = RoadConstants.DefaultRiverPenalty;
     public float WaterPenalty = RoadConstants.DefaultWaterPenalty;
+    public float SwampShallowWaterPenalty = RoadConstants.DefaultSwampShallowWaterPenalty;
     public float SteepSlopePenalty = RoadConstants.DefaultSteepSlopePenalty;
     public float SteepSlopeThreshold = RoadConstants.DefaultSteepSlopeThreshold;
     public float TerrainVariancePenalty = RoadConstants.DefaultTerrainVariancePenalty;
@@ -89,13 +92,31 @@ public class RoadPathfinder
 
             for (int i = 0; i < Directions.Length; i++)
             {
-                Vector2i neighborPos = new Vector2i(currentPos.x + Directions[i].x, currentPos.y + Directions[i].y);
-
-                if (closedSet.Contains(neighborPos))
-                    continue;
+                Vector2i neighborPos = new Vector2i(
+                    currentPos.x + Directions[i].x,
+                    currentPos.y + Directions[i].y);
 
                 float moveCost = GetMoveCost(currentPos, neighborPos, i);
-                if (moveCost >= RiverPenalty)
+
+                if (float.IsPositiveInfinity(moveCost))
+                {
+                    if (!IsRiverBlocked(neighborPos))
+                        continue;
+
+                    if (!TryGetShortRiverCrossing(
+                            currentPos,
+                            Directions[i],
+                            out Vector2i riverLanding,
+                            out float riverCrossingCost))
+                    {
+                        continue;
+                    }
+
+                    neighborPos = riverLanding;
+                    moveCost = riverCrossingCost;
+                }
+
+                if (closedSet.Contains(neighborPos))
                     continue;
 
                 float tentativeG = gCosts[currentPos] + moveCost;
@@ -105,7 +126,10 @@ public class RoadPathfinder
                     cameFrom[neighborPos] = currentPos;
                     gCosts[neighborPos] = tentativeG;
                     float h = Heuristic(neighborPos, endGrid);
-                    openSet.Remove((existingG + h, neighborPos));
+
+                    if (gCosts.TryGetValue(neighborPos, out float oldG))
+                        openSet.Remove((oldG + h, neighborPos));
+
                     openSet.Add((tentativeG + h, neighborPos));
                 }
             }
@@ -162,28 +186,60 @@ public class RoadPathfinder
         float h2 = m_worldGen.GetHeight(toWorld.x, toWorld.y);
         float slope = Mathf.Abs(h2 - h1) / dist;
 
+        Heightmap.Biome biome = m_worldGen.GetBiome(toWorld.x, toWorld.y);
+
         m_worldGen.GetRiverWeight(toWorld.x, toWorld.y, out float riverWeight, out _);
         if (riverWeight > RoadConstants.RiverImpassableThreshold)
-            return RiverPenalty;
+            return ImpassableCost;
 
-        float biomeHeight = m_worldGen.GetHeight(toWorld.x, toWorld.y);
-        if (biomeHeight < RoadConstants.DeepWaterHeight)
-            return WaterPenalty * 2f;
-        if (biomeHeight < RoadConstants.ShallowWaterHeight)
-            return WaterPenalty;
+        float waterCost = 0f;
 
+        if (h2 < RoadConstants.DeepWaterHeight)
+        {
+            return ImpassableCost;
+        }
+
+        if (h2 < RoadConstants.ShallowWaterHeight)
+        {
+            if (biome == Heightmap.Biome.Swamp)
+            {
+                waterCost += SwampShallowWaterPenalty;
+            }
+            else
+            {
+                return ImpassableCost;
+            }
+        }
+
+        float slopeCost = 0f;
         if (slope > SteepSlopeThreshold)
-            return SteepSlopePenalty;
+        {
+            slopeCost += SteepSlopePenalty;
+        }
 
-        if (GetTerrainVariance(toWorld) > TerrainVarianceThreshold)
-            return TerrainVariancePenalty;
-
-        Heightmap.Biome biome = m_worldGen.GetBiome(toWorld.x, toWorld.y);
         if (biome == Heightmap.Biome.Mountain && slope > RoadConstants.MountainSlopeThreshold)
-            return WaterPenalty;
+        {
+            slopeCost += WaterPenalty;
+        }
 
-        float riverCost = riverWeight > 0 ? WaterPenalty * riverWeight : 0f;
-        return BaseCost * dist + (slope * slope * SlopeMultiplier) + riverCost;
+        float varianceCost = 0f;
+        float variance = GetTerrainVariance(toWorld);
+        if (variance > TerrainVarianceThreshold)
+        {
+            if (biome == Heightmap.Biome.Swamp)
+                varianceCost += TerrainVariancePenalty * 0.5f;
+            else
+                varianceCost += TerrainVariancePenalty;
+        }
+
+        float riverCost = riverWeight > 0 ? RiverPenalty * riverWeight : 0f;
+
+        return BaseCost * dist
+            + (slope * slope * SlopeMultiplier)
+            + waterCost
+            + slopeCost
+            + varianceCost
+            + riverCost;
     }
 
     private List<Vector2> ReconstructPath(Dictionary<Vector2i, Vector2i> cameFrom, Vector2i current, Vector2 start, Vector2 end)
@@ -199,5 +255,74 @@ public class RoadPathfinder
         path.Add(start);
         path.Reverse();
         return path;
+    }
+
+    private bool IsRiverBlocked(Vector2i grid)
+    {
+        Vector2 world = GridToWorld(grid);
+        m_worldGen.GetRiverWeight(world.x, world.y, out float riverWeight, out _);
+        return riverWeight > RoadConstants.RiverImpassableThreshold;
+    }
+
+    private bool IsValidRiverLanding(Vector2i grid)
+    {
+        Vector2 world = GridToWorld(grid);
+
+        m_worldGen.GetRiverWeight(world.x, world.y, out float riverWeight, out _);
+        if (riverWeight > RoadConstants.RiverImpassableThreshold)
+            return false;
+
+        float height = m_worldGen.GetHeight(world.x, world.y);
+        if (height < RoadConstants.ShallowWaterHeight)
+            return false;
+
+        return true;
+    }
+
+    private bool TryGetShortRiverCrossing(
+        Vector2i from,
+        Vector2Int direction,
+        out Vector2i landing,
+        out float crossingCost)
+    {
+        landing = from;
+        crossingCost = 0f;
+
+        bool foundRiver = false;
+
+        for (int step = 1; step <= RoadConstants.MaxRiverCrossingCells; step++)
+        {
+            Vector2i check = new Vector2i(
+                from.x + direction.x * step,
+                from.y + direction.y * step);
+
+            if (IsRiverBlocked(check))
+            {
+                foundRiver = true;
+                continue;
+            }
+
+            if (!foundRiver)
+                return false;
+
+            if (!IsValidRiverLanding(check))
+                return false;
+
+            landing = check;
+
+            float distance = Vector2.Distance(GridToWorld(from), GridToWorld(landing));
+
+            crossingCost =
+                BaseCost * distance +
+                RoadConstants.RiverCrossingPenalty +
+                distance * 10f;
+
+            // Log.LogDebug(
+            //     $"River crossing accepted: from=({from.x},{from.y}) landing=({landing.x},{landing.y}) distance={distance:F0}m cost={crossingCost:F0}");
+
+            return true;
+        }
+
+        return false;
     }
 }

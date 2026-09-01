@@ -78,6 +78,7 @@ public static class RoadNetworkGenerator
     private const int MinLocationsPerIsland = 2;
     public static int MaxLocationsPerIsland = 12;
     private const float AreaPerLocation = 2_000_000f;
+    private const float EndpointTrimBuffer = 8f;
 
     /// <summary>
     /// Location names registered via API or config for road generation.
@@ -165,6 +166,40 @@ public static class RoadNetworkGenerator
     {
         m_roadsLoadedFromZDO = true;
         Log.LogDebug("Roads marked as loaded from ZDO persistence");
+    }
+
+    private static bool GenerateIslandRoad(
+        Island island,
+        Vector3 startPos,
+        float startRadius,
+        string startName,
+        Vector3 endPos,
+        float endRadius,
+        string endName)
+    {
+        float distance = Vector3.Distance(startPos, endPos);
+
+        string label =
+            $"[Island {island.Id}] " +
+            $"{startName}({startPos.x:F0},{startPos.z:F0}) -> " +
+            $"{endName}({endPos.x:F0},{endPos.z:F0}) " +
+            $"dist={distance:F0}m";
+
+        Log.LogInfo($"ROAD ATTEMPT: {label}");
+
+        bool success = GenerateRoad(
+            startPos,
+            startRadius,
+            endPos,
+            endRadius,
+            RoadWidth,
+            label);
+
+        Log.LogInfo(success
+            ? $"ROAD SUCCESS: {label}"
+            : $"ROAD FAILED: {label}");
+
+        return success;
     }
 
     /// <summary>
@@ -449,7 +484,9 @@ public static class RoadNetworkGenerator
     #region Island Road Strategies
 
     private static void GenerateChainRoads(
-        Vector3 startPos, float startRadius,
+        Island island,
+        Vector3 startPos,
+        float startRadius,
         List<(string name, Vector3 position, float radius)> locations)
     {
         if (locations.Count == 0) return;
@@ -476,9 +513,17 @@ public static class RoadNetworkGenerator
             var nearest = unvisited[nearestIdx];
             unvisited.RemoveAt(nearestIdx);
             
-            GenerateRoad(current, currentRadius, nearest.position, nearest.radius, RoadWidth,
-                $"{currentName} -> {nearest.name}");
-            
+            // GenerateRoad(current, currentRadius, nearest.position, nearest.radius, RoadWidth,
+            //     $"{currentName} -> {nearest.name}");
+            GenerateIslandRoad(
+                island,
+                current,
+                currentRadius,
+                currentName,
+                nearest.position,
+                nearest.radius,
+                nearest.name);
+
             current = nearest.position;
             currentRadius = nearest.radius;
             currentName = nearest.name;
@@ -486,7 +531,9 @@ public static class RoadNetworkGenerator
     }
 
     private static void GenerateMSTRoads(
-        Vector3 startPos, float startRadius,
+        Island island,
+        Vector3 startPos,
+        float startRadius,
         List<(string name, Vector3 position, float radius)> locations)
     {
         if (locations.Count == 0) return;
@@ -539,8 +586,16 @@ public static class RoadNetworkGenerator
             {
                 var from = nodes[parent[i]];
                 var to = nodes[i];
-                GenerateRoad(from.position, from.radius, to.position, to.radius, RoadWidth,
-                    $"{from.name} -> {to.name}");
+                // GenerateRoad(from.position, from.radius, to.position, to.radius, RoadWidth,
+                //     $"{from.name} -> {to.name}");
+                GenerateIslandRoad(
+                    island,
+                    from.position,
+                    from.radius,
+                    from.name,
+                    to.position,
+                    to.radius,
+                    to.name);
             }
         }
     }
@@ -562,20 +617,116 @@ public static class RoadNetworkGenerator
         }
         else
         {
-            Vector2 edge = island.GetEdgePoint();
-            startPos = new Vector3(edge.x, 0, edge.y);
+            startPos = GetSafeIslandStartPoint(island);
             startRadius = 0f;
         }
-        
+
         bool useMST = (island.Id % 2) == 0;
         
         Log.LogDebug(
             $"Island {island.Id}: {islandLocations.Count} locations, strategy={(useMST ? "MST" : "Chain")}");
         
         if (useMST)
-            GenerateMSTRoads(startPos, startRadius, islandLocations);
+            GenerateMSTRoads(island, startPos, startRadius, islandLocations);
         else
-            GenerateChainRoads(startPos, startRadius, islandLocations);
+            GenerateChainRoads(island, startPos, startRadius, islandLocations);
+    }
+
+    private static Vector3 GetSafeIslandStartPoint(Island island)
+    {
+        Vector2 edge = island.GetEdgePoint();
+        Vector2 center = island.Center;
+
+        Vector2 directionToCenter = center - edge;
+        if (directionToCenter.sqrMagnitude < 0.01f)
+        {
+            float edgeHeight = WorldGenerator.instance.GetHeight(edge.x, edge.y);
+            return new Vector3(edge.x, edgeHeight, edge.y);
+        }
+
+        directionToCenter.Normalize();
+
+        const float step = RoadConstants.PathfindingCellSize;
+        const int maxSteps = 60;
+        const float minSafeHeight = RoadConstants.ShallowWaterHeight + 0.75f;
+
+        Vector2 bestPoint = edge;
+        float bestHeight = WorldGenerator.instance.GetHeight(edge.x, edge.y);
+        float bestScore = float.MaxValue;
+        bool found = false;
+
+        for (int i = 2; i <= maxSteps; i++)
+        {
+            Vector2 candidate = edge + directionToCenter * step * i;
+
+            if (!island.ContainsPoint(candidate))
+                continue;
+
+            float height = WorldGenerator.instance.GetHeight(candidate.x, candidate.y);
+            if (height < minSafeHeight)
+                continue;
+
+            float variance = GetLocalHeightVariance(candidate);
+            if (variance > RoadConstants.DefaultTerrainVarianceThreshold * 1.5f)
+                continue;
+
+            float distanceFromEdge = step * i;
+
+            // Prefer dry, stable ground not too far inland.
+            float score =
+                distanceFromEdge +
+                variance * 20f +
+                Mathf.Abs(height - minSafeHeight) * 5f;
+
+            if (score < bestScore)
+            {
+                bestScore = score;
+                bestPoint = candidate;
+                bestHeight = height;
+                found = true;
+            }
+
+            // Once we're well inland and have a valid low-variance point, stop scanning.
+            if (found && distanceFromEdge >= 48f)
+                break;
+        }
+
+        if (found)
+        {
+            Log.LogInfo(
+                $"[Island {island.Id}] Safe inland shore start: edge=({edge.x:F0},{edge.y:F0}) -> start=({bestPoint.x:F0},{bestPoint.y:F0}), height={bestHeight:F2}, score={bestScore:F1}");
+
+            return new Vector3(bestPoint.x, bestHeight, bestPoint.y);
+        }
+
+        Log.LogWarning(
+            $"[Island {island.Id}] Could not find safe inland shore start from edge=({edge.x:F0},{edge.y:F0}); using center fallback");
+
+        float centerHeight = WorldGenerator.instance.GetHeight(center.x, center.y);
+        return new Vector3(center.x, centerHeight, center.y);
+    }
+
+    private static float GetLocalHeightVariance(Vector2 pos)
+    {
+        float centerHeight = WorldGenerator.instance.GetHeight(pos.x, pos.y);
+        float minHeight = centerHeight;
+        float maxHeight = centerHeight;
+
+        const float radius = 12f;
+        const int samples = 8;
+
+        for (int i = 0; i < samples; i++)
+        {
+            float angle = i * Mathf.PI * 2f / samples;
+            float h = WorldGenerator.instance.GetHeight(
+                pos.x + Mathf.Cos(angle) * radius,
+                pos.y + Mathf.Sin(angle) * radius);
+
+            minHeight = Mathf.Min(minHeight, h);
+            maxHeight = Mathf.Max(maxHeight, h);
+        }
+
+        return maxHeight - minHeight;
     }
 
     #endregion
@@ -624,7 +775,8 @@ public static class RoadNetworkGenerator
             return null;
 
         int startIndex = 0;
-        float startRadiusSq = startRadius * startRadius;
+        float effectiveStartRadius = startRadius + EndpointTrimBuffer;
+        float startRadiusSq = effectiveStartRadius * effectiveStartRadius;
         for (int i = 0; i < path.Count; i++)
         {
             if ((path[i] - startCenter).sqrMagnitude > startRadiusSq)
@@ -635,7 +787,8 @@ public static class RoadNetworkGenerator
         }
 
         int endIndex = path.Count - 1;
-        float endRadiusSq = endRadius * endRadius;
+        float effectiveEndRadius = endRadius + EndpointTrimBuffer;
+        float endRadiusSq = effectiveEndRadius * effectiveEndRadius;
         for (int i = path.Count - 1; i >= 0; i--)
         {
             if ((path[i] - endCenter).sqrMagnitude > endRadiusSq)
@@ -652,7 +805,7 @@ public static class RoadNetworkGenerator
 
         if (startIndex > 0 && startIndex < path.Count)
         {
-            Vector2 edgePoint = CalculateRadiusIntersection(path[startIndex], startCenter, startRadius);
+            Vector2 edgePoint = CalculateRadiusIntersection(path[startIndex], startCenter, effectiveStartRadius);
             trimmedPath.Add(edgePoint);
         }
 
@@ -663,12 +816,34 @@ public static class RoadNetworkGenerator
 
         if (endIndex < path.Count - 1 && endIndex >= 0)
         {
-            Vector2 edgePoint = CalculateRadiusIntersection(path[endIndex], endCenter, endRadius);
+            Vector2 edgePoint = CalculateRadiusIntersection(path[endIndex], endCenter, effectiveEndRadius);
             trimmedPath.Add(edgePoint);
         }
 
+        ResampleTrimmedEndpointHeights(trimmedPath);
         return trimmedPath.Count >= 2 ? trimmedPath : null;
     }
+
+    private static void ResampleTrimmedEndpointHeights(List<Vector2> path)
+    {
+        if (path == null || path.Count < 2 || WorldGenerator.instance == null)
+            return;
+
+        // Re-project first and last points onto nearby terrain grid spacing.
+        // This avoids keeping odd raw location/player endpoints.
+        path[0] = SnapToTerrainSample(path[0]);
+        path[path.Count - 1] = SnapToTerrainSample(path[path.Count - 1]);
+    }
+
+    private static Vector2 SnapToTerrainSample(Vector2 point)
+    {
+        float cellSize = RoadConstants.PathfindingCellSize;
+
+        float x = Mathf.Round(point.x / cellSize) * cellSize;
+        float y = Mathf.Round(point.y / cellSize) * cellSize;
+
+        return new Vector2(x, y);
+    }    
 
     /// <summary>
     /// Calculates the point on the radius circle in the direction from center to the given point.
@@ -715,4 +890,36 @@ public static class RoadNetworkGenerator
     }
 
     #endregion
+
+    public static bool GenerateTestRoad(Vector3 startPos, Vector3 endPos, string label)
+    {
+        if (WorldGenerator.instance == null)
+        {
+            Log.LogWarning("GenerateTestRoad failed: WorldGenerator not available");
+            return false;
+        }
+
+        bool createdTempPathfinder = false;
+
+        if (m_pathfinder == null)
+        {
+            m_pathfinder = new RoadPathfinder(WorldGenerator.instance);
+            createdTempPathfinder = true;
+        }
+
+        bool success = GenerateRoad(
+            startPos,
+            0f,
+            endPos,
+            0f,
+            RoadWidth,
+            label);
+
+        if (createdTempPathfinder)
+        {
+            m_pathfinder = null;
+        }
+
+        return success;
+    }
 }

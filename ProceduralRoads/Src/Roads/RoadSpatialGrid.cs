@@ -114,8 +114,15 @@ public static class RoadSpatialGrid
         Dictionary<Vector2i, List<RoadPoint>> tempPoints = new Dictionary<Vector2i, List<RoadPoint>>();
         for (int i = 0; i < densePoints.Count; i++)
         {
-            AddRoadPoint(tempPoints, densePoints[i], width, smoothedHeights[i]);
-            m_debugInfo[densePoints[i]] = debugInfos[i];
+            float rawHeight = denseHeights[i];
+            float rampBlend = GetEndpointRampBlend(densePoints, i);
+            float finalHeight = Mathf.Lerp(rawHeight, smoothedHeights[i], rampBlend);
+
+            AddRoadPoint(tempPoints, densePoints[i], width, finalHeight);
+
+            var debugInfo = debugInfos[i];
+            debugInfo.SmoothedHeight = finalHeight;
+            m_debugInfo[densePoints[i]] = debugInfo;
         }
 
         MergePoints(tempPoints);
@@ -240,6 +247,33 @@ public static class RoadSpatialGrid
         }
         
         return smoothed;
+    }
+
+    private static float GetEndpointRampBlend(List<Vector2> path, int index)
+    {
+        if (path == null || path.Count < 2)
+            return 1f;
+
+        float distanceFromStart = 0f;
+        for (int i = index; i > 0; i--)
+        {
+            distanceFromStart += Vector2.Distance(path[i], path[i - 1]);
+            if (distanceFromStart >= RoadConstants.EndpointRampLength)
+                break;
+        }
+
+        float distanceFromEnd = 0f;
+        for (int i = index; i < path.Count - 1; i++)
+        {
+            distanceFromEnd += Vector2.Distance(path[i], path[i + 1]);
+            if (distanceFromEnd >= RoadConstants.EndpointRampLength)
+                break;
+        }
+
+        float startBlend = Mathf.Clamp01(distanceFromStart / RoadConstants.EndpointRampLength);
+        float endBlend = Mathf.Clamp01(distanceFromEnd / RoadConstants.EndpointRampLength);
+
+        return Mathf.Min(startBlend, endBlend);
     }
 
     private static int DetectOverlap(List<Vector2> points, float width)

@@ -150,6 +150,12 @@ public static class RoadTerrainModifier
         public int InfluencingPoints;
     }
 
+    private static float Smoothstep(float t)
+    {
+        t = Mathf.Clamp01(t);
+        return t * t * (3f - 2f * t);
+    }
+
     private static BlendResult CalculateBlendedHeight(List<RoadSpatialGrid.RoadPoint> roadPoints, Vector2 vertexPos)
     {
         float weightedHeightSum = 0f;
@@ -159,29 +165,41 @@ public static class RoadTerrainModifier
 
         foreach (RoadSpatialGrid.RoadPoint rp in roadPoints)
         {
-            float distSq = (rp.p - vertexPos).sqrMagnitude;
-            float influenceRadius = (rp.w * 0.5f) + RoadConstants.TerrainBlendMargin;
-            float influenceRadiusSq = influenceRadius * influenceRadius;
-            
-            if (distSq < influenceRadiusSq)
+            float dist = Vector2.Distance(rp.p, vertexPos);
+
+            float halfWidth = rp.w * 0.5f;
+            float flatCoreRadius = halfWidth * RoadConstants.RoadFlatCoreRatio;
+            float influenceRadius = halfWidth + RoadConstants.TerrainBlendMargin;
+
+            if (dist >= influenceRadius)
+                continue;
+
+            float pointBlend;
+
+            if (dist <= flatCoreRadius)
             {
-                float dist = Mathf.Sqrt(distSq);
-                float t = dist / influenceRadius;
-                float pointBlend = 1f - Mathf.SmoothStep(0f, 1f, t);
-                float weight = pointBlend * pointBlend;
-                
-                weightedHeightSum += rp.h * weight;
-                totalWeight += weight;
-                influencingPoints++;
-                
-                if (pointBlend > maxBlend)
-                    maxBlend = pointBlend;
+                pointBlend = 1f;
             }
+            else
+            {
+                float shoulderT = (dist - flatCoreRadius) / (influenceRadius - flatCoreRadius);
+                shoulderT = Mathf.Clamp01(shoulderT);
+                pointBlend = 1f - Smoothstep(shoulderT);
+            }
+
+            float weight = pointBlend * pointBlend;
+
+            weightedHeightSum += rp.h * weight;
+            totalWeight += weight;
+            influencingPoints++;
+
+            if (pointBlend > maxBlend)
+                maxBlend = pointBlend;
         }
 
         return new BlendResult
         {
-            TargetHeight = influencingPoints > 0 ? weightedHeightSum / totalWeight : 0f,
+            TargetHeight = influencingPoints > 0 && totalWeight > 0f ? weightedHeightSum / totalWeight : 0f,
             MaxBlend = maxBlend,
             InfluencingPoints = influencingPoints
         };
@@ -231,8 +249,19 @@ public static class RoadTerrainModifier
                     if (dist > radiusInVertices)
                         continue;
                     
-                    float blendFactor = 1f - Mathf.Clamp01(dist / radiusInVertices);
-                    blendFactor = Mathf.Pow(blendFactor, 0.1f);
+                    float normalized = dist / radiusInVertices;
+                    float core = RoadConstants.RoadFlatCoreRatio;
+
+                    float blendFactor;
+                    if (normalized <= core)
+                    {
+                        blendFactor = 1f;
+                    }
+                    else
+                    {
+                        float t = (normalized - core) / (1f - core);
+                        blendFactor = 1f - Smoothstep(t);
+                    }
                     
                     int index = vy * gridSize + vx;
                     

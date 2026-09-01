@@ -23,6 +23,7 @@ public static class ConsoleCommands
     private static ManualLogSource Log => ProceduralRoadsPlugin.ProceduralRoadsLogger;
     private static List<Minimap.PinData> s_modPins = new();
     private static List<GameObject> s_debugMarkers = new();
+    private static Vector3? s_testRoadStart = null;
 
     /// <summary>
     /// Register console commands. Called from Terminal.InitTerminal patch.
@@ -141,9 +142,29 @@ public static class ConsoleCommands
             onlyServer: false,
             isSecret: false,
             allowInDevBuild: true);
+        
+        new Terminal.ConsoleCommand(
+            "road_pin_start",
+            "Set the start point for road testing to your current position.",
+            (args) => SetRoadTestStart(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
+            "road_test",
+            "Generate a test road from pinned start position to current position.",
+            (args) => GenerateTestRoad(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
 
         s_commandsRegistered = true;
-        ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug("Road console commands registered");
+        ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug("Road console commands registered 2.0");
     }
     
     /// <summary>
@@ -956,7 +977,110 @@ public static class ConsoleCommands
             args.Context.AddString($"Raw: {debugInfo.RawHeight:F2}m, Blended: {debugInfo.BlendedHeight:F2}m");
         args.Context.AddString("Full details logged (see BepInEx console)");
     }
+
+    private static void SetRoadTestStart(Terminal.ConsoleEventArgs args)
+    {
+        Player player = Player.m_localPlayer;
+        if (player == null)
+        {
+            args.Context.AddString("No local player found");
+            return;
+        }
+
+        s_testRoadStart = player.transform.position;
+
+        args.Context.AddString(
+            $"Road test start set to ({s_testRoadStart.Value.x:F1}, {s_testRoadStart.Value.z:F1})");
+
+        Log.LogInfo(
+            $"Road test start set to ({s_testRoadStart.Value.x:F1}, {s_testRoadStart.Value.z:F1})");
+    }
+
+    private static void GenerateTestRoad(Terminal.ConsoleEventArgs args)
+    {
+        if (!s_testRoadStart.HasValue)
+        {
+            args.Context.AddString(
+                "No start point set. Use road_pin_start first.");
+            return;
+        }
+
+        Player player = Player.m_localPlayer;
+        if (player == null)
+        {
+            args.Context.AddString("No local player found");
+            return;
+        }
+
+        Vector3 startPos = s_testRoadStart.Value;
+        Vector3 endPos = player.transform.position;
+
+        float distance = Vector3.Distance(startPos, endPos);
+
+        args.Context.AddString(
+            $"Testing road from ({startPos.x:F1},{startPos.z:F1}) to ({endPos.x:F1},{endPos.z:F1}) distance={distance:F0}m");
+
+        Log.LogInfo(
+            $"ROAD TEST: ({startPos.x:F1},{startPos.z:F1}) -> ({endPos.x:F1},{endPos.z:F1}) distance={distance:F0}m");
+
+        bool success = RoadNetworkGenerator.GenerateTestRoad(
+            startPos,
+            endPos,
+            $"Manual Test Road ({startPos.x:F0},{startPos.z:F0}) -> ({endPos.x:F0},{endPos.z:F0})");
+
+        if (success)
+        {
+            s_testRoadStart = endPos;
+            int zonesWithRoads = ApplyRoadsToLoadedZones();
+            args.Context.AddString(
+                $"Road generated successfully. Applied to {zonesWithRoads} visible zones. New start set to ({endPos.x:F1}, {endPos.z:F1})");
+            Log.LogInfo($"ROAD TEST SUCCESS. Applied to {zonesWithRoads} visible zones.");
+        }
+        else
+        {
+            args.Context.AddString("Road generation failed");
+            Log.LogWarning("ROAD TEST FAILED");
+        }
+    }
+
+    private static int ApplyRoadsToLoadedZones()
+    {
+        var heightmaps = Heightmap.GetAllHeightmaps();
+        int zonesWithRoads = 0;
+
+        if (heightmaps == null)
+            return 0;
+
+        foreach (var heightmap in heightmaps)
+        {
+            if (heightmap == null)
+                continue;
+
+            Vector3 hmPos = heightmap.transform.position;
+            Vector2i zoneID = ZoneSystem.GetZone(hmPos);
+
+            var roadPoints = RoadSpatialGrid.GetRoadPointsInZone(zoneID);
+            if (roadPoints.Count == 0)
+                continue;
+
+            TerrainComp terrainComp = heightmap.GetAndCreateTerrainCompiler();
+            if (terrainComp == null || !terrainComp.m_nview.IsOwner())
+                continue;
+
+            RoadTerrainModifier.ApplyRoadTerrainModsWithContext(
+                zoneID,
+                roadPoints,
+                heightmap,
+                terrainComp);
+
+            zonesWithRoads++;
+        }
+
+        return zonesWithRoads;
+    }
 }
+
+
 
 /// <summary>
 /// Harmony patch to register console commands when Terminal initializes.
