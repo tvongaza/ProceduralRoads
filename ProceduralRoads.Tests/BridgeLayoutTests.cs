@@ -192,8 +192,8 @@ public class BridgeLayoutTests
         string output = System.IO.Path.Combine(
             System.IO.Path.GetDirectoryName(typeof(BridgeLayoutTests).Assembly.Location)!,
             "debug-bridge.bmp");
-        WorldRenderer.Render(world, paths, markers, output,
-            crossing.Center.x - 120f, crossing.Center.x + 120f, 0.5f);
+        WorldRenderer.RenderCentered(world, paths, markers, output,
+            crossing.Center, 60f, 0.25f);
         Assert.True(System.IO.File.Exists(output));
     }
 }

@@ -10,6 +10,21 @@ namespace ProceduralRoads.Tests;
 /// </summary>
 public static class WorldRenderer
 {
+    /// <summary>Render a square window centered on a world position.</summary>
+    public static void RenderCentered(
+        WorldGenerator world,
+        List<(List<Vector2> path, byte r, byte g, byte b)> paths,
+        List<(Vector2 pos, byte r, byte g, byte b)> markers,
+        string outputPath,
+        Vector2 center,
+        float halfSize,
+        float metersPerPixel)
+    {
+        Render(world, paths, markers, outputPath,
+            center.x - halfSize, center.x + halfSize, metersPerPixel,
+            center.y - halfSize, center.y + halfSize);
+    }
+
     public static void Render(
         WorldGenerator world,
         List<(List<Vector2> path, byte r, byte g, byte b)> paths,
@@ -17,8 +32,12 @@ public static class WorldRenderer
         string outputPath,
         float worldMin = -700f,
         float worldMax = 700f,
-        float metersPerPixel = 4f)
+        float metersPerPixel = 4f,
+        float? worldMinY = null,
+        float? worldMaxY = null)
     {
+        float minY = worldMinY ?? worldMin;
+        float maxY = worldMaxY ?? worldMax;
         int size = (int)((worldMax - worldMin) / metersPerPixel);
         var pixels = new byte[size * size * 3]; // BGR rows, bottom-up
 
@@ -27,7 +46,7 @@ public static class WorldRenderer
             for (int px = 0; px < size; px++)
             {
                 float wx = worldMin + px * metersPerPixel;
-                float wy = worldMin + py * metersPerPixel;
+                float wy = minY + py * metersPerPixel;
 
                 float h = world.GetHeight(wx, wy);
                 world.GetRiverWeight(wx, wy, out float riverWeight, out _);
@@ -58,16 +77,16 @@ public static class WorldRenderer
         {
             if (path == null) continue;
             for (int i = 1; i < path.Count; i++)
-                DrawLine(pixels, size, worldMin, metersPerPixel, path[i - 1], path[i], r, g, b);
+                DrawLine(pixels, size, worldMin, minY, metersPerPixel, path[i - 1], path[i], r, g, b);
         }
 
         foreach (var (pos, r, g, b) in markers)
-            DrawDot(pixels, size, worldMin, metersPerPixel, pos, 3, r, g, b);
+            DrawDot(pixels, size, worldMin, minY, metersPerPixel, pos, 3, r, g, b);
 
         WriteBmp(outputPath, pixels, size, size);
     }
 
-    private static void DrawLine(byte[] px, int size, float worldMin, float mpp,
+    private static void DrawLine(byte[] px, int size, float worldMin, float worldMinY, float mpp,
         Vector2 a, Vector2 b, byte r, byte g, byte bl)
     {
         float steps = Mathf.Max(Vector2.Distance(a, b) / mpp * 2f, 1f);
@@ -77,7 +96,7 @@ public static class WorldRenderer
             float wx = a.x + (b.x - a.x) * t;
             float wy = a.y + (b.y - a.y) * t;
             int ix = (int)((wx - worldMin) / mpp);
-            int iy = (int)((wy - worldMin) / mpp);
+            int iy = (int)((wy - worldMinY) / mpp);
             // 2px-thick stroke so roads stay readable at map scale
             SetPixel(px, size, ix, iy, r, g, bl);
             SetPixel(px, size, ix + 1, iy, r, g, bl);
@@ -85,11 +104,11 @@ public static class WorldRenderer
         }
     }
 
-    private static void DrawDot(byte[] px, int size, float worldMin, float mpp,
+    private static void DrawDot(byte[] px, int size, float worldMin, float worldMinY, float mpp,
         Vector2 pos, int radius, byte r, byte g, byte b)
     {
         int cx = (int)((pos.x - worldMin) / mpp);
-        int cy = (int)((pos.y - worldMin) / mpp);
+        int cy = (int)((pos.y - worldMinY) / mpp);
         for (int dy = -radius; dy <= radius; dy++)
         for (int dx = -radius; dx <= radius; dx++)
             if (dx * dx + dy * dy <= radius * radius)
