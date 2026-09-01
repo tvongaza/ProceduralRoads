@@ -39,6 +39,15 @@ public static class RoadConstants
     public const int MaxRiverCrossingCells = 6; // 6 * 8m = 48m max ford
     public const float RiverCrossingPenalty = 5000f;
 
+    // Road cross-section (see RoadProfile): flat core fully leveled and
+    // solidly painted; paint fades out strictly inside the leveled footprint
+    // so roads keep an unpainted, smoothed verge; leveling eases to natural
+    // terrain over TerrainBlendMargin beyond the half-width. Ends ramp from
+    // natural terrain height to smoothed road height over EndpointRampLength.
+    public const float RoadFlatCoreRatio = 0.6f;
+    public const float RoadPaintOuterRatio = 0.85f;
+    public const float EndpointRampLength = 40f;
+
     // Terrain-quality guarantees (added after real-world selftest findings):
     // roads must keep this much height above the shallow-water threshold —
     // splined centerlines dip between 8m cell samples, so cells barely above

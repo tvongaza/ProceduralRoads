@@ -33,6 +33,10 @@
                  Condition="Exists('../ProceduralRoads/Src/Debug/RoadNetworkValidator.cs')"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadCrossing.cs" Link="ModSrc/RoadCrossing.cs"
                  Condition="Exists('../ProceduralRoads/Src/Roads/RoadCrossing.cs')"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadProfile.cs" Link="ModSrc/RoadProfile.cs"
+                 Condition="Exists('../ProceduralRoads/Src/Roads/RoadProfile.cs')"/>
+        <Compile Remove="RoadProfileTests.cs"
+                 Condition="!Exists('../ProceduralRoads/Src/Roads/RoadProfile.cs')"/>
         <Compile Remove="CrossingMetadataTests.cs"
                  Condition="!Exists('../ProceduralRoads/Src/Roads/RoadCrossing.cs')"/>
         <!-- Validator tests need RoadRoute + RoadNetworkValidator (post-#17 bases only) -->
