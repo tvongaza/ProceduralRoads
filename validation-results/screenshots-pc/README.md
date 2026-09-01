@@ -65,6 +65,22 @@ runs, 2146 pieces, 1 dry-land violation). Anchored censuses (cli_prefabs_at):
 | freecam-bridge-side.jpg | THE exhibit: complete ruined trestle in profile — deck on marching post pairs, collapsed span at the far abutment |
 | newbridge-wood-ondeck.jpg | Station assembly close-up: portal frame (paired posts + beam) with the deck plank seated through it |
 
+## Finding: creation-load generation differs from reload generation
+
+RoadTestPC3, same DLL, ForceRegenerate on: the WORLD-CREATION load generated
+hash c9c3014e (81 routes, 2146 planned pieces); every reload generates hash
+49748415 (84 routes, 2949 planned) — and reload-to-reload is byte-identical.
+Crossing/ford/stair-run counts are stable across all loads; only route
+success and therefore ruin plans shift. The mod's own rng is all seeded
+System.Random and biome/height sampling is pure WorldGenerator, so the
+suspect is upstream input state that differs between freshly-generated and
+loaded-from-save worlds (location instance list provenance/order).
+RoadTestPC1 did NOT show this (creation == reload, c4d6271b), so a condition
+is unpinned. Not composition scope — needs its own investigation.
+
+RULE UNTIL FIXED: take fixture/regression baselines from a RELOAD, never
+from the creation session. RoadTestPC3's baseline is 49748415.
+
 ## Visual assessment (blunt)
 
 1. **Scaffolding, confirmed on every crossing.** Piers are single skinny poles
