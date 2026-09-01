@@ -133,10 +133,32 @@ path, greedy-vs-MST length, orphan roads after failed edges).
 
 ## Tier 2 — high visual payoff, builds on Tier 1
 
-- [ ] **Switchback shaping** — cost shaping, not geometry: raise the
-  mountain slope ceiling; make cost scale steeply with grade *along the
-  path* so contouring beats direct ascent. A* produces switchbacks on its
-  own. Depends on the cost-model rework.
+- [x] **Switchback shaping** — DONE (ea37bca): MaxTraversableGrade cap +
+  per-meter quadratic grade cost. Real-world result: cliff-climb violations
+  eliminated (24 -> 9 total), one network component per island.
+- [ ] **Stair runs on steep sections** (designed 2026-08-31): three grade
+  bands — 0-0.35 road (terrain modified), 0.35-0.5 STAIRS (no terrain mod:
+  record StairRun metadata, place stair pieces hugging the slope at zone
+  spawn — vanilla stairs are exactly 2m run / 1m rise = grade 0.5), >1.0
+  impassable. Cost stairs above road, below long detours, so they appear on
+  final approaches only. Reuses the bridge architecture (pure layout solver
+  + SpawnZone placement + WearNTear ruin states — missing steps are jumps
+  or cheap repairs). Kits by progression: wood stairs (Meadows/BF), stone
+  stairs (Mountain), dvergr stairs/spiral (Mistlands — also the answer to
+  the remaining 8 sub-cell grade violations on jagged Mistlands routes).
+  Aesthetic bar: player builds using the Gizmo mod for fine rotations along
+  the contour — procedural placement writes ZDO transforms directly, so we
+  get exact per-piece yaw/height alignment for free (no build-UI snap), and
+  unmodded clients render arbitrary rotations fine.
+- [ ] **Mountain boulders vs roads** (designed 2026-08-31): boulders are
+  per-zone vegetation spawned AFTER road generation, so pathfind-time
+  avoidance requires replicating zone RNG — deferred as a research item
+  (deterministic vegetation prediction via DecompilerServer; would enable
+  road geometry reacting to rocks, e.g. a switchback at a monolith). Now:
+  selective clearing at zone spawn via existing clear-area machinery —
+  remove rocks intersecting the road CORE only, keep shoulder-overlap rocks
+  (roadside monoliths are character), position-seeded keep-bias for edge
+  cases so regeneration stays deterministic.
 - [ ] **Biome road surfaces** — dirt (Meadows/Black Forest/Swamp), stone
   (Mountain), mossy stone (Mistlands). Mostly a paint-type lookup at
   terrain-mod time. Perlin-blended transitions = stretch goal.
