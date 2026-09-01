@@ -35,6 +35,10 @@
                  Condition="Exists('../ProceduralRoads/Src/Roads/RoadCrossing.cs')"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadProfile.cs" Link="ModSrc/RoadProfile.cs"
                  Condition="Exists('../ProceduralRoads/Src/Roads/RoadProfile.cs')"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/BridgeLayout.cs" Link="ModSrc/BridgeLayout.cs"
+                 Condition="Exists('../ProceduralRoads/Src/Roads/BridgeLayout.cs')"/>
+        <Compile Remove="BridgeLayoutTests.cs"
+                 Condition="!Exists('../ProceduralRoads/Src/Roads/BridgeLayout.cs')"/>
         <Compile Remove="RoadProfileTests.cs"
                  Condition="!Exists('../ProceduralRoads/Src/Roads/RoadProfile.cs')"/>
         <Compile Remove="CrossingMetadataTests.cs"
