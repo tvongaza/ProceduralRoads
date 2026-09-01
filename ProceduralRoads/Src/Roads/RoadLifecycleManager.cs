@@ -41,6 +41,31 @@ public static class RoadLifecycleManager
         RoadClearAreaManager.ClearCache();
         RoadVegetationCleaner.Reset();
 
+        if (!TryStartRoadGeneration())
+        {
+            // Dedicated servers can fire GenerateLocationsCompleted before the
+            // location list is populated, and no player ever spawns headless to
+            // retry — so flag it and let the plugin's Update loop poll us.
+            m_pendingDeferredGeneration = true;
+        }
+    }
+
+    private static bool m_pendingDeferredGeneration;
+
+    /// <summary>True while generation is waiting for world state to be ready.</summary>
+    public static bool PendingDeferredGeneration => m_pendingDeferredGeneration;
+
+    /// <summary>Polled by the plugin while generation is deferred.</summary>
+    public static void RetryDeferredGeneration()
+    {
+        if (!m_pendingDeferredGeneration)
+            return;
+        if (TryStartRoadGeneration())
+            m_pendingDeferredGeneration = false;
+    }
+
+    private static bool TryStartRoadGeneration()
+    {
         bool hasWorldGen = WorldGenerator.instance != null;
         bool hasLocations = ZoneSystem.instance?.GetLocationList()?.Count > 0;
 
@@ -64,12 +89,15 @@ public static class RoadLifecycleManager
             }
 
             RoadValidationRunner.MaybeRunAfterGeneration();
+            return true;
         }
         else
         {
             ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(
                 $"Deferring road generation (WorldGen={hasWorldGen}, Locations={hasLocations})...");
         }
+
+        return false;
     }
 
     /// <summary>

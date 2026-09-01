@@ -55,12 +55,21 @@ sh ./start_server_bepinex.sh ./valheim_server.x86_64 \
     -public 0 -batchmode -nographics -savedir "$SAVES" > selftest-run.log 2>&1 &
 SERVER_PID=$!
 trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+LAST_SIZE=0
+STALL=0
 for i in $(seq 1 360); do
     grep -q "\[SELFTEST\]" selftest-run.log && break
     kill -0 $SERVER_PID 2>/dev/null || { echo "SERVER DIED:"; tail -30 selftest-run.log; exit 1; }
+    # Stall watchdog: a healthy run logs constantly; a silent log means the
+    # mod is wedged, not slow. (Heartbeat lines appear every 10 min, so a
+    # 4-minute silence window is decisive well before the 30-min cap.)
+    SIZE=$(wc -c < selftest-run.log)
+    if [ "$SIZE" = "$LAST_SIZE" ]; then STALL=$((STALL+1)); else STALL=0; LAST_SIZE=$SIZE; fi
+    if [ $STALL -ge 48 ]; then echo "STALLED (4m of log silence):"; tail -20 selftest-run.log; exit 1; fi
     sleep 5
 done
-grep "\[SELFTEST\]" selftest-run.log | head -4 || { echo "TIMEOUT (30m):"; tail -30 selftest-run.log; exit 1; }
+# grep -m keeps grep's own exit code (a pipe to head would mask a miss).
+grep -m4 "\[SELFTEST\]" selftest-run.log || { echo "TIMEOUT (30m, no selftest):"; tail -30 selftest-run.log; exit 1; }
 kill $SERVER_PID 2>/dev/null || true
 sleep 3
 echo "MEMORY_PEAK_BYTES=$(cat /sys/fs/cgroup/memory.peak 2>/dev/null || echo unavailable)"

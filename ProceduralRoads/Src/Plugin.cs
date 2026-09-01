@@ -50,6 +50,18 @@ namespace ProceduralRoads
         public static ConfigEntry<bool> DebugValidation = null!;
         public static ConfigEntry<bool> ForceRegenerate = null!;
 
+        private float m_nextDeferredRetry;
+
+        public void Update()
+        {
+            if (!RoadLifecycleManager.PendingDeferredGeneration)
+                return;
+            if (Time.unscaledTime < m_nextDeferredRetry)
+                return;
+            m_nextDeferredRetry = Time.unscaledTime + 2f;
+            RoadLifecycleManager.RetryDeferredGeneration();
+        }
+
         public void Awake()
         {
             // Register the metadata prefab with Jotunn FIRST - must happen before ZNetScene.Awake
