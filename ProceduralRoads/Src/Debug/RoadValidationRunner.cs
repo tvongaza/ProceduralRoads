@@ -33,6 +33,8 @@ public static class RoadValidationRunner
             return null;
         }
 
+        PrefabProbe.ProbeOnce();
+
         var routes = RoadNetworkGenerator.GetRoadRoutes();
         System.DateTime validateStart = System.DateTime.Now;
         var report = RoadNetworkValidator.Validate(routes, WorldGenerator.instance,
