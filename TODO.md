@@ -176,9 +176,20 @@ path, greedy-vs-MST length, orphan roads after failed edges).
      orientations, settled into the bed near pier bases/banks only —
      visible underwater, never in the fairway (they are real colliders).
      Road users wade/swim the gap or rebuild the deck on the piers.
-  6. Verify exact vanilla prefab names + WearNTear thresholds against game
-     data first (DecompilerServer). Biome variants later: black marble
-     (Mistlands), rotten wood piles (Swamp).
+  6. Progression-aligned styles (decided 2026-08-31): material follows
+     player progression via (biome, world ring) -> BridgeStyle lookup
+     (warp-71 already computes rings; crossings record biome). Start with
+     the SIMPLEST kit first: Meadows wood — pole pilings + plank deck,
+     heavily decayed (rebuildable with day-one materials). Then:
+     Black Forest log-on-stone-footings; Swamp rotten piling stubs only;
+     Mountain/Plains stone piers + arches (monumental, half-toppled);
+     Mistlands black marble, least ruined (dvergr still maintain theirs —
+     vanilla dvergr marble bridges are the reference look, as Draugr
+     village wood bridges are for Meadows). Decay scales inward: humblest
+     and most-decayed at the center, grander and better-preserved outward —
+     fits the ancient-network premise, and rebuild cost tracks progression.
+  7. Verify exact vanilla prefab names + WearNTear thresholds against game
+     data first (DecompilerServer).
 - [ ] Gully crossings: detect via height-profile dip along the path (reuse
   crossing machinery, not a separate terrain scan).
 - [ ] Edge landings as optional destinations → future docks/harbours.
