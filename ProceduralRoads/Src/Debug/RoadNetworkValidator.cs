@@ -29,13 +29,31 @@ public static class RoadNetworkValidator
         public bool Passed => Violations.Count == 0;
     }
 
-    public static Report Validate(IReadOnlyList<RoadRoute> routes, WorldGenerator world)
+    public static Report Validate(IReadOnlyList<RoadRoute> routes, WorldGenerator world,
+        IReadOnlyList<StairRun>? stairRuns = null)
     {
         Report report = new();
         if (routes == null || world == null)
         {
             report.Violations.Add("validator: routes or world unavailable");
             return report;
+        }
+
+        // Stair runs own their grade: steps handle any in-band slope, so
+        // slope checks are exempt inside a run's corridor.
+        List<StairRun> runs = stairRuns != null ? new List<StairRun>(stairRuns) : new List<StairRun>();
+        bool InStairRun(Vector3 p)
+        {
+            foreach (StairRun run in runs)
+            {
+                foreach (Vector2 rp in run.Points)
+                {
+                    float dx = p.x - rp.x, dz = p.z - rp.y;
+                    if (dx * dx + dz * dz <= 16f) // within 4m of the centerline
+                        return true;
+                }
+            }
+            return false;
         }
 
         uint hash = 2166136261;
@@ -96,7 +114,8 @@ public static class RoadNetworkValidator
                     if (horizontal > 0.01f)
                     {
                         float slope = Mathf.Abs(p.y - prev.y) / horizontal;
-                        if (slope > SlopeSanityCap && slopeViolations++ < MaxViolationsPerCheck)
+                        if (slope > SlopeSanityCap && !InStairRun(p)
+                            && slopeViolations++ < MaxViolationsPerCheck)
                             report.Violations.Add(
                                 $"slope: {route.Label} point {i} grade {slope:F2} over {horizontal:F1}m");
                     }

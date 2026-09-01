@@ -35,7 +35,8 @@ public static class RoadValidationRunner
 
         var routes = RoadNetworkGenerator.GetRoadRoutes();
         System.DateTime validateStart = System.DateTime.Now;
-        var report = RoadNetworkValidator.Validate(routes, WorldGenerator.instance);
+        var report = RoadNetworkValidator.Validate(routes, WorldGenerator.instance,
+            RoadNetworkGenerator.GetStairRuns());
         Log.LogInfo(
             $"[TIMING] validator ms={(System.DateTime.Now - validateStart).TotalMilliseconds:F0} " +
             $"pathfinderIterations={RoadPathfinder.TotalIterations} terrainSamples={RoadPathfinder.TotalTerrainSamples}");
@@ -44,6 +45,7 @@ public static class RoadValidationRunner
             $"[SELFTEST] {(report.Passed ? "PASS" : "FAIL")}: {report.RouteCount} routes, " +
             $"{report.TotalLengthMeters:F0}m total, {report.NetworkComponents} network component(s), " +
             $"{report.FordCount} ford(s), {RoadNetworkGenerator.GetRoadCrossings().Count} crossing(s), " +
+            $"{RoadNetworkGenerator.GetStairRuns().Count} stair run(s), " +
             $"hash {report.PointsHash}, {report.Violations.Count} violation(s)");
 
         foreach (string violation in report.Violations)
