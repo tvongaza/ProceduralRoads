@@ -56,6 +56,12 @@ target on macOS). net48 runs under Homebrew Mono 6.14 — closest available
 match to Valheim's in-game Unity Mono runtime. Includes a characterization test pinning the current "river makes
 far side unreachable" behavior — flip it when the cost-model rework lands.
 
+First-PR scope decision (2026-08-31): the first upstream PR is this harness
+characterizing existing behavior — before any new road code. Now also
+compiles `RoadNetworkGenerator`/`RoadSpatialGrid`/`BiomeBlendedHeight`/
+`IslandDetector` and pins the Chain/MST topology strategies (hub/spoke vs
+path, greedy-vs-MST length, orphan roads after failed edges).
+
 - [ ] Extend harness to cover `RoadSpatialGrid` smoothing and
   `RoadTerrainModifier` blend math (add shims as needed).
 - [ ] Grow `SyntheticWorld` scenarios per feature (swamp lowlands for wading,
