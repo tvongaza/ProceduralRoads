@@ -131,8 +131,19 @@ public class ReachableRoadsTests
 
         h.Run(new Vector3(-280, 0, 0), layout);
 
-        // Same two physical roads as the old strategies...
         Assert.Contains(("Start", "NearWest"), h.SuccessEdges);
+
+        if (RiverCrossingTests.Available)
+        {
+            // With the cost-model rework the river is fordable, so the whole
+            // island connects into one component — the end goal of the rework.
+            Assert.Equal(3, h.SuccessEdges.Count);
+            Assert.Empty(h.FailedEdges);
+            Assert.DoesNotContain(h.Logs, l => l.Contains("Started disconnected road component"));
+            return;
+        }
+
+        // Pre-rework: same two physical roads as the old strategies...
         Assert.Contains(("FarEast", "FarEast2"), h.SuccessEdges);
         Assert.Equal(2, h.SuccessEdges.Count);
 

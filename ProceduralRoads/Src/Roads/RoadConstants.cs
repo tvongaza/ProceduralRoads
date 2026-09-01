@@ -22,12 +22,22 @@ public static class RoadConstants
     
     public const float DefaultBaseCost = 1f;
     public const float DefaultSlopeMultiplier = 10f;
-    public const float DefaultRiverPenalty = 100000f;
-    public const float DefaultWaterPenalty = 100000f;
+    // True blockers (deep water, wide river cores, non-swamp shallows) use
+    // float.PositiveInfinity in RoadPathfinder; the values below are additive
+    // penalties on passable terrain.
+    public const float DefaultRiverPenalty = 4000f;
+    public const float DefaultSwampShallowWaterPenalty = 500f;
+    public const float DefaultMountainSteepSlopePenalty = 2000f;
     public const float DefaultSteepSlopePenalty = 2000f;
     public const float DefaultSteepSlopeThreshold = 0.6f;
     public const float DefaultTerrainVariancePenalty = 1000f;
     public const float DefaultTerrainVarianceThreshold = 5f;
+
+    // Short river crossings (fords): the pathfinder may jump an impassable
+    // river core if dry, non-river ground exists within this many cells
+    // (capped by world distance, so long diagonal directions don't stretch it).
+    public const int MaxRiverCrossingCells = 6; // 6 * 8m = 48m max ford
+    public const float RiverCrossingPenalty = 5000f;
     
     public const float SpatialGridSize = 64f;
     public const float DefaultRoadWidth = 4f;

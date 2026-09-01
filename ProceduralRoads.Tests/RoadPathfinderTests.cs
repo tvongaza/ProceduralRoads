@@ -36,17 +36,20 @@ public class RoadPathfinderTests
     }
 
     [Fact]
-    public void RiverBlocksPathInCurrentImplementation()
+    public void RiverCrossabilityMatchesCostModel()
     {
-        // Characterization test: documents upstream master behavior — a river
-        // spanning the island makes the far side unreachable. The planned
-        // cost-model rework + crossings should flip this expectation.
+        // On the original cost model a river spanning the island makes the far
+        // side unreachable (the behavior behind upstream issue #7). With the
+        // cost-model rework (short fords), the same river becomes crossable.
         var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
         var pathfinder = new RoadPathfinder(world);
 
         var path = pathfinder.FindPath(new Vector2(-300f, 0f), new Vector2(400f, 0f));
 
-        Assert.Null(path);
+        if (RiverCrossingTests.Available)
+            Assert.NotNull(path);
+        else
+            Assert.Null(path);
     }
 
     [Fact]

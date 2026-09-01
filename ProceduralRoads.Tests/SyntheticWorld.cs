@@ -23,6 +23,15 @@ public class SyntheticWorld : WorldGenerator
     public float IslandRadius = 600f;
     public float IslandPeakHeight = 18f; // above sea level at the island center
 
+    /// <summary>
+    /// Optional north-south lowland band flooded to just below the shallow-water
+    /// threshold — a swamp margin (biome Swamp) or a plain flooded cut (Meadows).
+    /// </summary>
+    public bool HasWetBand = false;
+    public bool WetBandIsSwamp = true;
+    public float WetBandX = -150f;
+    public float WetBandHalfWidth = 30f;
+
     public override float GetHeight(float wx, float wy)
     {
         float r = Mathf.Sqrt(wx * wx + wy * wy);
@@ -50,11 +59,18 @@ public class SyntheticWorld : WorldGenerator
                 height = Mathf.Lerp(height, 26f, weight);
         }
 
+        // Wet band floods to knee depth: below the shallow threshold (30.5)
+        // but above deep water (28), so it is wadeable terrain, not ocean.
+        if (HasWetBand && Mathf.Abs(wx - WetBandX) < WetBandHalfWidth)
+            height = Mathf.Min(height, 30.0f);
+
         return height;
     }
 
     public override Heightmap.Biome GetBiome(float wx, float wy)
     {
+        if (HasWetBand && WetBandIsSwamp && Mathf.Abs(wx - WetBandX) < WetBandHalfWidth + 16f)
+            return Heightmap.Biome.Swamp;
         if (GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f)
             return Heightmap.Biome.Ocean;
         if (HasMountain && Mathf.Abs(wx - MountainX) < MountainHalfWidth * 0.6f)
