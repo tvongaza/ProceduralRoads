@@ -60,8 +60,18 @@ far side unreachable" behavior — flip it when the cost-model rework lands.
   `RoadTerrainModifier` blend math (add shims as needed).
 - [ ] Grow `SyntheticWorld` scenarios per feature (swamp lowlands for wading,
   narrow-vs-wide river for crossings, steep dome for switchbacks).
-- [ ] Later: dump real-seed height/river/biome samples from the game once and
-  replay as a fixture world for real-world regression tests.
+- [ ] **Deferred until debugging needs it — real-terrain fidelity, staged:**
+  1. `road_dump_world <center> <size> <step>` console command sampling real
+     `GetHeight`/`GetBiome`/`GetRiverWeight` over a grid to a file, plus a
+     `FixtureWorld : WorldGenerator` shim replaying it with bilinear interp.
+     ~2–4 m step suffices for 8 m pathfinder cells. Turns any bug report
+     into a permanent regression test (e.g. issue #7's seed `nRleKzu9bI`).
+  2. Only if tuning-by-statistics over many seeds becomes the goal: port the
+     real worldgen pipeline (Unity PerlinNoise = classic Perlin, Unity
+     Random = Xorshift128; parity proven feasible by valheim-map.world)
+     behind the same shim, validated against the step-1 fixture dumps.
+  Keep the synthetic world for feature tests either way — constructed
+  scenarios (narrow river, steep dome) stay more legible than real terrain.
 
 ## Tier 1 — differentiated core
 
