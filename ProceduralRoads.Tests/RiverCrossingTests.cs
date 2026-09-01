@@ -13,6 +13,14 @@ namespace ProceduralRoads.Tests;
 /// </summary>
 public class RiverCrossingTests
 {
+    /// <summary>Reflection-safe constant lookup so this file compiles on
+    /// bases that predate the constant (tests no-op there anyway).</summary>
+    private static float ConstF(string name, float fallback)
+    {
+        var f = typeof(RoadConstants).GetField(name, BindingFlags.Public | BindingFlags.Static);
+        return f != null ? System.Convert.ToSingle(f.GetRawConstantValue()) : fallback;
+    }
+
     /// <summary>True once the cost-model rework (river fords) is present.</summary>
     public static bool Available =>
         typeof(RoadPathfinder).GetMethod("TryGetShortRiverCrossing",
@@ -42,8 +50,8 @@ public class RiverCrossingTests
             if (weight > RoadConstants.RiverImpassableThreshold)
             {
                 foundCrossing = true;
-                Assert.True(segment <= RoadConstants.MaxRiverCrossingCells * RoadPathfinder.CellSize + 1f,
-                    $"Crossing segment {segment:F0}m exceeds the {RoadConstants.MaxRiverCrossingCells * RoadPathfinder.CellSize:F0}m cap");
+                Assert.True(segment <= ConstF("MaxRiverCrossingCells", 6f) * RoadPathfinder.CellSize + 1f,
+                    $"Crossing segment {segment:F0}m exceeds the {ConstF("MaxRiverCrossingCells", 6f) * RoadPathfinder.CellSize:F0}m cap");
             }
         }
         Assert.True(foundCrossing, "Expected the path to include a river-crossing segment");

@@ -12,6 +12,14 @@ namespace ProceduralRoads.Tests;
 /// </summary>
 public class TerrainQualityTests
 {
+    /// <summary>Reflection-safe constant lookup so this file compiles on
+    /// bases that predate the constant (tests no-op there anyway).</summary>
+    private static float ConstF(string name, float fallback)
+    {
+        var f = typeof(RoadConstants).GetField(name, BindingFlags.Public | BindingFlags.Static);
+        return f != null ? System.Convert.ToSingle(f.GetRawConstantValue()) : fallback;
+    }
+
     /// <summary>True once the waterline/grade quality pass exists.</summary>
     public static bool Available =>
         typeof(RoadConstants).GetField("WaterlineClearance", BindingFlags.Public | BindingFlags.Static) != null;
@@ -67,7 +75,7 @@ public class TerrainQualityTests
             maxGrade = Mathf.Max(maxGrade, Mathf.Abs(h2 - h1) / dist);
         }
 
-        Assert.True(maxGrade <= RoadConstants.MaxTraversableGrade + 0.05f,
+        Assert.True(maxGrade <= ConstF("MaxTraversableGrade", 1f) + 0.05f,
             $"Max along-path grade {maxGrade:F2} exceeds traversable cap");
 
         // Contouring means real extra distance versus the straight line.
