@@ -11,4 +11,6 @@ ProceduralRoads/features
 WARP.md
 
 .claude
-.claude/
+.claude/validation-results/
+validation-fixtures/
+server-test/
