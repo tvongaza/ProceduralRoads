@@ -6,6 +6,23 @@ location priority API, route export). We own **path quality and crossings**
 not touching, so everything below stays merge-friendly and independently
 shippable, potentially as upstream PRs.
 
+## Design constraint: vanilla-data compatibility (Xbox / unmodded clients)
+
+Everything the mod writes must be **vanilla world data** so unmodded clients
+(Xbox crossplay) see the results. This already holds today:
+`RoadTerrainModifier` writes `m_levelDelta` / `m_modifiedHeight` /
+`m_paintMask` into `_TerrainCompiler` ZDOs — the same format as hoe/pickaxe
+edits, which sync and persist for all clients. Keep it that way:
+
+- Bridges/ruins (Tier 3): **vanilla prefabs only** (ruined stone/wood
+  pieces). Custom prefabs are invisible or broken for unmodded clients.
+- Road surfaces (Tier 2): **vanilla paint channels only**
+  (paved/dirt/cultivated) — conveniently exactly what the biome-surface
+  idea needs.
+- Vegetation clearing must land as ZDO state from a modded peer generating
+  the zone first (upstream `RoadVegetationCleaner` does this) — an unmodded
+  client generating a virgin zone spawns trees on the road corridor.
+
 ## Base
 
 - [ ] Branch from `origin/master`, then evaluate merging upstream branches:
@@ -67,6 +84,15 @@ far side unreachable" behavior — flip it when the cost-model rework lands.
   players actually see. Fix in passing: `ResampleTrimmedEndpointHeights`
   moves endpoint X/Z (misnamed, and grid-snap + 8 m trim buffer can leave
   visible gaps at locations); drop or rework the snap.
+
+- [ ] **`road_bake` command — pre-bake the network for unmodded clients.**
+  Iterate every zone with `RoadSpatialGrid` points and write its
+  `_TerrainCompiler` ZDO (terrain deltas + paint) directly into the world
+  save, without a player visiting — plus corridor-only vegetation clearing.
+  JereKuusela's Upgrade World proves headless ZDO writes on unloaded zones
+  work; its `generate` command is also the zero-code interim workflow
+  (modded crossplay server, pre-generate road zones once, Xbox players see
+  roads forever after). Keeps the save small vs. full-world pregeneration.
 
 ## Tier 2 — high visual payoff, builds on Tier 1
 
