@@ -98,7 +98,10 @@ path, greedy-vs-MST length, orphan roads after failed edges).
   wading, mountain slopes expensive-not-impassable, ford crossings <= 48m
   at RiverCrossingPenalty, A* open-set fix, RiverPenalty 100000 -> 4000.
   21/21 tests. This is the PR 2 payload (targets master; pathfinder files
-  identical on both bases).
+  identical on both bases). Terrain-quality follow-up (ea37bca) after the
+  first real-world selftest: waterline clearance + move interior sampling
+  (roads keep feet dry between cell samples) and along-path grade shaping
+  (MaxTraversableGrade cap + per-meter quadratic cost → switchbacks).
 - [ ] **River crossings with `RoadCrossing` metadata.** June version proved
   A* can jump rivers (≤6 cells / 48 m at a penalty). Missing piece: record
   `{ type, center, fromBank, toBank, direction, width, biome }` and **split
@@ -106,11 +109,18 @@ path, greedy-vs-MST length, orphan roads after failed edges).
   water. Road-ends-at-bank / resumes-at-other-bank reads as a ruined
   crossing even before bridge prefabs exist.
 - [ ] **Road cross-section + endpoint ramps** (port from wip branch):
-  flat core (~65% width) with smoothstep shoulders replacing `pow(x, 0.1)`
-  blend; 40 m endpoint ramps blending raw→smoothed height. The change
-  players actually see. Fix in passing: `ResampleTrimmedEndpointHeights`
-  moves endpoint X/Z (misnamed, and grid-snap + 8 m trim buffer can leave
-  visible gaps at locations); drop or rework the snap.
+  flat core (~65% width, `RoadFlatCoreRatio`) with smoothstep shoulders
+  replacing `pow(x, 0.1)` blend; 40 m endpoint ramps blending raw→smoothed
+  height. The change players actually see. Key design detail from the June
+  code (confirmed 2026-08-31): **level wider than you paint** — leveling
+  extends to halfWidth + 2 m blend margin, full paint only in the flat
+  core, paint fading across the shoulders, so roads read as a solid dirt
+  strip with smoothed grass verges. Make the unused `RoadShoulderOuterRatio`
+  a real knob for shoulder extent, and consider painting even narrower
+  than the core for wider RoadWidth configs. Fix in passing:
+  `ResampleTrimmedEndpointHeights` moves endpoint X/Z (misnamed, and
+  grid-snap + 8 m trim buffer can leave visible gaps at locations); drop
+  or rework the snap.
 
 - [ ] **`road_bake` command — pre-bake the network for unmodded clients.**
   Iterate every zone with `RoadSpatialGrid` points and write its
