@@ -148,7 +148,29 @@ path, greedy-vs-MST length, orphan roads after failed edges).
 
 ## Tier 3 — later, once crossings exist
 
-- [ ] Ruined bridge foundations: prefab placement on `RoadCrossing` metadata.
+- [ ] **Ruined bridge foundations** (designed 2026-08-31) — vanilla pieces
+  as ZDOs so unmodded clients see them, and players can REBUILD the deck on
+  surviving piers:
+  1. PR 3 prerequisite: `RoadCrossing { center, fromBank, toBank, direction,
+     width, waterLevel, riverbedHeight, biome }` recorded at ford acceptance,
+     persisted like routes (#17 pattern), surfaced in the selftest report.
+  2. `BridgeLayout.Solve(crossing, seed)` — pure, harness-tested layout
+     solver returning (prefab, position, rotation, healthFraction). Support
+     grammar: piers are vertical stone stacks from the riverbed (ground-
+     supported — WearNTear collapses floating stone on zone load), deck
+     plates only directly on pier tops, no cantilevers. Ruin = deterministic
+     missing pieces (mid-span deck preferentially gone, abutments mostly
+     intact, pier bases never removed) + WearNTear health 30-70% for the
+     cracked/worn vanilla damage visuals (health lives in the ZDO — syncs).
+  3. Placement via the existing ZoneSystem.SpawnZone patch: instantiate with
+     ZNetView on first zone spawn, set health, register clear-areas.
+  4. Blending: abutment floors sunk ~0.3m below road surface at the banks so
+     terrain/paint lap onto the stone; paint paved onto the abutment
+     footprint. Replace the dry ford causeway with a submerged rubble line
+     (~0.5m below water) between the piers — wadeable, reads as collapse.
+  5. Verify exact vanilla prefab names + WearNTear thresholds against game
+     data first (DecompilerServer). Biome variants later: black marble
+     (Mistlands), rotten wood piles (Swamp).
 - [ ] Gully crossings: detect via height-profile dip along the path (reuse
   crossing machinery, not a separate terrain scan).
 - [ ] Edge landings as optional destinations → future docks/harbours.
