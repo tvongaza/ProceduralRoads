@@ -1,3 +1,5 @@
+using System;
+using UnityEngine;
 using System.Collections.Generic;
 using BepInEx.Logging;
 
@@ -67,5 +69,36 @@ public static class PrefabProbe
         Log.LogInfo($"[PREFABS] found: {string.Join(", ", found)}");
         if (missing.Count > 0)
             Log.LogInfo($"[PREFABS] missing: {string.Join(", ", missing)}");
+
+        foreach (string term in EnumerateTerms)
+            Enumerate(term);
+    }
+
+    /// <summary>Substrings to list every matching prefab for.</summary>
+    private static readonly string[] EnumerateTerms = { "stair", "step" };
+
+    /// <summary>Lists every prefab whose name contains <paramref name="term"/>.
+    ///
+    /// Testing a guessed name can only ever answer "not under THAT spelling",
+    /// which is not the same as "does not exist" -- and on 2026-09-01 the two
+    /// were confused. The shipped localization table has distinct entries for
+    /// "Black Marble Stair Left" AND "Black Marble Stair Right", so both
+    /// pieces exist, yet blackmarble_stair_corner_right does not resolve while
+    /// blackmarble_stair_corner_left does. That nearly became a design
+    /// decision (abandon vanilla corners, hand-fill every wedge) founded on a
+    /// spelling we had not found.
+    ///
+    /// Enumerating removes the guessing entirely: ask the game what it has
+    /// rather than asking whether it has the name we imagined.</summary>
+    private static void Enumerate(string term)
+    {
+        List<string> names = new();
+        foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
+        {
+            if (prefab != null && prefab.name.IndexOf(term, StringComparison.OrdinalIgnoreCase) >= 0)
+                names.Add(prefab.name);
+        }
+        names.Sort(StringComparer.Ordinal);
+        Log.LogInfo($"[PREFABS] all containing \"{term}\" ({names.Count}): {string.Join(", ", names)}");
     }
 }
