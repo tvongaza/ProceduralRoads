@@ -68,6 +68,56 @@ pass with 0 violations, while the Windows organic world RoadTestPC1
 fails with 3 (two slope, one dry-land). One world is a sample. Catching
 this class needs several seeds, not a different world type.
 
+## Creation-vs-reload hash divergence (2026-09-01, mechanism open)
+
+A world's CREATION load can produce a different road network than every
+subsequent RELOAD of the same world, with reload-to-reload byte-identical.
+Measured on the Windows station: RoadTestPC3 creation c9c3014e (81 routes,
+2146 planned pieces) against reload 49748415 (84 routes, 2949), verified
+twice. Crossings, fords and stair runs are identical across all loads --
+only which route attempts SUCCEED shifts. RoadTestPC1 did not diverge at
+all, so the triggering condition is unpinned.
+
+The NAS fixture shows the same shape in the other direction: the recorded
+baseline is 6d63bd64 / 83 routes, while a reload from a pristine restore
+gives f0d424fc / 81 routes, reproduced twice on a known commit. A code
+change is RULED OUT -- the only commits between the two measurements are
+d5f3ca3 (no mod source at all) and a363e83 (33 lines in ConsoleCommands,
+no generation path).
+
+Directions differ (+3 routes there, -2 here), which rules out a monotone
+mechanism but NOT a single one -- order-instability produces shifts in
+either direction depending on which marginal candidates consume the
+budget first.
+
+**A concrete mechanism exists in the code, though it is not yet proven to
+fire.** `GatherLocationData` builds `allLocations` by iterating
+`ZoneSystem.instance.GetLocationList()` with no sort applied. Everything
+downstream orders with LINQ `OrderByDescending` on location priority or
+island area -- and LINQ's ordering is STABLE, so locations sharing a
+priority tier (the common case) retain their INPUT order. If
+GetLocationList returns a different order on a freshly generated world
+than on one loaded from a save, that difference survives every sort and
+changes the sequence in which the per-island pathfinder budget and
+MaxLocationsPerIsland are consumed. Marginal routes then flip either way.
+
+Two follow-ups, in order of value:
+
+1. **Candidate fix, not just a diagnostic**: give the ordering an explicit
+   deterministic tiebreak -- e.g. `.ThenBy(position.x).ThenBy(position.z)`
+   or by prefab name -- so a tie can never inherit input order. If the
+   divergence disappears, the mechanism is confirmed and fixed in one
+   change. This is cheap and worth trying BEFORE instrumenting.
+2. **Discriminating experiment** (Windows station's design): log a digest
+   of the location list at generation time -- count plus an ordered
+   position hash -- and compare creation against reload. Digest differs
+   while the SET is identical means order; a differing set means
+   provenance, which the tiebreak above would not fix.
+
+Upstream-relevant: determinism claims in issue discussions assume
+load-invariance, and this is a counter-example with a reproducible
+witness.
+
 ## Next up (2026-09-01)
 
 - **Bridge & stair composition pass** (from first in-game screenshots):
