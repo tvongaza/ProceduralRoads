@@ -20,7 +20,38 @@ public static class RuinPlacement
     private static readonly HashSet<Vector2i> m_spawnedZones = new();
     private static readonly HashSet<string> m_warnedPrefabs = new();
 
+    /// <summary>ZDO marker identifying pieces this mod spawned, so debug
+    /// tooling can find and remove them (vanilla clients ignore unknown ZDO
+    /// vars, so the marker is crossplay-safe).</summary>
+    public static readonly int RuinMarkerHash = "pr_ruin".GetStableHashCode();
+
     public static IReadOnlyCollection<Vector2i> SpawnedZones => m_spawnedZones;
+
+    /// <summary>Forget which zones have spawned (their pieces should already
+    /// be destroyed) so plans can respawn from the current layout code.</summary>
+    public static void ClearSpawnedZones() => m_spawnedZones.Clear();
+
+    /// <summary>Recompute plans and spawn every planned zone immediately in
+    /// ghost mode (ZDOs only; ZNetScene instantiates the nearby ones on its
+    /// own). Debug workflow: iterate layout code against one fixture world
+    /// without recreating it or re-visiting zones.</summary>
+    public static int RespawnAllZones()
+    {
+        m_plansByZone = null; // recompute from the current road network
+        EnsurePlans();
+        if (m_plansByZone == null)
+            return 0;
+
+        int zones = 0;
+        foreach (Vector2i zone in new List<Vector2i>(m_plansByZone.Keys))
+        {
+            if (m_spawnedZones.Contains(zone))
+                continue;
+            SpawnRuinsInZone(zone, ZoneSystem.SpawnMode.Ghost);
+            zones++;
+        }
+        return zones;
+    }
 
     public static void Reset()
     {
@@ -129,6 +160,10 @@ public static class RuinPlacement
 
             Quaternion rotation = Quaternion.Euler(piece.PitchDegrees, piece.YawDegrees, piece.RollDegrees);
             GameObject go = Object.Instantiate(prefab, piece.Position, rotation);
+
+            ZNetView nview = go.GetComponent<ZNetView>();
+            if (nview != null && nview.GetZDO() != null)
+                nview.GetZDO().Set(RuinMarkerHash, 1);
 
             WearNTear wearNTear = go.GetComponent<WearNTear>();
             if (wearNTear != null && wearNTear.m_nview != null && wearNTear.m_nview.GetZDO() != null)

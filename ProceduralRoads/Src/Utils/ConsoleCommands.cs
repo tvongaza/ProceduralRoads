@@ -98,6 +98,50 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_ruins_reset",
+            "Destroy every mod-spawned ruin piece (pr_ruin ZDO marker) and respawn all planned zones from the current layout code. Fixture-world iteration: same world, same problem spots, fresh pieces per build.",
+            (args) =>
+            {
+                if (ZDOMan.instance == null || ZNetScene.instance == null)
+                {
+                    args.Context.AddString("ERROR: world not loaded");
+                    return;
+                }
+
+                List<ZDO> tagged = new();
+                foreach (var kv in ZDOMan.instance.m_objectsByID)
+                {
+                    if (kv.Value.GetInt(RuinPlacement.RuinMarkerHash) == 1)
+                        tagged.Add(kv.Value);
+                }
+
+                int destroyed = 0;
+                foreach (ZDO zdo in tagged)
+                {
+                    ZNetView instance = ZNetScene.instance.FindInstance(zdo);
+                    if (instance != null)
+                    {
+                        ZNetScene.instance.Destroy(instance.gameObject);
+                    }
+                    else
+                    {
+                        zdo.SetOwner(ZDOMan.GetSessionID());
+                        ZDOMan.instance.DestroyZDO(zdo);
+                    }
+                    destroyed++;
+                }
+
+                RuinPlacement.ClearSpawnedZones();
+                int zones = RuinPlacement.RespawnAllZones();
+                args.Context.AddString($"OK: destroyed {destroyed} tagged pieces, respawned {zones} zones from current plans");
+            },
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_snap_probe",
             "Dump snap points and collider bounds for a prefab (or the ruin kit prefabs when no arg): road_snap_probe [prefab]",
             (args) =>
