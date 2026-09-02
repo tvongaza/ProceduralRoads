@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Collections.Generic;
 using UnityEngine;
 using Xunit;
@@ -30,6 +31,31 @@ public class ValidatorTests
         Assert.Equal(1, report.RouteCount);
         Assert.True(report.FordCount >= 1, "Expected the validator to count the river ford");
         Assert.Equal(1, report.NetworkComponents);
+    }
+
+    [Fact]
+    public void WetPointsAreExemptOnlyInsideRecordedCrossings()
+    {
+        // NAS review (2026-09-02): a spurious crossing must not be able to
+        // hide its own underwater points. With crossing metadata, the
+        // exemption follows the recorded spans; the river core alone earns
+        // nothing.
+        var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
+        var path = new RoadPathfinder(world).FindPath(new Vector2(-300f, 0f), new Vector2(400f, 0f));
+        Assert.NotNull(path);
+        var route = RouteFromPath(world, 0, "Start -> FarSide", path!);
+        var recorded = RoadCrossingDetector.Detect(path!, world);
+        Assert.NotEmpty(recorded);
+
+        var withSpans = RoadNetworkValidator.Validate(new[] { route }, world, null, recorded);
+        Assert.DoesNotContain(withSpans.Violations, v => v.StartsWith("dry-land"));
+
+        var noSpans = RoadNetworkValidator.Validate(new[] { route }, world, null, new List<RoadCrossing>());
+        int wet = noSpans.Violations.Count(v => v.StartsWith("dry-land"));
+        Assert.True(wet > 0, "Wet route points outside any recorded crossing must be flagged");
+        // The total is reported even when the listed lines are capped.
+        if (wet > 12)
+            Assert.Contains(noSpans.Violations, v => v.Contains("wet points in total"));
     }
 
     [Fact]

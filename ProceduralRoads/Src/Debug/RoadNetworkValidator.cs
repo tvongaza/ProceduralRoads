@@ -33,7 +33,7 @@ public static class RoadNetworkValidator
     }
 
     public static Report Validate(IReadOnlyList<RoadRoute> routes, WorldGenerator world,
-        IReadOnlyList<StairRun>? stairRuns = null)
+        IReadOnlyList<StairRun>? stairRuns = null, IReadOnlyList<RoadCrossing>? crossings = null)
     {
         Report report = new();
         if (routes == null || world == null)
@@ -61,6 +61,28 @@ public static class RoadNetworkValidator
 
         uint hash = 2166136261;
         int dryLandViolations = 0, fordViolations = 0, slopeViolations = 0;
+        int dryLandTotal = 0;
+
+        // A wet point is legal only inside a RECORDED crossing span (a deck
+        // sits over water) — not merely inside river core, which would let a
+        // spurious crossing hide its own underwater points. Callers without
+        // crossing metadata fall back to the river-core rule.
+        bool InRecordedCrossing(RoadRoute route, Vector3 p)
+        {
+            if (crossings == null)
+                return false;
+            foreach (RoadCrossing c in crossings)
+            {
+                if (c.RouteIndex != route.Index)
+                    continue;
+                Vector2 rel = new(p.x - c.FromBank.x, p.z - c.FromBank.y);
+                float along = Vector2.Dot(rel, c.Direction);
+                float across = Mathf.Abs(rel.x * c.Direction.y - rel.y * c.Direction.x);
+                if (along >= -2f && along <= c.Width + 2f && across <= 6f)
+                    return true;
+            }
+            return false;
+        }
 
         foreach (RoadRoute route in routes)
         {
@@ -79,15 +101,21 @@ public static class RoadNetworkValidator
                 world.GetRiverWeight(p.x, p.z, out float riverWeight, out _);
                 bool inRiverCore = riverWeight > RoadConstants.RiverImpassableThreshold;
 
-                // Dry-land invariant: a wet point is legal only as part of a
-                // ford (river core) or as wadeable swamp shallows.
-                if (height < RoadConstants.ShallowWaterHeight - 0.25f && !inRiverCore)
+                // Dry-land invariant: a wet point is legal only inside a
+                // recorded crossing span (or, without crossing metadata, in
+                // river core) or as wadeable swamp shallows.
+                bool exempt = crossings != null ? InRecordedCrossing(route, p) : inRiverCore;
+                if (height < RoadConstants.ShallowWaterHeight - 0.25f && !exempt)
                 {
                     bool swampWade = world.GetBiome(p.x, p.z) == Heightmap.Biome.Swamp
                                      && height >= RoadConstants.DeepWaterHeight;
-                    if (!swampWade && dryLandViolations++ < MaxViolationsPerCheck)
-                        report.Violations.Add(
-                            $"dry-land: {route.Label} point {i} ({p.x:F0},{p.z:F0}) height {height:F1}");
+                    if (!swampWade)
+                    {
+                        dryLandTotal++;
+                        if (dryLandViolations++ < MaxViolationsPerCheck)
+                            report.Violations.Add(
+                                $"dry-land: {route.Label} point {i} ({p.x:F0},{p.z:F0}) height {height:F1}");
+                    }
                 }
 
                 // Crossing-length invariant: consecutive points over WATER
@@ -134,6 +162,10 @@ public static class RoadNetworkValidator
 
         report.PointsHash = hash.ToString("x8");
         report.NetworkComponents = CountComponents(routes);
+        // The listed lines are capped; the total is what the instrument measured.
+        if (dryLandTotal > MaxViolationsPerCheck)
+            report.Violations.Add($"dry-land: {dryLandTotal} wet points in total ({MaxViolationsPerCheck} listed)");
+
         return report;
     }
 

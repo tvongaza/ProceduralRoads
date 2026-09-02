@@ -38,7 +38,7 @@ public static class RoadValidationRunner
         var routes = RoadNetworkGenerator.GetRoadRoutes();
         System.DateTime validateStart = System.DateTime.Now;
         var report = RoadNetworkValidator.Validate(routes, WorldGenerator.instance,
-            RoadNetworkGenerator.GetStairRuns());
+            RoadNetworkGenerator.GetStairRuns(), RoadNetworkGenerator.GetRoadCrossings());
         Log.LogInfo(
             $"[TIMING] validator ms={(System.DateTime.Now - validateStart).TotalMilliseconds:F0} " +
             $"pathfinderIterations={RoadPathfinder.TotalIterations} terrainSamples={RoadPathfinder.TotalTerrainSamples}");
