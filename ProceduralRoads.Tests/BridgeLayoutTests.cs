@@ -38,10 +38,11 @@ public class BridgeLayoutTests
             Assert.Equal(a[i].HealthFraction, b[i].HealthFraction);
         }
 
-        // A different seed ruins differently.
+        // A different seed ruins differently: a short crossing can keep the
+        // same stations by chance, but the per-piece wear is seeded too.
         var c = BridgeLayout.Solve(crossing, world, 99999, BridgeStyle.MeadowsWood);
         Assert.True(c.Count != a.Count ||
-            c.Where((p, i) => p.Position != a[i].Position).Any(),
+            c.Where((p, i) => p.Position != a[i].Position || p.HealthFraction != a[i].HealthFraction).Any(),
             "Different seeds should produce different ruins");
     }
 

@@ -40,6 +40,11 @@ echo "== 3/6 selecting character '$CHAR' =="
 echo "== 4/6 starting local world '$WORLD' (generation runs self-test) =="
 "$CLI" cli_start_local_world "$WORLD"
 "$CLI" wait --for inworld --timeout 600s
+# Player safety FIRST: god + ghost (creatures ignore the player) and the
+# PassiveMobs world key (peaceful) — a validation character must never die.
+"$CLI" cli_set_player_safety true | tail -1
+"$CLI" devcommands | tail -1
+"$CLI" setkey PassiveMobs | tail -1
 
 echo "== 5/6 running road_selftest and saving world =="
 "$CLI" road_selftest

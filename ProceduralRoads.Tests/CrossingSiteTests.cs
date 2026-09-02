@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 using Xunit;
 
@@ -167,5 +168,163 @@ public class CrossingSiteTests
         Assert.Equal(14f, crossing.ToBank.x, 1);
         Assert.Equal(path[crossing.FromIndex], crossing.FromBank);
         Assert.Equal(path[crossing.ToIndex], crossing.ToBank);
+    }
+}
+
+/// <summary>
+/// Tys's wood-bridge feedback (2026-09-02): decks must span the WATER, not
+/// the dry approaches between the path's last dry cells and the shore
+/// (c4: 36 m crossing over a 15 m pond; c6: "bridge over land"; c0: deck
+/// running into the hillside); the painted road must reach the abutments
+/// (c0, c7: bridge to nowhere); knee-deep gullies get a road, not a bridge;
+/// and a land route beats a bridge whenever one exists.
+/// </summary>
+public class CrossingExtentTests
+{
+    /// <summary>Dry plateau at 33 for |x| ≥ 12, banks sloping to a channel
+    /// 26 deep at x = 0; the waterline (30) is crossed at |x| ≈ 6.9.</summary>
+    private sealed class ApproachWorld : WorldGenerator
+    {
+        public float Bed = 26f;
+        public override float GetHeight(float wx, float wy)
+        {
+            float ax = Mathf.Abs(wx);
+            if (ax >= 12f) return 33f;
+            return Mathf.Lerp(Bed, 33f, ax / 12f);
+        }
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / 8f); // core |x| < 4
+            width = weight > 0f ? 16f : 0f;
+        }
+    }
+
+    private static List<Vector2> StraightPath(float from, float to, float step)
+    {
+        var path = new List<Vector2>();
+        for (float x = from; x <= to + 0.01f; x += step)
+            path.Add(new Vector2(x, 0f));
+        return path;
+    }
+
+    [Fact]
+    public void CrossingSpansOnlyTheWater()
+    {
+        var world = new ApproachWorld();
+        // Path cells 8 m apart: dry points at ±16, the ford jumps between them.
+        var path = new List<Vector2> { new(-32f, 0f), new(-24f, 0f), new(-16f, 0f), new(16f, 0f), new(24f, 0f), new(32f, 0f) };
+
+        var crossing = Assert.Single(RoadCrossingDetector.Detect(path, world));
+
+        // Banks sit at the water's edge — the last point that can legally
+        // carry road (waterline + clearance) — not 7 m up the dry approach.
+        float minBank = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+        float fromH = world.GetHeight(crossing.FromBank.x, crossing.FromBank.y);
+        float toH = world.GetHeight(crossing.ToBank.x, crossing.ToBank.y);
+        Assert.InRange(fromH, minBank, minBank + 0.4f);
+        Assert.InRange(toH, minBank, minBank + 0.4f);
+        Assert.InRange(crossing.Width, 16f, 20f); // shores at |x| ≈ 9, not the dry cells at ±16
+
+        // The path indices still bracket the ford segment (painting resumes there).
+        Assert.Equal(2, crossing.FromIndex);
+        Assert.Equal(3, crossing.ToIndex);
+
+        // And the solver puts nothing on dry ground beyond the shores.
+        var plan = BridgeLayout.Solve(crossing, world, 7, BridgeStyle.MeadowsWood);
+        Assert.NotEmpty(plan);
+        foreach (var piece in plan)
+            Assert.True(Mathf.Abs(piece.Position.x) <= crossing.Width * 0.5f + 1.5f,
+                $"{piece.Kind} {piece.Prefab} at x={piece.Position.x:F1} is on the dry approach");
+    }
+
+    [Fact]
+    public void ShallowGullyIsAFordNotACrossing()
+    {
+        // Riverbed 29.5: knee-deep. A road (leveled ford) goes through; no
+        // bridge, no painting exclusion.
+        var world = new ApproachWorld { Bed = 29.5f };
+        var path = new List<Vector2> { new(-32f, 0f), new(-24f, 0f), new(-16f, 0f), new(16f, 0f), new(24f, 0f), new(32f, 0f) };
+
+        Assert.Empty(RoadCrossingDetector.Detect(path, world));
+        Assert.True(RoadConstants.FordWadeDepth > 0f && RoadConstants.FordWadeDepth <= 1.2f,
+            "Wadeable depth must stay below the sailable fairway depth (1.2 m)");
+    }
+
+    [Fact]
+    public void PaintedRoadReachesBothAbutments()
+    {
+        var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
+        WorldGenerator.instance = world;
+        RoadSpatialGrid.Clear();
+        typeof(RoadNetworkGenerator).GetMethod("Reset", BindingFlags.Public | BindingFlags.Static)!.Invoke(null, null);
+        typeof(RoadNetworkGenerator).GetField("m_pathfinder", BindingFlags.NonPublic | BindingFlags.Static)!
+            .SetValue(null, new RoadPathfinder(world));
+        try
+        {
+            Assert.True(RoadNetworkGenerator.GenerateRoad(
+                new Vector2(-300f, 0f), 0f, new Vector2(400f, 0f), 0f, 4f, "Cross river"));
+            var crossing = Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
+
+            // No bridge to nowhere: painted road within 3 m of each abutment
+            // (12 m was the old tolerance — a 12 m gap is the hillside at c0).
+            var stairRuns = RoadNetworkGenerator.GetStairRuns();
+            foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
+            {
+                bool road = RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(bank.x, 0, bank.y), 3f).Count > 0;
+                bool stairs = false;
+                foreach (var run in stairRuns)
+                    foreach (var rp in run.Points)
+                        if (Vector2.Distance(rp, bank) <= 3f) stairs = true;
+                Assert.True(road || stairs, $"Neither painted road nor stairs within 3 m of the abutment at {bank}");
+            }
+
+            // Still nothing painted in the channel.
+            RoadSpatialGrid.GetRoadWeight(crossing.FairwayCenter.x, crossing.FairwayCenter.y, out float wet, out _);
+            Assert.Equal(0f, wet);
+        }
+        finally
+        {
+            typeof(RoadNetworkGenerator).GetField("m_pathfinder", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, null);
+            RoadSpatialGrid.Clear();
+            WorldGenerator.instance = null;
+        }
+    }
+
+    /// <summary>River along x = 0 with a dry land bridge (no river, plateau
+    /// height) for y ∈ [60, 76]; bounded by deep water.</summary>
+    private sealed class GappedRiverWorld : WorldGenerator
+    {
+        private static bool InGap(float wy) => wy >= 60f && wy <= 76f;
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 200f || wy < -80f || wy > 200f) return 20f;
+            if (InGap(wy)) return 32f;
+            float ax = Mathf.Abs(wx);
+            return ax >= 6f ? 32f : Mathf.Lerp(26f, 32f, ax / 6f);
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+            GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = InGap(wy) ? 0f : Mathf.Clamp01(1f - Mathf.Abs(wx) / 10f);
+            width = weight > 0f ? 20f : 0f;
+        }
+    }
+
+    [Fact]
+    public void LandRouteBeatsBridgeWhenAGapExists()
+    {
+        // A* question (Tys, c4): the ford costs RiverCrossingPenalty on top of
+        // distance, so a dry gap 68 m off the straight line must win.
+        var world = new GappedRiverWorld();
+        var path = new RoadPathfinder(world).FindPath(new Vector2(-120f, 0f), new Vector2(120f, 0f));
+        Assert.NotNull(path);
+        for (int i = 1; i < path!.Count; i++)
+        {
+            Vector2 mid = (path[i - 1] + path[i]) * 0.5f;
+            world.GetRiverWeight(mid.x, mid.y, out float w, out _);
+            Assert.True(w <= RoadConstants.RiverImpassableThreshold,
+                $"Path fords the river at {mid} instead of using the land gap at y=60..76");
+        }
     }
 }

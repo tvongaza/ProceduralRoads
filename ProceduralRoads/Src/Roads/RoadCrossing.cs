@@ -93,7 +93,9 @@ public static class RoadCrossingDetector
                 int end = i - 1;
                 while (end < path.Count - 1 && !AboveWater(end))
                     end++;
-                crossings.Add(BuildCrossing(path, runStart, end, world));
+                RoadCrossing? crossing = BuildCrossing(path, runStart, end, world);
+                if (crossing != null)
+                    crossings.Add(crossing);
                 lastEnd = end;
                 runStart = -1;
                 if (end > i)
@@ -103,7 +105,11 @@ public static class RoadCrossingDetector
 
         // A path should never end inside a river, but guard anyway.
         if (runStart >= 0)
-            crossings.Add(BuildCrossing(path, runStart, path.Count - 1, world));
+        {
+            RoadCrossing? crossing = BuildCrossing(path, runStart, path.Count - 1, world);
+            if (crossing != null)
+                crossings.Add(crossing);
+        }
 
         return crossings;
     }
@@ -124,11 +130,27 @@ public static class RoadCrossingDetector
         return false;
     }
 
-    private static RoadCrossing BuildCrossing(List<Vector2> path, int fromIndex, int toIndex, WorldGenerator world)
+    /// <summary>
+    /// Builds the crossing between two dry path points, or returns null when
+    /// the channel is a knee-deep, unsailable gully that a leveled road can
+    /// simply go through (no bridge, no painting exclusion).
+    /// </summary>
+    private static RoadCrossing? BuildCrossing(List<Vector2> path, int fromIndex, int toIndex, WorldGenerator world)
     {
-        Vector2 from = path[fromIndex];
-        Vector2 to = path[toIndex];
+        Vector2 dryFrom = path[fromIndex];
+        Vector2 dryTo = path[toIndex];
+
+        // The deck spans the WATER, not the dry approaches: the path's last
+        // dry cells can sit 8-10 m up the bank (a 36 m "crossing" over a
+        // 15 m pond, decks running into hillsides). Each bank is the last
+        // point along the ford line that can legally carry road, so the
+        // painted road runs down the approach and stops at the abutment.
+        float minBank = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+        Vector2 from = Shore(dryFrom, dryTo, world, minBank);
+        Vector2 to = Shore(dryTo, dryFrom, world, minBank);
         float width = Vector2.Distance(from, to);
+        if (width < 0.5f)
+            return null;
 
         Vector2 direction = to - from;
         direction.Normalize();
@@ -180,6 +202,10 @@ public static class RoadCrossingDetector
             fairwayWidth = bestRunLength * step;
         }
 
+        // Knee-deep and unsailable: a road goes through as a leveled ford.
+        if (fairwayWidth <= 0f && riverbed >= RoadConstants.SeaLevel - RoadConstants.FordWadeDepth)
+            return null;
+
         Vector2 center = (from + to) * 0.5f;
 
         return new RoadCrossing
@@ -197,5 +223,33 @@ public static class RoadCrossingDetector
             FairwayWidth = fairwayWidth,
             Biome = world.GetBiome(center.x, center.y),
         };
+    }
+
+    /// <summary>Walks from a dry point toward the water and returns the last
+    /// point whose ground can legally carry road (>= minBank).</summary>
+    private static Vector2 Shore(Vector2 dry, Vector2 wet, WorldGenerator world, float minBank)
+    {
+        float length = Vector2.Distance(dry, wet);
+        if (length < 0.01f)
+            return dry;
+        Vector2 dir = (wet - dry).normalized;
+
+        Vector2 last = dry;
+        for (float d = 0.5f; d < length; d += 0.5f)
+        {
+            Vector2 p = dry + dir * d;
+            if (world.GetHeight(p.x, p.y) < minBank)
+            {
+                // A 1-2 m pothole on the approach is not the shore: keep
+                // walking if the ground recovers just beyond it.
+                Vector2 p1 = dry + dir * Mathf.Min(d + 1f, length);
+                Vector2 p2 = dry + dir * Mathf.Min(d + 2f, length);
+                if (world.GetHeight(p1.x, p1.y) < minBank && world.GetHeight(p2.x, p2.y) < minBank)
+                    break;
+                continue;
+            }
+            last = p;
+        }
+        return last;
     }
 }

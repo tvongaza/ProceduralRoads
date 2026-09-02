@@ -42,9 +42,13 @@ echo "== loading world (regeneration runs during load) =="
 "$CLI" cli_select_character RoadTester | tail -1
 "$CLI" cli_start_local_world "$WORLD" | tail -1
 "$CLI" wait --for localplayer --timeout 900s | tail -1
+# Player safety FIRST: god + ghost (creatures ignore the player) and the
+# PassiveMobs world key (peaceful) — a validation character must never die.
+"$CLI" cli_set_player_safety true | tail -1
+"$CLI" devcommands | tail -1
+"$CLI" setkey PassiveMobs | tail -1
 
 echo "== collecting spots =="
-"$CLI" cli_set_player_safety true | tail -1
 SPOTS_RAW=$("$CLI" road_spots 2>&1)
 echo "$SPOTS_RAW" | grep -E "CROSSING|STAIRS|total"
 

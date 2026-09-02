@@ -410,11 +410,35 @@ public static class RoadNetworkGenerator
         List<RoadCrossing> crossings = RoadCrossingDetector.Detect(path, WorldGenerator.instance);
         List<StairRun> stairRuns = StairRunDetector.Detect(path, WorldGenerator.instance);
 
-        List<(int from, int to)> exclusions = new();
+        // A stair run that ends at a crossing's dry point descends the rest of
+        // the way to the abutment at the water's edge, so stairs meet the deck
+        // the same way painted road does.
+        foreach (StairRun run in stairRuns)
+        {
+            foreach (RoadCrossing crossing in crossings)
+            {
+                if (run.ToIndex == crossing.FromIndex && Vector2.Distance(run.ToPos, crossing.FromBank) > 0.5f)
+                {
+                    run.Points.Add(crossing.FromBank);
+                    run.ToPos = crossing.FromBank;
+                }
+                if (run.FromIndex == crossing.ToIndex && Vector2.Distance(run.FromPos, crossing.ToBank) > 0.5f)
+                {
+                    run.Points.Insert(0, crossing.ToBank);
+                    run.FromPos = crossing.ToBank;
+                }
+            }
+        }
+
+        // Crossings carry their abutment points (the water's edge): the land
+        // segment before a crossing runs on to FromBank and the one after it
+        // starts at ToBank, so painted road meets the deck — no bridge to
+        // nowhere, no deck starting up a dry hillside.
+        List<(int from, int to, Vector2? lead, Vector2? resume)> exclusions = new();
         foreach (RoadCrossing crossing in crossings)
-            exclusions.Add((crossing.FromIndex, crossing.ToIndex));
+            exclusions.Add((crossing.FromIndex, crossing.ToIndex, crossing.FromBank, crossing.ToBank));
         foreach (StairRun stairRun in stairRuns)
-            exclusions.Add((stairRun.FromIndex, stairRun.ToIndex));
+            exclusions.Add((stairRun.FromIndex, stairRun.ToIndex, null, null));
         exclusions.Sort((x, y) => x.from.CompareTo(y.from));
 
         if (exclusions.Count == 0)
@@ -424,18 +448,27 @@ public static class RoadNetworkGenerator
         else
         {
             int cursor = 0;
-            foreach ((int from, int to) in exclusions)
+            Vector2? resumeAt = null;
+            foreach ((int from, int to, Vector2? lead, Vector2? resume) in exclusions)
             {
                 if (from > cursor)
                 {
                     List<Vector2> landSegment = path.GetRange(cursor, from - cursor + 1);
+                    if (resumeAt.HasValue && Vector2.Distance(resumeAt.Value, landSegment[0]) > 0.5f)
+                        landSegment.Insert(0, resumeAt.Value);
+                    if (lead.HasValue && Vector2.Distance(lead.Value, landSegment[landSegment.Count - 1]) > 0.5f)
+                        landSegment.Add(lead.Value);
                     if (landSegment.Count >= 2)
                         RoadSpatialGrid.AddRoadPath(landSegment, width, WorldGenerator.instance);
                 }
+                if (to >= cursor)
+                    resumeAt = resume;
                 cursor = Mathf.Max(cursor, to);
             }
 
             List<Vector2> tail = path.GetRange(cursor, path.Count - cursor);
+            if (resumeAt.HasValue && Vector2.Distance(resumeAt.Value, tail[0]) > 0.5f)
+                tail.Insert(0, resumeAt.Value);
             if (tail.Count >= 2)
                 RoadSpatialGrid.AddRoadPath(tail, width, WorldGenerator.instance);
         }

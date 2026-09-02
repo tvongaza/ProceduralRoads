@@ -48,6 +48,11 @@ public static class RoadConstants
     public const float MaxFordBankDelta = 4f;
     public const float FordBankDeltaPenalty = 1250f;
 
+    // A channel whose bed stays within FordWadeDepth of the waterline is
+    // knee-deep: the road goes through as a leveled ford (no bridge, no
+    // painting exclusion). Must stay below the sailable fairway depth.
+    public const float FordWadeDepth = 0.8f;
+
     // Road cross-section (see RoadProfile): flat core fully leveled and
     // solidly painted; paint fades out strictly inside the leveled footprint
     // so roads keep an unpainted, smoothed verge; leveling eases to natural

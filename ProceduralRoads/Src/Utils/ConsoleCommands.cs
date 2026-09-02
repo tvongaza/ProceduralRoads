@@ -436,7 +436,8 @@ public static class ConsoleCommands
             args.Context.AddString(
                 $"CROSSING {i} x={c.Center.x:F0} z={c.Center.y:F0} width={c.Width:F0} biome={c.Biome} " +
                 $"kit={(stone ? "stone" : "wood")} dir={c.Direction.x:F2},{c.Direction.y:F2} " +
-                $"fromY={fromY:F1} toY={toY:F1} dY={Mathf.Abs(fromY - toY):F1} water={c.WaterLevel:F1}");
+                $"fromY={fromY:F1} toY={toY:F1} dY={Mathf.Abs(fromY - toY):F1} water={c.WaterLevel:F1} " +
+                $"bed={c.RiverbedHeight:F1} fairway={c.FairwayWidth:F0}");
         }
 
         var runs = new List<StairRun>(RoadNetworkGenerator.GetStairRuns());
