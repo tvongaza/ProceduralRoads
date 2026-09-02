@@ -25,6 +25,105 @@
   paths, schedules, MACs) stay in gitignored files (scripts/.nas.env
   pattern) — never in tracked files of this public fork.
 
+## 2026-09-02 round 2: bridges as a last resort, one waterline floor, honest crossing measure (df5ae66)
+
+NAS review of 9dd8f2f (validator cap relaxed) asked the right question:
+were all suppressed ford-length lines wide bridges? Checked against the
+99cdf54 selftest + routes CSV + road_spots: **4 of 9 were** (crossings 0
+and 2, 81/94 m, fairways 48/39). **5 were not**: 70–106 m jumps across
+river-core bands that are mostly dry valley (10–41 m of water). Not road
+defects (the road is on dry land) but two real findings:
+1. the validator measured river CORE, not water → now measures
+   consecutive points over water (< 31.25), label "spans N m of water",
+   cap 128 m. Violation counts are not comparable across 9dd8f2f/df5ae66.
+2. a 20000 bridge penalty ≈ 160 m of rough terrain in this cost model: not
+   a last resort. Tys: a bridge must be far more expensive than going
+   around. Now 50000 + 400/m (`BridgeIsALastResortEvenWhenTheDetourIsRough`:
+   a 600 m rough detour beats a 96 m bridge; an island-splitting river is
+   still bridged).
+
+Endpoint pattern (NAS): three reports of route ends below the waterline
+were one cause — `IsPathablePoint` used the 30.5 shallow line while banks
+and road points use 31.25. Same floor everywhere now
+(`RouteEndpointsUseTheWaterlineFloor`). The Bonemass → GoblinKing case was
+different: the route jumped a 111 m river (crossing 3) and jumped back
+87 m forty metres later (crossing 4) with 57 points under water between —
+a double crossing the last-resort cost should remove.
+
+Live (RoadTestMac1 @ 99cdf54, unread by Claude except c16 top-down): the
+cobbled road now runs to an abutment plate at each water's edge and the
+deck spans water only — the c0/c7 defect is gone. But the 52 m wood span
+at c16 keeps only a stub or two per side after ruin + the 20 m gap: reads
+as two jetties, not a collapsed bridge. **Style question for Tys: long
+spans need a survival rule that keeps piers marching (piers outlive deck)
+rather than per-station coin flips.** Shots delivered for verdicts.
+
+Tys's ruling on artifacts: screenshots stay out of GitHub and off the NAS —
+they are DERIVED (fixture + DLL commit + camera = regenerable); the world
+states (~1 MB) and written findings are what to keep. Consequence: the pc
+README cites 18 JPEGs that no longer exist; rewrite it as findings-only
+(pointer to this file) at the docs/validation-gap merge.
+
+### Instrument work forced by the NAS review (dcb4fbd, a83ed1c, c980a8e)
+
+- **Blind spot (rev 4, a83ed1c):** the dry-land exemption was "in river
+  core", so any crossing (spurious or not) hid its own underwater points;
+  and the 12-line cap had no total, so historical counts at 12 are floors.
+  Now: exempt only inside a recorded crossing span of the route; totals
+  emitted for every capped class (dcb4fbd).
+- **Two-load control:** df5ae66 network scored twice, hash 95020c0c both
+  times. rev 3: dry-land 12 (cap). rev 4: 9 true. The 9 = 7 knee-deep ford
+  points (by design) + 2 at a route START in water.
+- **Route start in water** = TrimPathToRadii's interpolated radius-edge
+  point. Fixed in c980a8e (`TrimmedRouteEndsObeyTheWaterlineFloor`); with
+  the IsPathablePoint floor this closes the endpoint class.
+- **rev 5 (c980a8e, direction down):** knee-deep terrain (≥ waterline −
+  0.8) is a leveled ford, not a road in water; FordCount counts runs ≥ one
+  cell (df5ae66 had inflated it to 173). Every validator change now
+  records the direction it can move counts (NAS standing instruction).
+- **df5ae66 network:** 98 routes, 69 components, 17 crossings (the
+  Bonemass → GoblinKing double crossing is gone), six wide bridges
+  (63/63/82/80/92/121 m). Cost change worked as intended.
+
+Still open after this round: crossing 14 (BlackForest wood, 43 m) has a
+6.2 m bank delta at the SHORES (from 37.5) although the cell delta passed —
+a cliff bank; needs a shore-delta check or scenario. Crossing 1 (Swamp
+wade route, 7.9 m delta) unchanged. Crossing 8 fromY 30.2 (old c6 site)
+still below the floor — re-check after c980a8e.
+
+### Where the branch settled (c980a8e) and what the ford check found
+
+RoadTestMac1 regenerated at c980a8e: **hash e8ae009d**, 98 routes, 78
+components, 16 crossings, 363 stair runs, 3936 pieces planned, violations:
+the one standing slope point. Backed up under
+`validation-results/worlds/RoadTestMac1-regen-c980a8e/`. This is the Mac
+baseline; the causing change is the range a63f6fb..c980a8e (tip c980a8e).
+Components rose 69 → 78: dropping wet route ends can disconnect a route
+that used to end in the water (harbour-type locations). Open: decide
+whether such routes should end at the last dry point (current) or be
+dropped. fordCount now means "water runs ≥ one cell" (119 here);
+comparable only from c980a8e on.
+
+**NAS reservation on rev 5, checked live** (stand on the point, read the
+ground): at (−4590,−1448), a zone generated after the road existed,
+leveling raised the ground 29.6 → 30.8 — above the water (30.0) but below
+the 31.25 clearance: a dry, marginal ford. At (404,571) the ground is
+still raw 29.2: that zone was generated on an earlier visit and **terrain
+edits do not refresh when the network regenerates** — the old crossing's
+zone never received the new ford's leveling. Two consequences:
+1. rev 5's assumption holds only on fresh zones; the validator should
+   check the ROAD height above water for knee-deep fords rather than
+   assume leveling (rev 6, tightening).
+2. **World-reuse caveat (time economy):** a reused world is fine for
+   routes, crossings and ruins (`road_ruins_reset`), but terrain leveling
+   and paint in previously visited zones are stale after a regeneration.
+   Terrain verdicts need a fresh world or unvisited zones.
+Also observed: the road spline through a knee-deep ford sits at
+30.55–30.8, i.e. the ford deck is only 0.6–0.8 m above the water. Tys to
+judge whether a ford should be raised to bank height (embankment) or stay
+low (wet-footed ford).
+
+
 ## 2026-09-02 wood-bridge feedback round 1 + wide sailable rivers (pc/snap-point-composition 6f1dc31..9dd8f2f)
 
 Tys's feedback on the RoadTestMac1 wood sites, and what each became:
