@@ -104,7 +104,10 @@ public static class RoadNetworkValidator
                 // Dry-land invariant: a wet point is legal only inside a
                 // recorded crossing span (or, without crossing metadata, in
                 // river core) or as wadeable swamp shallows.
-                bool exempt = crossings != null ? InRecordedCrossing(route, p) : inRiverCore;
+                // Knee-deep water (bed within FordWadeDepth of the waterline) is a
+                // leveled ford by design (6f1dc31): the road goes through it.
+                bool kneeDeepFord = height >= RoadConstants.SeaLevel - RoadConstants.FordWadeDepth;
+                bool exempt = kneeDeepFord || (crossings != null ? InRecordedCrossing(route, p) : inRiverCore);
                 if (height < RoadConstants.ShallowWaterHeight - 0.25f && !exempt)
                 {
                     bool swampWade = world.GetBiome(p.x, p.z) == Heightmap.Biome.Swamp
@@ -130,9 +133,11 @@ public static class RoadNetworkValidator
                 }
                 else if (fordRunStart >= 0)
                 {
-                    report.FordCount++;
                     int startIdx = fordRunStart > 0 ? fordRunStart - 1 : fordRunStart;
                     float span = Vector3.Distance(route.Points[startIdx], route.Points[i]);
+                    // A crossing is at least a cell of water; shorter runs are dips.
+                    if (span >= RoadPathfinder.CellSize)
+                        report.FordCount++;
                     if (span > FordLengthCap + 16f)
                         fordTotal++;
                     if (span > FordLengthCap + 16f && fordViolations++ < MaxViolationsPerCheck)

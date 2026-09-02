@@ -1141,6 +1141,17 @@ public static class RoadNetworkGenerator
             trimmedPath.Add(edgePoint);
         }
 
+        // The radius-edge point is interpolated on the location's circle and can
+        // land in water; endpoints obey the same floor as banks and road points.
+        if (WorldGenerator.instance != null)
+        {
+            float floor = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+            while (trimmedPath.Count > 2 && WorldGenerator.instance.GetHeight(trimmedPath[0].x, trimmedPath[0].y) < floor)
+                trimmedPath.RemoveAt(0);
+            while (trimmedPath.Count > 2 && WorldGenerator.instance.GetHeight(trimmedPath[trimmedPath.Count - 1].x, trimmedPath[trimmedPath.Count - 1].y) < floor)
+                trimmedPath.RemoveAt(trimmedPath.Count - 1);
+        }
+
         return trimmedPath.Count >= 2 ? trimmedPath : null;
     }
 

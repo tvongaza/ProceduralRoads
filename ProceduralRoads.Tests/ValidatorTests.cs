@@ -58,6 +58,60 @@ public class ValidatorTests
             Assert.Contains(noSpans.Violations, v => v.Contains("wet points in total"));
     }
 
+    private sealed class KneeDeepDipWorld : WorldGenerator
+    {
+        public float Bed = 29.5f;
+        public override float GetHeight(float wx, float wy) => Mathf.Abs(wx) < 6f ? Bed : 33f;
+    }
+
+    [Fact]
+    public void KneeDeepFordsAreNotDryLandViolations()
+    {
+        // The road is leveled through a knee-deep gully by design; the raw
+        // terrain under it is wet but it is not a road in the water.
+        var world = new KneeDeepDipWorld();
+        var waypoints = new List<Vector2>();
+        for (float x = -40f; x <= 40f; x += 4f) waypoints.Add(new Vector2(x, 0f));
+        var route = RoadRoute.FromWaypoints(0, "A -> B", 4f, waypoints, world);
+
+        var report = RoadNetworkValidator.Validate(new[] { route }, world, null, new List<RoadCrossing>());
+        Assert.DoesNotContain(report.Violations, v => v.StartsWith("dry-land"));
+
+        // Deeper than knee-deep, outside any recorded crossing: still flagged.
+        var deep = new KneeDeepDipWorld { Bed = 28.5f };
+        var deepRoute = RoadRoute.FromWaypoints(0, "A -> B", 4f, waypoints, deep);
+        var deepReport = RoadNetworkValidator.Validate(new[] { deepRoute }, deep, null, new List<RoadCrossing>());
+        Assert.Contains(deepReport.Violations, v => v.StartsWith("dry-land"));
+    }
+
+    private sealed class WetShelfWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy) => wx < -20f ? 29.9f : 33f;
+    }
+
+    [Fact]
+    public void TrimmedRouteEndsObeyTheWaterlineFloor()
+    {
+        // The radius-edge point interpolated on the location circle used to
+        // be accepted even when it sat in water (route starts at 29.9).
+        var trim = typeof(RoadNetworkGenerator).GetMethod("TrimPathToRadii",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        var world = new WetShelfWorld();
+        WorldGenerator.instance = world;
+        try
+        {
+            var path = new List<Vector2>();
+            for (float x = -40f; x <= 40f; x += 4f) path.Add(new Vector2(x, 0f));
+            var trimmed = (List<Vector2>?)trim.Invoke(null, new object[] { path, new Vector2(-60f, 0f), 30f, new Vector2(60f, 0f), 10f });
+            Assert.NotNull(trimmed);
+            float floor = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+            Assert.True(world.GetHeight(trimmed![0].x, trimmed[0].y) >= floor,
+                $"Trimmed route starts in water at {trimmed[0]}");
+            Assert.True(trimmed[0].x >= -20f && trimmed[0].x <= -16f, $"Start moved too far: {trimmed[0]}");
+        }
+        finally { WorldGenerator.instance = null; }
+    }
+
     [Fact]
     public void RouteThroughOceanIsFlagged()
     {
