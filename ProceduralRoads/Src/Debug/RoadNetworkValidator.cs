@@ -12,7 +12,10 @@ namespace ProceduralRoads;
 /// </summary>
 public static class RoadNetworkValidator
 {
-    public const float FordLengthCap = RoadConstants.MaxRiverCrossingCells * RoadConstants.PathfindingCellSize;
+    // Crossings may be fords (<= MaxRiverCrossingCells) or, over wide sailable
+    // rivers, bridges (<= MaxBridgeCrossingCells); anything longer is a route
+    // that wandered through river core on ordinary moves.
+    private static readonly float FordLengthCap = RoadConstants.MaxBridgeCrossingCells * RoadPathfinder.CellSize;
     public const float SlopeSanityCap = 1.5f;
     public const float EndpointJoinRadius = 24f;
     private const int MaxViolationsPerCheck = 12;
@@ -101,7 +104,7 @@ public static class RoadNetworkValidator
                     float span = Vector3.Distance(route.Points[startIdx], route.Points[i]);
                     if (span > FordLengthCap + 16f && fordViolations++ < MaxViolationsPerCheck)
                         report.Violations.Add(
-                            $"ford-length: {route.Label} spans {span:F0}m across river core (cap {FordLengthCap:F0}m)");
+                            $"crossing-length: {route.Label} spans {span:F0}m across river core (cap {FordLengthCap:F0}m)");
                     fordRunStart = -1;
                 }
 
