@@ -93,8 +93,11 @@ still below the floor — re-check after c980a8e.
 
 ### NAS gate on f42428d (RoadTestAuto1): PASS, hash moved, one reading that matters
 
-82/82. pointsHash f0d424fc → **87b4ba7e** (second run in flight; recorded
-only when reproduced), routes 81 → 87, components 54 → 69, crossings 3,
+82/82. pointsHash f0d424fc → **87b4ba7e** (REPRODUCED on two consecutive
+runs from a byte-identical restore; recorded as the RoadTestAuto1 baseline
+with the range a63f6fb..c980a8e in its measured field, validator rev 5,
+fordCount era 3; the superseded f0d424fc entry is kept because the
+unresolved 6d63bd64 mystery hangs on it), routes 81 → 87, components 54 → 69, crossings 3,
 fords 61 (era 3), pieces 2256 → 2660 across 210 zones, planned == spawned,
 violations 1 → 0.
 
