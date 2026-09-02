@@ -142,6 +142,16 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_clear_view",
+            "SCREENSHOT WORLDS ONLY (DebugValidation): destroy vegetation and rock objects (trees, logs, bushes, rocks) around a point so built geometry can be photographed: road_clear_view <x> <z> [radius=40]. Never touches pr_ruin pieces, player builds, or location pieces; mutates world ZDOs, so never run it on a gate/baseline world.",
+            (args) => ClearView(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_snap_probe",
             "Dump snap points and collider bounds for a prefab (or the ruin kit prefabs when no arg): road_snap_probe [prefab]",
             (args) =>
@@ -417,8 +427,16 @@ public static class ConsoleCommands
         for (int i = 0; i < crossings.Count; i++)
         {
             var c = crossings[i];
+            // Direction and bank heights: side-profile camera azimuth is the
+            // crossing direction +-90 deg, and the bank delta is the crossing-site
+            // selection signal (a badly mismatched pair should not be bridged).
+            float fromY = WorldGenerator.instance != null ? WorldGenerator.instance.GetHeight(c.FromBank.x, c.FromBank.y) : 0f;
+            float toY = WorldGenerator.instance != null ? WorldGenerator.instance.GetHeight(c.ToBank.x, c.ToBank.y) : 0f;
+            bool stone = c.Biome is Heightmap.Biome.Mountain or Heightmap.Biome.Plains or Heightmap.Biome.Mistlands;
             args.Context.AddString(
-                $"CROSSING {i} x={c.Center.x:F0} z={c.Center.y:F0} width={c.Width:F0} biome={c.Biome}");
+                $"CROSSING {i} x={c.Center.x:F0} z={c.Center.y:F0} width={c.Width:F0} biome={c.Biome} " +
+                $"kit={(stone ? "stone" : "wood")} dir={c.Direction.x:F2},{c.Direction.y:F2} " +
+                $"fromY={fromY:F1} toY={toY:F1} dY={Mathf.Abs(fromY - toY):F1} water={c.WaterLevel:F1}");
         }
 
         var runs = new List<StairRun>(RoadNetworkGenerator.GetStairRuns());
@@ -432,6 +450,87 @@ public static class ConsoleCommands
         }
 
         args.Context.AddString($"total: {crossings.Count} crossings, {runs.Count} stair runs");
+    }
+
+    /// <summary>
+    /// Photography helper: remove vegetation and rock clutter around a point.
+    /// Debug-gated because it mutates world ZDOs. Anything with a Piece
+    /// component is left alone (player builds, ruins, location structures),
+    /// as is every pr_ruin-tagged piece the mod spawned.
+    /// </summary>
+    private static void ClearView(Terminal.ConsoleEventArgs args)
+    {
+        if (!ProceduralRoadsPlugin.DebugValidation.Value)
+        {
+            args.Context.AddString("ERROR: road_clear_view is debug-gated (DebugValidation = true) — screenshot worlds only, it mutates world ZDOs");
+            return;
+        }
+
+        if (args.Length < 3 ||
+            !float.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float x) ||
+            !float.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float z))
+        {
+            args.Context.AddString("Usage: road_clear_view <x> <z> [radius=40]");
+            return;
+        }
+
+        float radius = 40f;
+        if (args.Length >= 4)
+            float.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out radius);
+        radius = Mathf.Clamp(radius, 1f, 120f);
+
+        if (ZNetScene.instance == null)
+        {
+            args.Context.AddString("ERROR: world not loaded");
+            return;
+        }
+
+        List<ZNetView> victims = new();
+        Dictionary<string, int> byKind = new();
+        float radiusSq = radius * radius;
+        foreach (ZNetView view in ZNetScene.instance.m_instances.Values)
+        {
+            if (view == null || !view.IsValid())
+                continue;
+
+            Vector3 p = view.transform.position;
+            float dx = p.x - x;
+            float dz = p.z - z;
+            if (dx * dx + dz * dz > radiusSq)
+                continue;
+
+            ZDO zdo = view.GetZDO();
+            if (zdo == null || zdo.GetInt(RuinPlacement.RuinMarkerHash) == 1)
+                continue;
+
+            GameObject go = view.gameObject;
+            if (go.GetComponent<Piece>() != null || go.GetComponent<Character>() != null ||
+                go.GetComponent<ItemDrop>() != null || go.GetComponent<LocationProxy>() != null)
+                continue;
+
+            string? kind = null;
+            if (go.GetComponent<TreeBase>() != null) kind = "tree";
+            else if (go.GetComponent<TreeLog>() != null) kind = "log";
+            else if (go.GetComponent<MineRock5>() != null || go.GetComponent<MineRock>() != null) kind = "rock";
+            else if (go.GetComponent<Destructible>() != null) kind = "destructible"; // bushes, small rocks, stumps, roots
+            if (kind == null)
+                continue;
+
+            victims.Add(view);
+            byKind.TryGetValue(kind, out int count);
+            byKind[kind] = count + 1;
+        }
+
+        foreach (ZNetView view in victims)
+        {
+            if (view != null && view.IsValid())
+                ZNetScene.instance.Destroy(view.gameObject);
+        }
+
+        StringBuilder summary = new();
+        foreach (var kv in byKind)
+            summary.Append($" {kv.Key}={kv.Value}");
+        args.Context.AddString($"OK: cleared {victims.Count} objects within {radius:F0}m of ({x:F0},{z:F0}):{summary}");
     }
 
     private static void RunSelfTest(Terminal.ConsoleEventArgs args)
