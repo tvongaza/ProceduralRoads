@@ -44,10 +44,12 @@ gated 93cc14c6 on the fixture). Nothing below is started.
    Harness: (0,1,0) makes every ford Raise; defaults keep the variety test.
    *Interpretation to confirm:* Tys's "1/3 each chance" is read as the
    style mix; the ford SURFACE rule (low ford, current) is unchanged.
-3. **Routes that ended in water → B: re-route to a dry terminus.** After
-   the trim floor drops wet end points, search the location's radius
-   circle for the nearest dry point (≥ 31.25) and end there, so the road
-   reaches the location; the count fix ships with it: the validator's
+3. **Routes that ended in water → config lever, default B (re-route).**
+   Setting (e.g. Roads/WetTerminus = Trim | Reroute | Drop): Trim = end at
+   the last dry point (today), Reroute = search the location's radius
+   circle for the nearest dry point (≥ 31.25) and end there so the road
+   reaches the location, Drop = no route to a location whose approach is
+   wet. Default Reroute. The count fix ships regardless of the setting: the validator's
    components join routes by shared location NAME from the label as well
    as by endpoint proximity, so two dry ends on one circle are one
    network. Harness: wet north half of a circle → terminus lands on the
