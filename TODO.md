@@ -25,6 +25,276 @@
   paths, schedules, MACs) stay in gitignored files (scripts/.nas.env
   pattern) — never in tracked files of this public fork.
 
+## 2026-09-02 pass (Mac cockpit): 659fb63 merged, 2f04fca gated + seen, crossing-site selection landed
+
+State after this pass:
+- `integration/upstream-prs` = 659fb63 (fast-forward, gated tree) + ae2627b
+  (`scripts/redo-shots.sh`). Pushed. Harness 62/62 both runtimes. No
+  re-gate requested (same tree the NAS gated as f0d3cf7).
+- `pc/snap-point-composition` = 2f04fca + 2e81447 (`road_clear_view`,
+  richer `road_spots`) + a63f6fb (crossing-site selection). Pushed.
+  Harness 67/67 both runtimes.
+- valheimCLI: `cli_freefly_pose` committed locally only (b897179), no fork.
+- **Scope decision (Tys, 2026-09-02): wooden bridges first.** Iterate the
+  MeadowsWood kit to "reads well" with Tys's style feedback between
+  rounds; stone kit and arches parked, findings below. Crossing-site
+  selection stayed in because it is kit-independent and a wood site (c6)
+  showed the defect.
+- **Time economy (Tys, 2026-09-02):** every in-game step must be cheap.
+  RoadTestMac1 is backed up post-generation (untracked) and
+  `ForceRegenerate = false` is set, so later sessions RELOAD it (crossings
+  and stair runs persist) and use `road_ruins_reset` for layout iteration;
+  regenerate only when the network itself changes (the next live run must,
+  because a63f6fb moves routes). Capture: 3 fixed shots per site, ~25 s
+  per site, soak overlapped with image reading, reads capped at 15.
+
+## 2f04fca gate (NAS, 2026-09-02) — PASS, weak arch coverage
+
+Requested from the Mac, run by the NAS against the fixture world restored
+from the pristine master (build `gate/2f04fca`, 0 warnings):
+
+- Harness 63/63 (net10.0), +1 vs 62/62 at f0d3cf7 = the SnapChainTests
+  arch test.
+- pointsHash `f0d424fc` UNCHANGED (routes 81, points 5948, components 54,
+  fords 2). Arches touch assemblies, not geometry — confirmed.
+- Pieces 2254 → 2256 (+2) across 178 zones (zone count unchanged).
+  Ruins check PASS: planned 2256 == spawned 2256, per zone and aggregate.
+  Existence only, NOT survival.
+- `stone_arch` resolves (in the mod's `[PREFABS] found` list); zero
+  prefab-not-found warnings.
+- Known violation unchanged (dry-land MountainCave02 →
+  Mistlands_DvergrTownEntrance2, point 103, 29.9 vs 30.25) → passed:false
+  for that alone.
+- Bookkeeping closed on the NAS side (homelab 5f01118): baselines now
+  record piece count with provenance (2254 @ f0d3cf7, 2256 @ 2f04fca) and
+  the coverage caveat, so both verification axes are machine-checkable.
+
+**Caveat:** the fixture yields TWO arches, so the gate exercises the arch
+path twice. It proves the path runs and the prefab resolves; it does not
+cover varied bank geometries or the near-ford guard. Visual verification on
+the Mac carries the arch-correctness claim, not this run.
+
+## 2f04fca visual verification — Mac, RoadTestMac1 (2026-09-02)
+
+World: RoadTestMac1 (fresh, creation hash d49047f1; 92 routes, 9 crossings,
+292 stair runs, 2745 pieces planned; 1 slope violation Crypt4 →
+MountainCave02 point 314 grade 1.93). This world's own baseline — never
+compare its numbers with RoadTestAuto1's. Backed up post-generation under
+`validation-results/worlds/RoadTestMac1-postgen-2f04fca/` (untracked) so
+later sessions RELOAD it with ForceRegenerate=false instead of regenerating
+(crossings and stair runs persist on the metadata ZDO).
+
+Coverage caveat, same shape as the NAS's: this world has ONE stone-kit
+crossing (crossing 3, Plains), so the arch path ran once here and twice on
+the NAS fixture. Two worlds, three arch instances. Not broad coverage.
+
+Sites (3 of 9 crossings; 13 of the 15-image budget read):
+
+| site | kit | width | banks (from/to) | dY | verdict |
+|---|---|---|---|---|---|
+| c0 Meadows (476,628) | wood | 34 | 37.1 / 36.4 | 0.6 | GOOD — coherent trestle |
+| c6 BlackForest (6292,5201) | wood | 16 | 29.0 / 34.4 | 5.3 | UNREAD (framing); 26 pieces stand; from-bank below water |
+| c3 Plains (-6592,-3560) | stone | 16 | 29.4 / 33.6 | 4.3 | ARCH UNREADABLE; from-bank below water; soak 15/15 |
+
+Checklist, c0 (wood, the control): deck grades bank-to-bank down from the
+rocky bank on paired posts — PASS; no stilt tower — PASS; fairway clear
+(collapsed span is over the channel, far-bank posts stand alone) — PASS;
+seams closed at this distance — PASS; ruin reads intentional — PASS; no
+floating pieces under raking light — PASS. The snap-chain composition
+(659fb63) holds up on a level, wide wood crossing.
+
+Checklist, c3 (stone, the arch site): census within 30 m — 8 stone_wall_2x1,
+3 stone_floor_2x2, 2 stone_stair, 1 stone_wall_1x1, **1 stone_arch at
+(-6592, 33.0, -3567)** = the tall (to) bank, y exactly bankGround 33.6 −
+0.1 − 0.5. The low bank (29.4 < water + 0.8) correctly emitted no arch:
+the near-ford guard fired. Existence and placement math: PASS.
+- Springs from abutment top — **FAIL as a read**: the arch is embedded to
+  0.1 m below grade by design, so in-game it is a ~1 m dark lump beside the
+  abutment slab, hidden by Plains grass and a cloudberry bush. Nothing
+  reads as an arch, let alone a broken arch bridge.
+- Geometry matches span / no clipping — cannot judge; nothing visible to clip.
+- Deck grades — the "deck" here is pier stubs (stone_wall_2x1 at 28.8–31.9)
+  rising from a stream 16 m wide with one bank under water; no deck to grade.
+- Fairway clear — N/A (stream too shallow to carry a fairway).
+- Ruin state — reads as scattered blocks, not a collapsed bridge.
+
+Interpretation (directive 1): c3 and c6 both have a bank point BELOW water
+level (29.4 and 29.0 vs 30.0) and 4–5 m bank deltas. These are
+crossing-site defects, not composition defects: the detector accepted a
+"bank" that is in the water, so the low abutment sits in the stream and the
+deck grades from water level up the far bank. Do not polish arches at these
+sites. Recorded for the harness-first fix: bank-height delta 4.3 / 5.3,
+low bank −0.6 / −1.0 relative to water.
+
+Composition notes for the next arch iteration (independent of site fix):
+1. A single 2 m stone_arch sunk to grade cannot read at bridge scale. The
+   arch must spring from the abutment/pier TOP and rise above the deck
+   line: seat it on the abutment slab (or the first pier column), tapered
+   end outward and UP, and chain 2–3 arches for spans ≥ 12 m. Grounding
+   should come from the pier stack below it, not from burial.
+2. Harness assertion to add alongside: "exposed fraction" — the arch's top
+   edge must sit ≥ 1.0 m above the bank surface at the tip position
+   (readability), not just at-or-below grade at the face (grounding).
+3. Rather than a maximum, the existing wood trestle grammar (c0) is the
+   reference for what "reads": pieces stacked on each other from ground up.
+
+c6 correction: the three shots showed a pool and two posts, but the census
+(30 m) lists 15 wood_pole2, 5 wood_beam, 4 wood_floor, 3 wood_stair — a
+trestle climbing from 27.3 to 34.2 inside a sunken gully. The camera at
+mean-bank + 6 m looked OVER the gully rim; the structure was below the line
+of sight. Framing lesson (in the script now): sunken sites need the look-at
+point at the LOW bank + 2 m and a standoff scaled to the crossing width.
+c6's composition is therefore unverified, not failed. Site verdict stands.
+
+**Decay soak (c3, stone, the only arch site):** player within 10 m for
+8.7 min loaded (12:49 → 12:58). Census t0 == t8, position-level identical:
+8 stone_wall_2x1, 3 stone_floor_2x2, 2 stone_stair, 1 stone_wall_1x1,
+1 stone_arch. **Survival 15/15** for the stone kit incl. the buried arch —
+the first live survival claim for stone. (Wood survival at c6: 26 pieces
+standing ~12 min after first spawn; planned-count for the zone was 27+2+1,
+so at most one piece is unaccounted for and it may simply be outside the
+30 m census sphere. Not a clean claim — record as "no observed collapse".)
+
+## Harness-first work from this pass (branch pc/snap-point-composition)
+
+Landed (commit "crossing-site selection", 67/67 net10.0 + net48):
+- Ford acceptance refuses bank deltas > 4 m (`MaxFordBankDelta`) and
+  charges `FordBankDeltaPenalty` (1250/m²) on accepted fords, so the search
+  seeks near-level banks. `CrossingSiteTests.FordSeeksLevelBanks…` is the
+  directive-1 scenario: stepped-bank river, level crossing only 150 m
+  south of the straight line — the route detours there.
+- `RoadCrossingDetector` records banks as the first path points ≥ 31.25
+  (waterline + clearance), fixing the abutment-in-the-water defect
+  (`CrossingBanksStandAboveTheWaterline`).
+- **pointsHash WILL change** on every world at this commit (routes move).
+  Re-baseline + record the commit in each world's `measured` field (NAS
+  `_expected_hash_changes`). Keep the axes straight: this moves the hash
+  with pieces following routes; the arch commit moved pieces only.
+- NOT yet verified live (needs regeneration; batched into the next live
+  run with the questions below). Deploy at the next session start.
+
+Also landed: `road_clear_view <x> <z> [r]` (debug-gated vegetation/rock
+clearing for photography) and `road_spots` now prints kit, direction, both
+bank heights and their delta — the delta is the site-selection signal.
+valheimCLI gained `cli_freefly_pose` (local commit, no fork).
+
+Questions only the next live run can answer (arrive with the list):
+1. Does the RoadTestMac1 network still reach the same islands after fords
+   with > 4 m deltas are refused, or do routes drop out? (route count vs 92)
+2. Where does crossing 6's route cross now, and is the new site's bank
+   delta < 2 m in `road_spots`?
+3. Do the moved banks put every abutment on dry ground (`road_spots`
+   fromY/toY ≥ 31.25 for all crossings)?
+4. Wood kit only: does the c0-style trestle still read well at the new
+   sites, and does it survive an 8-minute soak with a player present?
+
+## Mock-gap ledger (2026-09-02, seeded by NAS + Mac)
+
+Rule (directive 3): after EVERY live run, add an entry — what live revealed
+that the harness failed to predict, and the shim/test/scenario that closes
+the gap. Live validation is scarce; the mocks must improve with each run.
+
+1. **OPEN (permanent boundary) — headless spawn proves EXISTENCE, not
+   DECAY.** No players → no WearNTear evaluation, so headless survival
+   always reads 100%. Survival claims require a live client with a player
+   within range. This entry defines the boundary of everything below it:
+   any "survives" claim in this file must cite a live-client soak.
+2. **CLOSED — the gate once scored plans, not pieces.** `[RUINS] planned
+   1592 / 0 spawned` still passed. Closed by `proads-ruins-check.py`
+   asserting planned == spawned per zone and in aggregate (NAS).
+3. **OPEN — the harness cannot tell you a feature was under-exercised**
+   (NAS, 2f04fca gate). 63/63 and a clean ruins check look identical whether
+   the fixture instantiates 2 arches or 200; the piece delta is the only
+   signal and it is easy to read as merely "the expected change". Closing
+   move: per-feature instance counts in the gate output (arches, beams,
+   stair supports) with a minimum-coverage assertion per kit, and a
+   SyntheticWorld crossing scenario per guard (near-ford bank, mismatched
+   banks) so each code path is exercised headlessly regardless of what the
+   fixture world happens to contain.
+4. **OPEN — the harness asserted grounding, not readability.** The arch
+   test proved the piece top sits at/below grade (grounded) and live showed
+   exactly that: a lump under grass. Closing move (when the stone kit is
+   re-opened): an "exposed fraction" assertion per decorative piece — top
+   edge ≥ 1.0 m above the ground at the piece's outward end — alongside
+   the grounding check. Grounding and reading are two assertions.
+5. **CLOSED — bank points below the waterline.** Live: crossings 3 and 6
+   recorded banks at 29.4 / 29.0 with water at 30.0; the harness's
+   SyntheticWorld banks happened to be dry. Closed by
+   `CrossingBanksStandAboveTheWaterline` (marshy-shelf path) and the
+   detector fix.
+6. **CLOSED — no scenario had mismatched banks.** Live: 4.3 / 5.3 m
+   deltas at two of three sites. Closed by the stepped-bank river scenario
+   and the ford delta guard/penalty (`CrossingSiteTests`).
+7. **OPEN — the harness has no notion of a sunken site.** c6's trestle sits
+   in a gully whose rim hides it from a rim-height camera; nothing in the
+   harness models "can this be seen". Not a solver gap — a capture-process
+   gap, closed on the script side (look-at at low bank + 2 m, standoff by
+   width). Recorded so nobody re-learns it.
+8. **OPEN (tooling, not solver)** — `tod 0.25` is pre-dawn in this build,
+   weather takes ~5 s to blend after `env Clear`, HUD hiding needs an
+   Accessibility grant, and the CLI returns each command's output one call
+   late. All four cost a wasted batch; all four are in the script now.
+
+## Public-surface audit (directive 2, 2026-09-02, read-only — HOLD respected)
+
+Inventory of what is visible upstream and on public fork branches:
+
+- **PR #18 body** (jneb802/ProceduralRoads): synthetic-world renders only
+  (`debug-topology.png`, `debug-world.png`, served raw from fork branch
+  `assets/pr-images`). Test counts and harness description. No world names,
+  seeds, hashes, machine names, or infra. **Clean.**
+- **PR #18 comment (2026-09-01)**: two characterization findings
+  (TotalRoadPoints 552→628 across round trip; TrimPathToRadii untrimmed
+  case). Test-scenario numbers only. **Clean.**
+- **#16 comment**: intent + two questions. **Clean.**
+- **`assets/pr-images`**: full source snapshot at the harness commit plus
+  the two synthetic PNGs. Nothing world-specific. **Clean.**
+- **`integration/upstream-prs` (public, tracked)**:
+  `validation-results/RoadTestAuto1.routes.csv` (409 KB, every route
+  centerline of the fixture world) and `RoadTestAuto1.selftest.json`
+  (pointsHash 9651c22d, 24 violations with world coordinates). These were
+  committed at/before a363e83 despite `validation-results/` being in
+  `.gitignore` (tracked files override the ignore). **Finding: the
+  "validation-results stays local" rule is already violated by two files.
+  Recommend `git rm --cached` both on integration and let the ignore hold.**
+  Internal-test detail level: fixture-world route dump; no infra. Low
+  sensitivity, but it is exactly the class we said stays local.
+- **`pc/snap-point-composition` / `pc/screenshots` (public)**:
+  `validation-results/screenshots-pc/README.md` — world names
+  (RoadTestPC1/2/3), hashes (c4d6271b, c9c3014e, 49748415), piece censuses,
+  the 8/18 stair decay measurement, the creation-vs-reload divergence
+  finding, and a blunt visual assessment. No infra details. The 18 JPEGs it
+  references were purged by the PC's rebase (confirmed: no image blobs on any
+  live fork branch). **Finding: durable findings parked in a results README
+  (divergence account, decay numbers, prefab-name mismatch) — moved into
+  TODO.md per the reconcile rule; the README should become a pointer once
+  docs/validation-gap merges.**
+- **`docs/validation-gap` TODO.md**: mentions a NAS wake-request path
+  (`/data/wake-requests/gaming-pc`) and the wake mechanism. Not an address
+  or credential, but it is an internal path on a public branch. **Minor;
+  consider generalizing the wording.**
+- Infra grep (Tailscale/4via6 addresses, 192.168.*, MACs, `/Volume1`,
+  ssh/PermitRootLogin) across all seven public fork branches: **no hits.**
+- No image blobs (jpg/jpeg/png) on any live fork branch except the two
+  synthetic renders on `assets/pr-images`.
+
+### Flagged for Tys, unstarted by design
+- Tiebreak fix go/no-go (weakened-invalidation context: RoadTestPC1 showed
+  creation == reload, so the fix may invalidate only a subset of baselines
+  and the stable-sort hypothesis may not be the whole mechanism).
+- valheimCLI fork (cli_freefly_pose sits in a local commit).
+- Physical PC BIOS visit; NAS `PermitRootLogin yes` (no sshd change made).
+- Scheduling `docs/validation-gap`: it is NOT docs-only (ReachableRoadsTests.cs,
+  RoadTopologyTests.cs changes) and is stranded until merged; when it
+  merges, `validation-results/screenshots-pc/README.md` becomes a pointer
+  to this file (TODO.md wins).
+- Public-surface audit findings above: the two tracked
+  `validation-results/` reports on `integration/upstream-prs` (recommend
+  `git rm --cached`), and the README parked on the pc/* branches.
+- Arch composition: parked. When re-opened, the direction is "spring from
+  the abutment TOP, rise above the deck line, chain 2–3 per span", with the
+  exposed-fraction harness assertion first.
+
 ## Validation gap: the gate scores the plan, never the survivors (2026-09-01)
 
 The NAS selftest can report PASS with 0 violations on a network that
