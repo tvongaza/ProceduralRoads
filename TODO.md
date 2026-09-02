@@ -25,6 +25,43 @@
   paths, schedules, MACs) stay in gitignored files (scripts/.nas.env
   pattern) — never in tracked files of this public fork.
 
+## 2026-09-02 wood-bridge feedback round 1 + wide sailable rivers (pc/snap-point-composition 6f1dc31..9dd8f2f)
+
+Tys's feedback on the RoadTestMac1 wood sites, and what each became:
+
+| feedback | root cause | change (harness test) |
+|---|---|---|
+| c0: bridge not connecting to the painted road; deck into the hillside | crossing spanned bank-to-bank between the path's last DRY cells, 8–10 m up each bank | banks = last point that can legally carry road, walked in from the dry cell (`CrossingSpansOnlyTheWater`); painting and stair runs extended to the abutments (`PaintedRoadReachesBothAbutments`) |
+| c7 ("c9"): road missing beyond the bridge | same: far dry cell 8 m from the water, nothing painted in between | same |
+| c4: bridge where a land route looked possible | there was no dry route: the channel was continuous; the visible "land" was the dry approach inside a 36 m crossing over a 15 m pond | same trimming; `LandRouteBeatsBridgeWhenAGapExists` characterises A*: a dry gap always beats a ford (penalty 5000 vs 1 per metre) |
+| c6: bridge over land | 16 m gully with a knee-deep trickle | bed within 0.8 m of the waterline and no fairway → not a crossing, road leveled through as a ford (`ShallowGullyIsAFordNotACrossing`) |
+| no 60–100 m sailable rivers crossed | ford cap 48 m; wider rivers split the network | bridge jump ≤ 128 m at penalty 20000, bank delta ≤ 2.5 m; 20 m navigation gap kept clear of piers and deck (`WideRiverBridgeTests`, 4 tests + render) |
+| (found in the render) bridge crossing obliquely | scan only started from river CORE and knight-move jumps dodged the bank cell's rough-ground cost | scans start from any water neighbour, cross shallow margins, must pass over river core, principal directions only (`BridgeTakesTheShortestPerpendicularJump`) |
+
+Also: the character died during the reload check because that script
+skipped `cli_set_player_safety`; every launch script now sets god + ghost
+and the PassiveMobs world key right after the player spawns.
+
+RoadTestMac1 regenerated at 99cdf54 (quit → relaunch → regenerate):
+hash **6b13b3d1**, 98 routes, 68 components, **19 crossings** (was 9),
+eight of them 81–121 m sailable-river bridges (fairways 39–90 m), 349
+stair runs. Backed up under `validation-results/worlds/RoadTestMac1-regen-99cdf54/`.
+This world's baseline moves to 6b13b3d1 with cause 99cdf54 recorded.
+
+Open after this round (live, from `road_spots` / selftest):
+- Two banks still below the waterline: crossing 4 toY 29.3 (two dry-land
+  points at 29.2, Bonemass → GoblinKing) and crossing 12 fromY 30.2. The
+  above-water walk stops at the path end / previous crossing; likely a
+  route ending at the water. Needs a scenario.
+- Crossing 5 (Swamp, 63 m, bank delta 7.9 m) is a wading route through
+  swamp water, not a jump, so the bank-delta rules never saw it. The
+  bridge there will stilt. Directive-1 scenario for swamp-wade crossings.
+- A leveled ford through a knee-deep gully is an embankment up to ~3 m
+  high (road spline at bank height); Tys to judge the look.
+- Design choice to confirm: the 20 m navigation gap (vs the whole deep
+  bed) is what makes a wide-river ruin still read as a bridge.
+- Live decay census for a wood bridge (ledger 9) still owed.
+
 ## 2026-09-02 pass (Mac cockpit): 659fb63 merged, 2f04fca gated + seen, crossing-site selection landed
 
 State after this pass:
