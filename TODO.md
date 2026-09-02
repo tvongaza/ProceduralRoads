@@ -25,6 +25,20 @@
   paths, schedules, MACs) stay in gitignored files (scripts/.nas.env
   pattern) — never in tracked files of this public fork.
 
+**Pass status (NAS gate, end of 2 Sep): GREEN and budget-independent.**
+fb574ff / 4f3528b on RoadTestAuto1: PASS, 93cc14c6, 94 routes, 0
+violations, 3798/3798 pieces across 272 zones, 0 ceiling hits, deepest
+genuine 57345. Ceiling 100000 and a real 200000 (after 4f3528b) give the
+identical network in the same ~195 s: extra ceiling is free (only searches
+that would be cut off pay for it), and the baseline describes the
+algorithm, not the budget. Two distinctions to keep: **reproducible is not
+trustworthy** (87b4ba7e reproduced three times while a road sat under a
+lake; deterministic truncation reproduces perfectly) — budget-independence
+is the test that the measurement is of the thing meant; and **read back
+what you wrote** — the clamp, the config drift and the ceiling were all
+found by reading effective state after the fact. NAS pins 200000 in its
+deployed config; the predecessor baseline is retired as unsafe.
+
 **Correction (NAS config probe, later on 2 Sep):** the mod's config range
 capped PathfindingMaxIterations at 100000, so every run labelled "200000"
 in rounds 3 and 4 executed at **100000** (BepInEx clamps silently). The
