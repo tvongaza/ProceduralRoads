@@ -111,9 +111,13 @@ the 31.25 clearance: a dry, marginal ford. At (404,571) the ground is
 still raw 29.2: that zone was generated on an earlier visit and **terrain
 edits do not refresh when the network regenerates** — the old crossing's
 zone never received the new ford's leveling. Two consequences:
-1. rev 5's assumption holds only on fresh zones; the validator should
-   check the ROAD height above water for knee-deep fords rather than
-   assume leveling (rev 6, tightening).
+1. rev 5's assumption holds only on fresh zones. The validator cannot
+   check road height (route points carry blended terrain height), so the
+   observable proxy lives one layer down: `FordRoadSurfaceStaysAboveTheWater`
+   (f42428d) asserts the smoothed road grid keeps a knee-deep ford ≥ 0.5 m
+   above the waterline; it passed without a generator change, and the two
+   live readings (30.55, 30.8) agree. Rev 5 stays, now justified by a
+   measured guarantee rather than an assumption. Branch tip f42428d, 82/82.
 2. **World-reuse caveat (time economy):** a reused world is fine for
    routes, crossings and ruins (`road_ruins_reset`), but terrain leveling
    and paint in previously visited zones are stale after a regeneration.
@@ -387,6 +391,16 @@ the gap. Live validation is scarce; the mocks must improve with each run.
    changed; the priority did. Closing move: the next live session takes a
    clean wood decay census EARLY (anchored census at t0 and t8 at one wood
    site, player within 10 m), before any wood iteration is judged.
+
+10. **OPEN (permanent boundary) — a restored fixture is a reused world.**
+    The NAS gate restores RoadTestAuto1 from a pristine master and
+    regenerates on load; terrain edits from the master's own generation
+    are not re-applied, so the gate can validate routes, crossings, ruin
+    plans and spawns, but NEVER leveling or paint on that fixture, no
+    matter what assertion is added (a leveling check would go green on
+    stale terrain and say nothing). Terrain verdicts need a freshly
+    generated world or unvisited zones. Recorded beside entry 1; both are
+    invisible from a passing run.
 
 ## Public-surface audit (directive 2, 2026-09-02, read-only — HOLD respected)
 
