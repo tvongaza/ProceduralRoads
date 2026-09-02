@@ -155,11 +155,37 @@ station; expect the fixture hash to move (decision 4 changes routes) and
 effective value read back after binding (BepInEx clamps silently). Grep it
 first when a hash moves; it also fires on config-file reload.
 
-**Next:** NAS gate on 40b7351 at a real 200000 (re-baseline, record the
-ceiling and the deepest genuine decision); Mac: regenerate RoadTestMac1 at
-200000, `road_ruins_reset` before any shot, shoot the 121 m wood bridge and
-one ford of each style for Tys. The stuck macOS "Allow Python" prompt still
-blocks clean screenshots on the Mac.
+### NAS gate on 40b7351 (RoadTestAuto1, real 200000): PASS, baseline b034af02
+
+`[CONFIG]` line read back: PathfindingMaxIterations=200000 unclamped,
+BridgeCostFixed=30000 BridgeCostPerMeter=300 WetTerminus=Reroute
+PierPersistence=0.85 FordWeights=1/1/1 (IslandRoadPercentage=100 on the
+fixture). Agrees with the file probe on everything but Analytics.InstanceID.
+
+    hash b034af02 (was 93cc14c6, expected)   routes 94 (same)   violations 0
+    components 55 (was 69, see below)        fords 76 (same)    crossings 8 (same)
+    stair runs 340 (was 334)                 pieces 3889/273 planned = spawned
+    ceiling hits 0   deepest genuine 57345 (unchanged; 3.5x margin)   195 s / 194 s
+
+Reproduced twice from byte-identical restored fixtures. Baseline recorded in
+proads-baselines.json and pushed (homelab 9d159ad).
+
+**Reading that matters:** the cost change moved WHERE routes sit (hash) but
+not WHAT gets built (routes, fords, crossings identical). Second station,
+second method, same conclusion as the budget sweep: the network is
+budget-independent and the cost lever, at these values, reshuffles rather
+than adds crossings on this fixture.
+
+**Caveat, recorded not smoothed:** components 69 → 55 is not attributable.
+40b7351 bundled a metric REDEFINITION (location-name join) with a GENERATION
+change (bridge cost), so the first observation of the new metric can never
+be split. Almost certainly the join, but that is inference. Rule from now
+on: **a metric redefinition ships on its own commit**, gated alone, before
+any generation change rides with it.
+
+**Next:** Mac: regenerate RoadTestMac1 at 200000, `road_ruins_reset` before
+any shot, shoot the 121 m wood bridge and one ford of each style for Tys.
+The stuck macOS "Allow Python" prompt still blocks clean screenshots.
 
 ## 2026-09-02 round 4: the raw-height blind spot (fb574ff)
 
