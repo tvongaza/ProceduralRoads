@@ -25,6 +25,48 @@
   paths, schedules, MACs) stay in gitignored files (scripts/.nas.env
   pattern) — never in tracked files of this public fork.
 
+## Decisions from Tys (end of 2 Sep 2026) — NEXT SESSION IMPLEMENTS THESE, harness-first
+
+Source: the decision brief (artifact "ProceduralRoads Crossing Decisions").
+Branch to work on: `pc/snap-point-composition` (tip 4f3528b, green,
+gated 93cc14c6 on the fixture). Nothing below is started.
+
+1. **Ruin rule for long wood spans → config lever, default B (piers
+   outlive the deck).** `BridgeStyle.PierPersistence` exists (0.85 in
+   the exhibit); expose it as a BepInEx setting (e.g. Bridges/PierPersistence,
+   0..1) applied in `RuinPlacement.BridgeStyleFor`, and make 0.85 the
+   product default for both kits. Harness: default plan uses persistence;
+   0 reproduces the old coin-flip plans.
+2. **Ford styles → config lever, default equal odds.** Weights for
+   Wade / Raise / Span (e.g. Fords/WadeWeight, RaiseWeight, SpanWeight,
+   default 1 each) drive the per-site choice among the styles the site
+   allows; the position hash stays so a world regenerates identically.
+   Harness: (0,1,0) makes every ford Raise; defaults keep the variety test.
+   *Interpretation to confirm:* Tys's "1/3 each chance" is read as the
+   style mix; the ford SURFACE rule (low ford, current) is unchanged.
+3. **Routes that ended in water → B: re-route to a dry terminus.** After
+   the trim floor drops wet end points, search the location's radius
+   circle for the nearest dry point (≥ 31.25) and end there, so the road
+   reaches the location; the count fix ships with it: the validator's
+   components join routes by shared location NAME from the label as well
+   as by endpoint proximity, so two dry ends on one circle are one
+   network. Harness: wet north half of a circle → terminus lands on the
+   dry arc; two routes 50 m apart on one circle count as one component.
+4. **Bridge cost → soften to a ~2 km break-even: 30 000 fixed + 300/m**
+   as the new defaults (RoadConstants + config defaults); the last-resort
+   scenario stays (1.4 km rough detour still beats a 96 m bridge at
+   ~58 800), and the exhibit constants text updates. Expect routes to
+   move (hash), re-baseline both stations with the range recorded.
+
+After implementing: 96+ tests green on both runtimes, deploy, regenerate
+RoadTestMac1 at a real 200000, `road_ruins_reset` before any shot (reused
+world), shoot the 121 m wood bridge (pier persistence) and one ford of
+each style, send to Tys unread, gate on the NAS at 200000.
+
+Still open for Tys: search-budget default per station (200000 is free),
+Analytics.Enabled on the NAS server, the stuck macOS "Allow Python"
+prompt on the Mac (blocks clean screenshots).
+
 **Pass status (NAS gate, end of 2 Sep): GREEN and budget-independent.**
 fb574ff / 4f3528b on RoadTestAuto1: PASS, 93cc14c6, 94 routes, 0
 violations, 3798/3798 pieces across 272 zones, 0 ceiling hits, deepest
