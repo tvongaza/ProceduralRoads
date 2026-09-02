@@ -31,6 +31,8 @@ public class RoadPathfinder
     public float TerrainVariancePenalty = RoadConstants.DefaultTerrainVariancePenalty;
     public float TerrainVarianceThreshold = RoadConstants.DefaultTerrainVarianceThreshold;
     public float BaseCost = RoadConstants.DefaultBaseCost;
+    public float BridgeCrossingPenalty = RoadConstants.BridgeCrossingPenalty;
+    public float BridgeCostPerMeter = RoadConstants.BridgeCostPerMeter;
 
     private static readonly Vector2Int[] Directions = new Vector2Int[]
     {
@@ -401,7 +403,7 @@ public class RoadPathfinder
 
             landing = check;
             crossingCost = BaseCost * distance + distance * 10f
-                + (bridge ? RoadConstants.BridgeCrossingPenalty + RoadConstants.BridgeCostPerMeter * distance
+                + (bridge ? BridgeCrossingPenalty + BridgeCostPerMeter * distance
                           : RoadConstants.RiverCrossingPenalty)
                 + RoadConstants.FordBankDeltaPenalty * bankDelta * bankDelta;
             return true;

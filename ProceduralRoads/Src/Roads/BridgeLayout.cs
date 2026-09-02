@@ -61,6 +61,19 @@ public sealed class BridgeStyle
 
     public float BankSurvival = 0.85f;   // piece survival probability near banks...
     public float MidSurvival = 0.4f;     // ...falling to this at mid-span
+    // Decision knob (2026-09-02): 0 = every station is one coin flip (piers and
+    // deck live or die together, long spans read as jetties); >0 = piers
+    // outlive the deck — pier survival is lifted toward 1 by this fraction
+    // while the deck keeps the original curve, so piers march across and
+    // the deck is what collapses.
+    public float PierPersistence = 0f;
+
+    public BridgeStyle WithPierPersistence(float value)
+    {
+        BridgeStyle copy = (BridgeStyle)MemberwiseClone();
+        copy.PierPersistence = value;
+        return copy;
+    }
     public float StubChance = 0.5f;      // removed pier leaves a rotted stub
     public float DebrisChance = 0.5f;    // removed piece leaves riverbed debris
 
@@ -151,6 +164,7 @@ public static class BridgeLayout
         // between the bank contact points and clamped above the water.
         int stationCount = Mathf.CeilToInt(crossing.Width / style.DeckSpan) + 1;
         bool[] pierAlive = new bool[stationCount];
+        bool[] deckAlive = new bool[stationCount];
         Vector2[] stationPos = new Vector2[stationCount];
         float[] stationDeckH = new float[stationCount];
 
@@ -169,8 +183,12 @@ public static class BridgeLayout
             float midCloseness = mid > 0f ? 1f - Mathf.Abs(i - mid) / mid : 0f;
             float survival = Mathf.Lerp(style.BankSurvival, style.MidSurvival, midCloseness);
 
-            bool alive = !inFairway && (isBankStation || NextFloat(rng) < survival);
+            float pierSurvival = survival + (1f - survival) * style.PierPersistence;
+            bool alive = !inFairway && (isBankStation || NextFloat(rng) < pierSurvival);
             pierAlive[i] = alive;
+            // With persistent piers the deck decays on its own curve (extra
+            // draw only in that mode, so default plans are byte-identical).
+            deckAlive[i] = alive && (style.PierPersistence <= 0f || isBankStation || NextFloat(rng) < survival);
 
             float ground = world.GetHeight(stationPos[i].x, stationPos[i].y);
 
@@ -195,7 +213,7 @@ public static class BridgeLayout
         // pitches to follow the graded deck line.
         for (int i = 0; i + 1 < stationCount; i++)
         {
-            if (!pierAlive[i] || !pierAlive[i + 1])
+            if (!deckAlive[i] || !deckAlive[i + 1])
                 continue;
 
             Vector2 mid2 = (stationPos[i] + stationPos[i + 1]) * 0.5f;
