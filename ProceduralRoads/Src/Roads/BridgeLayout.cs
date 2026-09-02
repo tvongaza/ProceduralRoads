@@ -359,7 +359,7 @@ public static class BridgeLayout
                 continue;
             // One step piece per metre of rise, marching outward from the
             // abutment so the top step meets the deck edge.
-            int steps = Mathf.CeilToInt((deckH - bankH) / 1f);
+            int steps = Mathf.Max(1, Mathf.CeilToInt((deckH - bankH) / 1f - 0.02f)); // tolerate float noise
             for (int k = 0; k < steps; k++)
             {
                 Vector2 c = bank - inward * (1f + k * 2f);

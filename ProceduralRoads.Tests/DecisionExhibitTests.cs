@@ -74,6 +74,40 @@ public class DecisionExhibitTests
         Assert.Equal(current.Count, again.Count);
     }
 
+    private sealed class FordGullyWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 100f || Mathf.Abs(wy) > 100f) return 20f;
+            float ax = Mathf.Abs(wx);
+            if (ax < 6f) return 29.5f;
+            if (ax < 9f) return Mathf.Lerp(29.5f, 32f, (ax - 6f) / 3f);
+            return 32f;
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+            GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / 12f);
+            width = weight > 0f ? 24f : 0f;
+        }
+    }
+
+    [Fact]
+    public void FordStyles_SpanPlanAndWadeProfile()
+    {
+        var world = new FordGullyWorld();
+        var path = new List<Vector2> { new(-32f, 0f), new(-24f, 0f), new(-16f, 0f), new(16f, 0f), new(24f, 0f), new(32f, 0f) };
+        var crossing = Assert.Single(RoadCrossingDetector.Detect(path, world));
+        Assert.Equal(CrossingKind.Ford, crossing.Kind);
+        crossing.Style = FordStyle.Span;
+        var plan = BridgeLayout.Solve(crossing, world, 7, BridgeStyle.MeadowsWood);
+        DumpPlan(Out("fordstyle-span.csv"), crossing, plan);
+        File.WriteAllText(Out("fordstyle-span.txt"),
+            $"width={crossing.Width:F1} water={crossing.WaterLevel} bed={crossing.RiverbedHeight:F1} bankFrom={world.GetHeight(crossing.FromBank.x, crossing.FromBank.y):F2} bankTo={world.GetHeight(crossing.ToBank.x, crossing.ToBank.y):F2} fromX={crossing.FromBank.x:F1} toX={crossing.ToBank.x:F1}");
+        Assert.NotEmpty(plan);
+    }
+
     private sealed class KneeDeepGullyWorld : WorldGenerator
     {
         public override float GetHeight(float wx, float wy) => Mathf.Abs(wx) < 6f ? 29.4f : 33f;
