@@ -84,6 +84,64 @@ public class WideRiverBridgeTests
         Assert.True(dy <= dx * 0.15f, $"Jump is oblique: dx={dx:F0} dy={dy:F0}");
     }
 
+    /// <summary>The wide river ends at y = 250 (a lake-like reach); land
+    /// continues north to the bound. Rough ground everywhere (hash noise
+    /// beyond the variance threshold) so the detour is expensive too.</summary>
+    private sealed class RiverWithAnEndWorld : WorldGenerator
+    {
+        private static float Hash(int x, int y)
+        {
+            unchecked { uint h = (uint)(x * 374761393 + y * 668265263); h = (h ^ (h >> 13)) * 1274126177u; return (h & 0xFFFF) / 65535f; }
+        }
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 220f || wy < -120f || wy > 330f) return 20f;
+            float rough = (Hash(Mathf.FloorToInt(wx / 6f), Mathf.FloorToInt(wy / 6f)) - 0.5f) * 7f;
+            if (wy > 250f) return 33f + rough;
+            float ax = Mathf.Abs(wx);
+            if (ax <= 35f) return 26f;
+            if (ax >= 45f) return 33f + rough;
+            return Mathf.Lerp(26f, 33f, (ax - 35f) / 10f);
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+            GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = wy > 250f ? 0f : Mathf.Clamp01(1f - Mathf.Abs(wx) / 80f);
+            width = weight > 0f ? 160f : 0f;
+        }
+    }
+
+    [Fact]
+    public void BridgeIsALastResortEvenWhenTheDetourIsRough()
+    {
+        // ~600 m of rough detour around the river's end must still beat a
+        // 96 m bridge: bridges appear only where a river is the sole way.
+        var world = new RiverWithAnEndWorld();
+        var path = new RoadPathfinder(world).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f));
+        Assert.NotNull(path);
+        Assert.False(FindJump(path!, world).HasValue, "Path bridged the river instead of going around its end");
+        Assert.True(path!.Any(p => p.y > 250f), "Path did not go around the river's end");
+    }
+
+    [Fact]
+    public void RouteEndpointsUseTheWaterlineFloor()
+    {
+        // 30.8 m is above the shallow-water line but below the clearance
+        // that crossing banks and road points must respect.
+        var isPathable = typeof(RoadNetworkGenerator).GetMethod("IsPathablePoint",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        var world = new WideSteppedWorld { EastRise = 0f };
+        WorldGenerator.instance = world;
+        try
+        {
+            // x = 43: height lerp(26, 32, 0.8) = 30.8 -> not pathable; x = 48: 32 -> pathable.
+            Assert.False((bool)isPathable.Invoke(null, new object[] { new Vector2(43f, 0f) })!);
+            Assert.True((bool)isPathable.Invoke(null, new object[] { new Vector2(48f, 0f) })!);
+        }
+        finally { WorldGenerator.instance = null; }
+    }
+
     [Fact]
     public void WideRiverBeyondTheBridgeCapStillBlocks()
     {

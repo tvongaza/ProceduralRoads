@@ -979,8 +979,11 @@ public static class RoadNetworkGenerator
         if (WorldGenerator.instance == null)
             return true;
 
+        // Same floor as crossing banks and road points: the waterline plus
+        // clearance. Endpoints between 30.5 and 31.25 used to be accepted and
+        // produced the recurring below-waterline route ends.
         float height = WorldGenerator.instance.GetHeight(point.x, point.y);
-        if (height < RoadConstants.ShallowWaterHeight)
+        if (height < RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance)
             return false;
 
         WorldGenerator.instance.GetRiverWeight(point.x, point.y, out float riverWeight, out _);

@@ -401,7 +401,8 @@ public class RoadPathfinder
 
             landing = check;
             crossingCost = BaseCost * distance + distance * 10f
-                + (bridge ? RoadConstants.BridgeCrossingPenalty : RoadConstants.RiverCrossingPenalty)
+                + (bridge ? RoadConstants.BridgeCrossingPenalty + RoadConstants.BridgeCostPerMeter * distance
+                          : RoadConstants.RiverCrossingPenalty)
                 + RoadConstants.FordBankDeltaPenalty * bankDelta * bankDelta;
             return true;
         }

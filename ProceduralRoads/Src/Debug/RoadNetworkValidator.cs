@@ -90,9 +90,12 @@ public static class RoadNetworkValidator
                             $"dry-land: {route.Label} point {i} ({p.x:F0},{p.z:F0}) height {height:F1}");
                 }
 
-                // Ford-length invariant: consecutive river-core points must
-                // span no more than the ford cap.
-                if (inRiverCore)
+                // Crossing-length invariant: consecutive points over WATER
+                // (below the waterline clearance) must span no more than the
+                // bridge cap. Measured on water, not river core: a core band
+                // can be a dry valley the road simply runs through.
+                bool overWater = height < RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+                if (overWater)
                 {
                     if (fordRunStart < 0)
                         fordRunStart = i;
@@ -104,7 +107,7 @@ public static class RoadNetworkValidator
                     float span = Vector3.Distance(route.Points[startIdx], route.Points[i]);
                     if (span > FordLengthCap + 16f && fordViolations++ < MaxViolationsPerCheck)
                         report.Violations.Add(
-                            $"crossing-length: {route.Label} spans {span:F0}m across river core (cap {FordLengthCap:F0}m)");
+                            $"crossing-length: {route.Label} spans {span:F0}m of water (cap {FordLengthCap:F0}m)");
                     fordRunStart = -1;
                 }
 

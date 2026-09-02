@@ -57,8 +57,14 @@ public static class RoadConstants
     // BRIDGE jump is allowed up to MaxBridgeCrossingCells, at a penalty high
     // enough that it is taken only where no land route exists, and only
     // between near-level banks. The layout solver leaves the fairway open.
+    // A bridge is a near-last resort (Tys, 2026-09-02): far more expensive
+    // than going around, so it appears only where a wide river is the sole
+    // way to reach somewhere. Fixed cost plus a per-metre cost, against a
+    // model where one rough cell costs ~1000: a 100 m bridge equals ~90
+    // rough cells or ~90 km of easy road.
     public const int MaxBridgeCrossingCells = 16; // 16 * 8m = 128m dry-point to dry-point
-    public const float BridgeCrossingPenalty = 20000f;
+    public const float BridgeCrossingPenalty = 50000f;
+    public const float BridgeCostPerMeter = 400f;
     public const float MaxBridgeBankDelta = 2.5f;
 
     // Road cross-section (see RoadProfile): flat core fully leveled and
