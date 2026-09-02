@@ -31,8 +31,14 @@ public class RoadPathfinder
     public float TerrainVariancePenalty = RoadConstants.DefaultTerrainVariancePenalty;
     public float TerrainVarianceThreshold = RoadConstants.DefaultTerrainVarianceThreshold;
     public float BaseCost = RoadConstants.DefaultBaseCost;
-    public float BridgeCrossingPenalty = RoadConstants.BridgeCrossingPenalty;
-    public float BridgeCostPerMeter = RoadConstants.BridgeCostPerMeter;
+    /// <summary>Player-facing lever (config "Roads/BridgeCostFixed" and
+    /// "Roads/BridgeCostPerMeter"): cheap = more bridges, expensive = fewer.
+    /// Applied at config read like MaxIterations; instances copy them.</summary>
+    public static float ConfiguredBridgeCostFixed = RoadConstants.BridgeCrossingPenalty;
+    public static float ConfiguredBridgeCostPerMeter = RoadConstants.BridgeCostPerMeter;
+
+    public float BridgeCrossingPenalty = ConfiguredBridgeCostFixed;
+    public float BridgeCostPerMeter = ConfiguredBridgeCostPerMeter;
 
     private static readonly Vector2Int[] Directions = new Vector2Int[]
     {

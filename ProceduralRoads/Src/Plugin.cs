@@ -47,6 +47,8 @@ namespace ProceduralRoads
         public static ConfigEntry<int> IslandRoadPercentage = null!;
         public static ConfigEntry<int> PathfindingMaxIterations = null!;
         public static ConfigEntry<int> MaxLocationsPerIsland = null!;
+        public static ConfigEntry<float> BridgeCostFixed = null!;
+        public static ConfigEntry<float> BridgeCostPerMeter = null!;
         public static ConfigEntry<bool> DebugValidation = null!;
         public static ConfigEntry<bool> ForceRegenerate = null!;
         public static ConfigEntry<bool> SpawnRuinsHeadless = null!;
@@ -91,6 +93,18 @@ namespace ProceduralRoads
                 new ConfigDescription("Maximum number of locations that can be connected by roads on a single island. " +
                     "Higher values allow more roads on large islands.",
                     new AcceptableValueRange<int>(2, 30)));
+
+            BridgeCostFixed = Config.Bind("Roads", "BridgeCostFixed", RoadConstants.BridgeCrossingPenalty,
+                new ConfigDescription("Pathfinding cost of building a bridge over a wide river, fixed part. " +
+                    "For scale: easy ground costs about 1 per metre of road, broken ground about 25. " +
+                    "Lower = more bridges, higher = roads go around instead. 20000 was the old value (bridge beats ~0.8 km of rough detour); " +
+                    "50000 + 400/m (default) makes a bridge worth ~3.6 km of rough detour.",
+                    new AcceptableValueRange<float>(0f, 300000f)));
+
+            BridgeCostPerMeter = Config.Bind("Roads", "BridgeCostPerMeter", RoadConstants.BridgeCostPerMeter,
+                new ConfigDescription("Pathfinding cost of a bridge per metre of span, on top of BridgeCostFixed. " +
+                    "Makes long bridges dearer than short ones.",
+                    new AcceptableValueRange<float>(0f, 5000f)));
 
             ForceRegenerate = Config.Bind("Debug", "ForceRegenerate", false,
                 "Ignore roads persisted in the world and regenerate the network from " +
@@ -158,6 +172,8 @@ namespace ProceduralRoads
             RoadNetworkGenerator.IslandRoadPercentage = IslandRoadPercentage.Value;
             RoadNetworkGenerator.MaxLocationsPerIsland = MaxLocationsPerIsland.Value;
             RoadPathfinder.MaxIterations = PathfindingMaxIterations.Value;
+            RoadPathfinder.ConfiguredBridgeCostFixed = BridgeCostFixed.Value;
+            RoadPathfinder.ConfiguredBridgeCostPerMeter = BridgeCostPerMeter.Value;
             // CustomLocations is parsed at generation time to preserve API registrations
         }
 
