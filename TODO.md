@@ -25,6 +25,148 @@
   paths, schedules, MACs) stay in gitignored files (scripts/.nas.env
   pattern) — never in tracked files of this public fork.
 
+## 2026-09-02 round 3: bridge cost as a config lever, ford styles, and the budget confound (d3df333..b2fe11b)
+
+Tys: (1) let players tune the bridge cost — cheap = more bridges; find a
+middle-ground default with numbers; (2) give shallow fords styles so roads
+vary: paint through the shallows without raising, raise the road, or a
+short stepped bridge.
+
+- **Lever (d3df333):** `Roads/BridgeCostFixed` and `Roads/BridgeCostPerMeter`
+  (defaults 50000 + 400/m), applied to `RoadPathfinder` statics at config
+  read. The config text gives the scale: easy ground ~1/m, broken ~25/m.
+- **Ford styles (fba0bf0, b2fe11b):** knee-deep unsailable crossings are
+  `CrossingKind.Ford` with a per-site `FordStyle` from a position hash
+  over the styles the site allows — Wade (≤ 0.5 m deep: painted at terrain
+  height, ground untouched), Raise (leveled through, as before), Span
+  (≥ 6 m wide: footbridge 1 m above the higher bank, ≥ 1 m above water,
+  posts to the bed, step pieces at each end). Persistence v2. `road_spots`
+  prints `kind=ford-wade|ford-raise|ford-span|bridge`. 92/92 both runtimes.
+  Harness exhibit: 17 m span = 3 decks, 20 posts, 6 beams, 2 steps.
+
+**Cost sweep on RoadTestMac1** (effective config fingerprint 80965f03:
+iterations 50000, MaxLocationsPerIsland 30, IslandRoadPercentage 100,
+RoadWidth 4; DLL d3df333; one regeneration per setting):
+
+| fixed + per m | routes | components | crossings (wide ≥ 55 m) | hash |
+|---|---|---|---|---|
+| 20000 + 0 (old) | 99 | 79 | 19 (8) | c8862908 |
+| 35000 + 200 | 98 | 78 | 16 (6) | 01e592ff |
+| 50000 + 400 (default) | 98 | 78 | 16 (6) | e8ae009d (= c980a8e regen: 3rd reload match) |
+| 50000 + 400, iterations 200000 (control) | 99 | 79 | 19 (8) | 40f562d8 — 0 ceiling hits, 24 genuine no-paths |
+
+**Budget confound (NAS, measured):** on the fixture the 10000-iteration
+ceiling is BINDING — 87 → 93 routes and +629 pieces at 50000 with nothing
+else changed — so a route lost at a higher bridge cost may have been lost
+to budget, not cost; the log distinguishes "max iterations reached" from
+"no reachable path". The Mac runs at 50000; the expensive sweep run logged
+3 ceiling hits against 13 unreachable, hence the control row.
+**Cross-machine:** the Mac and the fixture were never on the same config
+(iterations 50000 vs 10000, MaxLocationsPerIsland 30 vs 12); per-world
+baselines were always the only valid comparison, and now the reason is
+recorded. NAS proposes raising the fixture to 50000 (one more re-baseline,
+comparability gained) — Tys's call. Also for Tys: Analytics.Enabled is On
+on the NAS validation server (Off on the Mac).
+
+**What the hashes hide (crossing-set diffs):** 35000+200 and 50000+400 differ
+by ONE crossing shifted ~30 m along the same Plains river (58 m vs 63 m
+span); same network otherwise. 20000+0 vs 50000+400: the cheap cost keeps
+three extra Plains bridges (42, 94 and 111 m — the Bonemass → GoblinKing
+double crossing among them) and crosses two rivers at wider points (81 vs
+63 m, 107 vs 80 m); the expensive cost walks the river to narrower sites.
+So the lever's visible effect is between 20000 and ~35000; above that it
+mostly moves crossing points, not counts. **Behaviour-neutrality (NAS):**
+e8ae009d at d3df333 equals the c980a8e regeneration — two commits, one
+network at equal effective cost — so gates after the config extraction
+compare against the c980a8e baseline rather than starting fresh.
+
+**The control overturns the sweep's reading.** At 50000+400 with a
+200000-iteration budget the world gets 99 routes and 19 crossings (8
+wide), the same counts as the cheap setting, with 0 ceiling hits: the
+sweep's "fewer bridges at higher cost" was the 50000 ceiling truncating
+the deeper search a high bridge cost forces (3 ceiling hits at the
+expensive end; the three "lost" Plains crossings were budget, not cost).
+What the lever really does, read from the crossing-set diff at full
+budget: every river the cheap cost bridges, the expensive cost bridges
+too (island rivers must be crossed), but at a NARROWER point — 63 m
+instead of 81, 82 vs 89, 28 vs 42, 92 vs 94, 80 vs 107. Cost changes where
+a river is crossed, not whether. Route and crossing counts cannot rank
+cost settings at a binding ceiling; the Mac's 50000 binds too.
+
+### Mock-gap ledger additions (round 3)
+11. **CLOSED — a summary kept, the detail discarded** (three instances in
+    one day: the 12-line violation cap with no total; the gate reading
+    "Could not find path" and dropping the reason line beneath it; the
+    sweep keeping the selftest summary and overwriting the JSON). Rule:
+    when a run produces a summary and a detailed artefact, keep the
+    artefact; recovering a number by regenerating live costs five minutes,
+    keeping it costs kilobytes. Sweep and control scripts now keep the
+    selftest JSON, routes CSV and effective config per run.
+12. **OPEN — the iteration ceiling is a hidden variable in every count.**
+    A higher bridge cost forces a deeper search, so at a fixed ceiling the
+    expensive setting is truncated harder than the cheap one, and route or
+    crossing counts then measure budget consumed, not cost decisions
+    (RoadTestMac1: 16 → 19 crossings at the same cost from 50000 → 200000
+    iterations; fixture: 21 of 26 failed routes were ceiling hits at
+    10000). The pathfinder logs the reason ("max iterations reached" vs
+    "no reachable path after N"); the gate now counts both and the
+    deepest genuine decision (NAS proads-pathfind-check). Closing move:
+    pick a ceiling where ceiling hits are zero with headroom over the
+    deepest genuine decision, re-baseline once, and record the effective
+    config fingerprint with every hash. **Also re-reads the fixture's
+    81 → 87 route gain as a floor, not a measurement** (the newer run was
+    truncated harder than the baseline it was compared with).
+
+**Cheap-end control (20000+0, 200000 iterations):** 99 routes, 79
+components, 19 crossings (8 wide), hash **c8862908 — identical to the
+20000 run at 50000 iterations**, 0 ceiling hits, deepest genuine decision
+39002 (so 50000 was a 1.28× margin at the cheap end). Its extra violation
+is a second SLOPE point on Bonemass → GoblinKing (grade 1.68), not
+dry-land; the rev-4/5 validator found no road in the water at 20000.
+
+**The honest sweep table, at full budget:**
+
+| cost | routes | components | crossings (wide) | what differs |
+|---|---|---|---|---|
+| 20000 + 0 | 99 | 79 | 19 (8) | five crossings sited at WIDER points (81, 89, 42, 94, 107 m) and one extra slope violation on the steeper approach |
+| 50000 + 400 | 99 | 79 | 19 (8) | the same rivers crossed at narrower points (63, 82, 28, 92, 80 m) |
+
+Cost does not change whether an island river is bridged; it changes where.
+The sweep's earlier count differences were the 50000-iteration ceiling
+truncating the expensive search (0 hits at the cheap end, 3 at the
+expensive end).
+
+### NOT GREEN: the fixture at full budget shows a real road-in-water (NAS)
+
+Same commit f42428d, fixture RoadTestAuto1, only the ceiling changed:
+10000 → PASS, 0 violations, 87 routes, 21 ceiling hits; **200000 → FAIL,
+13 violations, 95 routes, 0 ceiling hits**, among them `dry-land: 14 wet
+points in total (12 listed)` on Crypt4 → Crypt4 at 26.2–28.1 under a 30.0
+waterline. At 10000 that route was one of the 21 ceiling hits, never
+built, so its defect could not be reported. The NAS retracted 87b4ba7e as
+a regression tripwire (a determinism that reproduces a blind spot is not
+one). Deepest genuine decision on the fixture plateaued at 35023 (same at
+50000 and 200000): 200000 is measured-good, 5.7× headroom. **This pass
+does not close green**; mechanism under investigation (swamp pool between
+samples vs. an unrecorded/trimmed crossing span), harness scenario first.
+Also: this is a83ed1c catching a genuine road-in-water on a real network,
+and the dcb4fbd total line keeping "14" from reading as "12".
+
+**Correction to earlier notes:** `pointsHash` hashes ROUTE points only.
+Painting changes, ford styles and ruin pieces do not move it (b2fe11b
+regenerated to 40f562d8, identical to d3df333 at the same config); only
+route geometry does. Piece counts are the axis for composition changes.
+
+**Mac station config from here on:** PathfindingMaxIterations 200000
+(deepest genuine decision 39002; 0 ceiling hits), bridge cost defaults.
+RoadTestMac1 baseline at b2fe11b / 200000: hash 40f562d8, 99 routes, 79
+components, 22 crossings (19 bridges, 2 raised fords, 1 span ford; no site
+shallow enough to wade), 372 stair runs, 4434 pieces, violations 1 (the
+standing slope point). Backed up under
+`validation-results/worlds/RoadTestMac1-regen-b2fe11b-iter200k/` with the
+effective config.
+
+
 ## 2026-09-02 round 2: bridges as a last resort, one waterline floor, honest crossing measure (df5ae66)
 
 NAS review of 9dd8f2f (validator cap relaxed) asked the right question:
