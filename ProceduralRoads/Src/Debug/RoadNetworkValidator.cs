@@ -61,7 +61,7 @@ public static class RoadNetworkValidator
 
         uint hash = 2166136261;
         int dryLandViolations = 0, fordViolations = 0, slopeViolations = 0;
-        int dryLandTotal = 0;
+        int dryLandTotal = 0, fordTotal = 0, slopeTotal = 0;
 
         // A wet point is legal only inside a RECORDED crossing span (a deck
         // sits over water) — not merely inside river core, which would let a
@@ -133,6 +133,8 @@ public static class RoadNetworkValidator
                     report.FordCount++;
                     int startIdx = fordRunStart > 0 ? fordRunStart - 1 : fordRunStart;
                     float span = Vector3.Distance(route.Points[startIdx], route.Points[i]);
+                    if (span > FordLengthCap + 16f)
+                        fordTotal++;
                     if (span > FordLengthCap + 16f && fordViolations++ < MaxViolationsPerCheck)
                         report.Violations.Add(
                             $"crossing-length: {route.Label} spans {span:F0}m of water (cap {FordLengthCap:F0}m)");
@@ -148,6 +150,8 @@ public static class RoadNetworkValidator
                     if (horizontal > 0.01f)
                     {
                         float slope = Mathf.Abs(p.y - prev.y) / horizontal;
+                        if (slope > SlopeSanityCap && !InStairRun(p))
+                            slopeTotal++;
                         if (slope > SlopeSanityCap && !InStairRun(p)
                             && slopeViolations++ < MaxViolationsPerCheck)
                             report.Violations.Add(
@@ -162,9 +166,14 @@ public static class RoadNetworkValidator
 
         report.PointsHash = hash.ToString("x8");
         report.NetworkComponents = CountComponents(routes);
-        // The listed lines are capped; the total is what the instrument measured.
+        // The listed lines are capped for readability; the totals are what the
+        // instrument measured — a display limit must never become a measurement limit.
         if (dryLandTotal > MaxViolationsPerCheck)
             report.Violations.Add($"dry-land: {dryLandTotal} wet points in total ({MaxViolationsPerCheck} listed)");
+        if (fordTotal > MaxViolationsPerCheck)
+            report.Violations.Add($"crossing-length: {fordTotal} over-length crossings in total ({MaxViolationsPerCheck} listed)");
+        if (slopeTotal > MaxViolationsPerCheck)
+            report.Violations.Add($"slope: {slopeTotal} over-grade points in total ({MaxViolationsPerCheck} listed)");
 
         return report;
     }
