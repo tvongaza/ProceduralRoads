@@ -172,6 +172,9 @@ Landed (commit "crossing-site selection", 67/67 net10.0 + net48):
   with pieces following routes; the arch commit moved pieces only.
 - NOT yet verified live (needs regeneration; batched into the next live
   run with the questions below). Deploy at the next session start.
+- Generation-time cost of the change: none measurable on the harness — the
+  pathfinder tests time the same before and after (same load conditions,
+  game running), and the four new scenarios take 2–40 ms each.
 
 Also landed: `road_clear_view <x> <z> [r]` (debug-gated vegetation/rock
 clearing for photography) and `road_spots` now prints kit, direction, both
