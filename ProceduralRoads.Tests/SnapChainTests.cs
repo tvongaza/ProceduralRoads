@@ -253,6 +253,46 @@ public class SnapChainTests
     }
 
     [Fact]
+    public void StoneAbutmentsSpringGroundedArches()
+    {
+        var world = new AsymmetricRiverWorld();
+        var crossing = MakeCrossing();
+        var style = BridgeStyle.MountainStone;
+        var plan = BridgeLayout.Solve(crossing, world, 42, style);
+
+        var arches = plan.Where(p => p.Kind == BridgePieceKind.Arch).ToList();
+        Assert.NotEmpty(arches); // both banks stand clear of the water here
+        Assert.True(arches.Count <= 2, "At most one arch per bank");
+
+        foreach (var arch in arches)
+        {
+            // Long axis parallel to the crossing direction.
+            float yawRad = arch.YawDegrees * Mathf.PI / 180f;
+            Vector2 axis = new(Mathf.Cos(yawRad), -Mathf.Sin(yawRad));
+            float align = Mathf.Abs(Vector2.Dot(axis, crossing.Direction));
+            Assert.True(align > 0.99f, $"Arch axis misaligned (|dot|={align:F3})");
+
+            // The tall face (local +x end) is buried into the bank: its top
+            // sits at or below grade at the face position, grounding the piece.
+            Vector2 facePos = new Vector2(arch.Position.x, arch.Position.z) + axis * 1f;
+            float faceGround = world.GetHeight(facePos.x, facePos.y);
+            float archTop = arch.Position.y + 0.5f;
+            Assert.True(archTop <= faceGround + 0.01f,
+                $"Arch top {archTop:F2} above grade {faceGround:F2} at the bank face — not grounded");
+
+            // And the tapered end reaches inward over lower ground, not into the bank.
+            Vector2 tipPos = new Vector2(arch.Position.x, arch.Position.z) - axis * 1f;
+            float tipGround = world.GetHeight(tipPos.x, tipPos.y);
+            Assert.True(tipGround < faceGround + 0.01f,
+                "Arch points into rising ground instead of out over the water");
+        }
+
+        // Wood kits have no arch prefab and must emit none.
+        var woodPlan = BridgeLayout.Solve(crossing, world, 42, BridgeStyle.MeadowsWood);
+        Assert.DoesNotContain(woodPlan, p => p.Kind == BridgePieceKind.Arch);
+    }
+
+    [Fact]
     public void StoneStationsStackWallsWithoutAirGaps()
     {
         var world = new AsymmetricRiverWorld();

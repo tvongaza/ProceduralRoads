@@ -13,6 +13,7 @@ public enum BridgePieceKind
     StairSupport,  // vertical support under a floating stair step
     Landing,       // flat piece: switchback turn platform or flat chain stretch
     Beam,          // crossbeam tying a station's post pair under the deck
+    Arch,          // quarter-arch springing from a bank abutment over the water
 }
 
 /// <summary>One placed piece of a ruined bridge (a persistent ZDO once spawned).</summary>
@@ -40,6 +41,7 @@ public sealed class BridgeStyle
     public string DeckPrefab = "";
     public string AbutmentPrefab = "";
     public string DebrisPrefab = "";
+    public string ArchPrefab = "";       // empty: no abutment arches
 
     public float DeckSpan = 2f;          // meters between stations / one deck piece
     public float DeckWidth = 2f;         // deck piece width across the crossing
@@ -55,6 +57,7 @@ public sealed class BridgeStyle
     public bool PilingAcross = false;
     public float PostTopBelowDeck = 0.2f; // post tops tuck under the deck
     public float BeamBelowDeck = 0.13f;   // beam center under the deck surface
+    public float ArchTopBelowGrade = 0.1f; // arch flat top just under the bank surface
 
     public float BankSurvival = 0.85f;   // piece survival probability near banks...
     public float MidSurvival = 0.4f;     // ...falling to this at mid-span
@@ -79,6 +82,8 @@ public sealed class BridgeStyle
         DeckPrefab = "stone_floor_2x2",  // 2x2, 1m thick, top face at +0.5
         AbutmentPrefab = "stone_floor_2x2",
         DebrisPrefab = "stone_wall_1x1",
+        ArchPrefab = "stone_arch",       // 2m quarter-arch: full 1m face at +x,
+                                         // tapering to a top edge at -x, flat top
         PostSideOffset = 0f,             // full-width pier column
         PilingAcross = true,
         PilingSegment = 1f,              // was 2: stone walls stacked with air gaps
@@ -202,7 +207,9 @@ public static class BridgeLayout
         }
 
         // Abutments: bank platforms sunk slightly below the road surface so
-        // terrain and paint lap onto the wood/stone.
+        // terrain and paint lap onto the wood/stone. Stone kits also spring a
+        // quarter-arch from each bank out over the water — the surviving
+        // half of a broken arch bridge.
         foreach (Vector2 bank in new[] { from, to })
         {
             float bankGround = world.GetHeight(bank.x, bank.y);
@@ -214,9 +221,47 @@ public static class BridgeLayout
                 YawDegrees = yaw,
                 HealthFraction = 0.5f + NextFloat(rng) * 0.4f,
             });
+
+            if (string.IsNullOrEmpty(style.ArchPrefab))
+                continue;
+
+            // Springing only makes sense off a bank that stands clear of the
+            // water; a near-ford bank would put the arch in the mud.
+            Vector2 inward = bank == from ? dir : -dir;
+            bool tallEnough = bankGround > crossing.WaterLevel + 0.8f;
+            bool survives = NextFloat(rng) < style.BankSurvival; // draw always, for rng stability
+            if (tallEnough && survives)
+                EmitArch(pieces, style, bank, inward, bankGround, rng);
         }
 
         return pieces;
+    }
+
+    /// <summary>One quarter-arch springing from the bank: the full-height
+    /// face (local +x) seats into the bank at the abutment, the tapered top
+    /// edge reaches inward over the water. The tall face is embedded below
+    /// grade so the piece is grounded (stone has little horizontal support).</summary>
+    private static void EmitArch(List<BridgePiece> pieces, BridgeStyle style,
+        Vector2 bank, Vector2 inward, float bankGround, System.Random rng)
+    {
+        // Yaw mapping local +x onto -inward (tall face toward the bank):
+        // R(yaw)*(1,0,0) = (cos yaw, 0, -sin yaw)  =>  cos = t.x, sin = -t.y.
+        Vector2 t = -inward;
+        float archYaw = Mathf.Atan2(-t.y, t.x) * 180f / Mathf.PI;
+
+        // Center sits one half-length inward of the bank contact point; the
+        // flat top lands ArchTopBelowGrade under the bank surface, so the
+        // tall face is buried into the bank (grounded) and the curve emerges
+        // from the slope as the ground falls away toward the water.
+        Vector2 center = bank + inward * 1f;
+        pieces.Add(new BridgePiece
+        {
+            Kind = BridgePieceKind.Arch,
+            Prefab = style.ArchPrefab,
+            Position = new Vector3(center.x, bankGround - style.ArchTopBelowGrade - 0.5f, center.y),
+            YawDegrees = archYaw,
+            HealthFraction = RuinHealth(rng),
+        });
     }
 
     /// <summary>One surviving station: post pair (or single full-width pier)
