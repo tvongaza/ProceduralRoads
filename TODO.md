@@ -75,8 +75,9 @@ Search budget: 200000 measured free on the fixture (193 s vs 195 s,
 identical network), so headroom has no cost argument against it.
 
 Still open for Tys: search-budget default per station (200000 is free),
-Analytics.Enabled on the NAS server, the stuck macOS "Allow Python"
-prompt on the Mac (blocks clean screenshots).
+Analytics.Enabled on the NAS server. (The "Allow Python" prompt noted here
+earlier is gone: `screencapture -x` from the Mac session captures the full
+desktop cleanly, verified 2 Sep 17:49.)
 
 **Pass status (NAS gate, end of 2 Sep): GREEN and budget-independent.**
 fb574ff / 4f3528b on RoadTestAuto1: PASS, 93cc14c6, 94 routes, 0
@@ -184,8 +185,8 @@ on: **a metric redefinition ships on its own commit**, gated alone, before
 any generation change rides with it.
 
 **Next:** Mac: regenerate RoadTestMac1 at 200000, `road_ruins_reset` before
-any shot, shoot the 121 m wood bridge and one ford of each style for Tys.
-The stuck macOS "Allow Python" prompt still blocks clean screenshots.
+any shot, shoot the 121 m wood bridge and one ford of each style for Tys. Screen capture on the Mac is verified
+working (no permission prompt outstanding).
 
 ## 2026-09-02 round 4: the raw-height blind spot (fb574ff)
 
