@@ -28,8 +28,9 @@
 ## Decisions from Tys (end of 2 Sep 2026) — NEXT SESSION IMPLEMENTS THESE, harness-first
 
 Source: the decision brief (artifact "ProceduralRoads Crossing Decisions").
-Branch to work on: `pc/snap-point-composition` (tip 4f3528b, green,
-gated 93cc14c6 on the fixture). Nothing below is started.
+Branch to work on: `pc/snap-point-composition`. **Implemented in 40b7351**
+(round 5 below); harness scenarios in `ProceduralRoads.Tests/LeverTests.cs`.
+Still to do: deploy + live shots (Mac) and the NAS gate at 200000.
 
 1. **Ruin rule for long wood spans → config lever, default B (piers
    outlive the deck).** `BridgeStyle.PierPersistence` exists (0.85 in
@@ -103,6 +104,62 @@ fb574ff) and both stations should set a real ceiling above the deepest
 genuine decision with headroom; track that number every gate as the
 leading indicator, since hits appear only after the gate has started
 lying. Read config values BACK after a run; do not trust the request.
+
+## 2026-09-02 round 5: the four levers landed (40b7351, pc/snap-point-composition)
+
+All four decisions are code, each a BepInEx lever with the product default,
+107 tests green on net10.0 and net48 (was 96). Not yet gated on either
+station; expect the fixture hash to move (decision 4 changes routes) and
+`networkComponents` to change meaning (decision 3's location join).
+
+1. **Bridges/PierPersistence** (0..1, default 0.85). `BridgeLayout.StyleFor`
+   applies the configured value to whichever kit the biome picks;
+   `RuinPlacement` now calls it. The kit templates keep 0, so a lever of 0
+   reproduces the pre-lever plans byte for byte (asserted). Default plan on
+   the 80 m exhibit channel leaves more pilings than the coin flip (asserted
+   for seed 42).
+2. **Fords/WadeWeight, RaiseWeight, SpanWeight** (0..100, default 1 each).
+   Weighted pick among the styles the site allows, still driven by the site
+   hash. Equal weights reduce to the old `hash % count` pick, so default
+   worlds keep every ford they had (asserted against the modulo pick).
+   All-zero, or zero on every allowed style, raises. The
+   `ForcedFordStyleForTests` hook is gone; the wade test sets weights (1,0,0).
+   Interpretation kept: this is the style MIX; the low-ford surface rule is
+   untouched.
+3. **Roads/WetTerminus = Trim | Reroute | Drop** (default Reroute), applied
+   in `TrimPathToRadii`. Reroute samples the location circle at ~1 m of arc,
+   keeps candidates that pass `IsPathablePoint` (floor 31.25 AND not river
+   core) within one radius of the wet circle point, sorts by distance to it,
+   and takes the first whose straight leg from the last dry path point is
+   above the floor at every metre; nothing qualifies → Trim. The one-radius
+   cap keeps the leg out of the location's interior (a chord to the far side
+   of the circle would cut through the buildings). Drop returns no route
+   (logged at debug). Harness: pond biting the north of a 20 m circle →
+   terminus on the dry arc, on the circle, on the approach side, dry leg;
+   Trim ends at (-24,10); Drop → null; a fully flooded circle falls back to
+   Trim.
+   **Count fix ships regardless:** the validator joins two routes when
+   their labels ("{from} -> {to}") name the same location at ends that lie
+   within `LocationJoinRadius` = 100 m of each other. Name alone is NOT
+   enough — labels carry prefab names, and one island has many
+   `Runestone_Boars`; the fixture's component count would collapse to
+   nonsense on a pure name join. Asserted: two routes 50 m apart on one
+   circle are one component; the same prefab 400 m away is another; labels
+   without " -> " join only by proximity.
+4. **Bridge cost 30000 + 300/m** (RoadConstants + config defaults; 96 m span
+   = 58 800). Exhibit world (`decision4-bridge-cost.txt`): old 20000 flat
+   BRIDGES (409 m), default DETOURS (2085 m), as do 50000+400 and 50000+1500.
+   Config text and exhibit labels updated; the last-resort test still passes.
+
+**Instrument:** `ApplyConfiguration` now logs one `[CONFIG]` line with every
+effective value read back after binding (BepInEx clamps silently). Grep it
+first when a hash moves; it also fires on config-file reload.
+
+**Next:** NAS gate on 40b7351 at a real 200000 (re-baseline, record the
+ceiling and the deepest genuine decision); Mac: regenerate RoadTestMac1 at
+200000, `road_ruins_reset` before any shot, shoot the 121 m wood bridge and
+one ford of each style for Tys. The stuck macOS "Allow Python" prompt still
+blocks clean screenshots on the Mac.
 
 ## 2026-09-02 round 4: the raw-height blind spot (fb574ff)
 
