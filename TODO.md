@@ -25,6 +25,19 @@
   paths, schedules, MACs) stay in gitignored files (scripts/.nas.env
   pattern) — never in tracked files of this public fork.
 
+**Correction (NAS config probe, later on 2 Sep):** the mod's config range
+capped PathfindingMaxIterations at 100000, so every run labelled "200000"
+in rounds 3 and 4 executed at **100000** (BepInEx clamps silently). The
+measurements stand (0 ceiling hits and the plateau were observed at
+100000); the labels and the headroom claim do not: the fixture's deepest
+genuine decision of 57345 is a **1.74×** margin under a hard cap, and it
+rose 64% (35023 → 57345) when the rendered-height change landed. The
+range is now 2 000 000 (commit on pc/snap-point-composition after
+fb574ff) and both stations should set a real ceiling above the deepest
+genuine decision with headroom; track that number every gate as the
+leading indicator, since hits appear only after the gate has started
+lying. Read config values BACK after a run; do not trust the request.
+
 ## 2026-09-02 round 4: the raw-height blind spot (fb574ff)
 
 **Found by:** the NAS regenerating the fixture at 200000 iterations
@@ -66,7 +79,7 @@ the fixture regeneration: 432 s from relaunch to player spawn at 200000 iteratio
 **Result on the Mac's copy of the fixture, NAS config, fb574ff: PASS, 0
 violations, 94 routes, 69 components, 8 crossings, 334 stair runs, 3798
 pieces, hash 93cc14c6, 0 ceiling hits, deepest genuine decision 57345
-(3.5× headroom). The five remaining sub-29.2 route points on the Crypt4
+(1.74× under the effective 100000 cap; see the correction above). The five remaining sub-29.2 route points on the Crypt4
 routes sit inside bridge spans (rendered 27.3, no road points nearby).**
 NAS gate on fb574ff at 200000 requested; that run becomes the first
 fixture baseline that is neither truncated nor reading the wrong height..
