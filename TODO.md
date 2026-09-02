@@ -91,6 +91,28 @@ a cliff bank; needs a shore-delta check or scenario. Crossing 1 (Swamp
 wade route, 7.9 m delta) unchanged. Crossing 8 fromY 30.2 (old c6 site)
 still below the floor — re-check after c980a8e.
 
+### NAS gate on f42428d (RoadTestAuto1): PASS, hash moved, one reading that matters
+
+82/82. pointsHash f0d424fc → **87b4ba7e** (second run in flight; recorded
+only when reproduced), routes 81 → 87, components 54 → 69, crossings 3,
+fords 61 (era 3), pieces 2256 → 2660 across 210 zones, planned == spawned,
+violations 1 → 0.
+
+**The zero is not the standing violation being fixed.** The log carries
+`Could not find path: MountainCave02 -> Mistlands_DvergrTownEntrance2`:
+the route that held the dry-land point no longer paths at all, a
+legitimate consequence of the last-resort bridge cost, not evidence the
+dry-land problem was solved. A passing gate cannot tell "clean roads"
+from "road gone"; the NAS went and looked. Recorded as the rule: a
+violation that disappears must be traced to its route.
+
+Two product readings for Tys (both worlds now agree):
+- **3 crossings against 61 water runs** on the fixture: the last-resort
+  cost produced three bridges and fords everywhere else. Intended balance?
+- **Components rise when wet route ends are dropped** (54 → 69 here,
+  69 → 78 on RoadTestMac1): systematic, not one map. Trim to
+  disconnection, or re-route to a dry terminus — different products.
+
 ### Where the branch settled (c980a8e) and what the ford check found
 
 RoadTestMac1 regenerated at c980a8e: **hash e8ae009d**, 98 routes, 78
