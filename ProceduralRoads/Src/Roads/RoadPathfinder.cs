@@ -138,9 +138,19 @@ public class RoadPathfinder
 
                 if (float.IsPositiveInfinity(moveCost))
                 {
-                    // Only river cores can be jumped (a short ford). Other
-                    // blockers (deep water, non-swamp shallows) end the move.
-                    if (!IsRiverBlocked(neighborPos))
+                    // A crossing scan starts from any water-blocked neighbor
+                    // (river core, or the shallow margin of a gentle bank) but
+                    // only succeeds if it passes over river core: rivers are
+                    // forded or bridged, lakes and sea are not.
+                    if (!IsRiverBlocked(neighborPos) && !IsUnderWaterline(neighborPos))
+                        continue;
+
+                    // Crossings scan cell by cell, so only the eight principal
+                    // directions qualify: a knight-move stride skips cells it
+                    // never checks, and its origin one cell further from the
+                    // bank dodges the bank cell's rough-ground cost, which made
+                    // oblique bridges beat the shortest perpendicular jump.
+                    if (Mathf.Abs(Directions[i].x) > 1 || Mathf.Abs(Directions[i].y) > 1)
                         continue;
 
                     if (!TryGetShortRiverCrossing(currentPos, Directions[i],
@@ -315,6 +325,11 @@ public class RoadPathfinder
         return GetCellSample(grid).RiverWeight > RoadConstants.RiverImpassableThreshold;
     }
 
+    private bool IsUnderWaterline(Vector2i grid)
+    {
+        return GetCellSample(grid).Height < RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+    }
+
     private bool IsValidFordLanding(Vector2i grid)
     {
         Vector2 world = GridToWorld(grid);
@@ -341,14 +356,30 @@ public class RoadPathfinder
         float maxFordDistance = RoadConstants.MaxRiverCrossingCells * CellSize;
         float maxBridgeDistance = RoadConstants.MaxBridgeCrossingCells * CellSize;
 
+        bool sawRiverCore = false;
         for (int step = 1; step <= RoadConstants.MaxBridgeCrossingCells; step++)
         {
             Vector2i check = new Vector2i(from.x + direction.x * step, from.y + direction.y * step);
 
             if (IsRiverBlocked(check))
+            {
+                sawRiverCore = true;
                 continue;
+            }
 
+            // Keep scanning across water and marsh (the wide shallow margins
+            // of a gentle bank) until dry ground: a crossing spans them too.
+            // Only dry-but-unusable ground ends the scan.
             if (!IsValidFordLanding(check))
+            {
+                if (IsUnderWaterline(check))
+                    continue;
+                return false;
+            }
+
+            // Dry ground reached without a river in between: that was a lake
+            // or the sea, not a crossing.
+            if (!sawRiverCore)
                 return false;
 
             float distance = Vector2.Distance(GridToWorld(from), GridToWorld(check));

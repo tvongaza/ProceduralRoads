@@ -67,6 +67,24 @@ public class WideRiverBridgeTests
     }
 
     [Fact]
+    public void BridgeTakesTheShortestPerpendicularJump()
+    {
+        // Straight banks, endpoints on the same line: the 96 m perpendicular
+        // jump is the shortest and must win over a 107 m knight-move jump.
+        // (Before: the perpendicular scan hit a non-core cell that was still
+        // under water on the gentle bank and gave up, leaving only oblique
+        // directions whose sampling happened to land dry.)
+        var world = new WideSteppedWorld { EastRise = 0f };
+        var path = new RoadPathfinder(world).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f));
+        Assert.NotNull(path);
+        var jump = FindJump(path!, world);
+        Assert.True(jump.HasValue);
+        float dy = Mathf.Abs(jump!.Value.a.y - jump.Value.b.y);
+        float dx = Mathf.Abs(jump.Value.a.x - jump.Value.b.x);
+        Assert.True(dy <= dx * 0.15f, $"Jump is oblique: dx={dx:F0} dy={dy:F0}");
+    }
+
+    [Fact]
     public void WideRiverBeyondTheBridgeCapStillBlocks()
     {
         var world = new SyntheticWorld { HasRiver = true, HasMountain = false, RiverHalfWidth = 170f }; // core 170 m > 128 m bridge cap
