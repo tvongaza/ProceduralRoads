@@ -354,8 +354,18 @@ public class RoadPathfinder
             if (distance > maxFordDistance)
                 return false;
 
+            // Crossing-site selection: banks of drastically different
+            // heights cannot be bridged sensibly (stilt towers, absurd deck
+            // grades), so such a ford is refused outright; a smaller step is
+            // allowed but pays quadratically, which sends the search along
+            // the river to where the banks meet the water at similar heights.
+            float bankDelta = Mathf.Abs(GetCellSample(from).Height - GetCellSample(check).Height);
+            if (bankDelta > RoadConstants.MaxFordBankDelta)
+                return false;
+
             landing = check;
-            crossingCost = BaseCost * distance + RoadConstants.RiverCrossingPenalty + distance * 10f;
+            crossingCost = BaseCost * distance + RoadConstants.RiverCrossingPenalty + distance * 10f
+                + RoadConstants.FordBankDeltaPenalty * bankDelta * bankDelta;
             return true;
         }
 

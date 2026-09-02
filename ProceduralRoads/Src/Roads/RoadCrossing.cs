@@ -67,18 +67,37 @@ public static class RoadCrossingDetector
             return crossings;
 
         int runStart = -1; // index of the dry point before the first wet segment
+        int lastEnd = -1;  // ToIndex of the previous crossing (banks never overlap)
+
+        // A bank is the nearest path point that stands above the waterline
+        // clearance, not merely the last point outside the river core:
+        // splined centerlines dip through marshy shelves below the waterline
+        // on their way into the channel, and an abutment placed there sits in
+        // the water (live witness: banks at 29.0/29.4 vs water 30.0).
+        float minBank = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+        bool AboveWater(int index) => world.GetHeight(path[index].x, path[index].y) >= minBank;
 
         for (int i = 1; i < path.Count; i++)
         {
             bool wet = SegmentTouchesRiverCore(path[i - 1], path[i], world);
 
             if (wet && runStart < 0)
+            {
                 runStart = i - 1;
+                while (runStart > lastEnd + 1 && !AboveWater(runStart))
+                    runStart--;
+            }
 
             if (!wet && runStart >= 0)
             {
-                crossings.Add(BuildCrossing(path, runStart, i - 1, world));
+                int end = i - 1;
+                while (end < path.Count - 1 && !AboveWater(end))
+                    end++;
+                crossings.Add(BuildCrossing(path, runStart, end, world));
+                lastEnd = end;
                 runStart = -1;
+                if (end > i)
+                    i = end; // resume scanning past the extended far bank
             }
         }
 

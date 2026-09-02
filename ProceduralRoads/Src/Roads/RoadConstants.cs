@@ -39,6 +39,15 @@ public static class RoadConstants
     public const int MaxRiverCrossingCells = 6; // 6 * 8m = 48m max ford
     public const float RiverCrossingPenalty = 5000f;
 
+    // Crossing-site selection: a ford whose two banks differ in height by
+    // more than MaxFordBankDelta is not accepted at all (bridges across
+    // badly mismatched banks stilt or grade absurdly), and any accepted
+    // ford pays FordBankDeltaPenalty * delta^2 on top of the crossing
+    // penalty, so the pathfinder seeks near-level banks the way a natural
+    // road would (a 2 m step costs as much as the crossing itself).
+    public const float MaxFordBankDelta = 4f;
+    public const float FordBankDeltaPenalty = 1250f;
+
     // Road cross-section (see RoadProfile): flat core fully leveled and
     // solidly painted; paint fades out strictly inside the leveled footprint
     // so roads keep an unpainted, smoothed verge; leveling eases to natural
