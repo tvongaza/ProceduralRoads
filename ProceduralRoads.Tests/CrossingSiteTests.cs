@@ -290,6 +290,35 @@ public class CrossingExtentTests
         }
     }
 
+    private sealed class KneeDeepGullyWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy) => Mathf.Abs(wx) < 6f ? 29.4f : 33f;
+    }
+
+    [Fact]
+    public void FordRoadSurfaceStaysAboveTheWater()
+    {
+        // A knee-deep gully is painted through as a ford (6f1dc31). The road
+        // is leveled to the smoothed road height, so that height — not the
+        // raw terrain — is what the ford surface becomes. Live check
+        // 2026-09-02: 30.55 and 30.8 at two fords. Pin the guarantee: the
+        // ford surface sits at least 0.5 m above the waterline.
+        var world = new KneeDeepGullyWorld();
+        RoadSpatialGrid.Clear();
+        try
+        {
+            var path = new List<Vector2>();
+            for (float x = -40f; x <= 40f; x += 4f) path.Add(new Vector2(x, 0f));
+            RoadSpatialGrid.AddRoadPath(path, 4f, world);
+            var near = RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(0f, 0f, 0f), 4f);
+            Assert.NotEmpty(near);
+            foreach (var rp in near)
+                Assert.True(rp.h >= RoadConstants.SeaLevel + 0.5f,
+                    $"Ford surface at {rp.p} is only {rp.h - RoadConstants.SeaLevel:F2} m above the water");
+        }
+        finally { RoadSpatialGrid.Clear(); }
+    }
+
     /// <summary>River along x = 0 with a dry land bridge (no river, plateau
     /// height) for y ∈ [60, 76]; bounded by deep water.</summary>
     private sealed class GappedRiverWorld : WorldGenerator
