@@ -65,6 +65,14 @@ RoadTestMac1 at a real 200000, `road_ruins_reset` before any shot (reused
 world), shoot the 121 m wood bridge (pier persistence) and one ford of
 each style, send to Tys unread, gate on the NAS at 200000.
 
+Reading the next gate (NAS): three of the four are new config levers, so
+the network is conditioned on more knobs than the commit; when a hash
+moves unexpectedly, read the logged config fingerprint FIRST, before
+assuming code. And the location-name join changes `networkComponents` on
+its own: a component delta next pass is not evidence about connectivity.
+Search budget: 200000 measured free on the fixture (193 s vs 195 s,
+identical network), so headroom has no cost argument against it.
+
 Still open for Tys: search-budget default per station (200000 is free),
 Analytics.Enabled on the NAS server, the stuck macOS "Allow Python"
 prompt on the Mac (blocks clean screenshots).
