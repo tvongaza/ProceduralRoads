@@ -49,6 +49,11 @@ namespace ProceduralRoads
         public static ConfigEntry<int> MaxLocationsPerIsland = null!;
         public static ConfigEntry<float> BridgeCostFixed = null!;
         public static ConfigEntry<float> BridgeCostPerMeter = null!;
+        public static ConfigEntry<WetTerminusMode> WetTerminus = null!;
+        public static ConfigEntry<float> PierPersistence = null!;
+        public static ConfigEntry<float> FordWadeWeight = null!;
+        public static ConfigEntry<float> FordRaiseWeight = null!;
+        public static ConfigEntry<float> FordSpanWeight = null!;
         public static ConfigEntry<bool> DebugValidation = null!;
         public static ConfigEntry<bool> ForceRegenerate = null!;
         public static ConfigEntry<bool> SpawnRuinsHeadless = null!;
@@ -99,14 +104,42 @@ namespace ProceduralRoads
             BridgeCostFixed = Config.Bind("Roads", "BridgeCostFixed", RoadConstants.BridgeCrossingPenalty,
                 new ConfigDescription("Pathfinding cost of building a bridge over a wide river, fixed part. " +
                     "For scale: easy ground costs about 1 per metre of road, broken ground about 25. " +
-                    "Lower = more bridges, higher = roads go around instead. 20000 was the old value (bridge beats ~0.8 km of rough detour); " +
-                    "50000 + 400/m (default) makes a bridge worth ~3.6 km of rough detour.",
+                    "Lower = more bridges, higher = roads go around instead. 20000 flat was the old value (a bridge beats ~0.8 km of rough detour); " +
+                    "30000 + 300/m (default) makes a bridge worth roughly 2 km of rough detour (a 96 m span costs 58800); " +
+                    "50000 + 400/m makes it a last resort worth ~3.6 km.",
                     new AcceptableValueRange<float>(0f, 300000f)));
 
             BridgeCostPerMeter = Config.Bind("Roads", "BridgeCostPerMeter", RoadConstants.BridgeCostPerMeter,
                 new ConfigDescription("Pathfinding cost of a bridge per metre of span, on top of BridgeCostFixed. " +
                     "Makes long bridges dearer than short ones.",
                     new AcceptableValueRange<float>(0f, 5000f)));
+
+            WetTerminus = Config.Bind("Roads", "WetTerminus", WetTerminusMode.Reroute,
+                "What to do when a road's end on its location's radius circle lands in water. " +
+                "Trim: end at the last dry point short of the location. " +
+                "Reroute: end at the nearest dry point on the circle so the road still reaches the location. " +
+                "Drop: no road to a location whose approach is wet.");
+
+            PierPersistence = Config.Bind("Bridges", "PierPersistence", RoadConstants.DefaultPierPersistence,
+                new ConfigDescription("Ruin rule for bridges: how much the piers outlive the deck (0-1). " +
+                    "0 = each station is one coin flip, piers and deck fall together, so long spans read as jetties; " +
+                    "0.85 (default) = the piers march across the river and the deck is what collapsed.",
+                    new AcceptableValueRange<float>(0f, 1f)));
+
+            FordWadeWeight = Config.Bind("Fords", "WadeWeight", RoadConstants.DefaultFordStyleWeight,
+                new ConfigDescription("Relative odds that a knee-deep crossing is WADED: the road is painted through the shallows at ground height " +
+                    "(offered only where the water is ankle deep). 0 disables the style; with equal weights each site picks evenly among the styles it allows.",
+                    new AcceptableValueRange<float>(0f, 100f)));
+
+            FordRaiseWeight = Config.Bind("Fords", "RaiseWeight", RoadConstants.DefaultFordStyleWeight,
+                new ConfigDescription("Relative odds that a knee-deep crossing is RAISED: the road is leveled up through the shallows. " +
+                    "Always allowed, and used whenever no other style is.",
+                    new AcceptableValueRange<float>(0f, 100f)));
+
+            FordSpanWeight = Config.Bind("Fords", "SpanWeight", RoadConstants.DefaultFordStyleWeight,
+                new ConfigDescription("Relative odds that a knee-deep crossing is SPANNED: a short low footbridge with steps at each end " +
+                    "(offered only where the crossing is at least 6 m wide).",
+                    new AcceptableValueRange<float>(0f, 100f)));
 
             ForceRegenerate = Config.Bind("Debug", "ForceRegenerate", false,
                 "Ignore roads persisted in the world and regenerate the network from " +
@@ -176,7 +209,20 @@ namespace ProceduralRoads
             RoadPathfinder.MaxIterations = PathfindingMaxIterations.Value;
             RoadPathfinder.ConfiguredBridgeCostFixed = BridgeCostFixed.Value;
             RoadPathfinder.ConfiguredBridgeCostPerMeter = BridgeCostPerMeter.Value;
+            RoadNetworkGenerator.WetTerminus = WetTerminus.Value;
+            BridgeLayout.ConfiguredPierPersistence = PierPersistence.Value;
+            RoadCrossingDetector.SetFordStyleWeights(FordWadeWeight.Value, FordRaiseWeight.Value, FordSpanWeight.Value);
             // CustomLocations is parsed at generation time to preserve API registrations
+
+            // Effective values, read back after binding: BepInEx clamps to the
+            // declared ranges silently, and the network is conditioned on these
+            // knobs as much as on the code. Read this line first when a hash moves.
+            ProceduralRoadsLogger.LogInfo(
+                $"[CONFIG] RoadWidth={RoadWidth.Value} IslandRoadPercentage={IslandRoadPercentage.Value} " +
+                $"PathfindingMaxIterations={PathfindingMaxIterations.Value} MaxLocationsPerIsland={MaxLocationsPerIsland.Value} " +
+                $"BridgeCostFixed={BridgeCostFixed.Value} BridgeCostPerMeter={BridgeCostPerMeter.Value} " +
+                $"WetTerminus={WetTerminus.Value} PierPersistence={PierPersistence.Value} " +
+                $"FordWeights(wade/raise/span)={FordWadeWeight.Value}/{FordRaiseWeight.Value}/{FordSpanWeight.Value}");
         }
 
         /// <summary>

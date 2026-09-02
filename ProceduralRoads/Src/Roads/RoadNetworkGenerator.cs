@@ -6,6 +6,19 @@ using UnityEngine;
 
 namespace ProceduralRoads;
 
+/// <summary>Where a road ends when the point on its location's radius
+/// circle turns out to be wet (Tys, end of 2 Sep 2026).</summary>
+public enum WetTerminusMode
+{
+    /// <summary>End at the last dry point short of the circle.</summary>
+    Trim,
+    /// <summary>End at the nearest dry point on the circle, so the road still
+    /// reaches the location.</summary>
+    Reroute,
+    /// <summary>No road to a location whose approach is wet.</summary>
+    Drop,
+}
+
 /// <summary>
 /// Orchestrates road network generation after POI locations are known.
 /// </summary>
@@ -156,6 +169,9 @@ public static class RoadNetworkGenerator
 
     public static float RoadWidth = 4f;
     public static int IslandRoadPercentage = 50;
+    /// <summary>Player-facing lever (config "Roads/WetTerminus"): what to do
+    /// with a route whose end on its location's radius circle is in water.</summary>
+    public static WetTerminusMode WetTerminus = WetTerminusMode.Reroute;
 
     private static bool m_roadsGenerated = false;
     private static bool m_locationsReady = false;
@@ -1151,16 +1167,89 @@ public static class RoadNetworkGenerator
 
         // The radius-edge point is interpolated on the location's circle and can
         // land in water; endpoints obey the same floor as banks and road points.
+        // What happens then is the WetTerminus lever: Trim ends short at the
+        // last dry point, Reroute walks the circle to the nearest dry point so
+        // the road still reaches the location, Drop refuses the route.
         if (WorldGenerator.instance != null)
         {
-            float floor = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
-            while (trimmedPath.Count > 2 && BiomeBlendedHeight.GetBlendedHeight(trimmedPath[0].x, trimmedPath[0].y, WorldGenerator.instance) < floor)
+            Vector2 startEdge = trimmedPath[0];
+            Vector2 endEdge = trimmedPath[trimmedPath.Count - 1];
+            bool startWet = !AboveWaterlineFloor(startEdge);
+            bool endWet = !AboveWaterlineFloor(endEdge);
+
+            if ((startWet || endWet) && WetTerminus == WetTerminusMode.Drop)
+            {
+                Log.LogDebug("Route dropped: its end on the location circle is in water (WetTerminus = Drop)");
+                return null;
+            }
+
+            while (trimmedPath.Count > 2 && !AboveWaterlineFloor(trimmedPath[0]))
                 trimmedPath.RemoveAt(0);
-            while (trimmedPath.Count > 2 && BiomeBlendedHeight.GetBlendedHeight(trimmedPath[trimmedPath.Count - 1].x, trimmedPath[trimmedPath.Count - 1].y, WorldGenerator.instance) < floor)
+            while (trimmedPath.Count > 2 && !AboveWaterlineFloor(trimmedPath[trimmedPath.Count - 1]))
                 trimmedPath.RemoveAt(trimmedPath.Count - 1);
+
+            if (WetTerminus == WetTerminusMode.Reroute)
+            {
+                if (startWet && DryPointOnCircle(startCenter, startRadius, startEdge, trimmedPath[0]) is Vector2 s)
+                    trimmedPath.Insert(0, s);
+                if (endWet && DryPointOnCircle(endCenter, endRadius, endEdge, trimmedPath[trimmedPath.Count - 1]) is Vector2 e)
+                    trimmedPath.Add(e);
+            }
         }
 
         return trimmedPath.Count >= 2 ? trimmedPath : null;
+    }
+
+    /// <summary>
+    /// Reroute terminus: the dry point on a location's radius circle nearest
+    /// the wet edge point, reachable from the route's last dry point (the
+    /// anchor, at most a cell outside the circle) over dry ground in a
+    /// straight leg. Candidates farther than one radius from the wet point
+    /// are not considered: the leg would cut through the location's interior,
+    /// and such a site is better left to Trim. Null when nothing qualifies.
+    /// </summary>
+    private static Vector2? DryPointOnCircle(Vector2 center, float radius, Vector2 wetEdge, Vector2 anchor)
+    {
+        if (radius < 1f)
+            return null;
+
+        int samples = Mathf.Max(36, Mathf.CeilToInt(2f * Mathf.PI * radius)); // ~1 m of arc
+        float maxDistSq = radius * radius;
+        List<(float distSq, Vector2 point)> candidates = new();
+        for (int i = 0; i < samples; i++)
+        {
+            float angle = i * Mathf.PI * 2f / samples;
+            Vector2 p = center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+            float distSq = (p - wetEdge).sqrMagnitude;
+            if (distSq <= maxDistSq && IsPathablePoint(p))
+                candidates.Add((distSq, p));
+        }
+        candidates.Sort((a, b) => a.distSq.CompareTo(b.distSq));
+
+        foreach ((float _, Vector2 p) in candidates)
+        {
+            if (SegmentAboveWaterlineFloor(anchor, p))
+                return p;
+        }
+        return null;
+    }
+
+    private static bool AboveWaterlineFloor(Vector2 p) =>
+        BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, WorldGenerator.instance)
+            >= RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+
+    /// <summary>Every metre of the leg, both ends included, above the floor
+    /// (finer than the route's own spline spacing, so no resampled point can
+    /// land in a sliver the check skipped).</summary>
+    private static bool SegmentAboveWaterlineFloor(Vector2 a, Vector2 b)
+    {
+        int steps = Mathf.Max(1, Mathf.CeilToInt(Vector2.Distance(a, b)));
+        for (int i = 0; i <= steps; i++)
+        {
+            if (!AboveWaterlineFloor(Vector2.Lerp(a, b, (float)i / steps)))
+                return false;
+        }
+        return true;
     }
 
     /// <summary>

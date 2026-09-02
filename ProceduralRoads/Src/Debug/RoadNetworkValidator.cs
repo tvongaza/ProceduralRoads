@@ -184,8 +184,19 @@ public static class RoadNetworkValidator
     }
 
     /// <summary>
+    /// Two routes that end at the same named location are one network even
+    /// when their ends sit apart on its radius circle (the Reroute terminus
+    /// puts dry ends anywhere on the dry arc). Location names are prefab
+    /// names and repeat across an island, so the two ends must also lie
+    /// within this distance of each other: one location, not two instances
+    /// of one prefab. Comfortably above twice any exterior radius.
+    /// </summary>
+    public const float LocationJoinRadius = 100f;
+
+    /// <summary>
     /// Union-find over route endpoints: routes whose endpoints touch (within
-    /// EndpointJoinRadius) belong to one network component.
+    /// EndpointJoinRadius) or that end at the same named location (see
+    /// LocationJoinRadius) belong to one network component.
     /// </summary>
     private static int CountComponents(IReadOnlyList<RoadRoute> routes)
     {
@@ -205,7 +216,7 @@ public static class RoadNetworkValidator
         {
             for (int b = a + 1; b < n; b++)
             {
-                if (RoutesTouch(routes[a], routes[b]))
+                if (RoutesTouch(routes[a], routes[b]) || RoutesShareLocation(routes[a], routes[b]))
                 {
                     int ra = Find(a), rb = Find(b);
                     if (ra != rb) parent[ra] = rb;
@@ -248,6 +259,38 @@ public static class RoadNetworkValidator
         }
 
         return false;
+    }
+
+    private static bool RoutesShareLocation(RoadRoute a, RoadRoute b)
+    {
+        if (a.Points.Count == 0 || b.Points.Count == 0) return false;
+        (string? aStart, string? aEnd) = LocationNames(a.Label);
+        (string? bStart, string? bEnd) = LocationNames(b.Label);
+        if (aStart == null && aEnd == null) return false;
+
+        Vector3 a0 = a.Points[0], a1 = a.Points[a.Points.Count - 1];
+        Vector3 b0 = b.Points[0], b1 = b.Points[b.Points.Count - 1];
+        return SameLocation(aStart, a0, bStart, b0) || SameLocation(aStart, a0, bEnd, b1)
+            || SameLocation(aEnd, a1, bStart, b0) || SameLocation(aEnd, a1, bEnd, b1);
+    }
+
+    private static bool SameLocation(string? nameA, Vector3 endA, string? nameB, Vector3 endB)
+    {
+        if (string.IsNullOrEmpty(nameA) || nameA != nameB) return false;
+        float dx = endA.x - endB.x, dz = endA.z - endB.z;
+        return dx * dx + dz * dz <= LocationJoinRadius * LocationJoinRadius;
+    }
+
+    /// <summary>Generated routes are labelled "{from} -> {to}" with the
+    /// location names at each end; any other label carries no names.</summary>
+    private static (string? start, string? end) LocationNames(string? label)
+    {
+        if (string.IsNullOrEmpty(label)) return (null, null);
+        int i = label!.IndexOf(" -> ", System.StringComparison.Ordinal);
+        if (i < 0) return (null, null);
+        string start = label.Substring(0, i).Trim();
+        string end = label.Substring(i + 4).Trim();
+        return (start.Length > 0 ? start : null, end.Length > 0 ? end : null);
     }
 
     private static uint HashPoint(uint hash, Vector3 p)

@@ -137,7 +137,7 @@ public class DecisionExhibitTests
     }
 
     /// <summary>Wide river ending at y = 600; rough ground everywhere.</summary>
-    private sealed class RiverWithAnEndWorld : WorldGenerator
+    internal sealed class RiverWithAnEndWorld : WorldGenerator
     {
         private static float Hash(int x, int y)
         {
@@ -175,7 +175,8 @@ public class DecisionExhibitTests
         var variants = new (string name, float fixedCost, float perMeter, byte r, byte g, byte b)[]
         {
             ("old 20000 flat", 20000f, 0f, 240, 90, 60),
-            ("current 50000 + 400/m", RoadConstants.BridgeCrossingPenalty, RoadConstants.BridgeCostPerMeter, 250, 230, 90),
+            ("default 30000 + 300/m", RoadConstants.BridgeCrossingPenalty, RoadConstants.BridgeCostPerMeter, 250, 230, 90),
+            ("last resort 50000 + 400/m", 50000f, 400f, 160, 250, 120),
             ("stricter 50000 + 1500/m", 50000f, 1500f, 120, 220, 250),
         };
         var paths = new List<(List<Vector2>, byte, byte, byte)>();

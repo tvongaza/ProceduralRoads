@@ -236,9 +236,7 @@ public static class RoadCrossingDetector
             List<FordStyle> eligible = new() { FordStyle.Raise };
             if (depth <= RoadConstants.FordWadeMaxDepth) eligible.Add(FordStyle.Wade);
             if (width >= RoadConstants.FordSpanMinWidth) eligible.Add(FordStyle.Span);
-            style = ForcedFordStyleForTests != FordStyle.None
-                ? ForcedFordStyleForTests
-                : eligible[SiteHash(center) % eligible.Count];
+            style = PickFordStyle(eligible, SiteHash(center));
         }
 
         return new RoadCrossing
@@ -260,8 +258,58 @@ public static class RoadCrossingDetector
         };
     }
 
-    /// <summary>Test hook: force every ford to one style (None = normal choice).</summary>
-    public static FordStyle ForcedFordStyleForTests = FordStyle.None;
+    /// <summary>Player-facing lever (config "Fords/WadeWeight", "RaiseWeight",
+    /// "SpanWeight"): relative odds of each ford style among the styles a
+    /// site allows. 0 removes a style; when every allowed style is 0 the site
+    /// raises the road (always allowed). Set at config read.</summary>
+    public static float ConfiguredWadeWeight = RoadConstants.DefaultFordStyleWeight;
+    public static float ConfiguredRaiseWeight = RoadConstants.DefaultFordStyleWeight;
+    public static float ConfiguredSpanWeight = RoadConstants.DefaultFordStyleWeight;
+
+    public static void SetFordStyleWeights(float wade, float raise, float span)
+    {
+        ConfiguredWadeWeight = Mathf.Max(0f, wade);
+        ConfiguredRaiseWeight = Mathf.Max(0f, raise);
+        ConfiguredSpanWeight = Mathf.Max(0f, span);
+    }
+
+    private static float WeightOf(FordStyle style) => style switch
+    {
+        FordStyle.Wade => ConfiguredWadeWeight,
+        FordStyle.Raise => ConfiguredRaiseWeight,
+        FordStyle.Span => ConfiguredSpanWeight,
+        _ => 0f,
+    };
+
+    /// <summary>Weighted pick driven by the site hash, so a world regenerates
+    /// with the same fords. Equal weights reduce to the plain modulo pick,
+    /// so default worlds keep the styles they had before the lever existed.</summary>
+    internal static FordStyle PickFordStyle(List<FordStyle> eligible, int hash)
+    {
+        float total = 0f, first = -1f;
+        bool equal = true;
+        foreach (FordStyle s in eligible)
+        {
+            float w = Mathf.Max(0f, WeightOf(s));
+            total += w;
+            if (first < 0f) first = w;
+            else if (Mathf.Abs(w - first) > 1e-6f) equal = false;
+        }
+        if (total <= 0f)
+            return FordStyle.Raise;
+        if (equal)
+            return eligible[hash % eligible.Count];
+
+        float r = (hash & 0xFFFF) / 65536f * total;
+        foreach (FordStyle s in eligible)
+        {
+            float w = Mathf.Max(0f, WeightOf(s));
+            if (w <= 0f) continue;
+            if (r < w) return s;
+            r -= w;
+        }
+        return FordStyle.Raise; // float tail
+    }
 
     /// <summary>Deterministic per-site hash so a ford keeps its style across
     /// loads and worlds regenerate identically.</summary>

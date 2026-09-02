@@ -139,6 +139,26 @@ public static class BridgeLayout
     /// section a longship sails through (beam ~6 m, plus room to line up).</summary>
     public const float FairwayGapWidth = 20f;
 
+    /// <summary>Player-facing lever (config "Bridges/PierPersistence", 0..1):
+    /// how much the piers outlive the deck. Applied to every kit by StyleFor;
+    /// set at config read like the pathfinder's levers.</summary>
+    public static float ConfiguredPierPersistence = RoadConstants.DefaultPierPersistence;
+
+    /// <summary>The kit for a crossing's biome with the configured ruin rule
+    /// applied. Progression-aligned; Mistlands gets black marble later. The
+    /// kit templates keep PierPersistence 0, so a lever of 0 reproduces the
+    /// plans from before the lever existed.</summary>
+    public static BridgeStyle StyleFor(Heightmap.Biome biome)
+    {
+        BridgeStyle kit = biome switch
+        {
+            Heightmap.Biome.Mountain or Heightmap.Biome.Plains or Heightmap.Biome.Mistlands
+                => BridgeStyle.MountainStone,
+            _ => BridgeStyle.MeadowsWood,
+        };
+        return kit.WithPierPersistence(Mathf.Clamp01(ConfiguredPierPersistence));
+    }
+
     public static List<BridgePiece> Solve(RoadCrossing crossing, WorldGenerator world, int worldSeed, BridgeStyle style)
     {
         List<BridgePiece> pieces = new();

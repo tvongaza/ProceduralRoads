@@ -136,7 +136,7 @@ public class FordStyleTests
         ResetGenerator(world);
         try
         {
-            RoadCrossingDetector.ForcedFordStyleForTests = FordStyle.Wade;
+            RoadCrossingDetector.SetFordStyleWeights(1f, 0f, 0f); // the lever: wade only
             var gully = new GullyWorld { Bed = 29.5f };
             WorldGenerator.instance = gully;
             typeof(RoadNetworkGenerator).GetField("m_pathfinder", BindingFlags.NonPublic | BindingFlags.Static)!
@@ -151,6 +151,6 @@ public class FordStyleTests
                 Assert.True(Mathf.Abs(rp.h - gully.GetHeight(rp.p.x, rp.p.y)) < 0.05f,
                     $"Wade ford point at {rp.p} has road height {rp.h:F2} vs terrain {gully.GetHeight(rp.p.x, rp.p.y):F2}: it was raised");
         }
-        finally { RoadCrossingDetector.ForcedFordStyleForTests = FordStyle.None; TearDown(); }
+        finally { RoadCrossingDetector.SetFordStyleWeights(1f, 1f, 1f); TearDown(); }
     }
 }

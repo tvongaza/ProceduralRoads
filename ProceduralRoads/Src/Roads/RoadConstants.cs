@@ -63,15 +63,28 @@ public static class RoadConstants
     // BRIDGE jump is allowed up to MaxBridgeCrossingCells, at a penalty high
     // enough that it is taken only where no land route exists, and only
     // between near-level banks. The layout solver leaves the fairway open.
-    // A bridge is a near-last resort (Tys, 2026-09-02): far more expensive
-    // than going around, so it appears only where a wide river is the sole
-    // way to reach somewhere. Fixed cost plus a per-metre cost, against a
-    // model where one rough cell costs ~1000: a 100 m bridge equals ~90
-    // rough cells or ~90 km of easy road.
+    // A bridge is a last resort, not a first choice: dearer than going
+    // around, so it appears where the detour is long or there is none.
+    // Fixed cost plus a per-metre cost, against a model where one rough cell
+    // costs ~1000: a 100 m bridge equals ~60 rough cells or ~60 km of easy
+    // road, break-even against a rough detour of roughly 2 km. Tys (end of
+    // 2 Sep 2026) softened these from 50000 + 400/m (~3.6 km break-even);
+    // they are the defaults of the player levers Roads/BridgeCostFixed and
+    // Roads/BridgeCostPerMeter.
     public const int MaxBridgeCrossingCells = 16; // 16 * 8m = 128m dry-point to dry-point
-    public const float BridgeCrossingPenalty = 50000f;
-    public const float BridgeCostPerMeter = 400f;
+    public const float BridgeCrossingPenalty = 30000f;
+    public const float BridgeCostPerMeter = 300f;
     public const float MaxBridgeBankDelta = 2.5f;
+
+    // Ruin rule for bridge spans (player lever Bridges/PierPersistence,
+    // 0..1): piers outlive the deck by default, so a long span reads as a
+    // row of piers with a collapsed deck rather than a jetty. 0 = the old
+    // coin flip, pier and deck of a station live or die together.
+    public const float DefaultPierPersistence = 0.85f;
+
+    // Ford style mix (player levers Fords/WadeWeight, RaiseWeight,
+    // SpanWeight): equal odds among the styles a site allows.
+    public const float DefaultFordStyleWeight = 1f;
 
     // Road cross-section (see RoadProfile): flat core fully leveled and
     // solidly painted; paint fades out strictly inside the leveled footprint

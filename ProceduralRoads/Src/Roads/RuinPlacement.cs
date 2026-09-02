@@ -93,7 +93,7 @@ public static class RuinPlacement
         int seed = WorldGenerator.instance.GetSeed();
 
         foreach (RoadCrossing crossing in RoadNetworkGenerator.GetRoadCrossings())
-            Bucket(BridgeLayout.Solve(crossing, WorldGenerator.instance, seed, BridgeStyleFor(crossing.Biome)));
+            Bucket(BridgeLayout.Solve(crossing, WorldGenerator.instance, seed, BridgeLayout.StyleFor(crossing.Biome)));
 
         foreach (StairRun run in RoadNetworkGenerator.GetStairRuns())
             Bucket(StairLayout.Solve(run, WorldGenerator.instance, seed, StairLayout.StyleFor(run.Biome)));
@@ -101,17 +101,6 @@ public static class RuinPlacement
         int total = 0;
         foreach (var kv in m_plansByZone) total += kv.Value.Count;
         Log.LogInfo($"[RUINS] planned {total} pieces across {m_plansByZone.Count} zones");
-    }
-
-    private static BridgeStyle BridgeStyleFor(Heightmap.Biome biome)
-    {
-        // Progression-aligned kits; Mistlands gets black marble later.
-        return biome switch
-        {
-            Heightmap.Biome.Mountain or Heightmap.Biome.Plains or Heightmap.Biome.Mistlands
-                => BridgeStyle.MountainStone,
-            _ => BridgeStyle.MeadowsWood,
-        };
     }
 
     private static void Bucket(List<BridgePiece> pieces)
