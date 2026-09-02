@@ -25,6 +25,70 @@
   paths, schedules, MACs) stay in gitignored files (scripts/.nas.env
   pattern) — never in tracked files of this public fork.
 
+## 2026-09-02 round 4: the raw-height blind spot (fb574ff)
+
+**Found by:** the NAS regenerating the fixture at 200000 iterations
+(rev 5 validator): 14 dry-land points on Crypt4 → Crypt4 that the
+10000-iteration gate never built. Traced on the Mac's copy of the same
+fixture (same hash abc0f92a, NAS config) by standing on the route:
+
+| point | game heightmap | mod blend | raw generator | player y |
+|---|---|---|---|---|
+| (4021,3314) | 22.9 | 22.9 | 31.2 | 28.1 (swimming) |
+| (4045,3314) | 24.4 | 24.4 | 30.2 | 28.2 (swimming) |
+| (4000,3300) | 25.9 | 25.9 | 25.8 | 28.4 (swimming) |
+
+Biome Swamp/Plains, "at boundary". A swimmer floats 1.9 m under the 30 m
+surface, so the road there lies under 5–8 m of water. The mod's
+BiomeBlendedHeight matches the game's heightmap to the centimetre; the
+raw WorldGenerator.GetHeight, which the pathfinder, the crossing
+detector, endpoint pathability, trimming, the validator and the piece
+layouts all read, says 29–31 there. The router judged it dry; the
+validator agreed with the router; the road grid (which did use the blend)
+planned the road at 23 m, so on a fresh zone the terrain modifier would
+dig an 8 m trench into the lake. Two blind spots aligned: numerically
+(raw everywhere) and visually (the fixture is a reused world, edits never
+re-applied). Only a live client standing in the water could find it.
+
+**Fix (fb574ff):** every water judgement and piece seating reads the
+rendered height (36 call sites), with a per-zone single-biome cache so
+single-biome zones cost one raw query. `BiomeBorderTests` (meadow beside
+ocean: 33 raw, ~28 rendered 6 m inside the meadow) pins the validator and
+the router. Separately, the run-2 defect on the same route: with wet
+shelf points before a jump, the bank walk extended the crossing indices
+back over them and the bank line was drawn between the extended points,
+6–12 m off the jump (deck across the road, route points outside the span);
+the line now follows the jump and wet endpoints walk outward along it
+(`CrossingLineTests`). 96/96 both runtimes; the harness is ~12× slower on
+the synthetic island (many coastal mixed zones); in-game cost measured on
+the fixture regeneration: 432 s from relaunch to player spawn at 200000 iterations
+(the same cycle took ~325 s before the blend: about a third slower).
+**Result on the Mac's copy of the fixture, NAS config, fb574ff: PASS, 0
+violations, 94 routes, 69 components, 8 crossings, 334 stair runs, 3798
+pieces, hash 93cc14c6, 0 ceiling hits, deepest genuine decision 57345
+(3.5× headroom). The five remaining sub-29.2 route points on the Crypt4
+routes sit inside bridge spans (rendered 27.3, no road points nearby).**
+NAS gate on fb574ff at 200000 requested; that run becomes the first
+fixture baseline that is neither truncated nor reading the wrong height..
+
+Run 2 vs run 5 in one sentence: away from a biome border raw and rendered
+coincide (the validator matched the CSV on run 2), at a border they
+diverge by metres (run 5 invisible). A refutation's scope was the answer.
+
+### Mock-gap ledger additions (round 4)
+13. **CLOSED — the world the router and the validator agreed on was not the
+    rendered world.** Raw generator heights at biome borders differ from the
+    heightmap by metres; every consumer now reads the blend. Scenario:
+    `BiomeBorderTests`. Boundary restated: the headless gate can catch
+    regressions in what its height model believes; it cannot adjudicate
+    whether that model is the game. That needs a live client at a border.
+14. **CLOSED — a crossing's deck line was not the road's line** when the
+    painting exclusion had been extended over wet shelves. `CrossingLineTests`.
+15. **OPEN — the fixture cannot show trenches or fills**: terrain edits are
+    never re-applied on a restored world, so a road planned 8 m under the
+    ground reads as ordinary road there. A fresh-world (or unvisited-zone)
+    check is the only visual evidence for leveling defects.
+
 ## 2026-09-02 round 3: bridge cost as a config lever, ford styles, and the budget confound (d3df333..b2fe11b)
 
 Tys: (1) let players tune the bridge cost — cheap = more bridges; find a
