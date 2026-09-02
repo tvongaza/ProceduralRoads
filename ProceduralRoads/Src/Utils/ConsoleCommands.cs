@@ -430,8 +430,8 @@ public static class ConsoleCommands
             // Direction and bank heights: side-profile camera azimuth is the
             // crossing direction +-90 deg, and the bank delta is the crossing-site
             // selection signal (a badly mismatched pair should not be bridged).
-            float fromY = WorldGenerator.instance != null ? WorldGenerator.instance.GetHeight(c.FromBank.x, c.FromBank.y) : 0f;
-            float toY = WorldGenerator.instance != null ? WorldGenerator.instance.GetHeight(c.ToBank.x, c.ToBank.y) : 0f;
+            float fromY = WorldGenerator.instance != null ? BiomeBlendedHeight.GetBlendedHeight(c.FromBank.x, c.FromBank.y, WorldGenerator.instance) : 0f;
+            float toY = WorldGenerator.instance != null ? BiomeBlendedHeight.GetBlendedHeight(c.ToBank.x, c.ToBank.y, WorldGenerator.instance) : 0f;
             bool stone = c.Biome is Heightmap.Biome.Mountain or Heightmap.Biome.Plains or Heightmap.Biome.Mistlands;
             args.Context.AddString(
                 $"CROSSING {i} x={c.Center.x:F0} z={c.Center.y:F0} width={c.Width:F0} biome={c.Biome} " +
@@ -817,7 +817,7 @@ public static class ConsoleCommands
         float terrainHeight = 0f;
         if (WorldGenerator.instance != null)
         {
-            terrainHeight = WorldGenerator.instance.GetHeight(playerPos.x, playerPos.z);
+            terrainHeight = BiomeBlendedHeight.GetBlendedHeight(playerPos.x, playerPos.z, WorldGenerator.instance);
             args.Context.AddString($"WorldGenerator height at position: {terrainHeight:F2}m");
             Log.LogInfo($"WorldGenerator height at position: {terrainHeight:F2}m");
         }
@@ -865,7 +865,7 @@ public static class ConsoleCommands
             var rp = nearbyPoints[i];
             float dist = Vector2.Distance(rp.p, playerPos2D);
             float localTerrain = WorldGenerator.instance != null 
-                ? WorldGenerator.instance.GetHeight(rp.p.x, rp.p.y) 
+                ? BiomeBlendedHeight.GetBlendedHeight(rp.p.x, rp.p.y, WorldGenerator.instance) 
                 : 0f;
             float delta = rp.h - localTerrain;
             
@@ -1439,7 +1439,7 @@ public static class ConsoleCommands
         sb.AppendLine("  X direction:");
         foreach (float offset in offsets)
         {
-            float raw = worldGen.GetHeight(wx + offset, wz);
+            float raw = BiomeBlendedHeight.GetBlendedHeight(wx + offset, wz, worldGen);
             float blended = BiomeBlendedHeight.GetBlendedHeight(wx + offset, wz, worldGen);
             Heightmap.Biome biome = worldGen.GetBiome(wx + offset, wz);
             sb.AppendLine($"    X+{offset:+00;-00}m: raw={raw:F1}m, blended={blended:F1}m, diff={blended-raw:+0.0;-0.0}m [{biome}]");
@@ -1448,7 +1448,7 @@ public static class ConsoleCommands
         sb.AppendLine("  Z direction:");
         foreach (float offset in offsets)
         {
-            float raw = worldGen.GetHeight(wx, wz + offset);
+            float raw = BiomeBlendedHeight.GetBlendedHeight(wx, wz + offset, worldGen);
             float blended = BiomeBlendedHeight.GetBlendedHeight(wx, wz + offset, worldGen);
             Heightmap.Biome biome = worldGen.GetBiome(wx, wz + offset);
             sb.AppendLine($"    Z+{offset:+00;-00}m: raw={raw:F1}m, blended={blended:F1}m, diff={blended-raw:+0.0;-0.0}m [{biome}]");

@@ -97,7 +97,7 @@ public static class RoadNetworkValidator
                 Vector3 p = route.Points[i];
                 hash = HashPoint(hash, p);
 
-                float height = world.GetHeight(p.x, p.z);
+                float height = BiomeBlendedHeight.GetBlendedHeight(p.x, p.z, world);
                 world.GetRiverWeight(p.x, p.z, out float riverWeight, out _);
                 bool inRiverCore = riverWeight > RoadConstants.RiverImpassableThreshold;
 

@@ -97,7 +97,7 @@ public static class StairLayout
         // Chain state: the joint is the midpoint of the current piece's
         // top-edge snap line — where the next piece's bottom edge mates.
         Vector2 joint = pts[0];
-        float jointY = world.GetHeight(joint.x, joint.y) - style.GroundEmbed;
+        float jointY = BiomeBlendedHeight.GetBlendedHeight(joint.x, joint.y, world) - style.GroundEmbed;
         float traveled = 0f;
         Vector2 heading = (pts[1] - pts[0]).normalized;
 
@@ -120,7 +120,7 @@ public static class StairLayout
             // Terrain ahead decides the move; the wedge between pieces at a
             // hard turn is covered by the landing the turn happens on.
             Vector2 aheadFull = joint + heading * style.StepRun;
-            float groundAhead = world.GetHeight(aheadFull.x, aheadFull.y);
+            float groundAhead = BiomeBlendedHeight.GetBlendedHeight(aheadFull.x, aheadFull.y, world);
             float riseNeeded = groundAhead - jointY;
 
             Move move;
@@ -153,11 +153,11 @@ public static class StairLayout
             // BREAKS here — skip forward one full run without emitting, so
             // the ruin shows a genuine gap instead of a step teleporting to
             // the new level.
-            float nextGround = world.GetHeight(nextJoint.x, nextJoint.y);
+            float nextGround = BiomeBlendedHeight.GetBlendedHeight(nextJoint.x, nextJoint.y, world);
             if (nextY < nextGround - 1.5f * style.StepRise || nextY - nextGround > 4f)
             {
                 joint = nextJoint + heading * style.StepRun;
-                jointY = world.GetHeight(joint.x, joint.y) - style.GroundEmbed;
+                jointY = BiomeBlendedHeight.GetBlendedHeight(joint.x, joint.y, world) - style.GroundEmbed;
                 traveled += advance + style.StepRun;
                 continue;
             }
@@ -222,7 +222,7 @@ public static class StairLayout
     private static void EmitSupport(List<BridgePiece> pieces, StairStyle style,
         WorldGenerator world, Vector2 pos, float baseY, System.Random rng)
     {
-        float ground = world.GetHeight(pos.x, pos.y);
+        float ground = BiomeBlendedHeight.GetBlendedHeight(pos.x, pos.y, world);
         float gap = baseY - ground;
         if (gap <= style.MaxUndersideGap)
             return;

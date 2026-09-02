@@ -88,7 +88,7 @@ public class RoadPathfinder
         TotalTerrainSamples += 2 + RoadConstants.TerrainVarianceSampleCount;
         CellSample sample = new()
         {
-            Height = m_worldGen.GetHeight(world.x, world.y),
+            Height = BiomeBlendedHeight.GetBlendedHeight(world.x, world.y, m_worldGen),
             Biome = m_worldGen.GetBiome(world.x, world.y),
             Variance = GetTerrainVariance(world),
         };
@@ -212,7 +212,7 @@ public class RoadPathfinder
 
     private float GetTerrainVariance(Vector2 pos)
     {
-        float centerHeight = m_worldGen.GetHeight(pos.x, pos.y);
+        float centerHeight = BiomeBlendedHeight.GetBlendedHeight(pos.x, pos.y, m_worldGen);
         float minHeight = centerHeight;
         float maxHeight = centerHeight;
         
@@ -281,7 +281,7 @@ public class RoadPathfinder
                 return ImpassableCost;
 
             float interiorCost = GetWaterCost(
-                m_worldGen.GetHeight(ix, iy),
+                BiomeBlendedHeight.GetBlendedHeight(ix, iy, m_worldGen),
                 m_worldGen.GetBiome(ix, iy));
             if (float.IsPositiveInfinity(interiorCost))
                 return ImpassableCost;
@@ -346,7 +346,7 @@ public class RoadPathfinder
         if (riverWeight > RoadConstants.RiverImpassableThreshold)
             return false;
 
-        return m_worldGen.GetHeight(world.x, world.y)
+        return BiomeBlendedHeight.GetBlendedHeight(world.x, world.y, m_worldGen)
             >= RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
     }
 

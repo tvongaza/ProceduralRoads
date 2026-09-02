@@ -358,3 +358,69 @@ public class CrossingExtentTests
         }
     }
 }
+
+/// <summary>
+/// Fixture witness 2026-09-02 (RoadTestAuto1 @ 200000 iterations, route
+/// Crypt4 -> Crypt4): a jump whose path has wet shallows just before it.
+/// The bank walk extended the crossing's indices back over those points,
+/// the bank-to-bank line was then drawn between the EXTENDED points and no
+/// longer followed the jump, so the recorded deck line sat 6-12 m off the
+/// road and the route's deck-over-water points fell outside the span.
+/// The crossing line must follow the jump; the extension is for painting only.
+/// </summary>
+public class CrossingLineTests
+{
+    /// <summary>Wide flat channel along x = 0; a wet shelf (30.6, above the
+    /// deep-water line but below the clearance) on the west approach for
+    /// y in [-40, -8], so the path bends through it before the jump.</summary>
+    private sealed class ShelfWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy)
+        {
+            float ax = Mathf.Abs(wx);
+            if (ax <= 35f) return 26f;
+            if (ax >= 45f)
+            {
+                if (wx < 0f && wx > -70f && wy >= -40f && wy <= -8f) return 30.6f; // wet shelf
+                return 32f;
+            }
+            return Mathf.Lerp(26f, 32f, (ax - 35f) / 10f);
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy) => Heightmap.Biome.Swamp;
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / 80f);
+            width = weight > 0f ? 160f : 0f;
+        }
+    }
+
+    [Fact]
+    public void CrossingLineFollowsTheJumpNotTheExtendedBanks()
+    {
+        var world = new ShelfWorld();
+        // Path: dry, then across the wet shelf, then the diagonal jump (-48,-8) -> (48,88), then dry.
+        var path = new List<Vector2>
+        {
+            new(-64f, -56f), new(-56f, -40f), new(-52f, -24f), new(-48f, -8f),
+            new(48f, 88f), new(56f, 96f), new(64f, 104f),
+        };
+        var crossing = Assert.Single(RoadCrossingDetector.Detect(path, world));
+
+        Vector2 jumpDir = (path[4] - path[3]).normalized;
+        float align = Mathf.Abs(Vector2.Dot(crossing.Direction, jumpDir));
+        Assert.True(align > 0.999f, $"Crossing direction {crossing.Direction} is not the jump direction {jumpDir}");
+
+        // Both banks sit ON the jump line.
+        foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
+        {
+            Vector2 rel = bank - path[3];
+            float across = Mathf.Abs(rel.x * jumpDir.y - rel.y * jumpDir.x);
+            Assert.True(across < 0.5f, $"Bank {bank} is {across:F1} m off the jump line");
+        }
+
+        // And every route point over the water is inside the recorded span (validator exemption).
+        var route = RoadRoute.FromWaypoints(0, "Shelf -> Far", 4f, path, world);
+        var report = RoadNetworkValidator.Validate(new[] { route }, world, null, new List<RoadCrossing> { crossing });
+        Assert.DoesNotContain(report.Violations, v => v.StartsWith("dry-land"));
+    }
+}

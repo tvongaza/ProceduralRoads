@@ -990,7 +990,7 @@ public static class RoadNetworkGenerator
         // Same floor as crossing banks and road points: the waterline plus
         // clearance. Endpoints between 30.5 and 31.25 used to be accepted and
         // produced the recurring below-waterline route ends.
-        float height = WorldGenerator.instance.GetHeight(point.x, point.y);
+        float height = BiomeBlendedHeight.GetBlendedHeight(point.x, point.y, WorldGenerator.instance);
         if (height < RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance)
             return false;
 
@@ -1154,9 +1154,9 @@ public static class RoadNetworkGenerator
         if (WorldGenerator.instance != null)
         {
             float floor = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
-            while (trimmedPath.Count > 2 && WorldGenerator.instance.GetHeight(trimmedPath[0].x, trimmedPath[0].y) < floor)
+            while (trimmedPath.Count > 2 && BiomeBlendedHeight.GetBlendedHeight(trimmedPath[0].x, trimmedPath[0].y, WorldGenerator.instance) < floor)
                 trimmedPath.RemoveAt(0);
-            while (trimmedPath.Count > 2 && WorldGenerator.instance.GetHeight(trimmedPath[trimmedPath.Count - 1].x, trimmedPath[trimmedPath.Count - 1].y) < floor)
+            while (trimmedPath.Count > 2 && BiomeBlendedHeight.GetBlendedHeight(trimmedPath[trimmedPath.Count - 1].x, trimmedPath[trimmedPath.Count - 1].y, WorldGenerator.instance) < floor)
                 trimmedPath.RemoveAt(trimmedPath.Count - 1);
         }
 

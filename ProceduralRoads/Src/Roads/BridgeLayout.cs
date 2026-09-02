@@ -162,8 +162,8 @@ public static class BridgeLayout
         Vector2 side = new(-dir.y, dir.x);
         float yaw = Mathf.Atan2(dir.x, dir.y) * 180f / Mathf.PI;
 
-        float bankFromH = world.GetHeight(from.x, from.y);
-        float bankToH = world.GetHeight(to.x, to.y);
+        float bankFromH = BiomeBlendedHeight.GetBlendedHeight(from.x, from.y, world);
+        float bankToH = BiomeBlendedHeight.GetBlendedHeight(to.x, to.y, world);
         float minDeck = crossing.WaterLevel + style.DeckFreeboard;
 
         // Fairway keep-clear interval, projected onto the crossing line.
@@ -203,7 +203,7 @@ public static class BridgeLayout
             // draw only in that mode, so default plans are byte-identical).
             deckAlive[i] = alive && (style.PierPersistence <= 0f || isBankStation || NextFloat(rng) < survival);
 
-            float ground = world.GetHeight(stationPos[i].x, stationPos[i].y);
+            float ground = BiomeBlendedHeight.GetBlendedHeight(stationPos[i].x, stationPos[i].y, world);
 
             if (alive)
             {
@@ -250,7 +250,7 @@ public static class BridgeLayout
         // half of a broken arch bridge.
         foreach (Vector2 bank in new[] { from, to })
         {
-            float bankGround = world.GetHeight(bank.x, bank.y);
+            float bankGround = BiomeBlendedHeight.GetBlendedHeight(bank.x, bank.y, world);
             pieces.Add(new BridgePiece
             {
                 Kind = BridgePieceKind.Abutment,
@@ -318,8 +318,8 @@ public static class BridgeLayout
         Vector2 side = new(-dir.y, dir.x);
         float yaw = Mathf.Atan2(dir.x, dir.y) * 180f / Mathf.PI;
 
-        float bankFromH = world.GetHeight(from.x, from.y);
-        float bankToH = world.GetHeight(to.x, to.y);
+        float bankFromH = BiomeBlendedHeight.GetBlendedHeight(from.x, from.y, world);
+        float bankToH = BiomeBlendedHeight.GetBlendedHeight(to.x, to.y, world);
         float deckH = Mathf.Max(Mathf.Max(bankFromH, bankToH) + RoadConstants.FordSpanDeckRise,
             crossing.WaterLevel + RoadConstants.FordSpanDeckClearance);
 
@@ -389,12 +389,12 @@ public static class BridgeLayout
             foreach (float s in new[] { -style.PostSideOffset, style.PostSideOffset })
             {
                 Vector2 postPos = pos + sideDir * s;
-                EmitColumn(pieces, style, postPos, world.GetHeight(postPos.x, postPos.y), postTop, yaw, health);
+                EmitColumn(pieces, style, postPos, BiomeBlendedHeight.GetBlendedHeight(postPos.x, postPos.y, world), postTop, yaw, health);
             }
         }
         else
         {
-            EmitColumn(pieces, style, pos, world.GetHeight(pos.x, pos.y), postTop, yaw, health);
+            EmitColumn(pieces, style, pos, BiomeBlendedHeight.GetBlendedHeight(pos.x, pos.y, world), postTop, yaw, health);
         }
 
         if (!string.IsNullOrEmpty(style.BeamPrefab))
@@ -447,7 +447,7 @@ public static class BridgeLayout
         if (NextFloat(rng) < 0.5f) offset = -offset;
 
         Vector2 pos = station + side * offset;
-        float ground = world.GetHeight(pos.x, pos.y);
+        float ground = BiomeBlendedHeight.GetBlendedHeight(pos.x, pos.y, world);
 
         pieces.Add(new BridgePiece
         {

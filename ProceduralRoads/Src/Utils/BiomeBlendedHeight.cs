@@ -23,6 +23,9 @@ namespace ProceduralRoads;
 /// </summary>
 public static class BiomeBlendedHeight
 {
+    private static readonly System.Collections.Generic.Dictionary<(int, int), bool> s_singleBiomeZone = new();
+    private static WorldGenerator? s_cacheOwner;
+
     // Heightmap dimensions matching Valheim's Heightmap class
     // IMPORTANT: m_width=32 vertices, but m_scale=2 in the actual game prefab!
     // This makes heightmaps 64m wide to match zone spacing (64m between zone centers).
@@ -67,6 +70,17 @@ public static class BiomeBlendedHeight
         float z0 = cornerZ;
         float z1 = cornerZ + HeightmapSize;
         
+        // Per-zone cache: whether this heightmap's four corners share one
+        // biome. Single-biome zones (nearly all of them) answer with one raw
+        // height query, so routing every water judgement through the blend
+        // costs almost nothing; mixed zones take the full blend below.
+        if (worldGen != s_cacheOwner) { s_singleBiomeZone.Clear(); s_cacheOwner = worldGen; }
+        (int, int) zoneKey = (Mathf.RoundToInt(cornerX), Mathf.RoundToInt(cornerZ));
+        if (s_singleBiomeZone.TryGetValue(zoneKey, out bool single))
+        {
+            if (single) return worldGen.GetHeight(wx, wy);
+        }
+
         // Get biomes at the four corners
         Heightmap.Biome biome00 = worldGen.GetBiome(x0, z0);  // bottom-left
         Heightmap.Biome biome10 = worldGen.GetBiome(x1, z0);  // bottom-right  
@@ -75,7 +89,10 @@ public static class BiomeBlendedHeight
         
         // If all corners have the same biome, no blending needed
         // (This is the fast path that HeightmapBuilder uses)
-        if (biome00 == biome10 && biome00 == biome01 && biome00 == biome11)
+        bool allSame = biome00 == biome10 && biome00 == biome01 && biome00 == biome11;
+        if (!s_singleBiomeZone.ContainsKey(zoneKey))
+            s_singleBiomeZone[zoneKey] = allSame;
+        if (allSame)
         {
             return worldGen.GetHeight(wx, wy);
         }

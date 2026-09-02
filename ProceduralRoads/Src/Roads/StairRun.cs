@@ -87,7 +87,7 @@ public static class StairRunDetector
         float[] segLen = new float[n - 1];
         float[] height = new float[n];
         for (int i = 0; i < n; i++)
-            height[i] = world.GetHeight(path[i].x, path[i].y);
+            height[i] = BiomeBlendedHeight.GetBlendedHeight(path[i].x, path[i].y, world);
 
         for (int i = 0; i < n - 1; i++)
         {
