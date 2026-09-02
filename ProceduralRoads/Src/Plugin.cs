@@ -86,8 +86,10 @@ namespace ProceduralRoads
             PathfindingMaxIterations = Config.Bind("Roads", "PathfindingMaxIterations", 10000,
                 new ConfigDescription("Maximum number of iterations for each road segment's pathfinding algorithm. " +
                     "Higher values will generate more roads but increase generation time. " +
-                    "Lower values will speed up generation time but cause less roads to generate.",
-                    new AcceptableValueRange<int>(1000, 100000)));
+                    "Lower values will speed up generation time but cause less roads to generate. " +
+                    "Validation stations: keep this well above the deepest genuine no-path decision the log reports " +
+                    "(\"no reachable path after N iterations\"); at a binding ceiling failed routes are budget artefacts, not results.",
+                    new AcceptableValueRange<int>(1000, 2000000)));
 
             MaxLocationsPerIsland = Config.Bind("Roads", "MaxLocationsPerIsland", 12,
                 new ConfigDescription("Maximum number of locations that can be connected by roads on a single island. " +
