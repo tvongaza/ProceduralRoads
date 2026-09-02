@@ -76,10 +76,16 @@ the Mac carries the arch-correctness claim, not this run.
 
 ## 2f04fca visual verification — Mac, RoadTestMac1 (2026-09-02)
 
-World: RoadTestMac1 (fresh, creation hash d49047f1; 92 routes, 9 crossings,
+World: RoadTestMac1 (fresh; hash d49047f1; 92 routes, 9 crossings,
 292 stair runs, 2745 pieces planned; 1 slope violation Crypt4 →
 MountainCave02 point 314 grade 1.93). This world's own baseline — never
-compare its numbers with RoadTestAuto1's. Backed up post-generation under
+compare its numbers with RoadTestAuto1's. **Baseline provenance: a RELOAD
+with ForceRegenerate=true (quit, relaunch, regenerate) reproduced
+d49047f1 byte-for-byte — creation == reload on this world, the second
+negative case for the divergence after RoadTestPC1 (RoadTestPC3 and the
+NAS fixture diverge; trigger still unpinned).** Reload state backed up
+under `validation-results/worlds/RoadTestMac1-reload-2f04fca/`. Cost of
+that check: ~5 min wall-clock incl. relaunch. Backed up post-generation under
 `validation-results/worlds/RoadTestMac1-postgen-2f04fca/` (untracked) so
 later sessions RELOAD it with ForceRegenerate=false instead of regenerating
 (crossings and stair runs persist on the metadata ZDO).
@@ -237,6 +243,14 @@ the gap. Live validation is scarce; the mocks must improve with each run.
    weather takes ~5 s to blend after `env Clear`, HUD hiding needs an
    Accessibility grant, and the CLI returns each command's output one call
    late. All four cost a wasted batch; all four are in the script now.
+
+9. **OPEN — a scope change inverted which evidence is load-bearing** (NAS
+   observation). The parked stone kit has the clean survival datapoint
+   (15/15, 8.7 min, player present); the prioritised wood kit has the soft
+   one (26 standing at c6, not a clean count). Nothing about the evidence
+   changed; the priority did. Closing move: the next live session takes a
+   clean wood decay census EARLY (anchored census at t0 and t8 at one wood
+   site, player within 10 m), before any wood iteration is judged.
 
 ## Public-surface audit (directive 2, 2026-09-02, read-only — HOLD respected)
 
