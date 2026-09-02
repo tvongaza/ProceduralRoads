@@ -118,6 +118,10 @@ public static class BridgeLayout
 {
     public const float FairwayClearance = 1f;
 
+    /// <summary>Maximum keep-clear width over the fairway: the collapsed
+    /// section a longship sails through (beam ~6 m, plus room to line up).</summary>
+    public const float FairwayGapWidth = 20f;
+
     public static List<BridgePiece> Solve(RoadCrossing crossing, WorldGenerator world, int worldSeed, BridgeStyle style)
     {
         List<BridgePiece> pieces = new();
@@ -138,7 +142,10 @@ public static class BridgeLayout
 
         // Fairway keep-clear interval, projected onto the crossing line.
         float fairwayMid = Vector2.Dot(crossing.FairwayCenter - from, dir);
-        float fairwayHalf = crossing.FairwayWidth * 0.5f + FairwayClearance;
+        // SAILING IS SACRED, but a ship needs one gap, not the whole deep
+        // bed: on a wide flat channel the keep-clear is a navigation gap
+        // around the fairway center, so the ruin still reads as a bridge.
+        float fairwayHalf = Mathf.Min(crossing.FairwayWidth, FairwayGapWidth) * 0.5f + FairwayClearance;
 
         // Stations every DeckSpan from bank to bank, deck height graded
         // between the bank contact points and clamped above the water.

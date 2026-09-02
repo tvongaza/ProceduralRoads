@@ -76,7 +76,7 @@ public class RiverCrossingTests
         {
             HasRiver = true,
             HasMountain = false,
-            RiverHalfWidth = 120f, // impassable core ~120m >> 48m ford cap
+            RiverHalfWidth = 170f, // impassable core ~170m > 128m bridge cap (fords cap at 48m)
         };
         var pathfinder = new RoadPathfinder(world);
 

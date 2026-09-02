@@ -53,6 +53,14 @@ public static class RoadConstants
     // painting exclusion). Must stay below the sailable fairway depth.
     public const float FordWadeDepth = 0.8f;
 
+    // Wide, sailable rivers (60-100 m of water): beyond the ford cap a
+    // BRIDGE jump is allowed up to MaxBridgeCrossingCells, at a penalty high
+    // enough that it is taken only where no land route exists, and only
+    // between near-level banks. The layout solver leaves the fairway open.
+    public const int MaxBridgeCrossingCells = 16; // 16 * 8m = 128m dry-point to dry-point
+    public const float BridgeCrossingPenalty = 20000f;
+    public const float MaxBridgeBankDelta = 2.5f;
+
     // Road cross-section (see RoadProfile): flat core fully leveled and
     // solidly painted; paint fades out strictly inside the leveled footprint
     // so roads keep an unpainted, smoothed verge; leveling eases to natural

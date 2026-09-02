@@ -339,8 +339,9 @@ public class RoadPathfinder
         crossingCost = 0f;
 
         float maxFordDistance = RoadConstants.MaxRiverCrossingCells * CellSize;
+        float maxBridgeDistance = RoadConstants.MaxBridgeCrossingCells * CellSize;
 
-        for (int step = 1; step <= RoadConstants.MaxRiverCrossingCells; step++)
+        for (int step = 1; step <= RoadConstants.MaxBridgeCrossingCells; step++)
         {
             Vector2i check = new Vector2i(from.x + direction.x * step, from.y + direction.y * step);
 
@@ -351,20 +352,25 @@ public class RoadPathfinder
                 return false;
 
             float distance = Vector2.Distance(GridToWorld(from), GridToWorld(check));
-            if (distance > maxFordDistance)
+            if (distance > maxBridgeDistance)
                 return false;
 
             // Crossing-site selection: banks of drastically different
             // heights cannot be bridged sensibly (stilt towers, absurd deck
-            // grades), so such a ford is refused outright; a smaller step is
-            // allowed but pays quadratically, which sends the search along
-            // the river to where the banks meet the water at similar heights.
+            // grades), so such a crossing is refused outright; a smaller
+            // step is allowed but pays quadratically, which sends the search
+            // along the river to where the banks meet the water at similar
+            // heights. Beyond the ford cap the jump is a BRIDGE over a wide,
+            // sailable river: far more expensive (taken only where no land
+            // route exists) and held to a tighter bank-delta limit.
+            bool bridge = distance > maxFordDistance;
             float bankDelta = Mathf.Abs(GetCellSample(from).Height - GetCellSample(check).Height);
-            if (bankDelta > RoadConstants.MaxFordBankDelta)
+            if (bankDelta > (bridge ? RoadConstants.MaxBridgeBankDelta : RoadConstants.MaxFordBankDelta))
                 return false;
 
             landing = check;
-            crossingCost = BaseCost * distance + RoadConstants.RiverCrossingPenalty + distance * 10f
+            crossingCost = BaseCost * distance + distance * 10f
+                + (bridge ? RoadConstants.BridgeCrossingPenalty : RoadConstants.RiverCrossingPenalty)
                 + RoadConstants.FordBankDeltaPenalty * bankDelta * bankDelta;
             return true;
         }
