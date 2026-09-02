@@ -245,7 +245,8 @@ public class CrossingExtentTests
         var world = new ApproachWorld { Bed = 29.5f };
         var path = new List<Vector2> { new(-32f, 0f), new(-24f, 0f), new(-16f, 0f), new(16f, 0f), new(24f, 0f), new(32f, 0f) };
 
-        Assert.Empty(RoadCrossingDetector.Detect(path, world));
+        var ford = Assert.Single(RoadCrossingDetector.Detect(path, world));
+        Assert.Equal(CrossingKind.Ford, ford.Kind);
         Assert.True(RoadConstants.FordWadeDepth > 0f && RoadConstants.FordWadeDepth <= 1.2f,
             "Wadeable depth must stay below the sailable fairway depth (1.2 m)");
     }

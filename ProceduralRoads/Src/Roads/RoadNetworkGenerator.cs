@@ -436,7 +436,15 @@ public static class RoadNetworkGenerator
         // nowhere, no deck starting up a dry hillside.
         List<(int from, int to, Vector2? lead, Vector2? resume)> exclusions = new();
         foreach (RoadCrossing crossing in crossings)
+        {
+            // Raised fords are ordinary leveled road; wading fords are painted
+            // separately at terrain height; bridges and spans exclude painting.
+            if (crossing.Kind == CrossingKind.Ford && crossing.Style == FordStyle.Raise)
+                continue;
             exclusions.Add((crossing.FromIndex, crossing.ToIndex, crossing.FromBank, crossing.ToBank));
+            if (crossing.Kind == CrossingKind.Ford && crossing.Style == FordStyle.Wade)
+                RoadSpatialGrid.AddRoadPath(new List<Vector2> { crossing.FromBank, crossing.ToBank }, width, WorldGenerator.instance, followTerrain: true);
+        }
         foreach (StairRun stairRun in stairRuns)
             exclusions.Add((stairRun.FromIndex, stairRun.ToIndex, null, null));
         exclusions.Sort((x, y) => x.from.CompareTo(y.from));

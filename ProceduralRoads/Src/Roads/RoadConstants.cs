@@ -52,6 +52,12 @@ public static class RoadConstants
     // knee-deep: the road goes through as a leveled ford (no bridge, no
     // painting exclusion). Must stay below the sailable fairway depth.
     public const float FordWadeDepth = 0.8f;
+    // Ford styles: wading (paint only, ground untouched) needs ankle-deep
+    // water; a short span needs room for at least three deck plates.
+    public const float FordWadeMaxDepth = 0.5f;
+    public const float FordSpanMinWidth = 6f;
+    public const float FordSpanDeckClearance = 1f; // deck at least this far above the water
+    public const float FordSpanDeckRise = 1f;      // and this far above the higher bank: a stepped footbridge
 
     // Wide, sailable rivers (60-100 m of water): beyond the ford cap a
     // BRIDGE jump is allowed up to MaxBridgeCrossingCells, at a penalty high

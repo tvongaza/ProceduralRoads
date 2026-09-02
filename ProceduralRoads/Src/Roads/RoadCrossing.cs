@@ -9,8 +9,21 @@ namespace ProceduralRoads;
 /// the deepest contiguous span, which future bridge ruins must keep clear
 /// of piers and debris so boats can still sail through.
 /// </summary>
+/// <summary>Bridge: deep or sailable water, pieces span it. Ford: knee-deep
+/// water the road goes through in one of the FordStyle ways.</summary>
+public enum CrossingKind { Bridge, Ford }
+
+/// <summary>How a ford treats the shallows (Tys, 2026-09-02): WADE paints
+/// the ground and leaves it at its height (the road goes through the
+/// water), RAISE levels the road up through the shallows, SPAN builds a
+/// short low bridge with steps at each end. Chosen per site for variety.</summary>
+public enum FordStyle { None, Wade, Raise, Span }
+
 public sealed class RoadCrossing
 {
+    public CrossingKind Kind = CrossingKind.Bridge;
+    public FordStyle Style = FordStyle.None;
+
     /// <summary>Index of the route this crossing belongs to.</summary>
     public int RouteIndex;
 
@@ -202,14 +215,28 @@ public static class RoadCrossingDetector
             fairwayWidth = bestRunLength * step;
         }
 
-        // Knee-deep and unsailable: a road goes through as a leveled ford.
-        if (fairwayWidth <= 0f && riverbed >= RoadConstants.SeaLevel - RoadConstants.FordWadeDepth)
-            return null;
-
         Vector2 center = (from + to) * 0.5f;
+
+        // Knee-deep and unsailable: a FORD, in one of three styles chosen
+        // per site so roads vary. Wading only where the water is ankle deep;
+        // a span only where there is room for a deck.
+        bool ford = fairwayWidth <= 0f && riverbed >= RoadConstants.SeaLevel - RoadConstants.FordWadeDepth;
+        FordStyle style = FordStyle.None;
+        if (ford)
+        {
+            float depth = RoadConstants.SeaLevel - riverbed;
+            List<FordStyle> eligible = new() { FordStyle.Raise };
+            if (depth <= RoadConstants.FordWadeMaxDepth) eligible.Add(FordStyle.Wade);
+            if (width >= RoadConstants.FordSpanMinWidth) eligible.Add(FordStyle.Span);
+            style = ForcedFordStyleForTests != FordStyle.None
+                ? ForcedFordStyleForTests
+                : eligible[SiteHash(center) % eligible.Count];
+        }
 
         return new RoadCrossing
         {
+            Kind = ford ? CrossingKind.Ford : CrossingKind.Bridge,
+            Style = style,
             FromIndex = fromIndex,
             ToIndex = toIndex,
             FromBank = from,
@@ -223,6 +250,22 @@ public static class RoadCrossingDetector
             FairwayWidth = fairwayWidth,
             Biome = world.GetBiome(center.x, center.y),
         };
+    }
+
+    /// <summary>Test hook: force every ford to one style (None = normal choice).</summary>
+    public static FordStyle ForcedFordStyleForTests = FordStyle.None;
+
+    /// <summary>Deterministic per-site hash so a ford keeps its style across
+    /// loads and worlds regenerate identically.</summary>
+    private static int SiteHash(Vector2 center)
+    {
+        unchecked
+        {
+            int x = Mathf.RoundToInt(center.x), y = Mathf.RoundToInt(center.y);
+            uint h = (uint)(x * 374761393 + y * 668265263);
+            h = (h ^ (h >> 13)) * 1274126177u;
+            return (int)((h ^ (h >> 16)) & 0x7FFFFFFF);
+        }
     }
 
     /// <summary>Walks from a dry point toward the water and returns the last

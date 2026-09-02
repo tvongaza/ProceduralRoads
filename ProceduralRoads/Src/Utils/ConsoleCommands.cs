@@ -435,6 +435,7 @@ public static class ConsoleCommands
             bool stone = c.Biome is Heightmap.Biome.Mountain or Heightmap.Biome.Plains or Heightmap.Biome.Mistlands;
             args.Context.AddString(
                 $"CROSSING {i} x={c.Center.x:F0} z={c.Center.y:F0} width={c.Width:F0} biome={c.Biome} " +
+                $"kind={(c.Kind == CrossingKind.Ford ? "ford-" + c.Style.ToString().ToLowerInvariant() : "bridge")} " +
                 $"kit={(stone ? "stone" : "wood")} dir={c.Direction.x:F2},{c.Direction.y:F2} " +
                 $"fromY={fromY:F1} toY={toY:F1} dY={Mathf.Abs(fromY - toY):F1} water={c.WaterLevel:F1} " +
                 $"bed={c.RiverbedHeight:F1} fairway={c.FairwayWidth:F0}");

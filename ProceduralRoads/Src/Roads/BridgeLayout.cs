@@ -14,6 +14,7 @@ public enum BridgePieceKind
     Landing,       // flat piece: switchback turn platform or flat chain stretch
     Beam,          // crossbeam tying a station's post pair under the deck
     Arch,          // quarter-arch springing from a bank abutment over the water
+    Stair,         // a step piece from the road up onto a raised ford span
 }
 
 /// <summary>One placed piece of a ruined bridge (a persistent ZDO once spawned).</summary>
@@ -42,6 +43,7 @@ public sealed class BridgeStyle
     public string AbutmentPrefab = "";
     public string DebrisPrefab = "";
     public string ArchPrefab = "";       // empty: no abutment arches
+    public string StairPrefab = "";      // step piece for ford spans (2 m run, 1 m rise)
 
     public float DeckSpan = 2f;          // meters between stations / one deck piece
     public float DeckWidth = 2f;         // deck piece width across the crossing
@@ -84,6 +86,7 @@ public sealed class BridgeStyle
         DeckPrefab = "wood_floor",       // 2x2 plate, walking surface at origin
         AbutmentPrefab = "wood_floor",
         DebrisPrefab = "wood_pole2",
+        StairPrefab = "wood_stair",
         PostSideOffset = 0.75f,
         PilingSegment = 2f,
     };
@@ -95,6 +98,7 @@ public sealed class BridgeStyle
         DeckPrefab = "stone_floor_2x2",  // 2x2, 1m thick, top face at +0.5
         AbutmentPrefab = "stone_floor_2x2",
         DebrisPrefab = "stone_wall_1x1",
+        StairPrefab = "stone_stair",
         ArchPrefab = "stone_arch",       // 2m quarter-arch: full 1m face at +x,
                                          // tapering to a top edge at -x, flat top
         PostSideOffset = 0f,             // full-width pier column
@@ -142,6 +146,15 @@ public static class BridgeLayout
             return pieces;
 
         System.Random rng = new System.Random(worldSeed ^ StableSeed(crossing));
+
+        // Fords: wading and raised fords are road, not pieces; a span is a
+        // short low bridge with steps.
+        if (crossing.Kind == CrossingKind.Ford)
+        {
+            if (crossing.Style == FordStyle.Span)
+                EmitShallowSpan(pieces, crossing, world, style, rng);
+            return pieces;
+        }
 
         Vector2 from = crossing.FromBank;
         Vector2 to = crossing.ToBank;
@@ -287,6 +300,80 @@ public static class BridgeLayout
             YawDegrees = archYaw,
             HealthFraction = RuinHealth(rng),
         });
+    }
+
+    /// <summary>
+    /// Ford span: a continuous low deck from shore to shore, one station per
+    /// DeckSpan with posts to the bed, deck at least FordSpanDeckClearance
+    /// above the water and never below either bank, lightly ruined (it is a
+    /// footbridge, not a monument). A step piece at each end where the deck
+    /// sits above the road.
+    /// </summary>
+    private static void EmitShallowSpan(List<BridgePiece> pieces, RoadCrossing crossing,
+        WorldGenerator world, BridgeStyle style, System.Random rng)
+    {
+        Vector2 from = crossing.FromBank;
+        Vector2 to = crossing.ToBank;
+        Vector2 dir = crossing.Direction;
+        Vector2 side = new(-dir.y, dir.x);
+        float yaw = Mathf.Atan2(dir.x, dir.y) * 180f / Mathf.PI;
+
+        float bankFromH = world.GetHeight(from.x, from.y);
+        float bankToH = world.GetHeight(to.x, to.y);
+        float deckH = Mathf.Max(Mathf.Max(bankFromH, bankToH) + RoadConstants.FordSpanDeckRise,
+            crossing.WaterLevel + RoadConstants.FordSpanDeckClearance);
+
+        int stationCount = Mathf.CeilToInt(crossing.Width / style.DeckSpan) + 1;
+        bool[] alive = new bool[stationCount];
+        Vector2[] pos = new Vector2[stationCount];
+        for (int i = 0; i < stationCount; i++)
+        {
+            float along = Mathf.Min(i * style.DeckSpan, crossing.Width);
+            pos[i] = from + dir * along;
+            bool isEnd = i == 0 || i == stationCount - 1;
+            alive[i] = isEnd || NextFloat(rng) < style.BankSurvival;
+            if (alive[i])
+                EmitStation(pieces, style, world, pos[i], side, deckH, yaw, rng);
+        }
+        for (int i = 0; i + 1 < stationCount; i++)
+        {
+            if (!alive[i] || !alive[i + 1])
+                continue;
+            Vector2 mid2 = (pos[i] + pos[i + 1]) * 0.5f;
+            pieces.Add(new BridgePiece
+            {
+                Kind = BridgePieceKind.Deck,
+                Prefab = style.DeckPrefab,
+                Position = new Vector3(mid2.x, deckH - style.DeckTopOffset, mid2.y),
+                YawDegrees = yaw,
+                HealthFraction = RuinHealth(rng),
+            });
+        }
+
+        // Steps: the road arrives at bank height; the deck may sit above it.
+        if (string.IsNullOrEmpty(style.StairPrefab))
+            return;
+        foreach ((Vector2 bank, Vector2 inward, float bankH) in new[] { (from, dir, bankFromH), (to, -dir, bankToH) })
+        {
+            if (deckH - bankH < 0.4f)
+                continue;
+            // One step piece per metre of rise, marching outward from the
+            // abutment so the top step meets the deck edge.
+            int steps = Mathf.CeilToInt((deckH - bankH) / 1f);
+            for (int k = 0; k < steps; k++)
+            {
+                Vector2 c = bank - inward * (1f + k * 2f);
+                float stepYaw = Mathf.Atan2(inward.x, inward.y) * 180f / Mathf.PI;
+                pieces.Add(new BridgePiece
+                {
+                    Kind = BridgePieceKind.Stair,
+                    Prefab = style.StairPrefab,
+                    Position = new Vector3(c.x, deckH - 1f - k * 1f, c.y),
+                    YawDegrees = stepYaw,
+                    HealthFraction = RuinHealth(rng),
+                });
+            }
+        }
     }
 
     /// <summary>One surviving station: post pair (or single full-width pier)

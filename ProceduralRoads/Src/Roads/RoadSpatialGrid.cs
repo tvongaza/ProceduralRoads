@@ -81,7 +81,9 @@ public static class RoadSpatialGrid
         return m_debugInfo.TryGetValue(position, out debugInfo);
     }
 
-    public static void AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen)
+    /// <summary>followTerrain: paint only — every point keeps the raw terrain
+    /// height, so leveling toward it changes nothing (a WADE ford).</summary>
+    public static void AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen, bool followTerrain = false)
     {
         if (path == null || path.Count < 2 || worldGen == null)
             return;
@@ -124,7 +126,7 @@ public static class RoadSpatialGrid
         {
             float distFromNearestEnd = Mathf.Min(distanceFromStart[i], pathTotal - distanceFromStart[i]);
             float rampBlend = RoadProfile.EndpointRampBlend(distFromNearestEnd);
-            float finalHeight = Mathf.Lerp(denseHeights[i], smoothedHeights[i], rampBlend);
+            float finalHeight = followTerrain ? denseHeights[i] : Mathf.Lerp(denseHeights[i], smoothedHeights[i], rampBlend);
 
             AddRoadPoint(tempPoints, densePoints[i], width, finalHeight);
 

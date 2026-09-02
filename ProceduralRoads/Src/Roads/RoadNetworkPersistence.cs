@@ -576,7 +576,7 @@ public static class RoadNetworkPersistence
         using MemoryStream ms = new MemoryStream();
         using BinaryWriter writer = new BinaryWriter(ms);
 
-        writer.Write(1);
+        writer.Write(2);
         writer.Write(roadCrossings.Count);
 
         for (int i = 0; i < roadCrossings.Count; i++)
@@ -593,6 +593,8 @@ public static class RoadNetworkPersistence
             writer.Write(crossing.FairwayCenter.y);
             writer.Write(crossing.FairwayWidth);
             writer.Write((int)crossing.Biome);
+            writer.Write((int)crossing.Kind);   // v2
+            writer.Write((int)crossing.Style);  // v2
         }
 
         return ms.ToArray();
@@ -606,7 +608,7 @@ public static class RoadNetworkPersistence
             using BinaryReader reader = new BinaryReader(ms);
 
             int version = reader.ReadInt32();
-            if (version != 1)
+            if (version != 1 && version != 2)
             {
                 Log.LogWarning($"Unknown road crossing data version: {version}");
                 return false;
@@ -634,6 +636,11 @@ public static class RoadNetworkPersistence
                     FairwayWidth = reader.ReadSingle(),
                     Biome = (Heightmap.Biome)reader.ReadInt32(),
                 };
+                if (version >= 2)
+                {
+                    crossing.Kind = (CrossingKind)reader.ReadInt32();
+                    crossing.Style = (FordStyle)reader.ReadInt32();
+                }
 
                 crossing.Center = (crossing.FromBank + crossing.ToBank) * 0.5f;
                 Vector2 direction = crossing.ToBank - crossing.FromBank;
