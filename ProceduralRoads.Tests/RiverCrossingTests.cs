@@ -180,14 +180,15 @@ public class MistlandsBridgeBanTests
     private sealed class BiomeRiverWorld : WorldGenerator
     {
         public float HalfWidth = 40f;           // > 24 m: needs a BRIDGE jump
+        public float Bed = 26f;                 // deeper than wading: a bridge crossing
         public Heightmap.Biome EastBiome = Heightmap.Biome.Mistlands;
         public override float GetHeight(float wx, float wy)
         {
             if (Mathf.Abs(wx) > 220f || Mathf.Abs(wy) > 120f) return 20f;
             float ax = Mathf.Abs(wx);
-            if (ax <= HalfWidth) return 26f;
+            if (ax <= HalfWidth) return Bed;
             if (ax >= HalfWidth + 10f) return 32f;
-            return Mathf.Lerp(26f, 32f, (ax - HalfWidth) / 10f);
+            return Mathf.Lerp(Bed, 32f, (ax - HalfWidth) / 10f);
         }
         public override Heightmap.Biome GetBiome(float wx, float wy) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean
@@ -213,7 +214,20 @@ public class MistlandsBridgeBanTests
     [Fact]
     public void FordsIntoTheMistlandsStayAllowed()
     {
-        var mist = new BiomeRiverWorld { HalfWidth = 12f }; // ~28 m of water: a ford jump
+        // ~28 m of knee-deep water: a wadeable ford jump.
+        var mist = new BiomeRiverWorld { HalfWidth = 12f, Bed = RoadConstants.SeaLevel - RoadConstants.FordWadeDepth + 0.1f };
         Assert.NotNull(new RoadPathfinder(mist).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f)));
+    }
+
+    /// <summary>A ford-LENGTH jump over water deeper than wading is a bridge
+    /// crossing once detected (19 such on RoadTestMac2 still got wood and
+    /// stone after the bridge-jump ban), so the Mistlands refuse it too.</summary>
+    [Fact]
+    public void ShortDeepJumpsIntoTheMistlandsAreRefused()
+    {
+        var mist = new BiomeRiverWorld { HalfWidth = 12f, Bed = 26f };
+        Assert.Null(new RoadPathfinder(mist).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f)));
+        var meadows = new BiomeRiverWorld { HalfWidth = 12f, Bed = 26f, EastBiome = Heightmap.Biome.Meadows };
+        Assert.NotNull(new RoadPathfinder(meadows).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f)));
     }
 }

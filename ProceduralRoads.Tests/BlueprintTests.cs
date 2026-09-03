@@ -388,6 +388,15 @@ public class BlueprintTests
         }
     }
 
+    [Fact]
+    public void AMistlandsBridgeCrossingGetsNoPlan()
+    {
+        var (c, world) = Crossing();
+        Assert.NotEmpty(BridgeLayout.Solve(c, world, 7, BridgeLayout.StyleFor(c.Biome)));
+        c.Biome = Heightmap.Biome.Mistlands;
+        Assert.Empty(BridgeLayout.Solve(c, world, 7, BridgeLayout.StyleFor(c.Biome)));
+    }
+
     // ================= export =================
 
     [Theory]

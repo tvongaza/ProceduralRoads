@@ -220,6 +220,12 @@ public static class BridgeLayout
 
         System.Random rng = new System.Random(worldSeed ^ StableSeed(crossing));
 
+        // No bridges in or to the Mistlands (Tys, 3 Sep 2026): the pathfinder
+        // refuses deep-water jumps there; a bridge crossing it still records
+        // (cell sampling is coarser than the detector's) gets no plan.
+        if (crossing.Kind == CrossingKind.Bridge && crossing.Biome == Heightmap.Biome.Mistlands)
+            return pieces;
+
         // Fords: wading and raised fords are road, not pieces; a span is a
         // short low bridge with steps.
         if (crossing.Kind == CrossingKind.Ford)
