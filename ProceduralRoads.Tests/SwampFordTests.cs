@@ -72,14 +72,25 @@ public class SwampFordTests
         Assert.Equal(CrossingKind.Bridge, bridge.Kind);
         Assert.True(bridge.FairwayWidth >= RoadConstants.SwampFordMaxFairway);
 
-        // Deeper than wading depth anywhere: a bridge, whose banks stand at
-        // the edge of the wadeable water, not at the path's dry cells.
+        // Deeper than wading depth anywhere: a bridge. With dry land at 33
+        // only 6 m from the wadeable bank at 29 the high-bridge rule fires
+        // (a 4 m rise within reach) and the deck springs from the dry edge —
+        // abutments out of the swamp water, the shelf under the deck.
         var deep = new SwampChannelWorld { Bed = 29f, DipBed = 26f, DipHalfWidth = 4f };
         var deepBridge = Assert.Single(RoadCrossingDetector.Detect(Path(0f), deep));
         Assert.Equal(CrossingKind.Bridge, deepBridge.Kind);
-        Assert.InRange(deepBridge.Width, 7f, 9.5f); // the 8 m dip, not the 20 m channel or the 48 m jump
+        Assert.InRange(deepBridge.Width, 19f, 21f); // dry edge to dry edge, not the 48 m jump
         Assert.Equal(2, deepBridge.FromIndex);
         Assert.Equal(3, deepBridge.ToIndex);
+
+        // With a wide wade shelf (dry land 26 m away, beyond HighBankReach)
+        // the banks stand at the edge of the wadeable water: the shelf is
+        // waded, only the dip is decked.
+        var wide = new SwampChannelWorld { Bed = 29f, HalfWidth = 30f, DipBed = 26f, DipHalfWidth = 4f };
+        var widePath = new List<Vector2> { new(-56f, 0f), new(-48f, 0f), new(-40f, 0f), new(40f, 0f), new(48f, 0f), new(56f, 0f) };
+        var wideBridge = Assert.Single(RoadCrossingDetector.Detect(widePath, wide));
+        Assert.Equal(CrossingKind.Bridge, wideBridge.Kind);
+        Assert.InRange(wideBridge.Width, 7f, 9.5f); // the 8 m dip, not the 60 m shelf or the 80 m jump
     }
 
     [Fact]

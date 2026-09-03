@@ -234,6 +234,25 @@ public static class RoadCrossingDetector
         (Vector2 to, int toOrdinal) = ShoreAlongPath(path, toIndex, fromIndex, world);
         fromIndex += fromOrdinal;
         toIndex -= toOrdinal;
+
+        // High bridge: when the road climbs a cliff on both sides of the
+        // water, the deck springs from the bank tops instead of the water's
+        // edge (RoadConstants.HighBankReach / HighBankRise). Both banks move
+        // together, and only when the tops are level enough for one deck.
+        {
+            float fromH = BiomeBlendedHeight.GetBlendedHeight(from.x, from.y, world);
+            float toH = BiomeBlendedHeight.GetBlendedHeight(to.x, to.y, world);
+            (Vector2 topFrom, int topFromIndex, float topFromH) = BankTop(path, from, fromIndex, -1, world);
+            (Vector2 topTo, int topToIndex, float topToH) = BankTop(path, to, toIndex, +1, world);
+            if (topFromH >= fromH + RoadConstants.HighBankRise && topToH >= toH + RoadConstants.HighBankRise
+                && Mathf.Abs(topFromH - topToH) <= RoadConstants.MaxBridgeBankDelta)
+            {
+                from = topFrom;
+                to = topTo;
+                fromIndex = topFromIndex;
+                toIndex = topToIndex;
+            }
+        }
         float width = Vector2.Distance(from, to);
         if (width < 0.5f)
             return null;
@@ -473,6 +492,57 @@ public static class RoadCrossingDetector
             last = samples[k];
         }
         return metWater ? last : (first, 0);
+    }
+
+    /// <summary>
+    /// The highest ground within HighBankReach of a bank, walking OUTWARD
+    /// from it along the path (step -1 toward the path start from the from
+    /// bank, +1 toward the path end from the to bank). Returns the nearest
+    /// point where that height is reached, the path index that brackets it
+    /// on the water side (FromIndex / ToIndex semantics), and its height.
+    /// </summary>
+    private static (Vector2 top, int index, float height) BankTop(List<Vector2> path, Vector2 bank, int bankIndex, int step, WorldGenerator world)
+    {
+        // From the from bank the first vertex outward is path[bankIndex]
+        // (the bank lies on segment [bankIndex, bankIndex + 1]); from the to
+        // bank it is path[bankIndex] as well (segment [bankIndex - 1, bankIndex]).
+        List<(Vector2 p, int index)> samples = new() { (bank, bankIndex) };
+        Vector2 pos = bank;
+        int next = bankIndex;
+        float budget = RoadConstants.HighBankReach;
+        while (budget > 0f && next >= 0 && next < path.Count)
+        {
+            Vector2 target = path[next];
+            float length = Vector2.Distance(pos, target);
+            if (length > 0.01f)
+            {
+                Vector2 dir = (target - pos) * (1f / length);
+                // Samples on this stretch bracket to the vertex on the water
+                // side of it: `next` itself on the from side (the segment is
+                // [next, next + 1]) and `next` on the to side (segment
+                // [next - 1, next]) — the stretch's near vertex is the bracket
+                // once we are past the first stretch, which starts at the bank.
+                int bracket = next;
+                for (float d = 0.5f; d < length && d <= budget; d += 0.5f)
+                    samples.Add((pos + dir * d, bracket));
+                if (length <= budget)
+                    samples.Add((target, next));
+                budget -= length;
+            }
+            pos = target;
+            next += step;
+        }
+
+        float best = float.MinValue;
+        foreach ((Vector2 p, int _) in samples)
+            best = Mathf.Max(best, BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world));
+        foreach ((Vector2 p, int index) in samples)
+        {
+            float h = BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
+            if (h >= best - 0.05f)
+                return (p, index, h);
+        }
+        return (bank, bankIndex, BiomeBlendedHeight.GetBlendedHeight(bank.x, bank.y, world));
     }
 
     /// <summary>

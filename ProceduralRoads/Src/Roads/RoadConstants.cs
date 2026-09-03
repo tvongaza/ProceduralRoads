@@ -60,6 +60,22 @@ public static class RoadConstants
     // fairway: a wading-depth swamp channel with no longer sailable stretch
     // is a ford (Tys, 2026-09-02, c6/c7), a longer one stays a bridge.
     public const float SwampFordMaxFairway = 8f;
+
+    // High bridge (Tys, 2026-09-02, c4/c15: steep narrow channels where the
+    // fairway gap eats the whole deck and the road climbs a cliff on each
+    // side): when the ground within HighBankReach of each bank along the
+    // road stands at least HighBankRise above that bank, the deck springs
+    // from the bank tops — abutments there, piers taller, painted road
+    // stopping at the top.
+    public const float HighBankReach = 12f;
+    public const float HighBankRise = 2.5f;
+
+    // Stepped bridge ends (Tys, 2026-09-02, c12 "looks great"): per site the
+    // deck either meets the road flush or sits this far above it with steps
+    // up to it at both ends. Chosen by site hash (SteppedEndChance).
+    public const float SteppedEndChance = 0.5f;
+    public const float SteppedEndMinRise = 0.5f;
+    public const float SteppedEndMaxRise = 1.5f;
     public const float FordSpanDeckClearance = 1f; // deck at least this far above the water
     public const float FordSpanDeckRise = 1f;      // and this far above the higher bank: a stepped footbridge
 
