@@ -69,11 +69,23 @@ to the blueprint's first snap point or its centre). MoreWorldLocations
 does not use text blueprints at all (Unity prefabs with MOCK_ children),
 so it is not a reference for the format, only for spawning.
 
-### NAS state
-Gated: everything through e22acaa. Requested, results pending at hand-off:
-c689210 (swamp dry banks: expect hash same, swamp widths/pieces up),
-b28b317 (Mistlands ban: hash moves, routes may drop), bf90349 (must be
-byte-identical to b28b317). Baseline 73c6bec7; 0e9d7e1 onward held.
+### NAS state (results in at 09:40)
+- c689210 (swamp dry banks): INERT on Auto1 — routes MD5 and pieces
+  identical to e22acaa; the fixture has no swamp bridges. Fifth commit this
+  session that Auto1 could not exercise (arches, wet terminus, swamp fords,
+  consolidation, swamp bridges): **Auto1 is a regression tripwire, not a
+  feature exerciser** — state expectations that way; Mac2 is where features
+  show.
+- b28b317 (Mistlands ban): hash 7f80c02b -> d1813847, routes 91 -> 88,
+  crossings 17/17 -> 8/8, components 51 -> 48, pieces 1024 -> 572,
+  unreachable 9 -> 11, fordCount 20 -> 10 (unpredicted: routes that forded
+  on their way to a Mistlands bridge are gone entirely — inference, confirm),
+  violations 8 -> 6, all six now on approaches to DvergrTownEntrance1 (one
+  terrain feature; the only open class on Auto1).
+- bf90349: byte-identical to b28b317 (MD5 db8b6bf8...), as it must be; the
+  reload fix can only be proven by a real reload in-game.
+Baseline 73c6bec7; 0e9d7e1 onward held. Dumps for every commit incl.
+bf90349 at world-dumps/<commit>/ (scp -O).
 Dumps at /Volume1/Docker/data/procedural-roads/world-dumps/<commit>/ (scp -O).
 
 ### Next for whoever picks up
