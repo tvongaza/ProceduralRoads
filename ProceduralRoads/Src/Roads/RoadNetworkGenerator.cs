@@ -1240,7 +1240,7 @@ public static class RoadNetworkGenerator
         foreach ((float _, Vector2 p) in candidates)
         {
             if (LegClear(anchor, p, center, radius))
-                return new List<Vector2> { p };
+                return Densify(anchor, new List<Vector2> { p });
         }
 
         // Flood fill from the anchor over dry cells in the ring just outside
@@ -1298,7 +1298,7 @@ public static class RoadNetworkGenerator
                 leg.Add(Cell(c));
             leg.Reverse();
             leg.Add(t);
-            return StringPull(anchor, leg, center, radius);
+            return Densify(anchor, StringPull(anchor, leg, center, radius));
         }
         return null;
     }
@@ -1324,6 +1324,27 @@ public static class RoadNetworkGenerator
         return pulled;
     }
 
+    /// <summary>The route centerline is a Catmull-Rom spline through its
+    /// waypoints, and a sharp corner overshoots the polyline; waypoints every
+    /// LegWaypointSpacing keep the curve within the clearance LegClear
+    /// demands, so no resampled point lands in the water the leg skirted.</summary>
+    private const float LegWaypointSpacing = 2f;
+    private const float LegWaterClearance = 1f;
+
+    private static List<Vector2> Densify(Vector2 anchor, List<Vector2> leg)
+    {
+        List<Vector2> dense = new();
+        Vector2 from = anchor;
+        foreach (Vector2 to in leg)
+        {
+            int steps = Mathf.Max(1, Mathf.CeilToInt(Vector2.Distance(from, to) / LegWaypointSpacing));
+            for (int i = 1; i <= steps; i++)
+                dense.Add(Vector2.Lerp(from, to, (float)i / steps));
+            from = to;
+        }
+        return dense;
+    }
+
     private static bool AboveWaterlineFloor(Vector2 p) =>
         BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, WorldGenerator.instance)
             >= RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
@@ -1339,7 +1360,18 @@ public static class RoadNetworkGenerator
         for (int i = 0; i <= steps; i++)
         {
             Vector2 p = Vector2.Lerp(a, b, (float)i / steps);
-            if (!AboveWaterlineFloor(p) || (p - center).sqrMagnitude < keepOut)
+            if ((p - center).sqrMagnitude < keepOut)
+                return false;
+            if (!AboveWaterlineFloor(p))
+                return false;
+            // Dry LegWaterClearance to each side as well, so the spline's
+            // overshoot at the corners has dry ground to overshoot into. Not
+            // demanded of the segment's start: the anchor is a path point
+            // that may legitimately sit at the water's edge.
+            if (i > 0 && (!AboveWaterlineFloor(new Vector2(p.x + LegWaterClearance, p.y))
+                || !AboveWaterlineFloor(new Vector2(p.x - LegWaterClearance, p.y))
+                || !AboveWaterlineFloor(new Vector2(p.x, p.y + LegWaterClearance))
+                || !AboveWaterlineFloor(new Vector2(p.x, p.y - LegWaterClearance))))
                 return false;
         }
         return true;

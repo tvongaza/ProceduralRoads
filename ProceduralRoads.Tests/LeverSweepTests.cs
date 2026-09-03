@@ -393,6 +393,96 @@ public class LeverSweepTests
         finally { RoadNetworkGenerator.WetTerminus = saved; WorldGenerator.instance = null; }
     }
 
+    // ---------------------------------------------------------------
+    // End to end: a real pathfinder route into a location whose circle
+    // edge is wet. The NAS fixture has no such site (2 Sep: 94 of 94
+    // routes identical before and after the Reroute rework), so a gate
+    // there cannot exercise Reroute; this scenario pins it deterministically.
+    // ---------------------------------------------------------------
+
+    /// <summary>Flat 33 plateau. A thin wet band (height 29) hugs the
+    /// location's circle at the origin, one metre either side of the radius,
+    /// across ± BandHalfAngle around the western approach. Thinner than the
+    /// pathfinder's interior sampling, so a straight-in path steps over it
+    /// on cell centres and leaves its interpolated circle point in the
+    /// water — the real shape of a wet terminus.</summary>
+    private sealed class WetRimWorld : WorldGenerator
+    {
+        public float Radius = 22f;
+        public float BandHalfAngle = 40f;
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 400f || Mathf.Abs(wy) > 400f) return 20f;
+            float d = Mathf.Sqrt(wx * wx + wy * wy);
+            if (d < Radius - 1f || d > Radius + 1f) return 33f;
+            return OffsetFromWest(wx, wy) < BandHalfAngle ? 29f : 33f;
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+            GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
+    }
+
+    private static void ResetGenerator(WorldGenerator world)
+    {
+        WorldGenerator.instance = world;
+        RoadSpatialGrid.Clear();
+        typeof(RoadNetworkGenerator).GetMethod("Reset", BindingFlags.Public | BindingFlags.Static)!.Invoke(null, null);
+        typeof(RoadNetworkGenerator).GetField("m_pathfinder", BindingFlags.NonPublic | BindingFlags.Static)!
+            .SetValue(null, new RoadPathfinder(world));
+    }
+
+    private static void TearDownGenerator()
+    {
+        typeof(RoadNetworkGenerator).GetField("m_pathfinder", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, null);
+        RoadSpatialGrid.Clear();
+        WorldGenerator.instance = null;
+    }
+
+    [Fact]
+    public void WetTerminus_EndToEnd_ARealRouteReachesTheDryArcAndValidatesClean()
+    {
+        var world = new WetRimWorld();
+        float radius = world.Radius;
+        Vector2 start = new(-200f, 0f), center = new(0f, 0f);
+        var saved = RoadNetworkGenerator.WetTerminus;
+        try
+        {
+            // Precondition, asserted so the scenario cannot silently stop
+            // being a wet terminus: with Trim the road ends short of the circle.
+            ResetGenerator(world);
+            RoadNetworkGenerator.WetTerminus = WetTerminusMode.Trim;
+            Assert.True(RoadNetworkGenerator.GenerateRoad(start, 0f, center, radius, 4f, "West -> WetRim"));
+            var trimmed = Assert.Single(RoadNetworkGenerator.GetRoadRoutes());
+            Vector3 tEnd = trimmed.Points[trimmed.Points.Count - 1];
+            Assert.True(new Vector2(tEnd.x, tEnd.z).magnitude > radius + 1f,
+                $"precondition: Trim should end short of the circle (the edge point is wet); ended at {tEnd}");
+
+            // Reroute: the road reaches the location on its dry arc, and the
+            // validator (the same instrument as the in-game selftest) finds
+            // no wet point anywhere on the built centerline.
+            ResetGenerator(world);
+            RoadNetworkGenerator.WetTerminus = WetTerminusMode.Reroute;
+            Assert.True(RoadNetworkGenerator.GenerateRoad(start, 0f, center, radius, 4f, "West -> WetRim"));
+            var rerouted = Assert.Single(RoadNetworkGenerator.GetRoadRoutes());
+            Vector3 end = rerouted.Points[rerouted.Points.Count - 1];
+            Vector2 e = new(end.x, end.z);
+            Assert.InRange(e.magnitude, radius - 0.6f, radius + 0.6f);
+            Assert.True(world.GetHeight(e.x, e.y) >= Floor, $"terminus {e} is wet");
+            Assert.True(OffsetFromWest(e.x, e.y) >= world.BandHalfAngle - 0.5f, $"terminus {e} is inside the wet band");
+            foreach (Vector3 p in rerouted.Points)
+                Assert.True(new Vector2(p.x, p.z).magnitude >= radius - 0.6f, $"route point {p} is inside the location");
+            var report = RoadNetworkValidator.Validate(RoadNetworkGenerator.GetRoadRoutes(), world,
+                RoadNetworkGenerator.GetStairRuns(), RoadNetworkGenerator.GetRoadCrossings());
+            Assert.True(report.Passed, string.Join("; ", report.Violations));
+
+            // Drop: the location gets no road at all.
+            ResetGenerator(world);
+            RoadNetworkGenerator.WetTerminus = WetTerminusMode.Drop;
+            Assert.False(RoadNetworkGenerator.GenerateRoad(start, 0f, center, radius, 4f, "West -> WetRim"));
+            Assert.Empty(RoadNetworkGenerator.GetRoadRoutes());
+        }
+        finally { RoadNetworkGenerator.WetTerminus = saved; TearDownGenerator(); }
+    }
+
     // ===============================================================
     // 4. Roads/BridgeCostFixed + BridgeCostPerMeter: 0 .. prohibitive,
     //    against detours from short to long
