@@ -145,6 +145,34 @@ public static class BridgeLayout
     /// the fairway itself.</summary>
     public const float FairwayGapFraction = 0.3f;
 
+    /// <summary>Two routes crossing the same water (RoadTestMac2 c1/c2:
+    /// Eikthyrnir-GDKing and GDKing-Bonemass, opposite directions) each
+    /// record a crossing, and each record solved to the same bridge on the
+    /// same spot. One bridge per site: crossings whose centers lie within
+    /// SharedSiteRadius of an earlier one share its plan. Every route keeps
+    /// its own record (the validator exempts wet points per route).</summary>
+    public const float SharedSiteRadius = 6f;
+
+    public static List<RoadCrossing> DistinctSites(IEnumerable<RoadCrossing> crossings)
+    {
+        List<RoadCrossing> sites = new();
+        foreach (RoadCrossing c in crossings)
+        {
+            bool shared = false;
+            foreach (RoadCrossing s in sites)
+            {
+                if ((s.Center - c.Center).sqrMagnitude <= SharedSiteRadius * SharedSiteRadius)
+                {
+                    shared = true;
+                    break;
+                }
+            }
+            if (!shared)
+                sites.Add(c);
+        }
+        return sites;
+    }
+
     public static float FairwayGap(RoadCrossing crossing) =>
         Mathf.Min(crossing.FairwayWidth, Mathf.Max(FairwayGapWidth, crossing.Width * FairwayGapFraction));
 

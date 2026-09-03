@@ -95,6 +95,24 @@ public class ApproachAndGapTests
         }
     }
 
+    [Fact]
+    public void TwoRoutesOverOneWaterShareOneBridgePlan()
+    {
+        RoadCrossing At(float x, float z, float dirX) => new()
+        {
+            Kind = CrossingKind.Bridge, Center = new Vector2(x, z), Direction = new Vector2(dirX, 0f),
+            FromBank = new Vector2(x - 35f * dirX, z), ToBank = new Vector2(x + 35f * dirX, z), Width = 70f,
+        };
+        var a = At(-593f, 384f, 1f);          // Eikthyrnir -> GDKing
+        var b = At(-593f, 384f, -1f);         // GDKing -> Bonemass, the other way
+        var near = At(-590f, 386f, 1f);       // same water, slightly different line
+        var other = At(-520f, 384f, 1f);      // 73 m away: its own bridge
+        var sites = BridgeLayout.DistinctSites(new[] { a, b, near, other });
+        Assert.Equal(2, sites.Count);
+        Assert.Same(a, sites[0]);
+        Assert.Same(other, sites[1]);
+    }
+
     /// <summary>80 m sailable channel; level banks.</summary>
     private sealed class WideChannelWorld : WorldGenerator
     {

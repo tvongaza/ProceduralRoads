@@ -101,7 +101,7 @@ public static class RuinPlacement
         m_plansByZone = new Dictionary<Vector2i, List<BridgePiece>>();
         int seed = WorldGenerator.instance.GetSeed();
 
-        foreach (RoadCrossing crossing in RoadNetworkGenerator.GetRoadCrossings())
+        foreach (RoadCrossing crossing in BridgeLayout.DistinctSites(RoadNetworkGenerator.GetRoadCrossings()))
             Bucket(BridgeLayout.Solve(crossing, WorldGenerator.instance, seed, BridgeLayout.StyleFor(crossing.Biome)));
 
         foreach (StairRun run in RoadNetworkGenerator.GetStairRuns())
