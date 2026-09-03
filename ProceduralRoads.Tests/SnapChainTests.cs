@@ -203,8 +203,11 @@ public class SnapChainTests
         var style = BridgeStyle.MeadowsWood;
         var plan = BridgeLayout.Solve(crossing, world, 42, style);
 
-        float bankLow = world.GetHeight(crossing.FromBank.x, crossing.FromBank.y);
-        float bankHigh = world.GetHeight(crossing.ToBank.x, crossing.ToBank.y);
+        // A stepped site (task 1c) lifts both ends by the same rise; the
+        // graded line is between the lifted ends.
+        float rise = BridgeLayout.SteppedEndRise(crossing);
+        float bankLow = world.GetHeight(crossing.FromBank.x, crossing.FromBank.y) + rise;
+        float bankHigh = world.GetHeight(crossing.ToBank.x, crossing.ToBank.y) + rise;
         var decks = plan.Where(p => p.Kind == BridgePieceKind.Deck).ToList();
         Assert.NotEmpty(decks);
 
