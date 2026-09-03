@@ -135,9 +135,18 @@ public static class BridgeLayout
 {
     public const float FairwayClearance = 1f;
 
-    /// <summary>Maximum keep-clear width over the fairway: the collapsed
+    /// <summary>Minimum keep-clear width over the fairway: the collapsed
     /// section a longship sails through (beam ~6 m, plus room to line up).</summary>
     public const float FairwayGapWidth = 20f;
+
+    /// <summary>The collapsed middle grows with the span (Tys, 2 Sep 2026:
+    /// a 171 m deck with a 20 m hole reads wrong): this fraction of the
+    /// crossing width, never less than FairwayGapWidth, never more than
+    /// the fairway itself.</summary>
+    public const float FairwayGapFraction = 0.3f;
+
+    public static float FairwayGap(RoadCrossing crossing) =>
+        Mathf.Min(crossing.FairwayWidth, Mathf.Max(FairwayGapWidth, crossing.Width * FairwayGapFraction));
 
     /// <summary>Player-facing lever (config "Bridges/PierPersistence", 0..1):
     /// how much the piers outlive the deck. Applied to every kit by StyleFor;
@@ -191,7 +200,7 @@ public static class BridgeLayout
         // SAILING IS SACRED, but a ship needs one gap, not the whole deep
         // bed: on a wide flat channel the keep-clear is a navigation gap
         // around the fairway center, so the ruin still reads as a bridge.
-        float fairwayHalf = Mathf.Min(crossing.FairwayWidth, FairwayGapWidth) * 0.5f + FairwayClearance;
+        float fairwayHalf = FairwayGap(crossing) * 0.5f + FairwayClearance;
 
         // Stations every DeckSpan from bank to bank, deck height graded
         // between the bank contact points and clamped above the water.
@@ -383,7 +392,7 @@ public static class BridgeLayout
             for (int k = 0; k < steps; k++)
             {
                 Vector2 c = bank - inward * (1f + k * 2f);
-                float stepYaw = Mathf.Atan2(inward.x, inward.y) * 180f / Mathf.PI;
+                float stepYaw = Mathf.Atan2(inward.x, inward.y) * 180f / Mathf.PI + 180f; // stair prefab rises toward local -z
                 pieces.Add(new BridgePiece
                 {
                     Kind = BridgePieceKind.Stair,

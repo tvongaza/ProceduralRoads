@@ -169,6 +169,27 @@ public static class RoadNetworkGenerator
 
     public static float RoadWidth = 4f;
     public static int IslandRoadPercentage = 50;
+
+    /// <summary>Roads stop at a location's exterior radius, which for a
+    /// crypt is 25 m of swamp around a small mound: the road ends far from
+    /// the door (Tys, 2 Sep 2026). Compact locations get a tighter approach
+    /// radius so the road runs up to the entrance.</summary>
+    public const float CryptApproachRadius = 8f;
+    public static float ApproachRadius(string prefabName, float exteriorRadius) =>
+        prefabName.StartsWith("SunkenCrypt", StringComparison.Ordinal) || prefabName.StartsWith("Crypt", StringComparison.Ordinal)
+            ? Mathf.Min(exteriorRadius, CryptApproachRadius)
+            : exteriorRadius;
+
+    /// <summary>Two locations whose circles are closer than this are one
+    /// place for road purposes: they count as connected without a road,
+    /// instead of a few metres of paint between them (the crypt-to-crypt
+    /// stubs of RoadTestMac2, 2-27 m long).</summary>
+    public const float MinUsefulRoadLength = 30f;
+
+    private static readonly List<(string name, Vector3 position, float radius)> m_roadLocations = new();
+    /// <summary>Locations the current generation connected (debug rings);
+    /// empty after a load from ZDO, which stores routes only.</summary>
+    public static IReadOnlyList<(string name, Vector3 position, float radius)> GetRoadLocations() => m_roadLocations;
     /// <summary>Player-facing lever (config "Roads/WetTerminus"): what to do
     /// with a route whose end on its location's radius circle is in water.</summary>
     public static WetTerminusMode WetTerminus = WetTerminusMode.Reroute;
@@ -337,6 +358,7 @@ public static class RoadNetworkGenerator
             List<(string name, Vector3 position, float radius)> islandLocations = candidate.Locations;
             int maxLocs = GetMaxLocationsForIsland(candidate.Island);
             List<(string name, Vector3 position, float radius)> selected = SelectLocations(islandLocations, maxLocs);
+            m_roadLocations.AddRange(selected);
             
             Log.LogDebug(
                 $"Island {island.Id}: {islandLocations.Count} candidates -> {selected.Count} selected " +
@@ -576,7 +598,7 @@ public static class RoadNetworkGenerator
         foreach (var loc in locationInstances)
         {
             string prefabName = loc.m_location.m_prefab.Name;
-            float exteriorRadius = loc.m_location.m_exteriorRadius;
+            float exteriorRadius = ApproachRadius(prefabName, loc.m_location.m_exteriorRadius);
 
             allLocations.Add((prefabName, loc.m_position, exteriorRadius));
 
@@ -892,6 +914,17 @@ public static class RoadNetworkGenerator
             attempts++;
             (string name, Vector3 position, float radius) from = nodes[bestFrom];
             (string name, Vector3 position, float radius) to = nodes[bestTo];
+
+            // Circles a short walk apart are one place: connected, no road.
+            float edgeToEdge = Vector3.Distance(from.position, to.position) - from.radius - to.radius;
+            if (edgeToEdge < MinUsefulRoadLength)
+            {
+                Log.LogDebug($"Adjacent locations, no road: {from.name} -> {to.name} ({edgeToEdge:F0} m between circles)");
+                connected.Add(bestTo);
+                remaining.Remove(bestTo);
+                continue;
+            }
+
             bool generated = GenerateRoad(from.position, from.radius, to.position, to.radius, RoadWidth,
                 $"{from.name} -> {to.name}");
 
@@ -1093,6 +1126,7 @@ public static class RoadNetworkGenerator
         m_roadRoutes.Clear();
         m_roadCrossings.Clear();
         m_stairRuns.Clear();
+        m_roadLocations.Clear();
         RuinPlacement.Reset();
         RoadNetworkPersistence.Reset();
         RoadSpatialGrid.Clear();

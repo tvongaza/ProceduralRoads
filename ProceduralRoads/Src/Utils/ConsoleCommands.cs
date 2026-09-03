@@ -119,6 +119,17 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_debug_locations",
+            "Draw each road location's approach circle as a ring of purple markers, within a distance of the player: road_debug_locations [within=400]. " +
+            "Cleared by road_debug_markers_clear. Empty after a load from ZDO (the list is built during generation).",
+            (args) => SpawnLocationRings(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_zone_ready",
             "Is the world in around a point? Every zone within the radius loaded, every planned ruin zone there spawned, and its pieces instantiated: " +
             "road_zone_ready <x> <z> [radius=32]. Validation scripts poll this after a teleport instead of sleeping a fixed time.",
@@ -531,6 +542,61 @@ public static class ConsoleCommands
         foreach (string line in lines)
             args.Context.AddString(line);
         args.Context.AddString($"PIECE_HEALTH total={total} new={newCount} worn={wornCount} broken={brokenCount} noVisual={noVisual} radius={radius:F0}");
+    }
+
+    /// <summary>Purple rings on the approach circles roads stop at (Tys, 2 Sep
+    /// 2026: "draw a purple dotted outline around the POI radii"), so a road
+    /// that ends short of a door can be read against the circle it obeyed.</summary>
+    private static void SpawnLocationRings(Terminal.ConsoleEventArgs args)
+    {
+        Player player = Player.m_localPlayer;
+        if (player == null)
+        {
+            args.Context.AddString("Error: No local player found");
+            return;
+        }
+        float within = 400f;
+        if (args.Length >= 2)
+            float.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out within);
+
+        var locations = RoadNetworkGenerator.GetRoadLocations();
+        if (locations.Count == 0)
+        {
+            args.Context.AddString("No road locations recorded (network loaded from ZDO?) - regenerate to populate");
+            return;
+        }
+
+        Vector3 origin = player.transform.position;
+        int rings = 0, markers = 0;
+        foreach ((string name, Vector3 position, float radius) in locations)
+        {
+            if (Vector3.Distance(position, origin) > within)
+                continue;
+            rings++;
+            int n = Mathf.Max(12, Mathf.CeilToInt(2f * Mathf.PI * radius / 2f)); // a marker every ~2 m of arc
+            for (int i = 0; i < n; i++)
+            {
+                float a = i * Mathf.PI * 2f / n;
+                float x = position.x + Mathf.Cos(a) * radius;
+                float z = position.z + Mathf.Sin(a) * radius;
+                float y = position.y;
+                if (ZoneSystem.instance != null && ZoneSystem.instance.GetGroundHeight(new Vector3(x, 0f, z), out float ground))
+                    y = ground;
+                GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                marker.name = $"RoadDebugMarker_loc_{name}_{i}";
+                marker.transform.position = new Vector3(x, Mathf.Max(y, RoadConstants.SeaLevel) + 1.2f, z);
+                marker.transform.localScale = new Vector3(0.5f, 0.5f, 0.5f);
+                Collider collider = marker.GetComponent<Collider>();
+                if (collider != null)
+                    Object.Destroy(collider);
+                Renderer renderer = marker.GetComponent<Renderer>();
+                if (renderer != null && renderer.material != null)
+                    renderer.material.color = new Color(0.72f, 0.2f, 0.95f);
+                s_debugMarkers.Add(marker);
+                markers++;
+            }
+        }
+        args.Context.AddString($"OK: {rings} location ring(s), {markers} markers within {within:F0} m ({locations.Count} road locations in the network)");
     }
 
     private static readonly HashSet<string> m_visualDumped = new();

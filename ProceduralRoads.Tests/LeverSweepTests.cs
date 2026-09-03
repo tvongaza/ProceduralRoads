@@ -110,7 +110,7 @@ public class LeverSweepTests
         var crossing = WideCrossing(world);
         Assert.True(crossing.FairwayWidth > 0f);
         float fairwayMid = Vector2.Dot(crossing.FairwayCenter - crossing.FromBank, crossing.Direction);
-        float half = Mathf.Min(crossing.FairwayWidth, BridgeLayout.FairwayGapWidth) * 0.5f + BridgeLayout.FairwayClearance;
+        float half = BridgeLayout.FairwayGap(crossing) * 0.5f + BridgeLayout.FairwayClearance;
 
         foreach (float level in new[] { 0f, 0.1f, 0.5f, 0.9f, 1f })
         {

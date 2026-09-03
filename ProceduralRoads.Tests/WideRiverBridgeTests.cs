@@ -50,14 +50,14 @@ public class WideRiverBridgeTests
         // and has no deck over it: a bridge collapsed exactly where boats pass.
         Vector2 dir = crossing.Direction;
         float fairwayMid = Vector2.Dot(crossing.FairwayCenter - crossing.FromBank, dir);
-        float gapHalf = BridgeLayout.FairwayGapWidth * 0.5f;
+        float gapHalf = BridgeLayout.FairwayGap(crossing) * 0.5f;
         foreach (var piece in plan)
         {
             Vector2 p2 = new(piece.Position.x, piece.Position.z);
             float along = Vector2.Dot(p2 - crossing.FromBank, dir);
             float reach = piece.Kind == BridgePieceKind.Deck ? 1f : 0f; // deck plates are 2 m long
             Assert.True(Mathf.Abs(along - fairwayMid) - reach >= gapHalf - 0.01f,
-                $"{piece.Kind} at along={along:F1} inside the {BridgeLayout.FairwayGapWidth:F0} m navigation gap around {fairwayMid:F1}");
+                $"{piece.Kind} at along={along:F1} inside the {BridgeLayout.FairwayGap(crossing):F0} m navigation gap around {fairwayMid:F1}");
         }
 
         // Piers march in from BOTH banks: a ruined bridge, not two abutments.
@@ -205,7 +205,7 @@ public class WideRiverBridgeTests
         var markers = new List<(Vector2, byte, byte, byte)>();
         Vector2 dir = crossing.Direction;
         float fairwayMid = Vector2.Dot(crossing.FairwayCenter - crossing.FromBank, dir);
-        float half = BridgeLayout.FairwayGapWidth * 0.5f;
+        float half = BridgeLayout.FairwayGap(crossing) * 0.5f;
         paths.Add((new List<Vector2> { crossing.FromBank + dir * (fairwayMid - half), crossing.FromBank + dir * (fairwayMid + half) }, 60, 90, 255));
         foreach (var piece in plan)
         {

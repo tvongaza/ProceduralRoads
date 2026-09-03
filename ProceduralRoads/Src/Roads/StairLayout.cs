@@ -189,7 +189,10 @@ public static class StairLayout
                     // Descending: top edge at the joint instead.
                     Vector2 center = joint + heading * (advance * 0.5f);
                     float baseY = move == Move.DownStep ? nextY : jointY;
-                    float stairYaw = move == Move.DownStep ? yaw + 180f : yaw;
+                    // The vanilla stair prefab rises toward its local -z (Tys, 2 Sep 2026,
+                    // RoadTestMac2: every run faced downhill), so the piece is turned
+                    // to face back along the heading when ascending.
+                    float stairYaw = move == Move.DownStep ? yaw : yaw + 180f;
                     pieces.Add(new BridgePiece
                     {
                         Kind = BridgePieceKind.StairStep,
