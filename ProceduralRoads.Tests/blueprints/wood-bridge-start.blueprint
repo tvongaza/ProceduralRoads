@@ -1,0 +1,13 @@
+#Name:ProceduralRoads wood bridge START
+#Creator:ProceduralRoads
+#Description:Abutment plate sunk into the bank, the first deck plate, a post pair and a crossbeam under its far edge. Local +z runs onto the bridge; origin = bank contact point at deck height.
+#Category:ProceduralRoads
+#SnapPoints
+0;0;0
+0;0;2
+#Pieces
+wood_floor;Building;0;-0.3;0;0;0;0;1;;1;1;1
+wood_floor;Building;0;0;1;0;0;0;1;;1;1;1
+wood_pole2;Building;-0.75;-1.2;2;0;0;0;1;;1;1;1
+wood_pole2;Building;0.75;-1.2;2;0;0;0;1;;1;1;1
+wood_beam;Building;0;-0.13;2;0;0;0;1;;1;1;1

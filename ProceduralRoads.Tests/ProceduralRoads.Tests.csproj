@@ -57,4 +57,7 @@
         </PackageReference>
     </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="blueprints/*.blueprint" LogicalName="blueprints/%(Filename)%(Extension)"/>
+  </ItemGroup>
 </Project>

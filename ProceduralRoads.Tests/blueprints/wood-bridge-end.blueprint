@@ -1,0 +1,10 @@
+#Name:ProceduralRoads wood bridge END
+#Creator:ProceduralRoads
+#Description:Last floor plate and the abutment plate on the far bank. Origin = near edge at deck height; local +z reaches the far bank at z=2.
+#Category:ProceduralRoads
+#SnapPoints
+0;0;0
+0;0;2
+#Pieces
+wood_floor;Building;0;0;1;0;0;0;1;;1;1;1
+wood_floor;Building;0;-0.3;2;0;0;0;1;;1;1;1

@@ -1,0 +1,12 @@
+#Name:ProceduralRoads wood bridge SPAN
+#Creator:ProceduralRoads
+#Description:One 2 m station: a floor plate, a post pair under its far edge and a crossbeam. Tiles along local +z; origin = near edge of the plate at deck height.
+#Category:ProceduralRoads
+#SnapPoints
+0;0;0
+0;0;2
+#Pieces
+wood_floor;Building;0;0;1;0;0;0;1;;1;1;1
+wood_pole2;Building;-0.75;-1.2;2;0;0;0;1;;1;1;1
+wood_pole2;Building;0.75;-1.2;2;0;0;0;1;;1;1;1
+wood_beam;Building;0;-0.13;2;0;0;0;1;;1;1;1
