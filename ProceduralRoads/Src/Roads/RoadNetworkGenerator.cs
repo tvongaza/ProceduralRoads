@@ -460,7 +460,7 @@ public static class RoadNetworkGenerator
         // segment before a crossing runs on to FromBank and the one after it
         // starts at ToBank, so painted road meets the deck — no bridge to
         // nowhere, no deck starting up a dry hillside.
-        List<(int from, int to, Vector2? lead, Vector2? resume)> exclusions = new();
+        List<(int from, int to, Vector2 lead, Vector2 resume)> exclusions = new();
         foreach (RoadCrossing crossing in crossings)
         {
             // Raised fords are ordinary leveled road; wading fords are painted
@@ -489,15 +489,15 @@ public static class RoadNetworkGenerator
         {
             int cursor = 0;
             Vector2? resumeAt = null;
-            foreach ((int from, int to, Vector2? lead, Vector2? resume) in exclusions)
+            foreach ((int from, int to, Vector2 lead, Vector2 resume) in exclusions)
             {
                 if (from > cursor)
                 {
                     List<Vector2> landSegment = path.GetRange(cursor, from - cursor + 1);
                     if (resumeAt.HasValue && Vector2.Distance(resumeAt.Value, landSegment[0]) > 0.5f)
                         landSegment.Insert(0, resumeAt.Value);
-                    if (lead.HasValue && Vector2.Distance(lead.Value, landSegment[landSegment.Count - 1]) > 0.5f)
-                        landSegment.Add(lead.Value);
+                    if (Vector2.Distance(lead, landSegment[landSegment.Count - 1]) > 0.5f)
+                        landSegment.Add(lead);
                     if (landSegment.Count >= 2)
                         RoadSpatialGrid.AddRoadPath(landSegment, width, WorldGenerator.instance);
                 }

@@ -66,10 +66,9 @@ public static class RoadNetworkValidator
             {
                 if (c.RouteIndex != route.Index)
                     continue;
-                Vector2 rel = new(p.x - c.FromBank.x, p.z - c.FromBank.y);
-                float along = Vector2.Dot(rel, c.Direction);
-                float across = Mathf.Abs(rel.x * c.Direction.y - rel.y * c.Direction.x);
-                if (along >= -2f && along <= c.Width + 2f && across <= 6f)
+                Vector2 q = new(p.x, p.z);
+                float along = c.Along(q);
+                if (along >= -2f && along <= c.Width + 2f && c.Across(q) <= 6f)
                     return true;
             }
             return false;

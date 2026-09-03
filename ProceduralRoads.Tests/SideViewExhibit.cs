@@ -51,8 +51,7 @@ public static class SideViewExhibit
         // pieces
         foreach (var p in plan)
         {
-            Vector2 rel = new(p.Position.x - c.FromBank.x, p.Position.z - c.FromBank.y);
-            float along = Vector2.Dot(rel, c.Direction);
+            float along = c.Along(new Vector2(p.Position.x, p.Position.z));
             (float w, float bottom, float top, string color) = p.Kind switch
             {
                 BridgePieceKind.Piling => (0.5f, -style.PilingSegment * 0.5f, style.PilingSegment * 0.5f, "#8b5a2b"),

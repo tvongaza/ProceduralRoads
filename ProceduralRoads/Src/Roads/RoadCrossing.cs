@@ -58,6 +58,16 @@ public sealed class RoadCrossing
     public float FairwayWidth;
 
     public Heightmap.Biome Biome;
+
+    /// <summary>Signed distance of a point along the crossing line, from FromBank toward ToBank.</summary>
+    public float Along(Vector2 p) => Vector2.Dot(p - FromBank, Direction);
+
+    /// <summary>Unsigned distance of a point from the crossing line.</summary>
+    public float Across(Vector2 p)
+    {
+        Vector2 rel = p - FromBank;
+        return Mathf.Abs(rel.x * Direction.y - rel.y * Direction.x);
+    }
 }
 
 /// <summary>

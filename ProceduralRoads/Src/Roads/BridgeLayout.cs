@@ -214,7 +214,7 @@ public static class BridgeLayout
         Vector2 to = crossing.ToBank;
         Vector2 dir = crossing.Direction;
         Vector2 side = new(-dir.y, dir.x);
-        float yaw = Mathf.Atan2(dir.x, dir.y) * 180f / Mathf.PI;
+        float yaw = YawDegrees(dir);
 
         float bankFromH = BiomeBlendedHeight.GetBlendedHeight(from.x, from.y, world);
         float bankToH = BiomeBlendedHeight.GetBlendedHeight(to.x, to.y, world);
@@ -228,7 +228,7 @@ public static class BridgeLayout
         float deckToH = bankToH + endRise;
 
         // Fairway keep-clear interval, projected onto the crossing line.
-        float fairwayMid = Vector2.Dot(crossing.FairwayCenter - from, dir);
+        float fairwayMid = crossing.Along(crossing.FairwayCenter);
         // SAILING IS SACRED, but a ship needs one gap, not the whole deep
         // bed: on a wide flat channel the keep-clear is a navigation gap
         // around the fairway center, so the ruin still reads as a bridge.
@@ -404,7 +404,7 @@ public static class BridgeLayout
         Vector2 to = crossing.ToBank;
         Vector2 dir = crossing.Direction;
         Vector2 side = new(-dir.y, dir.x);
-        float yaw = Mathf.Atan2(dir.x, dir.y) * 180f / Mathf.PI;
+        float yaw = YawDegrees(dir);
 
         float bankFromH = BiomeBlendedHeight.GetBlendedHeight(from.x, from.y, world);
         float bankToH = BiomeBlendedHeight.GetBlendedHeight(to.x, to.y, world);
@@ -454,7 +454,7 @@ public static class BridgeLayout
         if (string.IsNullOrEmpty(style.StairPrefab) || deckH - bankH < 0.4f)
             return;
         int steps = Mathf.Max(1, Mathf.CeilToInt((deckH - bankH) / 1f - 0.02f)); // tolerate float noise
-        float stepYaw = Mathf.Atan2(inward.x, inward.y) * 180f / Mathf.PI + 180f; // stair prefab rises toward local -z
+        float stepYaw = YawDegrees(inward) + 180f; // stair prefab rises toward local -z
         for (int k = 0; k < steps; k++)
         {
             Vector2 c = bank - inward * (1f + k * 2f);
@@ -558,6 +558,9 @@ public static class BridgeLayout
             HealthFraction = 0.2f + NextFloat(rng) * 0.2f,
         });
     }
+
+    /// <summary>Unity yaw (degrees about +y) that turns local +z onto a world XZ direction.</summary>
+    public static float YawDegrees(Vector2 dir) => Mathf.Atan2(dir.x, dir.y) * 180f / Mathf.PI;
 
     private static float RuinHealth(System.Random rng) => 0.3f + NextFloat(rng) * 0.4f;
 
