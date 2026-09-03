@@ -246,9 +246,61 @@ mac-shoot.sh polls it after every teleport instead of sleeping 15 s.
   is cleared vs kept (small plants and trees go, big trees and rocks stay).
   Especially for switchback planning on steep mountain sides.
 
-**Next:** NAS gate on 2cd6473 (hash will move for wet-end routes only);
-then a clean wood decay census (t0 after `road_zone_ready`, t8) at one
-wood site.
+### NAS gate on 2cd6473: PASS, network point-for-point identical to b034af02
+
+94/94 routes identical (per-route CSV diff), hash b034af02 unchanged, all
+counts unchanged, 196 s. **Coverage gap, not a clean bill:** RoadTestAuto1
+has no wet location-circle terminus, so the Reroute rework is inert there.
+Rule (NAS, agreed): a passing gate proves the fixture exercised nothing
+that broke, not that it exercised the change; pin targeted changes with a
+harness scenario that contains the condition. The NAS now snapshots the
+routes CSV per baseline so per-route diffs stay possible.
+
+### Round 5c (evening): end-to-end wet terminus, support model, damage visuals
+
+- **717adf8 — Reroute end to end.** `WetRimWorld`: a 2 m wet band hugging
+  a location's circle, thinner than the pathfinder's interior sampling,
+  so a real route steps over it and its interpolated circle point is wet.
+  Trim ends short (precondition), Reroute ends on the dry arc and the
+  validator finds no wet point, Drop builds nothing. It failed first: the
+  route's Catmull-Rom spline cut the leg's corners into the band. The leg
+  is now densified to 2 m waypoints and every leg sample (not the anchor)
+  needs 1 m of dry ground each side. Generation change for wet-end routes;
+  inert on the fixture.
+- **6321a83 — support model (Tys: the ruin state is decided beforehand,
+  never by game physics).** `SupportModelTests`: a piece is supported when
+  buried or touching (overlapping vertical extents within reach) a
+  supported piece, flood-filled; stricter than vanilla (no horizontal
+  reach credit). Wood and stone bridges × 25 seeds × persistence 0/0.85/1,
+  level and graded banks up to 2.4 m delta, ford spans both kits, and a
+  planted floater the model must catch: all grounded. 134 tests.
+  Clarified by Tys: pieces a PLAYER destroys must still drop materials;
+  the only requirement is that nothing we spawn collapses on its own.
+  The no-drop patch idea is dropped.
+- **road_zone_ready measured:** RoadTestMac1 RELOAD (ForceRegenerate=false)
+  26 s vs 385 s regeneration; at c6 the probe reported ready after 1 s
+  with 176/176 planned pieces instantiated across the site's 2 zones. Use
+  the reload path for anything that is not a route/terrain verdict.
+- **99aa383 — damage visuals (Tys: "I don't see damaged pieces").**
+  `road_piece_health` shows the planned health reaches the ZDOs (poles
+  31-58% of 400, floors 46-49%). `road_piece_set_health` A/B at one
+  station (90 / 40 / 10 %, same pole photographed): the vanilla state
+  machine responds (all new at 90, all broken at 10) but **wood_pole2 and
+  wood_beam look identical in every state** — no visible damage variant.
+  **wood_floor has New/Worn/Broken** children; at the plan's 30-70% it
+  stays "worn" (subtle); "broken" (holes) needs < 25%. So for the wood
+  kit, "damaged" has to be expressed geometrically (missing plates,
+  stubs, tilted debris, missing beams) and via floor health below 25%,
+  not via pole/beam health. Shots: c6-health-{90,40,10}.png.
+
+**Next:** decisions for Tys — (a) deck-plate health: give a share of
+plates < 25% so some show broken planks (e.g. 20-60% range with ~25% of
+plates under 25%); (b) whether to add geometric "damage" to standing
+piers (e.g. a missing beam, a pole one segment short); (c) stone kit
+visuals unchecked (stone_wall/floor likely have variants — probe when the
+stone kit reopens). Gate 99aa383 on the NAS (717adf8 is a generation
+change, inert on the fixture). The clean wood decay census is now cheap:
+reload, `road_zone_ready` (planned == loaded is t0), soak, re-probe.
 
 ## 2026-09-02 round 4: the raw-height blind spot (fb574ff)
 
