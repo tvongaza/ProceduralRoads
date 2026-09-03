@@ -93,6 +93,14 @@ public static class RoadConstants
     // Roads/BridgeCostPerMeter.
     public const int MaxBridgeCrossingCells = 16; // 16 * 8m = 128m dry-point to dry-point
     public const float BridgeCrossingPenalty = 30000f;
+
+    // Road reuse (night plan 2026-09-03 task 1g): a move onto a cell that
+    // already carries road costs this fraction of its normal cost, and a
+    // crossing whose both ends already carry road (an existing bridge)
+    // likewise, so later routes follow earlier ones and share bridges
+    // instead of building their own a few cells apart (RoadTestMac2 c1/c2,
+    // c0/c3 doubled sites). 1 = off. Config "Roads/ReuseDiscount".
+    public const float DefaultRoadReuseDiscount = 0.2f;
     public const float BridgeCostPerMeter = 300f;
     public const float MaxBridgeBankDelta = 2.5f;
 

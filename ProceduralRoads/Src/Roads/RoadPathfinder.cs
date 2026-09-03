@@ -40,6 +40,16 @@ public class RoadPathfinder
     public float BridgeCrossingPenalty = ConfiguredBridgeCostFixed;
     public float BridgeCostPerMeter = ConfiguredBridgeCostPerMeter;
 
+    /// <summary>Player-facing lever (config "Roads/ReuseDiscount", 0..1):
+    /// cost multiplier for moves onto cells that already carry road, and
+    /// for crossings whose both ends do (a shared bridge). 1 = off.</summary>
+    public static float ConfiguredRoadReuseDiscount = RoadConstants.DefaultRoadReuseDiscount;
+    public float RoadReuseDiscount = ConfiguredRoadReuseDiscount;
+
+    // Which cells carry road changes between searches (every finished road
+    // is painted before the next search), so this cache lives per search.
+    private readonly Dictionary<Vector2i, bool> m_onRoadCache = new();
+
     private static readonly Vector2Int[] Directions = new Vector2Int[]
     {
         new Vector2Int(1, 0), new Vector2Int(-1, 0), new Vector2Int(0, 1), new Vector2Int(0, -1),
@@ -101,6 +111,7 @@ public class RoadPathfinder
     {
         Vector2i startGrid = WorldToGrid(start);
         Vector2i endGrid = WorldToGrid(end);
+        m_onRoadCache.Clear();
 
         if (startGrid == endGrid)
             return new List<Vector2> { start, end };
@@ -314,7 +325,29 @@ public class RoadPathfinder
         if (riverWeight > 0f && h2 < RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance + 1f)
             cost += RiverPenalty * riverWeight;
 
+        // Following an existing road is cheap: later routes merge into
+        // earlier ones and share their crossings.
+        if (RoadReuseDiscount < 1f && OnExistingRoad(to))
+            cost *= RoadReuseDiscount;
+
         return cost;
+    }
+
+    /// <summary>True when the cell's center lies within an existing road's
+    /// painted footprint (the spatial grid holds every road finished so far).</summary>
+    private bool OnExistingRoad(Vector2i grid)
+    {
+        if (m_onRoadCache.TryGetValue(grid, out bool cached))
+            return cached;
+        bool on = false;
+        if (RoadSpatialGrid.IsInitialized)
+        {
+            Vector2 world = GridToWorld(grid);
+            RoadSpatialGrid.GetRoadWeight(world.x, world.y, out float weight, out _);
+            on = weight > 0f;
+        }
+        m_onRoadCache[grid] = on;
+        return on;
     }
 
     /// <summary>
@@ -422,6 +455,10 @@ public class RoadPathfinder
                 + (bridge ? BridgeCrossingPenalty + BridgeCostPerMeter * distance
                           : RoadConstants.RiverCrossingPenalty)
                 + RoadConstants.FordBankDeltaPenalty * bankDelta * bankDelta;
+            // An existing road on both banks here is an existing crossing:
+            // share it instead of building another a few cells away.
+            if (RoadReuseDiscount < 1f && OnExistingRoad(from) && OnExistingRoad(check))
+                crossingCost *= RoadReuseDiscount;
             return true;
         }
 

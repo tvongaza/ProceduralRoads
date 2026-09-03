@@ -50,6 +50,7 @@ namespace ProceduralRoads
         public static ConfigEntry<float> BridgeCostFixed = null!;
         public static ConfigEntry<float> BridgeCostPerMeter = null!;
         public static ConfigEntry<WetTerminusMode> WetTerminus = null!;
+        public static ConfigEntry<float> ReuseDiscount = null!;
         public static ConfigEntry<float> PierPersistence = null!;
         public static ConfigEntry<float> FordWadeWeight = null!;
         public static ConfigEntry<float> FordRaiseWeight = null!;
@@ -114,6 +115,11 @@ namespace ProceduralRoads
                 new ConfigDescription("Pathfinding cost of a bridge per metre of span, on top of BridgeCostFixed. " +
                     "Makes long bridges dearer than short ones.",
                     new AcceptableValueRange<float>(0f, 5000f)));
+
+            ReuseDiscount = Config.Bind("Roads", "ReuseDiscount", RoadConstants.DefaultRoadReuseDiscount,
+                new ConfigDescription("Cost multiplier for a road that follows an existing road (and for a crossing where a road already crosses). " +
+                    "0.2 (default): later roads merge into earlier ones and share bridges; 1: every road finds its own way.",
+                    new AcceptableValueRange<float>(0.05f, 1f)));
 
             WetTerminus = Config.Bind("Roads", "WetTerminus", WetTerminusMode.Reroute,
                 "What to do when a road's end on its location's radius circle lands in water. " +
@@ -215,6 +221,7 @@ namespace ProceduralRoads
             RoadPathfinder.MaxIterations = PathfindingMaxIterations.Value;
             RoadPathfinder.ConfiguredBridgeCostFixed = BridgeCostFixed.Value;
             RoadPathfinder.ConfiguredBridgeCostPerMeter = BridgeCostPerMeter.Value;
+            RoadPathfinder.ConfiguredRoadReuseDiscount = ReuseDiscount.Value;
             RoadNetworkGenerator.WetTerminus = WetTerminus.Value;
             BridgeLayout.ConfiguredPierPersistence = PierPersistence.Value;
             RoadCrossingDetector.SetFordStyleWeights(FordWadeWeight.Value, FordRaiseWeight.Value, FordSpanWeight.Value);
@@ -226,7 +233,7 @@ namespace ProceduralRoads
             ProceduralRoadsLogger.LogInfo(
                 $"[CONFIG] RoadWidth={RoadWidth.Value} IslandRoadPercentage={IslandRoadPercentage.Value} " +
                 $"PathfindingMaxIterations={PathfindingMaxIterations.Value} MaxLocationsPerIsland={MaxLocationsPerIsland.Value} " +
-                $"BridgeCostFixed={BridgeCostFixed.Value} BridgeCostPerMeter={BridgeCostPerMeter.Value} " +
+                $"BridgeCostFixed={BridgeCostFixed.Value} BridgeCostPerMeter={BridgeCostPerMeter.Value} ReuseDiscount={ReuseDiscount.Value} " +
                 $"WetTerminus={WetTerminus.Value} PierPersistence={PierPersistence.Value} " +
                 $"FordWeights(wade/raise/span)={FordWadeWeight.Value}/{FordRaiseWeight.Value}/{FordSpanWeight.Value}");
         }
