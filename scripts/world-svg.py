@@ -19,9 +19,10 @@ from collections import defaultdict
 
 SEA = 30.0
 BIOME_FILL = {
-    'Meadows': '#b9d38a', 'BlackForest': '#4f7a4a', 'Swamp': '#6b6a3f', 'Mountain': '#e8ecef',
-    'Plains': '#d8cd7a', 'Mistlands': '#8a8aa8', 'AshLands': '#b05a3a', 'DeepNorth': '#dfe8f0',
-    'Ocean': '#8fb7d9',
+    # Light tints (Tys, 3 Sep 2026): the roads must carry the contrast, not the land.
+    'Meadows': '#E4EED3', 'BlackForest': '#C9DCC4', 'Swamp': '#DCD9C0', 'Mountain': '#F3F5F7',
+    'Plains': '#F0EACB', 'Mistlands': '#DCDBE6', 'AshLands': '#EACFC3', 'DeepNorth': '#EEF3F7',
+    'Ocean': '#B9D2E8',
 }
 LABEL_KEYS = ('Eikthyr', 'GDKing', 'Bonemass', 'Dragonqueen', 'GoblinKing', 'Mistlands_DvergrBossEntrance',
               'Crypt', 'SunkenCrypt', 'TrollCave', 'MountainCave', 'Mistlands_DvergrTownEntrance',
@@ -119,9 +120,9 @@ def render(view, xs, zs, cells, locations, routes, contour, title, min_radius):
                 if h >= SEA:
                     fill = BIOME_FILL.get(biome, '#cccccc')
                     if river > 0.5:
-                        fill = '#9bc0a3'  # dry river band: valley floor
+                        fill = '#D3E4D4'  # dry river band: valley floor
                 elif river > 0.5:
-                    fill = '#4a7fc1'  # river water
+                    fill = '#7FA6D4'  # river water
             if fill == run_fill and run_x1 == x:
                 run_x1 = x + step
             else:
@@ -151,8 +152,8 @@ def render(view, xs, zs, cells, locations, routes, contour, title, min_radius):
             if not (view.inside(x0, z0) or view.inside(x1, z1)):
                 continue
             ymin = min(y0, y1)
-            color = '#e03030' if stub else ('#f08a24' if ymin < 28 else ('#1fa8a0' if ymin < 30.5 else '#3a3a3a'))
-            width = 3 if stub else (2.4 if ymin < 30.5 else 1.4)
+            color = '#e03030' if stub else ('#e07a10' if ymin < 28 else ('#0f8f88' if ymin < 30.5 else '#1f1f1f'))
+            width = 3.2 if stub else (2.8 if ymin < 30.5 else 2.0)
             out.append(f'<line x1="{f(view.X(x0))}" y1="{f(view.Y(z0))}" x2="{f(view.X(x1))}" y2="{f(view.Y(z1))}" '
                        f'stroke="{color}" stroke-width="{width}" stroke-linecap="round"/>')
     # locations
@@ -160,8 +161,8 @@ def render(view, xs, zs, cells, locations, routes, contour, title, min_radius):
         if r < min_radius or not view.inside(x, z, r):
             continue
         out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="{f(r * view.px)}" fill="none" '
-                   f'stroke="#7a2ea0" stroke-width="0.6" stroke-opacity="0.5"/>')
-        out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="2.2" fill="#7a2ea0"/>')
+                   f'stroke="#8a4ab0" stroke-width="0.5" stroke-opacity="0.4"/>')
+        out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="1.8" fill="#8a4ab0" fill-opacity="0.8"/>')
         if any(k in name for k in LABEL_KEYS):
             out.append(f'<text x="{f(view.X(x) + 4)}" y="{f(view.Y(z) - 3)}" font-size="9" fill="#3b1050">{escape(name)}</text>')
     out.append(f'<text x="6" y="14" font-size="12" fill="#111">{escape(title)}</text>')
