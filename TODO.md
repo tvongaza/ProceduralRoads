@@ -3,7 +3,7 @@
 ## MORNING REPORT 2026-09-03 (overnight session, 00:10-~02:00; Tys asleep)
 
 Everything below is on the fork. Bridge branch `pc/snap-point-composition`
-tip **2031bf3** (153 tests, both runtimes). Stairs live on `pc/stairs`
+tip **d7fef39** (155 tests, both runtimes; 0e9d7e1 road reuse is HELD, see below). Stairs live on `pc/stairs`
 (f8cdf0f, 159 tests; fork PR #1 "WIP: stair runs", base the bridge branch).
 Tooling on `pc/tooling` (18bed48, from upstream master + PR #18 harness +
 routes; 26 tests; no upstream PR, HOLD). NAS gates: every commit below was
@@ -68,13 +68,41 @@ route moved), baseline stays 73c6bec7 because 8 slope violations remain
 7. NAS: sshd's sftp Subsystem points at a missing binary (scp needs -O
    from macOS). The NAS session flagged it; host config is your call.
 
+### Landed after the report above (02:00-02:10)
+
+- **0e9d7e1 — task 1g road reuse** (`Roads/ReuseDiscount`, default 0.2):
+  moves onto cells already carrying road, and crossings whose both ends
+  do, cost 0.2x. NAS (Auto1): hash c4b6895c -> 7f80c02b, total length
+  +1219 m, route points sharing a 4 m cell 193 -> 541 (+180%), routes /
+  components / crossings / pieces flat (Auto1 crosses each river once:
+  nothing to merge), violations the same 8, ceiling hits 0, wall clock
+  +10%. **HELD, not baselined** — your call after looking. Mac2: the
+  GDKing-Bonemass bridge moved from (-595,331) onto Eikthyrnir-GDKing's
+  at (-590,368) (4 m apart = one site), the (-544,351) bridge is now used
+  by two routes at the same cells; distinct sites 32 -> 31, hash 496fe5ab
+  -> 6abad78b, 95 routes, 34 crossing records. Remaining doubles are
+  26-40 m apart: the crossing discount needs the exact from-cell and
+  landing cell of the earlier bridge (4 m road, 8 m cells), so routes
+  arriving at an angle still build their own. Follow-up: test crossing
+  ends against "within N m of an existing crossing's banks" instead of the
+  painted cell. Regen tag `road-reuse` (numbers only, no shots).
+  `validation-results/RoadTestMac2.world.svg` was re-rendered on these routes.
+- **d7fef39 — task 1h spike, proof step by IL** (monodis on
+  assembly_valheim, ZoneSystem.PlaceLocations/SpawnZone): a location's
+  rotation is decided in PlaceLocations — `m_slopeRotation`: LookRotation
+  of the terrain delta over the exterior radius, rounded to 22.5 deg
+  (predictable from terrain); `m_randomRotation`: `Random.Range(0,16)*22.5`
+  from the global Random state at zone spawn (SpawnZone seeds nothing and
+  places locations before vegetation) — NOT predictable at road time. The
+  per-location seed (GetSeed + zone.x*4271 + zone.y*9187) only feeds
+  SpawnLocation's interior. So aiming is possible only for slope-rotated
+  prefabs. Aids added: `road_location_flags` (which prefabs are which) and
+  `[Debug] LogLocationSpawns` ([LOCATION] lines with the real yaw) — see
+  `validation-results/RoadTestMac2.location-flags.txt` if it is there.
+  No aiming implemented.
+
 ### Not done / blocked
 
-- 1g road reuse (pathfinder discount near existing routes): started after
-  this report if time allowed — see the commit list on the fork; it moves
-  the hash and every count, so it is gated separately.
-- 1h dungeon-entrance spike: not started (needs a live client session
-  with the Harmony postfix; lower priority than 1g).
 - Task 4 second pass (names, tests-assert-behaviour): only the helper
   consolidation shipped.
 - pc/tooling has no upstream PR (HOLD until PR #18 is answered).
