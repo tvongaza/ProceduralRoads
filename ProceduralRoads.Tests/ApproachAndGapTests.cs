@@ -53,6 +53,48 @@ public class ApproachAndGapTests
         Assert.Equal(expected, BridgeLayout.FairwayGap(Crossing(width, fairway)), 1);
     }
 
+    /// <summary>Swamp: ankle-deep water everywhere (31.0, wadeable for the
+    /// pathfinder but under the road floor), with one dry hummock at 33.</summary>
+    private sealed class SwampWorld : WorldGenerator
+    {
+        public float HummockHalfWidth = 5f;
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 300f || Mathf.Abs(wy) > 300f) return 20f;
+            return Mathf.Abs(wx) < HummockHalfWidth ? 33f : 31.0f;
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+            GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Swamp;
+    }
+
+    [Theory]
+    [InlineData(5f, false)]    // 10 m of dry hummock in 80 m of shallows: paint, dropped
+    [InlineData(25f, true)]    // 50 m of dry ground: a road
+    public void ASwampRouteTrimmedToAHummockIsDropped(float hummockHalfWidth, bool expectRoad)
+    {
+        var world = new SwampWorld { HummockHalfWidth = hummockHalfWidth };
+        WorldGenerator.instance = world;
+        RoadSpatialGrid.Clear();
+        typeof(RoadNetworkGenerator).GetMethod("Reset", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!.Invoke(null, null);
+        typeof(RoadNetworkGenerator).GetField("m_pathfinder", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .SetValue(null, new RoadPathfinder(world));
+        try
+        {
+            bool built = RoadNetworkGenerator.GenerateRoad(new Vector2(-40f, 0f), 0f, new Vector2(40f, 0f), 0f, 4f, "Crypt -> Crypt");
+            Assert.Equal(expectRoad, built);
+            if (built)
+                Assert.True(Assert.Single(RoadNetworkGenerator.GetRoadRoutes()).Length >= RoadNetworkGenerator.MinUsefulRoadLength);
+            else
+                Assert.Empty(RoadNetworkGenerator.GetRoadRoutes());
+        }
+        finally
+        {
+            typeof(RoadNetworkGenerator).GetField("m_pathfinder", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, null);
+            RoadSpatialGrid.Clear();
+            WorldGenerator.instance = null;
+        }
+    }
+
     /// <summary>80 m sailable channel; level banks.</summary>
     private sealed class WideChannelWorld : WorldGenerator
     {

@@ -442,6 +442,17 @@ public static class RoadNetworkGenerator
             return false;
         }
 
+        // A route whose wet ends were trimmed down to a few metres of dry
+        // hummock (swamp crypt to swamp crypt) is paint, not a road.
+        float trimmedLength = 0f;
+        for (int i = 1; i < path.Count; i++)
+            trimmedLength += Vector2.Distance(path[i - 1], path[i]);
+        if (trimmedLength < MinUsefulRoadLength)
+        {
+            Log.LogDebug($"Route dropped: {trimmedLength:F0} m left after trimming wet ends ({label})");
+            return false;
+        }
+
         // Rivers are crossed but never paved (crossings become bridge ruins)
         // and steep sections become staircases with untouched ground: paint
         // and level only the ordinary road spans between those exclusions.
