@@ -347,6 +347,31 @@ public static class RoadCrossingDetector
             if (width >= RoadConstants.FordSpanMinWidth) eligible.Add(FordStyle.Span);
             style = PickFordStyle(eligible, SiteHash(center));
         }
+        else if (swamp)
+        {
+            // A BRIDGE starts and ends on land above the water (Tys, 3 Sep
+            // 2026, after seeing abutments standing in 2 m of swamp water):
+            // in a swamp the wade shelf is road-legal, so the banks found
+            // above can sit under the waterline; walk each one outward
+            // along the road until the ground clears the waterline
+            // clearance, even if that makes the deck longer.
+            float dryFloor = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+            bool fromWet = BiomeBlendedHeight.GetBlendedHeight(from.x, from.y, world) < dryFloor;
+            bool toWet = BiomeBlendedHeight.GetBlendedHeight(to.x, to.y, world) < dryFloor;
+            if (fromWet || toWet)
+            {
+                if (fromWet)
+                    (from, fromIndex) = FirstOutward(path, from, fromIndex, -1, RoadConstants.SwampBridgeDryReach, world, dryFloor);
+                if (toWet)
+                    (to, toIndex) = FirstOutward(path, to, toIndex, +1, RoadConstants.SwampBridgeDryReach, world, dryFloor);
+                width = Vector2.Distance(from, to);
+                direction = to - from;
+                direction.Normalize();
+                center = (from + to) * 0.5f;
+                // The profile keeps its riverbed and fairway: the added deck
+                // is over the shelf, which is shallower than both.
+            }
+        }
 
         return new RoadCrossing
         {
@@ -502,6 +527,41 @@ public static class RoadCrossingDetector
             last = samples[k];
         }
         return metWater ? last : (first, 0);
+    }
+
+    /// <summary>
+    /// Walks outward from a bank along the path (step -1 toward the path
+    /// start, +1 toward its end) and returns the first point whose ground is
+    /// at least <paramref name="floor"/> high, with the path index that
+    /// brackets it on the water side (FromIndex / ToIndex semantics). Gives
+    /// the bank back unchanged when no such point lies within reach.
+    /// </summary>
+    private static (Vector2 bank, int index) FirstOutward(List<Vector2> path, Vector2 bank, int bankIndex, int step, float reach, WorldGenerator world, float floor)
+    {
+        Vector2 pos = bank;
+        int next = bankIndex;
+        float budget = reach;
+        while (budget > 0f && next >= 0 && next < path.Count)
+        {
+            Vector2 target = path[next];
+            float length = Vector2.Distance(pos, target);
+            if (length > 0.01f)
+            {
+                Vector2 dir = (target - pos) * (1f / length);
+                for (float d = 0.5f; d < length && d <= budget; d += 0.5f)
+                {
+                    Vector2 p = pos + dir * d;
+                    if (BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world) >= floor)
+                        return (p, next);
+                }
+                if (length <= budget && BiomeBlendedHeight.GetBlendedHeight(target.x, target.y, world) >= floor)
+                    return (target, next);
+                budget -= length;
+            }
+            pos = target;
+            next += step;
+        }
+        return (bank, bankIndex);
     }
 
     /// <summary>

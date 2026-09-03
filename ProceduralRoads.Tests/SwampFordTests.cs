@@ -84,13 +84,19 @@ public class SwampFordTests
         Assert.Equal(3, deepBridge.ToIndex);
 
         // With a wide wade shelf (dry land 26 m away, beyond HighBankReach)
-        // the banks stand at the edge of the wadeable water: the shelf is
-        // waded, only the dip is decked.
+        // the bridge still starts and ends on land above the water (Tys,
+        // 3 Sep 2026): its banks walk outward over the shelf to the dry
+        // edge at |x| = 30, so the deck spans the whole 60 m shelf, not the
+        // 8 m dip — and never the 80 m jump.
         var wide = new SwampChannelWorld { Bed = 29f, HalfWidth = 30f, DipBed = 26f, DipHalfWidth = 4f };
         var widePath = new List<Vector2> { new(-56f, 0f), new(-48f, 0f), new(-40f, 0f), new(40f, 0f), new(48f, 0f), new(56f, 0f) };
         var wideBridge = Assert.Single(RoadCrossingDetector.Detect(widePath, wide));
         Assert.Equal(CrossingKind.Bridge, wideBridge.Kind);
-        Assert.InRange(wideBridge.Width, 7f, 9.5f); // the 8 m dip, not the 60 m shelf or the 80 m jump
+        Assert.InRange(wideBridge.Width, 59f, 62f);
+        float dryFloor = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+        Assert.True(wide.GetHeight(wideBridge.FromBank.x, 0f) >= dryFloor, "FromBank stands in the water");
+        Assert.True(wide.GetHeight(wideBridge.ToBank.x, 0f) >= dryFloor, "ToBank stands in the water");
+        Assert.InRange(wideBridge.RiverbedHeight, 25.9f, 26.1f); // the profile still knows the dip
     }
 
     [Fact]

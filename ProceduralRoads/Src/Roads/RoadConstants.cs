@@ -60,6 +60,10 @@ public static class RoadConstants
     // fairway: a wading-depth swamp channel with no longer sailable stretch
     // is a ford (Tys, 2026-09-02, c6/c7), a longer one stays a bridge.
     public const float SwampFordMaxFairway = 8f;
+    // A swamp BRIDGE starts and ends on land above the water (Tys,
+    // 2026-09-03): its banks walk outward over the wade shelf up to this
+    // far to find ground above the waterline clearance.
+    public const float SwampBridgeDryReach = 120f;
 
     // High bridge (Tys, 2026-09-02, c4/c15: steep narrow channels where the
     // fairway gap eats the whole deck and the road climbs a cliff on each
