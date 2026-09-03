@@ -58,7 +58,7 @@ cp "$CONFIG_DIR/ProceduralRoads.selftest.json" "$OUT_DIR/$WORLD.selftest.json"
 cp "$CONFIG_DIR/ProceduralRoads.routes.csv" "$OUT_DIR/$WORLD.routes.csv"
 
 echo "Report: $OUT_DIR/$WORLD.selftest.json"
-grep -E '"passed"|"routeCount"|"networkComponents"|"fordCount"|"violations"' \
+grep -E '"passed"|"routeCount"|"networkComponents"|"fordCount"|"wetPoints"|"wetPointsOutsideSpans"|"violations"' \
     "$OUT_DIR/$WORLD.selftest.json" | head -6
 
 grep -q '"passed": true' "$OUT_DIR/$WORLD.selftest.json"

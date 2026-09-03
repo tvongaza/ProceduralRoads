@@ -53,9 +53,16 @@ public class ValidatorTests
         var noSpans = RoadNetworkValidator.Validate(new[] { route }, world, null, new List<RoadCrossing>());
         int wet = noSpans.Violations.Count(v => v.StartsWith("dry-land"));
         Assert.True(wet > 0, "Wet route points outside any recorded crossing must be flagged");
-        // The total is reported even when the listed lines are capped.
+        // The total is reported even when the listed lines are capped, and it
+        // is a report field: the number that moves while the list is saturated.
         if (wet > 12)
-            Assert.Contains(noSpans.Violations, v => v.Contains("wet points in total"));
+            Assert.Contains(noSpans.Violations, v => v.Contains("wet points outside recorded spans"));
+        Assert.Equal(System.Math.Min(wet, 12), Mathf.Min(noSpans.WetPointsOutsideSpans, 12));
+        Assert.True(noSpans.WetPointsOutsideSpans >= wet);
+        Assert.True(noSpans.WetPoints >= noSpans.WetPointsOutsideSpans);
+        Assert.Equal(0, withSpans.WetPointsOutsideSpans);
+        Assert.Equal(noSpans.WetPoints, withSpans.WetPoints); // spans exempt, they do not dry
+        Assert.Contains("\"wetPointsOutsideSpans\"", RoadNetworkValidator.ToJson(noSpans));
     }
 
     private sealed class KneeDeepDipWorld : WorldGenerator

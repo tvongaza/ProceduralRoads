@@ -27,6 +27,14 @@ public static class RoadNetworkValidator
         public int PointCount;
         public int NetworkComponents;
         public int FordCount;
+        /// <summary>Centerline points under the water threshold, exempt or not.</summary>
+        public int WetPoints;
+        /// <summary>Wet points that no recorded crossing span or wading rule
+        /// covers: the uncapped dry-land count. The listed violations stop at
+        /// MaxViolationsPerCheck, so this is the number that moves.</summary>
+        public int WetPointsOutsideSpans;
+        public int OverLengthCrossings;
+        public int OverGradePoints;
         public string PointsHash = "";
         public readonly List<string> Violations = new();
         public bool Passed => Violations.Count == 0;
@@ -108,6 +116,8 @@ public static class RoadNetworkValidator
                 // leveled ford by design (6f1dc31): the road goes through it.
                 bool kneeDeepFord = height >= RoadConstants.SeaLevel - RoadConstants.FordWadeDepth;
                 bool exempt = kneeDeepFord || (crossings != null ? InRecordedCrossing(route, p) : inRiverCore);
+                if (height < RoadConstants.ShallowWaterHeight - 0.25f)
+                    report.WetPoints++;
                 if (height < RoadConstants.ShallowWaterHeight - 0.25f && !exempt)
                 {
                     bool swampWade = world.GetBiome(p.x, p.z) == Heightmap.Biome.Swamp
@@ -172,13 +182,20 @@ public static class RoadNetworkValidator
         report.PointsHash = hash.ToString("x8");
         report.NetworkComponents = CountComponents(routes);
         // The listed lines are capped for readability; the totals are what the
-        // instrument measured — a display limit must never become a measurement limit.
+        // instrument measured — a display limit must never become a measurement
+        // limit, so they are report fields too. "Wet points outside recorded
+        // spans" is a count of what fell OUTSIDE every exemption, not of all
+        // wet points (WetPoints has those): the two together say how much of
+        // the water the decks cover.
+        report.WetPointsOutsideSpans = dryLandTotal;
+        report.OverLengthCrossings = fordTotal;
+        report.OverGradePoints = slopeTotal;
         if (dryLandTotal > MaxViolationsPerCheck)
-            report.Violations.Add($"dry-land: {dryLandTotal} wet points in total ({MaxViolationsPerCheck} listed)");
+            report.Violations.Add($"dry-land: {dryLandTotal} wet points outside recorded spans ({MaxViolationsPerCheck} listed)");
         if (fordTotal > MaxViolationsPerCheck)
-            report.Violations.Add($"crossing-length: {fordTotal} over-length crossings in total ({MaxViolationsPerCheck} listed)");
+            report.Violations.Add($"crossing-length: {fordTotal} over-length crossings ({MaxViolationsPerCheck} listed)");
         if (slopeTotal > MaxViolationsPerCheck)
-            report.Violations.Add($"slope: {slopeTotal} over-grade points in total ({MaxViolationsPerCheck} listed)");
+            report.Violations.Add($"slope: {slopeTotal} over-grade points ({MaxViolationsPerCheck} listed)");
 
         return report;
     }
@@ -314,6 +331,10 @@ public static class RoadNetworkValidator
         sb.Append($"  \"pointCount\": {report.PointCount},\n");
         sb.Append($"  \"networkComponents\": {report.NetworkComponents},\n");
         sb.Append($"  \"fordCount\": {report.FordCount},\n");
+        sb.Append($"  \"wetPoints\": {report.WetPoints},\n");
+        sb.Append($"  \"wetPointsOutsideSpans\": {report.WetPointsOutsideSpans},\n");
+        sb.Append($"  \"overLengthCrossings\": {report.OverLengthCrossings},\n");
+        sb.Append($"  \"overGradePoints\": {report.OverGradePoints},\n");
         sb.Append($"  \"pointsHash\": \"{report.PointsHash}\",\n");
         sb.Append("  \"violations\": [\n");
         for (int i = 0; i < report.Violations.Count; i++)

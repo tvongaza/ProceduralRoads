@@ -85,6 +85,6 @@ scp -q "$NAS:$SRV/selftest-run.log" \
     "$REPO_DIR/validation-results/$WORLD.nas.server.log" 2>/dev/null || true
 
 echo "Report: validation-results/$WORLD.nas.selftest.json"
-grep -E '"passed"|"routeCount"|"networkComponents"|"fordCount"|"pointsHash"' \
+grep -E '"passed"|"routeCount"|"networkComponents"|"fordCount"|"wetPoints"|"wetPointsOutsideSpans"|"pointsHash"' \
     "$REPO_DIR/validation-results/$WORLD.nas.selftest.json"
 grep -q '"passed": true' "$REPO_DIR/validation-results/$WORLD.nas.selftest.json"

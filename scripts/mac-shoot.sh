@@ -100,7 +100,7 @@ sleep 2
 sleep 3
 cp "$VALHEIM/BepInEx/config/ProceduralRoads.selftest.json" "$REPO_DIR/validation-results/$WORLD.selftest.json"
 cp "$VALHEIM/BepInEx/config/ProceduralRoads.routes.csv" "$REPO_DIR/validation-results/$WORLD.routes.csv"
-grep -E '"passed"|"routeCount"|"networkComponents"|"fordCount"|"pointsHash"' "$REPO_DIR/validation-results/$WORLD.selftest.json"
+grep -E '"passed"|"routeCount"|"networkComponents"|"fordCount"|"wetPoints"|"wetPointsOutsideSpans"|"pointsHash"' "$REPO_DIR/validation-results/$WORLD.selftest.json"
 
 # ---- 5. pick the sites ----
 say "5/8 sites"
