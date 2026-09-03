@@ -43,6 +43,15 @@ if "$CLI" --status 2>/dev/null | grep -q "process=true"; then
     done
 fi
 
+# ---- 1b. restore the pristine fixture: paint and leveling are applied only
+# when a zone first generates, so regenerating over a travelled world shows
+# the OLD network's roads in every visited zone. No fixture, no run. ----
+say "1b/8 restore pristine fixture"
+"$REPO_DIR/scripts/world-fixture.sh" restore "$WORLD" || {
+    echo "no pristine fixture for $WORLD: create the world with IslandRoadPercentage = 0, quit, then scripts/world-fixture.sh save $WORLD"
+    exit 1
+}
+
 # ---- 2. config: real ceiling, regenerate, selftest on ----
 say "2/8 config"
 python3 - "$CFG" "$ITER" <<'EOF'
@@ -177,6 +186,18 @@ census() {  # census <file> <x> <z>
     "$CLI" cli_nearby_prefabs 30 > "$1" 2>&1 || true
     printf '%s pieces: ' "$(basename "$1")"; grep -cE 'wood_(pole2|beam|floor|stair)|stone_(wall|floor|stair|arch)' "$1" || true
 }
+
+if [ "${SHOTS:-1}" = "0" ]; then
+    say "6/8 shots skipped (SHOTS=0): world prepared for inspection"
+    "$CLI" save | tail -1
+    python3 - "$CFG" <<'EOF'
+import sys, re
+p = sys.argv[1]; s = open(p).read()
+s = re.sub(r'^ForceRegenerate = .*$', 'ForceRegenerate = false', s, flags=re.M)
+open(p, 'w').write(s)
+EOF
+    exit 0
+fi
 
 say "6/8 fords first (short), then the wood bridge with a $DECAY_SOAK s decay soak"
 BRIDGE=""

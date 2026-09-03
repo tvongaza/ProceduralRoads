@@ -680,6 +680,12 @@ public static class RoadNetworkGenerator
         if (candidates.Count == 0)
             return new List<IslandCandidate>();
 
+        // 0 means no roads at all — the pristine-fixture flow depends on it
+        // (world-fixture.sh: create with roads off, snapshot, regenerate on
+        // every run). Any positive percentage still gets at least one island.
+        if (percentage <= 0)
+            return new List<IslandCandidate>();
+
         int targetCount = Mathf.Max(1, Mathf.RoundToInt(candidates.Count * percentage / 100f));
         if (targetCount >= candidates.Count)
             return candidates.OrderByDescending(candidate => candidate.Island.ApproxArea).ToList();
