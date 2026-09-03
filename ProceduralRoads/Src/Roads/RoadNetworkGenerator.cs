@@ -190,11 +190,6 @@ public static class RoadNetworkGenerator
     /// <summary>Locations the current generation connected (debug rings);
     /// empty after a load from ZDO, which stores routes only.</summary>
     public static IReadOnlyList<(string name, Vector3 position, float radius)> GetRoadLocations() => m_roadLocations;
-    /// <summary>Stair runs (steep sections become staircases) are their own
-    /// line of work on branch pc/stairs; the bridge work keeps them off so
-    /// stairs cannot bend routes or pieces around crossings (Tys, 2 Sep 2026).
-    /// Config "Stairs/Enabled".</summary>
-    public static bool StairsEnabled = false;
 
     /// <summary>Player-facing lever (config "Roads/WetTerminus"): what to do
     /// with a route whose end on its location's radius circle is in water.</summary>
@@ -208,7 +203,6 @@ public static class RoadNetworkGenerator
     private static List<(Vector2 position, string label)> m_roadStartPoints = new();
     private static List<RoadRoute> m_roadRoutes = new List<RoadRoute>();
     private static List<RoadCrossing> m_roadCrossings = new List<RoadCrossing>();
-    private static List<StairRun> m_stairRuns = new List<StairRun>();
 
     public static bool RoadsGenerated => m_roadsGenerated;
     public static bool IsLocationsReady => m_locationsReady;
@@ -227,7 +221,6 @@ public static class RoadNetworkGenerator
 
     public static IReadOnlyList<RoadCrossing> GetRoadCrossings() => m_roadCrossings;
 
-    public static IReadOnlyList<StairRun> GetStairRuns() => m_stairRuns;
 
     public static string GetRoadRouteLabel(int routeIndex)
     {
@@ -459,33 +452,9 @@ public static class RoadNetworkGenerator
             return false;
         }
 
-        // Rivers are crossed but never paved (crossings become bridge ruins)
-        // and steep sections become staircases with untouched ground: paint
-        // and level only the ordinary road spans between those exclusions.
+        // Rivers are crossed but never paved (crossings become bridge ruins):
+        // paint and level only the ordinary road spans between them.
         List<RoadCrossing> crossings = RoadCrossingDetector.Detect(path, WorldGenerator.instance);
-        List<StairRun> stairRuns = StairsEnabled
-            ? StairRunDetector.Detect(path, WorldGenerator.instance)
-            : new List<StairRun>();
-
-        // A stair run that ends at a crossing's dry point descends the rest of
-        // the way to the abutment at the water's edge, so stairs meet the deck
-        // the same way painted road does.
-        foreach (StairRun run in stairRuns)
-        {
-            foreach (RoadCrossing crossing in crossings)
-            {
-                if (run.ToIndex == crossing.FromIndex && Vector2.Distance(run.ToPos, crossing.FromBank) > 0.5f)
-                {
-                    run.Points.Add(crossing.FromBank);
-                    run.ToPos = crossing.FromBank;
-                }
-                if (run.FromIndex == crossing.ToIndex && Vector2.Distance(run.FromPos, crossing.ToBank) > 0.5f)
-                {
-                    run.Points.Insert(0, crossing.ToBank);
-                    run.FromPos = crossing.ToBank;
-                }
-            }
-        }
 
         // Crossings carry their abutment points (the water's edge): the land
         // segment before a crossing runs on to FromBank and the one after it
@@ -510,8 +479,6 @@ public static class RoadNetworkGenerator
                 RoadSpatialGrid.AddRoadPath(wade, width, WorldGenerator.instance, followTerrain: true);
             }
         }
-        foreach (StairRun stairRun in stairRuns)
-            exclusions.Add((stairRun.FromIndex, stairRun.ToIndex, null, null));
         exclusions.Sort((x, y) => x.from.CompareTo(y.from));
 
         if (exclusions.Count == 0)
@@ -559,12 +526,6 @@ public static class RoadNetworkGenerator
             {
                 crossing.RouteIndex = route.Index;
                 m_roadCrossings.Add(crossing);
-            }
-
-            foreach (StairRun stairRun in stairRuns)
-            {
-                stairRun.RouteIndex = route.Index;
-                m_stairRuns.Add(stairRun);
             }
         }
 
@@ -1152,7 +1113,6 @@ public static class RoadNetworkGenerator
         m_roadStartPoints.Clear();
         m_roadRoutes.Clear();
         m_roadCrossings.Clear();
-        m_stairRuns.Clear();
         m_roadLocations.Clear();
         RuinPlacement.Reset();
         RoadNetworkPersistence.Reset();
@@ -1475,7 +1435,7 @@ public static class RoadNetworkGenerator
             return;
         }
 
-        RoadNetworkPersistence.SaveGlobalRoadData(m_roadStartPoints, m_roadRoutes, m_roadCrossings, m_stairRuns, RuinPlacement.SpawnedZones);
+        RoadNetworkPersistence.SaveGlobalRoadData(m_roadStartPoints, m_roadRoutes, m_roadCrossings, RuinPlacement.SpawnedZones);
     }
 
     /// <summary>
@@ -1487,7 +1447,7 @@ public static class RoadNetworkGenerator
     {
         var spawnedRuinZones = new HashSet<Vector2i>();
         bool loaded = RoadNetworkPersistence.TryLoadGlobalRoadData(
-            m_roadStartPoints, m_roadRoutes, m_roadCrossings, m_stairRuns, spawnedRuinZones);
+            m_roadStartPoints, m_roadRoutes, m_roadCrossings, spawnedRuinZones);
         if (loaded)
             RuinPlacement.MarkZonesSpawned(spawnedRuinZones);
         return loaded;

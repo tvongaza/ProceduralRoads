@@ -268,15 +268,10 @@ public class CrossingExtentTests
 
             // No bridge to nowhere: painted road within 3 m of each abutment
             // (12 m was the old tolerance — a 12 m gap is the hillside at c0).
-            var stairRuns = RoadNetworkGenerator.GetStairRuns();
             foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
             {
                 bool road = RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(bank.x, 0, bank.y), 3f).Count > 0;
-                bool stairs = false;
-                foreach (var run in stairRuns)
-                    foreach (var rp in run.Points)
-                        if (Vector2.Distance(rp, bank) <= 3f) stairs = true;
-                Assert.True(road || stairs, $"Neither painted road nor stairs within 3 m of the abutment at {bank}");
+                Assert.True(road, $"No painted road within 3 m of the abutment at {bank}");
             }
 
             // Still nothing painted in the channel.
@@ -450,7 +445,7 @@ public class CrossingLineTests
             // Every route point over the channel is inside the recorded span
             // (validator exemption); the shelf points are legal swamp wading.
             var route = RoadRoute.FromWaypoints(0, "Shelf -> Far", 4f, path, world);
-            var report = RoadNetworkValidator.Validate(new[] { route }, world, null, new List<RoadCrossing> { crossing });
+            var report = RoadNetworkValidator.Validate(new[] { route }, world, new List<RoadCrossing> { crossing });
             Assert.DoesNotContain(report.Violations, v => v.StartsWith("dry-land"));
         }
     }
@@ -543,7 +538,7 @@ public class DeckOnRoadTests
         crossing.RouteIndex = 0;
         var route = RoadRoute.FromWaypoints(0, "A -> B", 4f, path, world);
 
-        var report = RoadNetworkValidator.Validate(new[] { route }, world, null, new[] { crossing });
+        var report = RoadNetworkValidator.Validate(new[] { route }, world, new[] { crossing });
 
         Assert.DoesNotContain(report.Violations, v => v.StartsWith("dry-land"));
     }
@@ -596,7 +591,7 @@ public class DeckOnRoadTests
         Assert.Equal(3, crossing.ToIndex);
 
         var route = RoadRoute.FromWaypoints(0, "A -> B", 4f, path, world);
-        var report = RoadNetworkValidator.Validate(new[] { route }, world, null, new[] { crossing });
+        var report = RoadNetworkValidator.Validate(new[] { route }, world, new[] { crossing });
         Assert.DoesNotContain(report.Violations, v => v.StartsWith("dry-land"));
     }
 

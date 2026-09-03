@@ -9,9 +9,6 @@ public enum BridgePieceKind
     Deck,          // walkable span resting on a station pair
     Abutment,      // bank platform, sunk into the road surface
     Debris,        // collapsed piece settled on the riverbed, outside the fairway
-    StairStep,     // one staircase step following a stair run's centerline
-    StairSupport,  // vertical support under a floating stair step
-    Landing,       // flat piece: switchback turn platform or flat chain stretch
     Beam,          // crossbeam tying a station's post pair under the deck
     Arch,          // quarter-arch springing from a bank abutment over the water
     Stair,         // a step piece from the road up onto a raised ford span

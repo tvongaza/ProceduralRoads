@@ -41,7 +41,8 @@ public static class RoadNetworkPersistence
     /// </summary>
     private static readonly int RoadCrossingsHash = "ProceduralRoads_Crossings".GetStableHashCode();
 
-    private static readonly int StairRunsHash = "ProceduralRoads_StairRuns".GetStableHashCode();
+    // "ProceduralRoads_StairRuns" blobs written by earlier builds stay in the
+    // metadata ZDO unread; stair runs live on branch pc/stairs.
     private static readonly int SpawnedRuinZonesHash = "ProceduralRoads_SpawnedRuinZones".GetStableHashCode();
 
     /// <summary>
@@ -110,7 +111,6 @@ public static class RoadNetworkPersistence
         IReadOnlyList<(Vector2 position, string label)> roadStartPoints,
         IReadOnlyList<RoadRoute> roadRoutes,
         IReadOnlyList<RoadCrossing> roadCrossings,
-        IReadOnlyList<StairRun> stairRuns,
         IReadOnlyCollection<Vector2i> spawnedRuinZones)
     {
         Log.LogDebug($"[SAVE] SaveGlobalRoadData called");
@@ -164,13 +164,6 @@ public static class RoadNetworkPersistence
             Log.LogDebug($"[SAVE] Saved {roadCrossings.Count} road crossings ({crossingsData.Length} bytes)");
         }
 
-        byte[] stairData = SerializeStairRuns(stairRuns);
-        if (stairData.Length > 0)
-        {
-            metadataZdo.Set(StairRunsHash, stairData);
-            Log.LogDebug($"[SAVE] Saved {stairRuns.Count} stair runs ({stairData.Length} bytes)");
-        }
-
         byte[] zonesData = SerializeSpawnedRuinZones(spawnedRuinZones);
         if (zonesData.Length > 0)
         {
@@ -188,7 +181,6 @@ public static class RoadNetworkPersistence
         List<(Vector2 position, string label)> roadStartPoints,
         List<RoadRoute> roadRoutes,
         List<RoadCrossing> roadCrossings,
-        List<StairRun> stairRuns,
         HashSet<Vector2i> spawnedRuinZones)
     {
         Log.LogDebug("[LOAD] TryLoadGlobalRoadData called");
@@ -224,7 +216,6 @@ public static class RoadNetworkPersistence
             TryLoadRoadMetadata(roadStartPoints);
             TryLoadRoadRoutes(roadRoutes);
             TryLoadRoadCrossings(roadCrossings);
-            TryLoadStairRuns(stairRuns);
             TryLoadSpawnedRuinZones(spawnedRuinZones);
 
             return true;
@@ -449,12 +440,6 @@ public static class RoadNetworkPersistence
         return false;
     }
 
-    public static bool TryLoadStairRuns(List<StairRun> stairRuns)
-    {
-        byte[]? data = ReadMetadataBlob(StairRunsHash);
-        return data != null && DeserializeStairRuns(data, stairRuns);
-    }
-
     public static bool TryLoadSpawnedRuinZones(HashSet<Vector2i> zones)
     {
         byte[]? data = ReadMetadataBlob(SpawnedRuinZonesHash);
@@ -503,72 +488,6 @@ public static class RoadNetworkPersistence
             writer.Write(zone.y);
         }
         return ms.ToArray();
-    }
-
-    private static byte[] SerializeStairRuns(IReadOnlyList<StairRun> stairRuns)
-    {
-        using MemoryStream ms = new();
-        using BinaryWriter writer = new(ms);
-        writer.Write(1);
-        writer.Write(stairRuns.Count);
-        foreach (StairRun run in stairRuns)
-        {
-            writer.Write(run.RouteIndex);
-            writer.Write(run.Length);
-            writer.Write(run.MaxGrade);
-            writer.Write((int)run.Biome);
-            writer.Write(run.Points.Count);
-            foreach (Vector2 point in run.Points)
-            {
-                writer.Write(point.x);
-                writer.Write(point.y);
-            }
-        }
-        return ms.ToArray();
-    }
-
-    private static bool DeserializeStairRuns(byte[] data, List<StairRun> stairRuns)
-    {
-        try
-        {
-            using MemoryStream ms = new(data);
-            using BinaryReader reader = new(ms);
-            int version = reader.ReadInt32();
-            if (version != 1)
-            {
-                Log.LogWarning($"Unknown stair run data version: {version}");
-                return false;
-            }
-            int count = reader.ReadInt32();
-            if (count < 0 || count > 100000) return false;
-            stairRuns.Clear();
-            for (int i = 0; i < count; i++)
-            {
-                StairRun run = new()
-                {
-                    RouteIndex = reader.ReadInt32(),
-                    Length = reader.ReadSingle(),
-                    MaxGrade = reader.ReadSingle(),
-                    Biome = (Heightmap.Biome)reader.ReadInt32(),
-                };
-                int pointCount = reader.ReadInt32();
-                if (pointCount < 0 || pointCount > 100000) return false;
-                for (int j = 0; j < pointCount; j++)
-                    run.Points.Add(new Vector2(reader.ReadSingle(), reader.ReadSingle()));
-                if (run.Points.Count >= 2)
-                {
-                    run.FromPos = run.Points[0];
-                    run.ToPos = run.Points[run.Points.Count - 1];
-                }
-                stairRuns.Add(run);
-            }
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log.LogWarning($"Failed to deserialize stair runs: {ex.Message}");
-            return false;
-        }
     }
 
     private static byte[] SerializeRoadCrossings(IReadOnlyList<RoadCrossing> roadCrossings)
