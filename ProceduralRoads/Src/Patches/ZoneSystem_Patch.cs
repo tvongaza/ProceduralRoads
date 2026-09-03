@@ -57,6 +57,24 @@ public static class ZoneSystem_Patch
         }
     }
 
+    /// <summary>Night plan 2026-09-03 task 1h: log every placed location with
+    /// the rotation the game chose, so a rotation predicted from terrain
+    /// (slope-rotated prefabs) can be checked against reality. Off unless
+    /// [Debug] LogLocationSpawns is on: one line per location per zone.</summary>
+    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.SpawnLocation))]
+    public static class ZoneSystem_SpawnLocation_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(ZoneSystem.ZoneLocation location, int seed, Vector3 pos, Quaternion rot, ZoneSystem.SpawnMode mode)
+        {
+            if (ProceduralRoadsPlugin.LogLocationSpawns == null || !ProceduralRoadsPlugin.LogLocationSpawns.Value)
+                return;
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo(
+                $"[LOCATION] {location.m_prefab.Name} pos=({pos.x:F1},{pos.y:F1},{pos.z:F1}) yaw={rot.eulerAngles.y:F1} seed={seed} mode={mode} " +
+                $"slopeRotation={location.m_slopeRotation} randomRotation={location.m_randomRotation}");
+        }
+    }
+
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.OnDestroy))]
     public static class ZoneSystem_OnDestroy_Patch
     {

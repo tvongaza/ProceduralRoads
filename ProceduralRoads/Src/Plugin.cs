@@ -59,6 +59,7 @@ namespace ProceduralRoads
         public static ConfigEntry<bool> ForceRegenerate = null!;
         public static ConfigEntry<bool> SpawnRuinsHeadless = null!;
         public static ConfigEntry<bool> WorldDump = null!;
+        public static ConfigEntry<bool> LogLocationSpawns = null!;
 
         private float m_nextDeferredRetry;
 
@@ -162,6 +163,10 @@ namespace ProceduralRoads
                 "After the self-test, dump the world grid (height, biome, river at 50 m) and every placed location " +
                 "to ProceduralRoads.world.csv / ProceduralRoads.locations.csv in the config folder (scripts/world-svg.py renders them). " +
                 "Also available on demand as road_world_dump.");
+
+            LogLocationSpawns = Config.Bind("Debug", "LogLocationSpawns", false,
+                "Log every location the game places ([LOCATION] prefab, position, yaw, seed, rotation flags) for checking " +
+                "predicted dungeon-entrance directions against reality. Verbose.");
 
             SpawnRuinsHeadless = Config.Bind("Debug", "SpawnRuinsHeadless", false,
                 "Spawn every planned ruin piece as ZDOs immediately after road generation, " +

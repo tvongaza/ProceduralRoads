@@ -259,6 +259,36 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_location_flags",
+            "List every location prefab the world placed with the flags that decide its rotation (slopeRotation / randomRotation / snapToWater), its radius and count. " +
+            "Slope-rotated locations face away from the uphill (predictable from terrain); random-rotated ones draw from the zone's Random state at spawn.",
+            (args) =>
+            {
+                var list = ZoneSystem.instance != null ? ZoneSystem.instance.GetLocationList() : null;
+                if (list == null) { args.Context.AddString("No location list"); return; }
+                var seen = new Dictionary<string, (ZoneSystem.ZoneLocation loc, int count)>();
+                foreach (var inst in list)
+                {
+                    string name = inst.m_location.m_prefab.Name;
+                    seen[name] = seen.TryGetValue(name, out var e) ? (e.loc, e.count + 1) : (inst.m_location, 1);
+                }
+                var names = new List<string>(seen.Keys);
+                names.Sort(System.StringComparer.Ordinal);
+                foreach (string name in names)
+                {
+                    var (loc, count) = seen[name];
+                    args.Context.AddString($"LOCATION {name} count={count} slopeRotation={loc.m_slopeRotation} randomRotation={loc.m_randomRotation} " +
+                        $"snapToWater={loc.m_snapToWater} clearArea={loc.m_clearArea} exteriorRadius={loc.m_exteriorRadius:F1} unique={loc.m_unique}");
+                }
+                args.Context.AddString($"total: {names.Count} location prefabs, {list.Count} instances");
+            },
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_selftest",
             "Validate the generated road network (dry land, ford lengths, slopes, connectivity) and write a JSON report + routes CSV to the config folder.",
             (args) => RunSelfTest(args),
