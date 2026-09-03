@@ -3,8 +3,8 @@
 ## HANDOFF 2026-09-03 afternoon (Tys away; dev-52 working autonomously)
 
 Read this first; it sits on top of the 09:30 handoff below. All commits on
-`pc/snap-point-composition`, pushed to the fork. Suite 198/198 on both
-runtimes at the tip; mod DLL builds. Nothing touched in-game (Mac client
+`pc/snap-point-composition`, pushed to the fork. Suite 204/204 on both
+runtimes at the tip 063d273; mod DLL builds. Nothing touched in-game (Mac client
 still parked at (150, 692) for decision 5).
 
 | commit | what | Auto1 gate |
@@ -14,6 +14,7 @@ still parked at (150, 692) for decision 5).
 | d85001e | swamp dry banks walk straight along the crossing line (fixes the c33 chord regression) | expected inert on Auto1 (no swamp bridges); NAS running |
 | 7e97b41 | Mistlands: deep ford-length jumps refused in the pathfinder, no plan for any Mistlands bridge (finishes decision 4; chose the pathfinder rule + a plan-level safety net) | hash WILL move; NAS running, reporting the route diff by label count |
 | c2f223c | kits first class: shipped in the mod, `Bridges/Kit` = Solver (default) / Wood / StoneArch / Hybrid / ByBiome, player override dir `BepInEx/config/ProceduralRoads/blueprints`, SupportModel + Weather moved into the mod | expected inert (default = solver); NAS asked |
+| 063d273 | review pass (independent review of the day's commits, findings verified): SpanCount rounds UP so a kit never leaves a deck hole (10 m crossing + 4 m kit had a 2 m gap); Mistlands ban holds by centre OR bank on both the pathfinder and the plan (`BridgeLayout.TouchesMistlands`); player-kit sidecar loadYOffset; Data ';' sanitised; dead code out; 204 tests | expected inert vs c2f223c; NAS asked |
 
 ### Blueprints, as built (decision 6 done, see "Elaboration on 6")
 - Format = jneb802's valheimCreative `.blueprint` (PlanBuild layout, 13
