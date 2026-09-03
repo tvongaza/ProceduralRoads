@@ -1,5 +1,57 @@
 # Fresh-Start Plan (2026-08-31)
 
+## HANDOFF 2026-09-03 afternoon (Tys away; dev-52 working autonomously)
+
+Read this first; it sits on top of the 09:30 handoff below. All commits on
+`pc/snap-point-composition`, pushed to the fork. Suite 198/198 on both
+runtimes at the tip; mod DLL builds. Nothing touched in-game (Mac client
+still parked at (150, 692) for decision 5).
+
+| commit | what | Auto1 gate |
+|---|---|---|
+| 6dff7d5 | ruin piece health 5-70 % (Tys, was 30-70 %); abutments 50-90 and debris 20-40 unchanged | INERT: MD5 db8b6bf8 identical to bf90349. NAS caveat: the gate sees positions, not health; only `road_piece_health` on a live client shows the values (in-game item for Tys) |
+| 78043d3 | bridges as blueprints: RoadBlueprint (format + Unity Euler/quaternion math), BlueprintComposer (kits tiled per crossing, Export per site, `road_export_blueprints`), stone-arch + hybrid kit spike, exhibits | INERT, MD5 identical |
+| d85001e | swamp dry banks walk straight along the crossing line (fixes the c33 chord regression) | expected inert on Auto1 (no swamp bridges); NAS running |
+| 7e97b41 | Mistlands: deep ford-length jumps refused in the pathfinder, no plan for any Mistlands bridge (finishes decision 4; chose the pathfinder rule + a plan-level safety net) | hash WILL move; NAS running, reporting the route diff by label count |
+| c2f223c | kits first class: shipped in the mod, `Bridges/Kit` = Solver (default) / Wood / StoneArch / Hybrid / ByBiome, player override dir `BepInEx/config/ProceduralRoads/blueprints`, SupportModel + Weather moved into the mod | expected inert (default = solver); NAS asked |
+
+### Blueprints, as built (decision 6 done, see "Elaboration on 6")
+- Format = jneb802's valheimCreative `.blueprint` (PlanBuild layout, 13
+  fields, quoted description, quaternion rotation); our reader also takes
+  PlanBuild's 10-field and Expand World's 15-field lines; writer emits
+  exactly their layout. Data field is `kind=Deck health=0.62`
+  (space-separated: PlanBuild rewrites commas as decimal points).
+- Frame: local +z along the crossing, +x on the road's RIGHT
+  `(dir.y, -dir.x)`; the spike's side vector was the left (symmetric kits
+  never noticed). Proven against Unity's yaw for any heading.
+- Kits (`ProceduralRoads/blueprints/`): wood-bridge (2 m planks),
+  stone-arch (4 m bays, quarter-arches from double-wide piers meeting
+  under two-abreast slabs), hybrid (stone courses every 4 m under a 4 m
+  wood deck with crossbeams). Double-wide = ±1 m = the 4 m causeway.
+  ASSUMED, not measured: stone_arch is 2 m wide across; check in-game
+  with road_snap_probe before trusting the two-abreast arches.
+- Composition: START at the near bank, n SPAN by snap-point chaining
+  (nearest whole count, pitched evenly), END at the far bank, deck graded
+  as BridgeLayout's, posts stacked to the bed, then Weather: fairway
+  cleared, decks/arches first, columns whole, abutments stay, survivors
+  in the ruin health range, support cascade last.
+- Exhibits: `validation-results/kit-*-side.svg`,
+  `validation-results/blueprints/kit-*.blueprint`, and every solved
+  bridge can be dumped in-game with `road_export_blueprints` into
+  Expand World's / valheimCreative's folder.
+- In-game (not done): set `Bridges/Kit = StoneArch` on a screenshot world,
+  `road_ruins_reset`, look; run `road_export_blueprints` and load one with
+  `!creative load` in valheimCreative to prove the file interoperates.
+
+### Next for whoever picks up
+1. NAS numbers for d85001e, 7e97b41, c2f223c (this table); Tys reviews
+   7e97b41's route loss before any re-baseline.
+2. Re-regen Mac2 at the tip; look at c33 (swamp chord) and the Mistlands
+   crossings (should be gone or planless).
+3. Decision 5 (shoreline dips) still Tys's.
+4. Code-review findings from the afternoon review pass, if any, land
+   after this note.
+
 ## HANDOFF 2026-09-03 ~09:30 (Tys reviewing; session about to be cleared)
 
 Read this before the MORNING REPORT below; it supersedes its "decisions" list.
