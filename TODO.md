@@ -163,6 +163,32 @@ and tiles start/span/end across a crossing, with the support model run
 over the result, and three .blueprint files for the wood kit written from
 the current grammar. No in-game placement yet.
 
+### Task 6 — world SVG tooling (Tys: global road distribution at a glance)
+
+Goal: one SVG of the whole world showing island outlines, rivers,
+topographic contour lines, every road location with its approach circle,
+and the routes, so road distribution can be judged on paper. Two parts:
+
+- **Mod side, a dump command** `road_world_dump [step=50]`: sample
+  WorldGenerator on a grid over ±10 km (50 m step = 160 000 samples,
+  seconds): height (BiomeBlendedHeight), biome, river weight. Write
+  `ProceduralRoads.world.csv` (x,z,height,biome,river) to the config
+  folder, plus `ProceduralRoads.locations.csv` (name,x,z,radius) from
+  GetRoadLocations() and, if generation ran, the routes CSV the selftest
+  already writes. Add both to what mac-shoot.sh copies into
+  validation-results/.
+- **Render side, `scripts/world-svg.py`** (python3, no PIL/matplotlib —
+  write SVG by hand like tonight's stub map): coastline as the 30 m
+  contour and land fill; rivers where river weight > 0.5 as blue; contour
+  lines by marching squares at a fixed interval (10 m; 30 m contour
+  heavier as the coast); locations as dots with faint approach circles and
+  a name label for bosses/dungeons; routes as lines coloured by kind
+  (grey road, orange bridge spans, teal fords), stubs under 40 m red;
+  optional `--zoom cx,cz,half` inset. Output next to the CSVs. Run it on
+  RoadTestMac2 and RoadTestAuto1 (ask the NAS for its CSVs) and put both
+  SVGs in the morning report.
+- Belongs in the tooling PR (Task 3) once it works.
+
 ### Morning checklist for Tys (fill in)
 
 - Gated commits and hashes; anything that regressed the census.
