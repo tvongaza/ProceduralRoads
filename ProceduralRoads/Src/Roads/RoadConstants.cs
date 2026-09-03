@@ -56,6 +56,10 @@ public static class RoadConstants
     // water; a short span needs room for at least three deck plates.
     public const float FordWadeMaxDepth = 0.5f;
     public const float FordSpanMinWidth = 6f;
+    // In swamps a sailable stretch shorter than a boat is a pothole, not a
+    // fairway: a wading-depth swamp channel with no longer sailable stretch
+    // is a ford (Tys, 2026-09-02, c6/c7), a longer one stays a bridge.
+    public const float SwampFordMaxFairway = 8f;
     public const float FordSpanDeckClearance = 1f; // deck at least this far above the water
     public const float FordSpanDeckRise = 1f;      // and this far above the higher bank: a stepped footbridge
 

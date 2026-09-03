@@ -1,0 +1,108 @@
+using System.Collections.Generic;
+using UnityEngine;
+using Xunit;
+
+namespace ProceduralRoads.Tests;
+
+/// <summary>
+/// Tys (2026-09-02, c6/c7) via the night plan 2026-09-03 task 1b: swamp
+/// crossings at wading depth get the wade / raise / span mix instead of a
+/// bridge (RoadTestMac2 c5/c6: 60 m swamp "bridges" over a 28.5 bed with a
+/// 3-7 m dip of sailable depth). A swamp channel that is sailable for a
+/// boat's length or deeper than wading depth stays a bridge.
+/// </summary>
+public class SwampFordTests
+{
+    /// <summary>Flat swamp at 33 with a channel around x = 0: bed height,
+    /// half width and an optional deeper dip of DipHalfWidth around x = 0.</summary>
+    private sealed class SwampChannelWorld : WorldGenerator
+    {
+        public float Bed = 29f;
+        public float HalfWidth = 10f;
+        public float DipBed = 29f;
+        public float DipHalfWidth = 0f;
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 100f || Mathf.Abs(wy) > 4100f) return 20f;
+            float ax = Mathf.Abs(wx);
+            if (ax < DipHalfWidth) return DipBed;
+            return ax < HalfWidth ? Bed : 33f;
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+            GetHeight(wx, wy) < 22f ? Heightmap.Biome.Ocean : Heightmap.Biome.Swamp;
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / (HalfWidth * 2f));
+            width = weight > 0f ? HalfWidth * 4f : 0f;
+        }
+    }
+
+    private static List<Vector2> Path(float y) =>
+        new() { new(-40f, y), new(-32f, y), new(-24f, y), new(24f, y), new(32f, y), new(40f, y) };
+
+    [Fact]
+    public void WadingDepthSwampChannelIsAFordInEveryStyle()
+    {
+        // Bed 29.0 (1 m of water: too deep to wade outside a swamp, not yet
+        // sailable) with a 3 m dip to 28.2 (sailable, shorter than a boat) — c5/c6.
+        var world = new SwampChannelWorld { Bed = 29f, DipBed = 28.2f, DipHalfWidth = 1.5f };
+        var styles = new HashSet<FordStyle>();
+        for (float y = 0f; y < 4000f; y += 40f)
+        {
+            var crossing = Assert.Single(RoadCrossingDetector.Detect(Path(y), world));
+            Assert.Equal(CrossingKind.Ford, crossing.Kind);
+            Assert.NotEqual(FordStyle.None, crossing.Style);
+            // Wading-depth swamp is road: the ford runs bank to bank along the
+            // jump (the whole channel is wadeable, the banks are its ends).
+            Assert.Equal(2, crossing.FromIndex);
+            Assert.Equal(3, crossing.ToIndex);
+            styles.Add(crossing.Style);
+        }
+        Assert.Contains(FordStyle.Wade, styles);
+        Assert.Contains(FordStyle.Raise, styles);
+        Assert.Contains(FordStyle.Span, styles);
+    }
+
+    [Fact]
+    public void SailableOrDeepSwampChannelStaysABridge()
+    {
+        // A boat's length of sailable depth: sailing is sacred.
+        var sailable = new SwampChannelWorld { Bed = 29f, DipBed = 28.6f, DipHalfWidth = 5f };
+        var bridge = Assert.Single(RoadCrossingDetector.Detect(Path(0f), sailable));
+        Assert.Equal(CrossingKind.Bridge, bridge.Kind);
+        Assert.True(bridge.FairwayWidth >= RoadConstants.SwampFordMaxFairway);
+
+        // Deeper than wading depth anywhere: a bridge, whose banks stand at
+        // the edge of the wadeable water, not at the path's dry cells.
+        var deep = new SwampChannelWorld { Bed = 29f, DipBed = 26f, DipHalfWidth = 4f };
+        var deepBridge = Assert.Single(RoadCrossingDetector.Detect(Path(0f), deep));
+        Assert.Equal(CrossingKind.Bridge, deepBridge.Kind);
+        Assert.InRange(deepBridge.Width, 7f, 9.5f); // the 8 m dip, not the 20 m channel or the 48 m jump
+        Assert.Equal(2, deepBridge.FromIndex);
+        Assert.Equal(3, deepBridge.ToIndex);
+    }
+
+    [Fact]
+    public void OutsideSwampsTheWadingRulesAreUnchanged()
+    {
+        // A 28.6 channel in the Meadows is deep water: a bridge with
+        // banks above the waterline clearance.
+        var world = new MeadowsChannelWorld();
+        var crossing = Assert.Single(RoadCrossingDetector.Detect(Path(0f), world));
+        Assert.Equal(CrossingKind.Bridge, crossing.Kind);
+        float minBank = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+        Assert.True(world.GetHeight(crossing.FromBank.x, crossing.FromBank.y) >= minBank);
+        Assert.True(world.GetHeight(crossing.ToBank.x, crossing.ToBank.y) >= minBank);
+    }
+
+    private sealed class MeadowsChannelWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy) => Mathf.Abs(wx) < 10f ? 28.6f : 33f;
+        public override Heightmap.Biome GetBiome(float wx, float wy) => Heightmap.Biome.Meadows;
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / 20f);
+            width = weight > 0f ? 40f : 0f;
+        }
+    }
+}

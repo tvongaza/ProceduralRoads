@@ -500,7 +500,15 @@ public static class RoadNetworkGenerator
                 continue;
             exclusions.Add((crossing.FromIndex, crossing.ToIndex, crossing.FromBank, crossing.ToBank));
             if (crossing.Kind == CrossingKind.Ford && crossing.Style == FordStyle.Wade)
-                RoadSpatialGrid.AddRoadPath(new List<Vector2> { crossing.FromBank, crossing.ToBank }, width, WorldGenerator.instance, followTerrain: true);
+            {
+                // The wade follows the road through the shallows, bank to
+                // bank, at terrain height — not a chord between the banks.
+                List<Vector2> wade = new() { crossing.FromBank };
+                for (int k = crossing.FromIndex + 1; k < crossing.ToIndex; k++)
+                    wade.Add(path[k]);
+                wade.Add(crossing.ToBank);
+                RoadSpatialGrid.AddRoadPath(wade, width, WorldGenerator.instance, followTerrain: true);
+            }
         }
         foreach (StairRun stairRun in stairRuns)
             exclusions.Add((stairRun.FromIndex, stairRun.ToIndex, null, null));

@@ -82,13 +82,12 @@ public static class RoadCrossingDetector
         int runStart = -1; // index of the dry point before the first wet segment
         int lastEnd = -1;  // ToIndex of the previous crossing (banks never overlap)
 
-        // A bank is the nearest path point that stands above the waterline
-        // clearance, not merely the last point outside the river core:
+        // A bank is the nearest path point that stands on road-legal ground
+        // (see RoadFloor), not merely the last point outside the river core:
         // splined centerlines dip through marshy shelves below the waterline
         // on their way into the channel, and an abutment placed there sits in
         // the water (live witness: banks at 29.0/29.4 vs water 30.0).
-        float minBank = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
-        bool AboveWater(int index) => BiomeBlendedHeight.GetBlendedHeight(path[index].x, path[index].y, world) >= minBank;
+        bool AboveWater(int index) => IsRoadGround(path[index], world);
 
         for (int i = 1; i < path.Count; i++)
         {
@@ -162,9 +161,8 @@ public static class RoadCrossingDetector
         // after it (river core covers dry bank land), and the chord through
         // those ends tilted the deck 6 degrees off an 86 m bridge
         // (RoadTestMac2 65a68b3, "Eikthyrnir -> GDKing", 13 points 6-13 m off).
-        float minBank = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
-        (Vector2 from, int fromOrdinal) = ShoreAlongPath(path, fromIndex, toIndex, world, minBank);
-        (Vector2 to, int toOrdinal) = ShoreAlongPath(path, toIndex, fromIndex, world, minBank);
+        (Vector2 from, int fromOrdinal) = ShoreAlongPath(path, fromIndex, toIndex, world);
+        (Vector2 to, int toOrdinal) = ShoreAlongPath(path, toIndex, fromIndex, world);
         fromIndex += fromOrdinal;
         toIndex -= toOrdinal;
         float width = Vector2.Distance(from, to);
@@ -222,17 +220,27 @@ public static class RoadCrossingDetector
         }
 
         Vector2 center = (from + to) * 0.5f;
+        Heightmap.Biome biome = world.GetBiome(center.x, center.y);
+        bool swamp = biome == Heightmap.Biome.Swamp;
 
         // Knee-deep and unsailable: a FORD, in one of three styles chosen
         // per site so roads vary. Wading only where the water is ankle deep;
         // a span only where there is room for a deck.
-        bool ford = fairwayWidth <= 0f && riverbed >= RoadConstants.SeaLevel - RoadConstants.FordWadeDepth;
+        // Swamps wade deeper (Tys, 2026-09-02, c6/c7): a swamp channel whose
+        // bed stays at wading depth (DeepWaterHeight, what the pathfinder
+        // already wades) is a ford in the same style mix, wading always
+        // allowed — unless a stretch of it is sailable for at least a
+        // boat's length, which keeps it a bridge (sailing is sacred; a
+        // shorter dip is a pothole, not a fairway).
+        bool ford = swamp
+            ? fairwayWidth < RoadConstants.SwampFordMaxFairway && riverbed >= RoadConstants.DeepWaterHeight
+            : fairwayWidth <= 0f && riverbed >= RoadConstants.SeaLevel - RoadConstants.FordWadeDepth;
         FordStyle style = FordStyle.None;
         if (ford)
         {
             float depth = RoadConstants.SeaLevel - riverbed;
             List<FordStyle> eligible = new() { FordStyle.Raise };
-            if (depth <= RoadConstants.FordWadeMaxDepth) eligible.Add(FordStyle.Wade);
+            if (swamp || depth <= RoadConstants.FordWadeMaxDepth) eligible.Add(FordStyle.Wade);
             if (width >= RoadConstants.FordSpanMinWidth) eligible.Add(FordStyle.Span);
             style = PickFordStyle(eligible, SiteHash(center));
         }
@@ -252,7 +260,7 @@ public static class RoadCrossingDetector
             RiverbedHeight = riverbed,
             FairwayCenter = fairwayCenter,
             FairwayWidth = fairwayWidth,
-            Biome = world.GetBiome(center.x, center.y),
+            Biome = biome,
         };
     }
 
@@ -325,17 +333,19 @@ public static class RoadCrossingDetector
     /// <summary>
     /// Walks the path from the vertex at <paramref name="start"/> toward the
     /// vertex at <paramref name="stop"/> and returns the last point whose
-    /// ground can legally carry road (>= minBank), with the ordinal (0-based,
+    /// ground can legally carry road (IsRoadGround), with the ordinal (0-based,
     /// counted from start along the walk) of the path vertex at or before it.
     /// If the start vertex is itself wet — only at a path boundary, since the
     /// run's ends were walked out to dry vertices — the bank is sought
-    /// OUTWARD along the first segment's line instead.
+    /// OUTWARD along the first segment's line instead. A walk that reaches
+    /// the far vertex without meeting water (the run is wadeable or dry all
+    /// the way) keeps the start vertex as its bank.
     /// </summary>
-    private static (Vector2 bank, int ordinal) ShoreAlongPath(List<Vector2> path, int start, int stop, WorldGenerator world, float minBank)
+    private static (Vector2 bank, int ordinal) ShoreAlongPath(List<Vector2> path, int start, int stop, WorldGenerator world)
     {
         int step = stop >= start ? 1 : -1;
         Vector2 first = path[start];
-        bool Legal(Vector2 p) => BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world) >= minBank;
+        bool Legal(Vector2 p) => IsRoadGround(p, world);
 
         if (!Legal(first))
         {
@@ -368,6 +378,7 @@ public static class RoadCrossingDetector
         }
 
         (Vector2 p, int ordinal) last = samples[0];
+        bool metWater = false;
         for (int k = 1; k < samples.Count; k++)
         {
             if (!Legal(samples[k].p))
@@ -377,11 +388,31 @@ public static class RoadCrossingDetector
                 int k1 = Mathf.Min(k + 2, samples.Count - 1);
                 int k2 = Mathf.Min(k + 4, samples.Count - 1);
                 if (!Legal(samples[k1].p) && !Legal(samples[k2].p))
+                {
+                    metWater = true;
                     break;
+                }
                 continue;
             }
             last = samples[k];
         }
-        return last;
+        return metWater ? last : (first, 0);
+    }
+
+    /// <summary>
+    /// Ground a road may stand on, so also where a deck may end. Outside
+    /// swamps: the waterline clearance, the pathfinder's rule for an
+    /// ordinary move. In swamps the pathfinder already wades down to
+    /// DeepWaterHeight, so everything shallower is road (a wading ford),
+    /// not deck: the deck spans only the water the road could not wade,
+    /// instead of a chord over 100 m of wadeable shelf (RoadTestMac2 c19,
+    /// 171 m of "crossing" over a 111 m channel).
+    /// </summary>
+    internal static bool IsRoadGround(Vector2 p, WorldGenerator world)
+    {
+        float floor = world.GetBiome(p.x, p.y) == Heightmap.Biome.Swamp
+            ? RoadConstants.DeepWaterHeight
+            : RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+        return BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world) >= floor;
     }
 }

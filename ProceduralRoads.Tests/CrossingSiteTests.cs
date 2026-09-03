@@ -375,13 +375,14 @@ public class CrossingLineTests
     /// y in [-40, -8], so the path bends through it before the jump.</summary>
     private sealed class ShelfWorld : WorldGenerator
     {
+        public float ShelfHeight = 30.6f;
         public override float GetHeight(float wx, float wy)
         {
             float ax = Mathf.Abs(wx);
             if (ax <= 35f) return 26f;
             if (ax >= 45f)
             {
-                if (wx < 0f && wx > -70f && wy >= -40f && wy <= -8f) return 30.6f; // wet shelf
+                if (wx < 0f && wx > -70f && wy >= -40f && wy <= -8f) return ShelfHeight; // wet shelf
                 return 32f;
             }
             return Mathf.Lerp(26f, 32f, (ax - 35f) / 10f);
@@ -408,37 +409,49 @@ public class CrossingLineTests
         return best;
     }
 
-    [Fact]
-    public void CrossingBanksLieOnTheRoadNotOnAnOutwardWalk()
+    private static readonly List<Vector2> ShelfPath = new()
     {
-        var world = new ShelfWorld();
-        // Path: dry, then across the wet shelf, then the diagonal jump (-48,-8) -> (48,88), then dry.
-        var path = new List<Vector2>
+        new(-64f, -56f), new(-56f, -40f), new(-52f, -24f), new(-48f, -8f),
+        new(48f, 88f), new(56f, 96f), new(64f, 104f),
+    };
+
+    [Fact]
+    public void SwampShelfIsWadedAndOnlyTheChannelIsDecked()
+    {
+        // Task 1a/1b (night plan 2026-09-03). The road bends across a swamp
+        // shelf (above the waterline, below the clearance) before a diagonal
+        // jump over a deep channel. The shelf is wadeable swamp — road, not
+        // deck — so both banks sit ON the jump where the ground drops below
+        // wading depth, the deck is the jump, and nothing walks 45 m outward
+        // along the jump line off the road (the old bank walk).
+        foreach (float shelf in new[] { 30.6f, 28.5f })
         {
-            new(-64f, -56f), new(-56f, -40f), new(-52f, -24f), new(-48f, -8f),
-            new(48f, 88f), new(56f, 96f), new(64f, 104f),
-        };
-        var crossing = Assert.Single(RoadCrossingDetector.Detect(path, world));
+            var world = new ShelfWorld { ShelfHeight = shelf };
+            var path = ShelfPath;
+            var crossing = Assert.Single(RoadCrossingDetector.Detect(path, world));
 
-        // Both banks are points of the road: the far bank is on the jump,
-        // the near bank is where the road enters the shelf — not 45 m out
-        // along the jump line's extension, off the road entirely (the old
-        // outward walk; night plan 2026-09-03 task 1a). The shelf itself is
-        // wadeable swamp; treating it as road rather than deck is task 1b.
-        foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
-            Assert.True(DistanceToPolyline(path, bank) < 0.5f, $"Bank {bank} is off the road");
-        Vector2 jumpDir = (path[4] - path[3]).normalized;
-        Vector2 relTo = crossing.ToBank - path[3];
-        Assert.True(Mathf.Abs(relTo.x * jumpDir.y - relTo.y * jumpDir.x) < 0.5f, $"ToBank {crossing.ToBank} is off the jump");
-        Assert.Equal(-56f, crossing.FromBank.x, 0);
-        Assert.Equal(-40f, crossing.FromBank.y, 0);
-        Assert.Equal(0, crossing.FromIndex); // the shelf begins AT vertex 1, so the bank is just before it
-        Assert.Equal(4, crossing.ToIndex);
+            Vector2 jumpDir = (path[4] - path[3]).normalized;
+            Assert.True(Mathf.Abs(Vector2.Dot(crossing.Direction, jumpDir)) > 0.999f,
+                $"shelf {shelf}: crossing direction {crossing.Direction} is not the jump direction {jumpDir}");
+            foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
+            {
+                Vector2 rel = bank - path[3];
+                float along = Vector2.Dot(rel, jumpDir);
+                float across = Mathf.Abs(rel.x * jumpDir.y - rel.y * jumpDir.x);
+                Assert.True(across < 0.5f, $"shelf {shelf}: bank {bank} is {across:F1} m off the jump line");
+                Assert.InRange(along, 0f, Vector2.Distance(path[3], path[4]));
+                Assert.True(world.GetHeight(bank.x, bank.y) >= RoadConstants.DeepWaterHeight - 0.01f,
+                    $"shelf {shelf}: bank {bank} stands below wading depth");
+            }
+            Assert.Equal(3, crossing.FromIndex);
+            Assert.Equal(4, crossing.ToIndex);
+            Assert.Equal(CrossingKind.Bridge, crossing.Kind);
 
-        // With the deck drawn from the shelf entry to the far bank, its chord
-        // leaves the bent jump by up to 7 m — more than the validator's 6 m
-        // corridor. The cure is not a wider corridor but wading the swamp
-        // shelf as road and decking only the channel (task 1b), whose test
-        // asserts the validator exemption for this scenario.
+            // Every route point over the channel is inside the recorded span
+            // (validator exemption); the shelf points are legal swamp wading.
+            var route = RoadRoute.FromWaypoints(0, "Shelf -> Far", 4f, path, world);
+            var report = RoadNetworkValidator.Validate(new[] { route }, world, null, new List<RoadCrossing> { crossing });
+            Assert.DoesNotContain(report.Violations, v => v.StartsWith("dry-land"));
+        }
     }
 }
