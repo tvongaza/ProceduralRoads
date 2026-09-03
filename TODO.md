@@ -78,8 +78,12 @@ so it is not a reference for the format, only for spawning.
   show.
 - b28b317 (Mistlands ban): hash 7f80c02b -> d1813847, routes 91 -> 88,
   crossings 17/17 -> 8/8, components 51 -> 48, pieces 1024 -> 572,
-  unreachable 9 -> 11, fordCount 20 -> 10 (unpredicted: routes that forded
-  on their way to a Mistlands bridge are gone entirely — inference, confirm),
+  unreachable 9 -> 11, fordCount 20 -> 10 (CONFIRMED by the NAS's route
+  diff: three Mistlands-involving routes vanished — Crypt3 -> Lighthouse,
+  one of twenty Crypt4 -> Crypt4, one of three DvergrTownEntrance1 -> ... —
+  and their 14 + 17 + 20 = 51 wet points equal the wetPoints drop 362 -> 311
+  exactly; note that labels repeat, so diff route lists by count per label,
+  not by label set),
   violations 8 -> 6, all six now on approaches to DvergrTownEntrance1 (one
   terrain feature; the only open class on Auto1).
 - bf90349: byte-identical to b28b317 (MD5 db8b6bf8...), as it must be; the
