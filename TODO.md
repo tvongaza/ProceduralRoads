@@ -3,7 +3,7 @@
 ## MORNING REPORT 2026-09-03 (overnight session, 00:10-~02:00; Tys asleep)
 
 Everything below is on the fork. Bridge branch `pc/snap-point-composition`
-tip **d7fef39** (155 tests, both runtimes; 0e9d7e1 road reuse is HELD, see below). Stairs live on `pc/stairs`
+tip **e22acaa** (155 tests, both runtimes; 0e9d7e1 road reuse is HELD, see below). Stairs live on `pc/stairs`
 (f8cdf0f, 159 tests; fork PR #1 "WIP: stair runs", base the bridge branch).
 Tooling on `pc/tooling` (18bed48, from upstream master + PR #18 harness +
 routes; 26 tests; no upstream PR, HOLD). NAS gates: every commit below was
@@ -97,9 +97,18 @@ route moved), baseline stays 73c6bec7 because 8 slope violations remain
   per-location seed (GetSeed + zone.x*4271 + zone.y*9187) only feeds
   SpawnLocation's interior. So aiming is possible only for slope-rotated
   prefabs. Aids added: `road_location_flags` (which prefabs are which) and
-  `[Debug] LogLocationSpawns` ([LOCATION] lines with the real yaw) — see
-  `validation-results/RoadTestMac2.location-flags.txt` if it is there.
-  No aiming implemented.
+  `[Debug] LogLocationSpawns` ([LOCATION] lines with the real yaw).
+  `validation-results/RoadTestMac2.location-flags.txt` (147 prefabs) says
+  which is which: **slope-rotated (aimable from terrain)**: TrollCave02,
+  MountainCave02, Mistlands_DvergrTownEntrance1/2, Mistlands_DvergrBossEntrance1;
+  **random-rotated (not predictable at road time)**: SunkenCrypt4 and the
+  BlackForest Crypt2/3/4 (see the file for the rest). No aiming
+  implemented; next step is reproducing GetTerrainDelta's direction from
+  WorldGenerator heights and comparing against [LOCATION] yaws in-game.
+- **e22acaa** selftest JSON gains crossingRecords / crossingSites (the
+  NAS caught that the crossing count counts records, which rose 33 -> 34
+  on Mac2 while sites fell 32 -> 31); "N crossing(s) at M site(s)" in the
+  [SELFTEST] line. Final tip of the night: **e22acaa**.
 
 ### Not done / blocked
 
