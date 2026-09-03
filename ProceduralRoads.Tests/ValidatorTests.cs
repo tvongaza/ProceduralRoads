@@ -47,10 +47,10 @@ public class ValidatorTests
         var recorded = RoadCrossingDetector.Detect(path!, world);
         Assert.NotEmpty(recorded);
 
-        var withSpans = RoadNetworkValidator.Validate(new[] { route }, world, recorded);
+        var withSpans = RoadNetworkValidator.Validate(new[] { route }, world, null, recorded);
         Assert.DoesNotContain(withSpans.Violations, v => v.StartsWith("dry-land"));
 
-        var noSpans = RoadNetworkValidator.Validate(new[] { route }, world, new List<RoadCrossing>());
+        var noSpans = RoadNetworkValidator.Validate(new[] { route }, world, null, new List<RoadCrossing>());
         int wet = noSpans.Violations.Count(v => v.StartsWith("dry-land"));
         Assert.True(wet > 0, "Wet route points outside any recorded crossing must be flagged");
         // The total is reported even when the listed lines are capped, and it
@@ -81,13 +81,13 @@ public class ValidatorTests
         for (float x = -40f; x <= 40f; x += 4f) waypoints.Add(new Vector2(x, 0f));
         var route = RoadRoute.FromWaypoints(0, "A -> B", 4f, waypoints, world);
 
-        var report = RoadNetworkValidator.Validate(new[] { route }, world, new List<RoadCrossing>());
+        var report = RoadNetworkValidator.Validate(new[] { route }, world, null, new List<RoadCrossing>());
         Assert.DoesNotContain(report.Violations, v => v.StartsWith("dry-land"));
 
         // Deeper than knee-deep, outside any recorded crossing: still flagged.
         var deep = new KneeDeepDipWorld { Bed = 28.5f };
         var deepRoute = RoadRoute.FromWaypoints(0, "A -> B", 4f, waypoints, deep);
-        var deepReport = RoadNetworkValidator.Validate(new[] { deepRoute }, deep, new List<RoadCrossing>());
+        var deepReport = RoadNetworkValidator.Validate(new[] { deepRoute }, deep, null, new List<RoadCrossing>());
         Assert.Contains(deepReport.Violations, v => v.StartsWith("dry-land"));
     }
 
@@ -218,14 +218,14 @@ public class ValidatorTests
 
         var swamp = new ShelfAndChannelWorld { Biome = Heightmap.Biome.Swamp };
         var swampRoute = RoadRoute.FromWaypoints(0, "A -> B", 4f, path, swamp);
-        var swampReport = RoadNetworkValidator.Validate(new[] { swampRoute }, swamp,
+        var swampReport = RoadNetworkValidator.Validate(new[] { swampRoute }, swamp, null,
             RoadCrossingDetector.Detect(path, swamp));
         Assert.DoesNotContain(swampReport.Violations, v => v.StartsWith("crossing-length"));
         Assert.Equal(1, swampReport.FordCount); // the channel, once
 
         var meadows = new ShelfAndChannelWorld { Biome = Heightmap.Biome.Meadows };
         var meadowsRoute = RoadRoute.FromWaypoints(0, "A -> B", 4f, path, meadows);
-        var meadowsReport = RoadNetworkValidator.Validate(new[] { meadowsRoute }, meadows,
+        var meadowsReport = RoadNetworkValidator.Validate(new[] { meadowsRoute }, meadows, null,
             RoadCrossingDetector.Detect(path, meadows));
         Assert.Contains(meadowsReport.Violations, v => v.StartsWith("crossing-length"));
     }

@@ -89,7 +89,7 @@ public static class ConsoleCommands
 
         new Terminal.ConsoleCommand(
             "road_spots",
-            "List coordinates of generated river crossings (for teleport/visual checks).",
+            "List coordinates of generated river crossings and the longest stair runs (for teleport/visual checks).",
             (args) => ListRuinSpots(args),
             isCheat: true,
             isNetwork: false,
@@ -501,7 +501,17 @@ public static class ConsoleCommands
                 $"bed={c.RiverbedHeight:F1} fairway={c.FairwayWidth:F0}");
         }
 
-        args.Context.AddString($"total: {crossings.Count} crossings");
+        var runs = new List<StairRun>(RoadNetworkGenerator.GetStairRuns());
+        runs.Sort((a, b) => b.Length.CompareTo(a.Length));
+        for (int i = 0; i < Mathf.Min(5, runs.Count); i++)
+        {
+            var r = runs[i];
+            Vector2 mid = (r.FromPos + r.ToPos) * 0.5f;
+            args.Context.AddString(
+                $"STAIRS {i} x={mid.x:F0} z={mid.y:F0} len={r.Length:F0} grade={r.MaxGrade:F1} biome={r.Biome}");
+        }
+
+        args.Context.AddString($"total: {crossings.Count} crossings, {runs.Count} stair runs");
     }
 
     private static void PieceHealth(Terminal.ConsoleEventArgs args)

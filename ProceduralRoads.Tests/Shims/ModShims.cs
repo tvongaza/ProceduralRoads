@@ -33,15 +33,15 @@ public static class RoadNetworkPersistence
         List<(Vector2 position, string label)> roadStartPoints,
         List<TRoute> routes, List<TCrossing> crossings) => false;
 
-    public static void SaveGlobalRoadData<TRoute, TCrossing>(
+    public static void SaveGlobalRoadData<TRoute, TCrossing, TStair>(
         List<(Vector2 position, string label)> roadStartPoints,
         List<TRoute> routes, List<TCrossing> crossings,
-        IReadOnlyCollection<Vector2i> spawnedZones) { }
+        List<TStair> stairRuns, IReadOnlyCollection<Vector2i> spawnedZones) { }
 
-    public static bool TryLoadGlobalRoadData<TRoute, TCrossing>(
+    public static bool TryLoadGlobalRoadData<TRoute, TCrossing, TStair>(
         List<(Vector2 position, string label)> roadStartPoints,
         List<TRoute> routes, List<TCrossing> crossings,
-        HashSet<Vector2i> spawnedZones) => false;
+        List<TStair> stairRuns, HashSet<Vector2i> spawnedZones) => false;
 }
 
 /// <summary>
