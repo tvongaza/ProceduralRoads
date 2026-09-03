@@ -26,7 +26,11 @@ public static class ZoneSystem_Patch
         [HarmonyPrefix]
         public static void Prefix(Vector2i zoneID, List<ZoneSystem.ClearArea> clearAreas)
         {
-            if (!RoadNetworkGenerator.RoadsGenerated)
+            // Roads loaded from the save count too: a zone that first generates on a
+            // reloaded world must get its paint, leveling, clearing and ruin pieces
+            // (Tys, 3 Sep 2026: after a relaunch every zone had the road in the data
+            // and nothing on the ground).
+            if (!RoadNetworkGenerator.RoadsAvailable)
                 return;
 
             List<ZoneSystem.ClearArea> roadClearAreas = RoadClearAreaManager.GetOrCreateClearAreas(zoneID);
@@ -41,7 +45,7 @@ public static class ZoneSystem_Patch
         [HarmonyPostfix]
         public static void Postfix(ZoneSystem __instance, Vector2i zoneID, ZoneSystem.SpawnMode mode, ref bool __result)
         {
-            if (!__result || !RoadNetworkGenerator.RoadsGenerated)
+            if (!__result || !RoadNetworkGenerator.RoadsAvailable)
                 return;
 
             RuinPlacement.SpawnRuinsInZone(zoneID, mode);
