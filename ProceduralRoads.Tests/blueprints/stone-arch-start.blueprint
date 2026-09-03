@@ -1,0 +1,14 @@
+#Name:ProceduralRoads stone arch START
+#Creator:ProceduralRoads
+#Description:"Double-wide stone abutment sunk 0.3 into the bank, the first pair of slabs, and a double-wide pier at z=2. Origin = bank contact at deck height; +z runs onto the bridge; slab tops at y=0."
+#Category:ProceduralRoads
+#SnapPoints
+0;0;0
+0;0;2
+#Pieces
+stone_floor_2x2;Building;-1;-0.8;0;0;0;0;1;kind=Abutment;1;1;1
+stone_floor_2x2;Building;1;-0.8;0;0;0;0;1;kind=Abutment;1;1;1
+stone_floor_2x2;Building;-1;-0.5;1;0;0;0;1;kind=Deck;1;1;1
+stone_floor_2x2;Building;1;-0.5;1;0;0;0;1;kind=Deck;1;1;1
+stone_wall_2x1;Building;-1;-1.5;2;0;0.707106781;0;0.707106781;kind=Piling;1;1;1
+stone_wall_2x1;Building;1;-1.5;2;0;0.707106781;0;0.707106781;kind=Piling;1;1;1

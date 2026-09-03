@@ -37,6 +37,12 @@
                  Condition="Exists('../ProceduralRoads/Src/Roads/RoadProfile.cs')"/>
         <Compile Include="../ProceduralRoads/Src/Roads/BridgeLayout.cs" Link="ModSrc/BridgeLayout.cs"
                  Condition="Exists('../ProceduralRoads/Src/Roads/BridgeLayout.cs')"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadBlueprint.cs" Link="ModSrc/RoadBlueprint.cs"
+                 Condition="Exists('../ProceduralRoads/Src/Roads/RoadBlueprint.cs')"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/BlueprintComposer.cs" Link="ModSrc/BlueprintComposer.cs"
+                 Condition="Exists('../ProceduralRoads/Src/Roads/BlueprintComposer.cs')"/>
+        <Compile Remove="BlueprintTests.cs"
+                 Condition="!Exists('../ProceduralRoads/Src/Roads/BlueprintComposer.cs')"/>
         <Compile Remove="BridgeLayoutTests.cs"
                  Condition="!Exists('../ProceduralRoads/Src/Roads/BridgeLayout.cs')"/>
         <Compile Remove="RoadProfileTests.cs"

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 using BepInEx.Logging;
@@ -91,6 +92,16 @@ public static class ConsoleCommands
             "road_spots",
             "List coordinates of generated river crossings (for teleport/visual checks).",
             (args) => ListRuinSpots(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
+            "road_export_blueprints",
+            "Write every bridge site's solved plan as a PlanBuild-format .blueprint (the format valheimCreative saves and Expand World loads) into BepInEx/config/expand_world/blueprints, or road_export_blueprints <dir>.",
+            (args) => ExportBlueprints(args),
             isCheat: true,
             isNetwork: false,
             onlyServer: false,
@@ -550,6 +561,18 @@ public static class ConsoleCommands
         }
 
         args.Context.AddString($"total: {crossings.Count} crossings");
+    }
+
+    private static void ExportBlueprints(Terminal.ConsoleEventArgs args)
+    {
+        if (WorldGenerator.instance == null)
+        {
+            args.Context.AddString("no world");
+            return;
+        }
+        string dir = args.Length >= 2 ? args[1] : Path.Combine(BepInEx.Paths.ConfigPath, "expand_world", "blueprints");
+        int written = BlueprintComposer.ExportAll(dir, RoadNetworkGenerator.GetRoadCrossings(), WorldGenerator.instance, WorldGenerator.instance.GetSeed());
+        args.Context.AddString($"wrote {written} blueprints to {dir}");
     }
 
     private static void PieceHealth(Terminal.ConsoleEventArgs args)

@@ -96,6 +96,15 @@ public class SupportModelTests
         string.Join("; ", floaters.Take(6).Select(i =>
             $"{plan[i].Kind} {plan[i].Prefab} at ({plan[i].Position.x:F1},{plan[i].Position.y:F1},{plan[i].Position.z:F1}) ground {BiomeBlendedHeight.GetBlendedHeight(plan[i].Position.x, plan[i].Position.z, world):F1}"));
 
+    /// <summary>The plan without the pieces the model cannot support. One
+    /// pass is enough: support is a closure from the ground, so removing
+    /// what lies outside it changes nothing inside it.</summary>
+    internal static List<BridgePiece> DropUnsupported(List<BridgePiece> plan, BridgeStyle style, WorldGenerator world)
+    {
+        var floaters = new HashSet<int>(Floaters(plan, style, world));
+        return plan.Where((_, i) => !floaters.Contains(i)).ToList();
+    }
+
     internal static void AssertGrounded(List<BridgePiece> plan, BridgeStyle style, WorldGenerator world, string site)
     {
         Assert.NotEmpty(plan);

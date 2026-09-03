@@ -88,6 +88,25 @@ public sealed class BridgeStyle
         PilingSegment = 2f,
     };
 
+    /// <summary>Stone piers under a wood deck, the causeway's full 4 m
+    /// width (blueprint kit spike, Tys 3 Sep 2026): stone endures below,
+    /// wood weathers above. Composed from the hybrid-* kit, not solved.</summary>
+    public static readonly BridgeStyle HybridStoneWood = new()
+    {
+        PilingPrefab = "stone_wall_2x1",
+        BeamPrefab = "wood_beam",
+        DeckPrefab = "wood_floor",
+        AbutmentPrefab = "wood_floor",
+        DebrisPrefab = "stone_wall_1x1",
+        StairPrefab = "wood_stair",
+        DeckWidth = 4f,
+        PostSideOffset = 1f,             // two walls abreast: a 4 m pier
+        PilingAcross = true,
+        PilingSegment = 1f,
+        BankSurvival = 0.9f,
+        MidSurvival = 0.45f,
+    };
+
     public static readonly BridgeStyle MountainStone = new()
     {
         PilingPrefab = "stone_wall_2x1", // 2m wide, 1m tall, snaps at y ±0.5
@@ -224,8 +243,7 @@ public static class BridgeLayout
         // plans byte for byte) the deck sits SteppedEndRise above the road
         // at both ends, with steps up to it; otherwise it meets the road flush.
         float endRise = SteppedEndRise(crossing);
-        float deckFromH = bankFromH + endRise;
-        float deckToH = bankToH + endRise;
+        (float deckFromH, float deckToH) = DeckEndHeights(crossing, world);
 
         // Fairway keep-clear interval, projected onto the crossing line.
         float fairwayMid = crossing.Along(crossing.FairwayCenter);
@@ -342,6 +360,16 @@ public static class BridgeLayout
         }
 
         return pieces;
+    }
+
+    /// <summary>Deck height where it meets each bank: the bank's ground plus
+    /// the site's stepped-end rise. Shared with the blueprint composer so a
+    /// kit lands where the solver's deck would.</summary>
+    public static (float from, float to) DeckEndHeights(RoadCrossing crossing, WorldGenerator world)
+    {
+        float rise = SteppedEndRise(crossing);
+        return (BiomeBlendedHeight.GetBlendedHeight(crossing.FromBank.x, crossing.FromBank.y, world) + rise,
+                BiomeBlendedHeight.GetBlendedHeight(crossing.ToBank.x, crossing.ToBank.y, world) + rise);
     }
 
     /// <summary>How far above the road a site's deck ends sit: 0 for a

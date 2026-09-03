@@ -1,0 +1,18 @@
+#Name:ProceduralRoads stone arch SPAN
+#Creator:ProceduralRoads
+#Description:"One 4 m arch bay: quarter-arches spring from the pier at z=0 and from the pier at z=4 to meet under the deck at z=2, two abreast; four slabs; a double-wide pier at z=4. Origin = near pier at deck height."
+#Category:ProceduralRoads
+#SnapPoints
+0;0;0
+0;0;4
+#Pieces
+stone_arch;Building;-1;-1.5;1;0;0.707106781;0;0.707106781;kind=Arch;1;1;1
+stone_arch;Building;1;-1.5;1;0;0.707106781;0;0.707106781;kind=Arch;1;1;1
+stone_arch;Building;-1;-1.5;3;0;-0.707106781;0;0.707106781;kind=Arch;1;1;1
+stone_arch;Building;1;-1.5;3;0;-0.707106781;0;0.707106781;kind=Arch;1;1;1
+stone_floor_2x2;Building;-1;-0.5;1;0;0;0;1;kind=Deck;1;1;1
+stone_floor_2x2;Building;1;-0.5;1;0;0;0;1;kind=Deck;1;1;1
+stone_floor_2x2;Building;-1;-0.5;3;0;0;0;1;kind=Deck;1;1;1
+stone_floor_2x2;Building;1;-0.5;3;0;0;0;1;kind=Deck;1;1;1
+stone_wall_2x1;Building;-1;-1.5;4;0;0.707106781;0;0.707106781;kind=Piling;1;1;1
+stone_wall_2x1;Building;1;-1.5;4;0;0.707106781;0;0.707106781;kind=Piling;1;1;1
