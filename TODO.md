@@ -29,7 +29,9 @@ where GDKing -> Bonemass bobs through 26-29 m water at points 1122-1143
    Mistlands gets no bridge plan (treat as a raise ford, or make the
    pathfinder refuse any jump over deep water there). Decide which.
 5. **Shoreline spline dips**: Tys is looking now; no verdict yet.
-6. **Blueprint format**: see "Elaboration on 6" below.
+6. **Blueprint format**: DECIDED 09:55 — use the format jneb802 uses for
+   their own builds (valheimCreative `.blueprint`, PlanBuild-compatible);
+   see "Elaboration on 6" below.
 7. NAS sftp: still Tys's call. 8. Road reuse: still held.
 
 ### Found this morning
@@ -55,19 +57,55 @@ where GDKing -> Bonemass bobs through 26-29 m water at points 1122-1143
   `--px` sets pixels per metre (default 0.1); `--zoom cx,cz,half` adds an
   inset (use `--zoom=-590,360,300` for negative coordinates).
 
-### Elaboration on 6 (blueprint format)
-The harness spike reads `.blueprint` text as: `#Name:` / `#Creator:` /
-`#Description:` / `#Category:` headers, a `#SnapPoints` section of
-`x;y;z` lines, a `#Pieces` section of
-`prefab;category;posX;posY;posZ;rotX;rotY;rotZ;rotW;additionalInfo;scaleX;scaleY;scaleZ`.
-That column order is from memory of PlanBuild, not from a file it wrote.
-Before a player's blueprint can be loaded: export one real blueprint from
-PlanBuild in-game (BepInEx/config/PlanBuild/blueprints/*.blueprint), diff
-its header names and column order against the parser, and check the
-rotation convention (quaternion vs euler, and whether pieces are relative
-to the blueprint's first snap point or its centre). MoreWorldLocations
-does not use text blueprints at all (Unity prefabs with MOCK_ children),
-so it is not a reference for the format, only for spawning.
+### Elaboration on 6 (blueprint format) — DECIDED 2026-09-03 ~09:55
+Tys: the roads author also writes MoreWorldLocations; use whatever they
+use for their builds. Both of jneb802's pipelines checked:
+- **MWL locations**: Unity prefabs in asset bundles (SoftReferenceableAssets
+  manifest; `MOCK_`/`JVLmock_` children swapped for real prefabs at load,
+  Ports/Managers/Blueprint.cs). Needs a Unity project; community builders'
+  work is imported by hand. Not our path.
+- **valheimCreative** (github.com/jneb802/valheimCreative,
+  Source/Features/Creative/CreativeBlueprintService.cs): `!creative save
+  <name>` writes a PlanBuild-compatible `.blueprint` text file into
+  `BepInEx/config/expand_world/blueprints/` (Expand World's folder) and
+  `!creative load` spawns it at runtime from ZNetScene prefabs. **This is
+  the model**: text blueprints, runtime instantiation of vanilla pieces,
+  no Unity. A player-built bridge kit is: build in valheimCreative,
+  `!creative save`, drop the file in our blueprint folder.
+
+Their writer emits exactly:
+```
+#Name:<name>
+#Creator:<player>
+#Description:"<escaped>"
+#Category:Blueprints
+#Pieces
+prefab;category;posX;posY;posZ;rotX;rotY;rotZ;rotW;data;scaleX;scaleY;scaleZ
+```
+13 fields minimum (their shipped pad file has 14; extras tolerated),
+full quaternion rotation, floats `G9` invariant, unknown `#` lines
+ignored, pieces sorted by y, x, z. Positions are local to the creative
+zone centre with the zone rotation removed. On load the anchor is the
+bottom-centre of the piece bounds (min y, mid x/z) plus a per-file
+`loadYOffset` from a sidecar `blueprint-metadata.json` (which also
+carries `biome`). No `#SnapPoints` section is written; PlanBuild's
+reader (sirskunkalot/PlanBuild Blueprint.cs, PieceEntry.cs) accepts one,
+and so does ours; their parser ignores it. Column order and header names
+confirmed against both sources, so the spike's "verify against a real
+export" caveat is closed.
+
+Consequences for the spike (2031bf3, BlueprintTests.Parse):
+- Keep the full quaternion (the spike reduces to yaw) so tilted pieces in
+  player builds survive; carry `data` (field 10) through to the ZDO as
+  they do (`valheimCreativeBlueprintData`).
+- Keep `#SnapPoints` (PlanBuild-legal, ignored by their loader) for
+  START/SPAN/END chaining; fall back to their bottom-centre anchor when a
+  file has none. Support the `blueprint-metadata.json` sidecar for
+  `loadYOffset`.
+- Our writer must quote the description and emit all 13 fields; our
+  reader must accept 13+ and the quoted description.
+- Design note under Task 5 (below) still describes the units and tiler;
+  only the format paragraph there is superseded by this section.
 
 ### NAS state (results in at 09:40)
 - c689210 (swamp dry banks): INERT on Auto1 — routes MD5 and pieces
@@ -98,6 +136,8 @@ Dumps at /Volume1/Docker/data/procedural-roads/world-dumps/<commit>/ (scp -O).
 3. Verify bf90349 on a reloaded world in-game.
 4. Get Tys's verdict on 5 (shoreline dips), then fix in the pathfinder.
 5. Update the Night Watch artifact (claude.ai/code/artifact/d0890132-...).
+6. Align the blueprint spike to the decided format (Elaboration on 6):
+   full quaternion, data field, sidecar, quoted description.
 
 ## MORNING REPORT 2026-09-03 (overnight session, 00:10-~02:00; Tys asleep)
 
