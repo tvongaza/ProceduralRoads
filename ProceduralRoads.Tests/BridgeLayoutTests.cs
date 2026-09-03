@@ -143,7 +143,7 @@ public class BridgeLayoutTests
         Assert.True(decks < stations, $"Deck complete ({decks}/{stations}) — not a ruin");
 
         // Damage states: every piece carries partial health for WearNTear.
-        Assert.All(plan, p => Assert.True(p.HealthFraction is > 0.1f and < 0.95f,
+        Assert.All(plan, p => Assert.True(p.HealthFraction >= RoadConstants.RuinHealthMin - 0.001f && p.HealthFraction < 0.95f,
             $"{p.Kind} health {p.HealthFraction:F2} outside ruin range"));
 
         // Abutments sit sunk below the bank surface (road laps onto them).

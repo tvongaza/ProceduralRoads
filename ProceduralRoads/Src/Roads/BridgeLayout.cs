@@ -562,7 +562,10 @@ public static class BridgeLayout
     /// <summary>Unity yaw (degrees about +y) that turns local +z onto a world XZ direction.</summary>
     public static float YawDegrees(Vector2 dir) => Mathf.Atan2(dir.x, dir.y) * 180f / Mathf.PI;
 
-    private static float RuinHealth(System.Random rng) => 0.3f + NextFloat(rng) * 0.4f;
+    /// <summary>Survivor health, 5-70 % (Tys, 3 Sep 2026: widen from 30-70 %
+    /// so the low end reaches the visible damage states — a wood floor only
+    /// reads as broken under about 25 %).</summary>
+    private static float RuinHealth(System.Random rng) => RoadConstants.RuinHealthMin + NextFloat(rng) * (RoadConstants.RuinHealthMax - RoadConstants.RuinHealthMin);
 
     private static float NextFloat(System.Random rng) => (float)rng.NextDouble();
 

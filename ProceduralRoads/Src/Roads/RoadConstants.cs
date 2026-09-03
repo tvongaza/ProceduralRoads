@@ -65,6 +65,11 @@ public static class RoadConstants
     // far to find ground above the waterline clearance.
     public const float SwampBridgeDryReach = 120f;
 
+    /// <summary>WearNTear health fraction range for surviving ruin pieces
+    /// (decks, piers, beams, arches, steps). 5-70 % (Tys, 3 Sep 2026).</summary>
+    public const float RuinHealthMin = 0.05f;
+    public const float RuinHealthMax = 0.70f;
+
     // High bridge (Tys, 2026-09-02, c4/c15: steep narrow channels where the
     // fairway gap eats the whole deck and the road climbs a cliff on each
     // side): when the ground within HighBankReach of each bank along the
