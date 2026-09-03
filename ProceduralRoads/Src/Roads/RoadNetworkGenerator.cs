@@ -1190,10 +1190,13 @@ public static class RoadNetworkGenerator
 
             if (WetTerminus == WetTerminusMode.Reroute)
             {
-                if (startWet && DryPointOnCircle(startCenter, startRadius, startEdge, trimmedPath[0]) is Vector2 s)
-                    trimmedPath.Insert(0, s);
-                if (endWet && DryPointOnCircle(endCenter, endRadius, endEdge, trimmedPath[trimmedPath.Count - 1]) is Vector2 e)
-                    trimmedPath.Add(e);
+                if (startWet && DryLegToCircle(startCenter, startRadius, startEdge, trimmedPath[0]) is List<Vector2> s)
+                {
+                    s.Reverse();
+                    trimmedPath.InsertRange(0, s);
+                }
+                if (endWet && DryLegToCircle(endCenter, endRadius, endEdge, trimmedPath[trimmedPath.Count - 1]) is List<Vector2> e)
+                    trimmedPath.AddRange(e);
             }
         }
 
@@ -1202,15 +1205,20 @@ public static class RoadNetworkGenerator
 
     /// <summary>
     /// Reroute terminus: the dry point on a location's radius circle nearest
-    /// the wet edge point, reachable from the route's last dry point (the
-    /// anchor, at most a cell outside the circle) over dry ground in a
-    /// straight leg. Candidates farther than one radius from the wet point
-    /// are not considered: the leg would cut through the location's interior,
-    /// and such a site is better left to Trim. Null when nothing qualifies.
+    /// the wet edge point that the route's last dry point (the anchor, at
+    /// most a cell outside the circle) can reach over dry ground. The water
+    /// that made the edge point wet usually lies BETWEEN the anchor and the
+    /// circle, so a straight leg would cross it: the leg is found by a
+    /// flood fill over a 2 m grid of dry cells outside the circle, then
+    /// string-pulled to the few corners that matter. Candidates farther than
+    /// one radius from the wet point are not considered (the road would
+    /// wrap half the location to reach them; such a site is left to Trim).
+    /// Returns the leg's points after the anchor, ending at the terminus, or
+    /// null when nothing qualifies.
     /// </summary>
-    private static Vector2? DryPointOnCircle(Vector2 center, float radius, Vector2 wetEdge, Vector2 anchor)
+    private static List<Vector2>? DryLegToCircle(Vector2 center, float radius, Vector2 wetEdge, Vector2 anchor)
     {
-        if (radius < 1f)
+        if (radius < 1f || WorldGenerator.instance == null)
             return null;
 
         int samples = Mathf.Max(36, Mathf.CeilToInt(2f * Mathf.PI * radius)); // ~1 m of arc
@@ -1224,29 +1232,114 @@ public static class RoadNetworkGenerator
             if (distSq <= maxDistSq && IsPathablePoint(p))
                 candidates.Add((distSq, p));
         }
+        if (candidates.Count == 0)
+            return null;
         candidates.Sort((a, b) => a.distSq.CompareTo(b.distSq));
 
+        // Cheap first: a straight leg.
         foreach ((float _, Vector2 p) in candidates)
         {
-            if (SegmentAboveWaterlineFloor(anchor, p))
-                return p;
+            if (LegClear(anchor, p, center, radius))
+                return new List<Vector2> { p };
+        }
+
+        // Flood fill from the anchor over dry cells in the ring just outside
+        // the circle; every cell remembers how it was reached.
+        const float step = 2f;
+        float reach = radius + RoadConstants.PathfindingCellSize * 3f;
+        Dictionary<(int x, int y), (int x, int y)> parent = new();
+        Queue<(int x, int y)> open = new();
+        (int x, int y) origin = (0, 0);
+        parent[origin] = origin;
+        open.Enqueue(origin);
+        Vector2 Cell((int x, int y) c) => anchor + new Vector2(c.x * step, c.y * step);
+        bool Passable(Vector2 p) => (p - center).sqrMagnitude <= reach * reach
+                                     && (p - center).magnitude >= radius - 0.5f
+                                     && IsPathablePoint(p);
+        while (open.Count > 0 && parent.Count < 20000)
+        {
+            (int x, int y) c = open.Dequeue();
+            Vector2 from = Cell(c);
+            for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                (int x, int y) n = (c.x + dx, c.y + dy);
+                if (parent.ContainsKey(n)) continue;
+                Vector2 to = Cell(n);
+                if (!Passable(to) || !LegClear(from, to, center, radius)) continue;
+                parent[n] = c;
+                open.Enqueue(n);
+            }
+        }
+
+        foreach ((float _, Vector2 t) in candidates)
+        {
+            // The reachable cell nearest the candidate whose final hop is clear.
+            (int x, int y) near = (Mathf.RoundToInt((t.x - anchor.x) / step), Mathf.RoundToInt((t.y - anchor.y) / step));
+            (int x, int y)? best = null;
+            float bestDist = float.MaxValue;
+            for (int dx = -2; dx <= 2; dx++)
+            for (int dy = -2; dy <= 2; dy++)
+            {
+                (int x, int y) c = (near.x + dx, near.y + dy);
+                if (!parent.ContainsKey(c)) continue;
+                float d = (Cell(c) - t).sqrMagnitude;
+                if (d < bestDist && LegClear(Cell(c), t, center, radius))
+                {
+                    bestDist = d;
+                    best = c;
+                }
+            }
+            if (best == null) continue;
+
+            List<Vector2> leg = new();
+            for ((int x, int y) c = best.Value; c != origin; c = parent[c])
+                leg.Add(Cell(c));
+            leg.Reverse();
+            leg.Add(t);
+            return StringPull(anchor, leg, center, radius);
         }
         return null;
+    }
+
+    /// <summary>Greedy string-pulling: from each kept point, skip ahead to the
+    /// farthest leg point still reachable by a clear straight segment.</summary>
+    private static List<Vector2> StringPull(Vector2 anchor, List<Vector2> leg, Vector2 center, float radius)
+    {
+        List<Vector2> pulled = new();
+        Vector2 from = anchor;
+        int i = 0;
+        while (i < leg.Count)
+        {
+            int far = i;
+            for (int j = leg.Count - 1; j > i; j--)
+            {
+                if (LegClear(from, leg[j], center, radius)) { far = j; break; }
+            }
+            pulled.Add(leg[far]);
+            from = leg[far];
+            i = far + 1;
+        }
+        return pulled;
     }
 
     private static bool AboveWaterlineFloor(Vector2 p) =>
         BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, WorldGenerator.instance)
             >= RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
 
-    /// <summary>Every metre of the leg, both ends included, above the floor
-    /// (finer than the route's own spline spacing, so no resampled point can
-    /// land in a sliver the check skipped).</summary>
-    private static bool SegmentAboveWaterlineFloor(Vector2 a, Vector2 b)
+    /// <summary>Every metre of a reroute leg segment, both ends included,
+    /// above the floor (finer than the route's own spline spacing, so no
+    /// resampled point can land in a sliver the check skipped) and outside
+    /// the location's circle (the leg skirts the location, never crosses it).</summary>
+    private static bool LegClear(Vector2 a, Vector2 b, Vector2 center, float radius)
     {
         int steps = Mathf.Max(1, Mathf.CeilToInt(Vector2.Distance(a, b)));
+        float keepOut = (radius - 0.5f) * (radius - 0.5f);
         for (int i = 0; i <= steps; i++)
         {
-            if (!AboveWaterlineFloor(Vector2.Lerp(a, b, (float)i / steps)))
+            Vector2 p = Vector2.Lerp(a, b, (float)i / steps);
+            if (!AboveWaterlineFloor(p) || (p - center).sqrMagnitude < keepOut)
                 return false;
         }
         return true;

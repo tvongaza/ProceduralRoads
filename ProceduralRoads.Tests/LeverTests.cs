@@ -238,19 +238,23 @@ public class LeverTests
             var path = Trim(ApproachFromTheNorthWest(), center, radius);
             Assert.NotNull(path);
             Vector2 terminus = path![path.Count - 1];
-            Assert.Equal(5, path.Count); // the four cell points plus the terminus
+            Assert.True(path.Count >= 5, "the four cell points plus a leg to the terminus");
+            Assert.Equal(new Vector2(-24f, 10f), path[3]); // the anchor: last dry cell point
             Assert.InRange(Vector2.Distance(terminus, center), radius - 0.5f, radius + 0.5f); // on the circle
             Assert.True(terminus.y <= 5f, $"terminus {terminus} is on the wet arc");
             Assert.True(world.GetHeight(terminus.x, terminus.y) >= Floor);
             Assert.True(terminus.x < 0f, $"terminus {terminus} should stay on the approach side");
-            // The final leg stays dry at every metre (the route's spline is
-            // resampled coarser than that, so no road point can be wet).
-            Vector2 anchor = path[path.Count - 2];
-            int metres = Mathf.CeilToInt(Vector2.Distance(anchor, terminus));
-            for (int i = 0; i <= metres; i++)
+            // The leg stays dry at every metre (the route's spline is resampled
+            // coarser than that, so no road point can be wet) and outside the circle.
+            for (int s = 3; s < path.Count - 1; s++)
             {
-                Vector2 p = Vector2.Lerp(anchor, terminus, (float)i / metres);
-                Assert.True(world.GetHeight(p.x, p.y) >= Floor, $"leg point {p} is wet");
+                int metres = Mathf.CeilToInt(Vector2.Distance(path[s], path[s + 1]));
+                for (int i = 0; i <= metres; i++)
+                {
+                    Vector2 p = Vector2.Lerp(path[s], path[s + 1], (float)i / metres);
+                    Assert.True(world.GetHeight(p.x, p.y) >= Floor, $"leg point {p} is wet");
+                    Assert.True(Vector2.Distance(p, center) >= radius - 0.5f, $"leg point {p} enters the location");
+                }
             }
         }
         finally { RoadNetworkGenerator.WetTerminus = saved; WorldGenerator.instance = null; }
