@@ -47,6 +47,8 @@ namespace ProceduralRoads
         public static ConfigEntry<int> IslandRoadPercentage = null!;
         public static ConfigEntry<int> PathfindingMaxIterations = null!;
         public static ConfigEntry<int> MaxLocationsPerIsland = null!;
+        public static ConfigEntry<bool> DebugValidation = null!;
+        public static ConfigEntry<bool> ForceRegenerate = null!;
 
         public void Awake()
         {
@@ -81,6 +83,16 @@ namespace ProceduralRoads
                 "Comma-separated list of location names to include in road generation. " +
                 "Use this for locations added by Expand World Data or other mods. " +
                 "Example: Runestone_Boars,Runestone_Greydwarfs,MerchantCamp");
+
+            ForceRegenerate = Config.Bind("Debug", "ForceRegenerate", false,
+                "Ignore roads persisted in the world and regenerate the network from " +
+                "scratch on every load. For validation/testing against fixture worlds " +
+                "with pre-placed locations; leave off for normal play.");
+
+            DebugValidation = Config.Bind("Debug", "DebugValidation", false,
+                "Run automatic road-network validation after generation and write " +
+                "ProceduralRoads.selftest.json plus ProceduralRoads.routes.csv to the config folder. " +
+                "Also available on demand via the road_selftest console command.");
 
             // Apply config to road generator
             ApplyConfiguration();
@@ -126,6 +138,14 @@ namespace ProceduralRoads
             RoadNetworkGenerator.IslandRoadPercentage = IslandRoadPercentage.Value;
             RoadNetworkGenerator.MaxLocationsPerIsland = MaxLocationsPerIsland.Value;
             RoadPathfinder.MaxIterations = PathfindingMaxIterations.Value;
+            
+            // Effective values, read back after binding: BepInEx clamps to the
+            // declared ranges silently, and the network is conditioned on these
+            // knobs as much as on the code. Read this line first when a hash moves.
+            ProceduralRoadsLogger.LogInfo(
+                $"[CONFIG] RoadWidth={{RoadWidth.Value}} IslandRoadPercentage={{IslandRoadPercentage.Value}} " +
+                $"PathfindingMaxIterations={{PathfindingMaxIterations.Value}} MaxLocationsPerIsland={{MaxLocationsPerIsland.Value}} " +
+                $"DebugValidation={{DebugValidation.Value}} ForceRegenerate={{ForceRegenerate.Value}}");
             // CustomLocations is parsed at generation time to preserve API registrations
         }
 

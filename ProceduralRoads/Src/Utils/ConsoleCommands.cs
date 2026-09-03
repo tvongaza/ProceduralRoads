@@ -109,6 +109,54 @@ public static class ConsoleCommands
 
         // road_clearpins - Remove all pins added by this mod
         new Terminal.ConsoleCommand(
+            "road_snap_probe",
+            "Dump snap points and collider bounds for a prefab (or the ruin kit prefabs when no arg): road_snap_probe [prefab]",
+            (args) =>
+            {
+                if (args.Length >= 2)
+                {
+                    PrefabProbe.ProbeSnapPoints(args[1], args.Context.AddString);
+                    return;
+                }
+                foreach (string name in new[]
+                {
+                    "wood_stair", "stone_stair",
+                    "wood_pole2", "wood_beam", "wood_floor",
+                    "stone_wall_1x1", "stone_wall_2x1", "stone_wall_4x2",
+                    "stone_floor_2x2", "stone_arch",
+                })
+                {
+                    PrefabProbe.ProbeSnapPoints(name, args.Context.AddString);
+                }
+            },
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
+            "road_selftest",
+            "Validate the generated road network (dry land, ford lengths, slopes, connectivity) and write a JSON report + routes CSV to the config folder.",
+            (args) => RunSelfTest(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
+            "road_debug_locations",
+            "Draw each road location's approach circle as a ring of purple markers, within a distance of the player: road_debug_locations [within=400]. " +
+            "Cleared by road_debug_markers_clear. Empty after a load from ZDO (the list is built during generation).",
+            (args) => SpawnLocationRings(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_clearpins",
             "Remove all map pins added by ProceduralRoads commands.",
             (args) => ClearAllModPins(args),
@@ -248,6 +296,74 @@ public static class ConsoleCommands
     /// <summary>
     /// Show road start points on the map.
     /// </summary>
+    private static void RunSelfTest(Terminal.ConsoleEventArgs args)
+    {
+        var report = RoadValidationRunner.Run();
+        if (report == null)
+        {
+            args.Context.AddString("Self-test unavailable (no world loaded)");
+            return;
+        }
+
+        args.Context.AddString(
+            $"Road self-test {(report.Passed ? "PASS" : "FAIL")}: {report.RouteCount} routes, " +
+            $"{report.TotalLengthMeters:F0}m, {report.NetworkComponents} component(s), " +
+            $"{report.FordCount} ford(s), {report.Violations.Count} violation(s)");
+        args.Context.AddString($"Report: {RoadValidationRunner.ReportPath}");
+    }
+
+    private static void SpawnLocationRings(Terminal.ConsoleEventArgs args)
+    {
+        Player player = Player.m_localPlayer;
+        if (player == null)
+        {
+            args.Context.AddString("Error: No local player found");
+            return;
+        }
+        float within = 400f;
+        if (args.Length >= 2)
+            float.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out within);
+
+        var locations = RoadNetworkGenerator.GetRoadLocations();
+        if (locations.Count == 0)
+        {
+            args.Context.AddString("No road locations recorded (network loaded from ZDO?) - regenerate to populate");
+            return;
+        }
+
+        Vector3 origin = player.transform.position;
+        int rings = 0, markers = 0;
+        foreach ((string name, Vector3 position, float radius) in locations)
+        {
+            if (Vector3.Distance(position, origin) > within)
+                continue;
+            rings++;
+            int n = Mathf.Max(12, Mathf.CeilToInt(2f * Mathf.PI * radius / 2f)); // a marker every ~2 m of arc
+            for (int i = 0; i < n; i++)
+            {
+                float a = i * Mathf.PI * 2f / n;
+                float x = position.x + Mathf.Cos(a) * radius;
+                float z = position.z + Mathf.Sin(a) * radius;
+                float y = position.y;
+                if (ZoneSystem.instance != null && ZoneSystem.instance.GetGroundHeight(new Vector3(x, 0f, z), out float ground))
+                    y = ground;
+                GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                marker.name = $"RoadDebugMarker_loc_{name}_{i}";
+                marker.transform.position = new Vector3(x, Mathf.Max(y, RoadConstants.SeaLevel) + 1.2f, z);
+                marker.transform.localScale = new Vector3(0.5f, 0.5f, 0.5f);
+                Collider collider = marker.GetComponent<Collider>();
+                if (collider != null)
+                    Object.Destroy(collider);
+                Renderer renderer = marker.GetComponent<Renderer>();
+                if (renderer != null && renderer.material != null)
+                    renderer.material.color = new Color(0.72f, 0.2f, 0.95f);
+                s_debugMarkers.Add(marker);
+                markers++;
+            }
+        }
+        args.Context.AddString($"OK: {rings} location ring(s), {markers} markers within {within:F0} m ({locations.Count} road locations in the network)");
+    }
+
     private static void ShowRoadStartPins(Terminal.ConsoleEventArgs args)
     {
         // Debug: show current state

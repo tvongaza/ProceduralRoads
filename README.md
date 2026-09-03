@@ -86,3 +86,31 @@ private static void RegisterRoadLocation(string locationName)
 ## License
 
 MIT License - see LICENSE.md
+
+## Validation tooling
+
+The mod can judge its own output. With `[Debug] DebugValidation = true` it
+runs `RoadNetworkValidator` after generation and writes
+`ProceduralRoads.selftest.json` (pass/fail, route count, network components,
+ford count, the uncapped wet-point / crossing-length / grade totals, a hash
+of every centerline point, and the violations) plus
+`ProceduralRoads.routes.csv` (every route point) to the config folder. The
+same run is available on demand from the console as `road_selftest`.
+`[Debug] ForceRegenerate = true` ignores roads persisted in the world and
+regenerates from scratch on every load, so a fixture world with pre-placed
+locations gives the same `pointsHash` on every station. The effective
+config is logged once at start as a `[CONFIG]` line: read it first when a
+hash moves.
+
+Console commands (cheats on): `road_selftest`, `road_routes`,
+`road_route_nearest`, `road_route_export`, `road_debug_locations` (rings
+around every connected location), `road_snap_probe [prefab]` (snap points
+and collider bounds of build pieces).
+
+Scripts (`scripts/`): `server-validate.sh` runs a dedicated server on a
+fixture world and greps the `[SELFTEST]` line; `nas-validate.sh` does the
+same on a remote host over ssh; `ingame-validate.sh` drives a local client;
+`world-fixture.sh` saves and restores a pristine copy of a fixture world
+(paint and leveling apply only when a zone first generates, so every run
+starts from the untouched world). `ci/validate.yml` is a GitHub Actions
+job that does the server run.

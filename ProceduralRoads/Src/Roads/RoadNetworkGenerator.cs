@@ -131,6 +131,11 @@ public static class RoadNetworkGenerator
     public static int IslandRoadPercentage = 50;
 
     private static bool m_roadsGenerated = false;
+
+    private static readonly List<(string name, Vector3 position, float radius)> m_roadLocations = new();
+    /// <summary>Locations the current generation connected (debug rings);
+    /// empty after a load from ZDO, which stores routes only.</summary>
+    public static IReadOnlyList<(string name, Vector3 position, float radius)> GetRoadLocations() => m_roadLocations;
     private static bool m_locationsReady = false;
     private static bool m_roadsLoadedFromZDO = false;
     private static RoadPathfinder? m_pathfinder;
@@ -290,6 +295,7 @@ public static class RoadNetworkGenerator
             
             int maxLocs = GetMaxLocationsForIsland(island);
             var selected = SelectLocations(islandLocations, maxLocs);
+            m_roadLocations.AddRange(selected);
             
             Log.LogDebug(
                 $"Island {island.Id}: {islandLocations.Count} candidates -> {selected.Count} selected (max {maxLocs}, area {island.ApproxArea/1_000_000:F1}km²)");
@@ -643,6 +649,7 @@ public static class RoadNetworkGenerator
 
     public static void Reset()
     {
+        m_roadLocations.Clear();
         m_roadsGenerated = false;
         m_locationsReady = false;
         m_roadsLoadedFromZDO = false;
