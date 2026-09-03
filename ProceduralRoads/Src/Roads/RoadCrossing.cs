@@ -360,10 +360,16 @@ public static class RoadCrossingDetector
             bool toWet = BiomeBlendedHeight.GetBlendedHeight(to.x, to.y, world) < dryFloor;
             if (fromWet || toWet)
             {
+                // Straight out along the crossing LINE, not along the path:
+                // the deck is a chord, and where the approach bent on the
+                // shelf a path walk carried the abutment 8 m off it, leaving
+                // 11 route points over the channel outside the recorded span
+                // (RoadTestMac2 c33). The painted lead still reaches the
+                // abutment: the land segment runs on to FromBank / ToBank.
                 if (fromWet)
-                    (from, fromIndex) = FirstOutward(path, from, fromIndex, -1, RoadConstants.SwampBridgeDryReach, world, dryFloor);
+                    from = FirstDryAlongLine(from, -direction, RoadConstants.SwampBridgeDryReach, world, dryFloor);
                 if (toWet)
-                    (to, toIndex) = FirstOutward(path, to, toIndex, +1, RoadConstants.SwampBridgeDryReach, world, dryFloor);
+                    to = FirstDryAlongLine(to, direction, RoadConstants.SwampBridgeDryReach, world, dryFloor);
                 width = Vector2.Distance(from, to);
                 direction = to - from;
                 direction.Normalize();
@@ -530,38 +536,20 @@ public static class RoadCrossingDetector
     }
 
     /// <summary>
-    /// Walks outward from a bank along the path (step -1 toward the path
-    /// start, +1 toward its end) and returns the first point whose ground is
-    /// at least <paramref name="floor"/> high, with the path index that
-    /// brackets it on the water side (FromIndex / ToIndex semantics). Gives
-    /// the bank back unchanged when no such point lies within reach.
+    /// Walks straight out from a bank along <paramref name="outward"/> and
+    /// returns the first point whose ground is at least
+    /// <paramref name="floor"/> high, or the bank itself when none lies
+    /// within reach.
     /// </summary>
-    private static (Vector2 bank, int index) FirstOutward(List<Vector2> path, Vector2 bank, int bankIndex, int step, float reach, WorldGenerator world, float floor)
+    private static Vector2 FirstDryAlongLine(Vector2 bank, Vector2 outward, float reach, WorldGenerator world, float floor)
     {
-        Vector2 pos = bank;
-        int next = bankIndex;
-        float budget = reach;
-        while (budget > 0f && next >= 0 && next < path.Count)
+        for (float d = 0.5f; d <= reach; d += 0.5f)
         {
-            Vector2 target = path[next];
-            float length = Vector2.Distance(pos, target);
-            if (length > 0.01f)
-            {
-                Vector2 dir = (target - pos) * (1f / length);
-                for (float d = 0.5f; d < length && d <= budget; d += 0.5f)
-                {
-                    Vector2 p = pos + dir * d;
-                    if (BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world) >= floor)
-                        return (p, next);
-                }
-                if (length <= budget && BiomeBlendedHeight.GetBlendedHeight(target.x, target.y, world) >= floor)
-                    return (target, next);
-                budget -= length;
-            }
-            pos = target;
-            next += step;
+            Vector2 p = bank + outward * d;
+            if (BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world) >= floor)
+                return p;
         }
-        return (bank, bankIndex);
+        return bank;
     }
 
     /// <summary>

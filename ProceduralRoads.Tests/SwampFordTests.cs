@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Xunit;
 
@@ -97,6 +98,36 @@ public class SwampFordTests
         Assert.True(wide.GetHeight(wideBridge.FromBank.x, 0f) >= dryFloor, "FromBank stands in the water");
         Assert.True(wide.GetHeight(wideBridge.ToBank.x, 0f) >= dryFloor, "ToBank stands in the water");
         Assert.InRange(wideBridge.RiverbedHeight, 25.9f, 26.1f); // the profile still knows the dip
+    }
+
+    /// <summary>Regression (RoadTestMac2 c33, 3 Sep 2026): where the approach
+    /// bends on the wade shelf, the dry-bank walk must go straight out along
+    /// the crossing line, not along the path — a path walk carried the far
+    /// abutment 8 m off the deck chord and left 11 route points over the
+    /// channel outside the recorded span.</summary>
+    [Fact]
+    public void DryBankWalkFollowsTheCrossingLineNotABentApproach()
+    {
+        var wide = new SwampChannelWorld { Bed = 29f, HalfWidth = 30f, DipBed = 26f, DipHalfWidth = 4f };
+        var bent = new List<Vector2> { new(-56f, 0f), new(-48f, 0f), new(-40f, 0f), new(20f, 0f), new(28f, 8f), new(36f, 16f), new(48f, 16f), new(56f, 16f) };
+        // The bend splits the wet run: the channel crossing, then two short
+        // shelf fords along the bent leg (wade shelf = road, task 1b).
+        var crossings = RoadCrossingDetector.Detect(bent, wide);
+        var bridge = crossings.OrderByDescending(x => x.Width).First();
+        Assert.Equal(CrossingKind.Bridge, bridge.Kind);
+        Assert.All(crossings.Where(x => x != bridge), x => Assert.Equal(CrossingKind.Ford, x.Kind));
+        float dryFloor = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+        Assert.True(wide.GetHeight(bridge.FromBank.x, bridge.FromBank.y) >= dryFloor, "FromBank stands in the water");
+        Assert.True(wide.GetHeight(bridge.ToBank.x, bridge.ToBank.y) >= dryFloor, "ToBank stands in the water");
+        // Both abutments sit on the channel's own line (y = 0), the deck is straight along it.
+        Assert.Equal(0f, bridge.FromBank.y, 1);
+        Assert.Equal(0f, bridge.ToBank.y, 1);
+        Assert.Equal(1f, bridge.Direction.x, 3);
+        Assert.InRange(bridge.Width, 59f, 62f);
+        // The bent shelf points stay within the deck's corridor.
+        foreach (var p in bent)
+            if (Mathf.Abs(p.x) < 30f)
+                Assert.True(bridge.Across(p) <= RoadCrossingDetector.LineCorridor + 8.01f || bridge.Along(p) > bridge.Width, $"point {p.x},{p.y} is {bridge.Across(p):F1} m off the deck");
     }
 
     [Fact]
