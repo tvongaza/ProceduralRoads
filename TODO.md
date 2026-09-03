@@ -293,6 +293,26 @@ routes CSV per baseline so per-route diffs stay possible.
   stubs, tilted debris, missing beams) and via floor health below 25%,
   not via pole/beam health. Shots: c6-health-{90,40,10}.png.
 
+### NAS gate on 99aa383: PASS, hash moved b034af02 → 73c6bec7, baseline updated
+
+94 routes, 0 violations, all counts unchanged, +1 m total length, 196 s /
+189 s, reproduced twice. Per-route diff: 92 routes byte-identical, **2
+routes +2 points each at the tail** (Mistlands_DvergrTownEntrance1 →
+Mistlands_Harbour1; MountainCave02 → Mistlands_DvergrTownEntrance2) —
+717adf8's leg densification, confined to wet-terminus routes, confirmed
+at point level.
+
+**Correction (NAS's, agreed):** the fixture DOES have two wet-terminus
+routes. The 2cd6473 diff showed the walk-around producing the same leg as
+the straight one on those two (their pockets are under the ~15° where the
+straight leg fails), and "inert" was read as "condition absent". Lesson:
+"the change was inert" shows a code path did not fire, not that its
+condition is absent — they come apart whenever the change is conditional
+on more than the condition itself. Accurate coverage statement: **the
+fixture exercises reroute densification, not pocket avoidance**;
+WetRimWorld pins the latter. Baseline 73c6bec7 (homelab d73cb06);
+routes-b034af02.csv and routes-73c6bec7.csv both kept on the NAS.
+
 **Next:** decisions for Tys — (a) deck-plate health: give a share of
 plates < 25% so some show broken planks (e.g. 20-60% range with ~25% of
 plates under 25%); (b) whether to add geometric "damage" to standing
