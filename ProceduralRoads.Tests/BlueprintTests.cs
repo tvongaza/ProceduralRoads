@@ -176,7 +176,7 @@ public class BlueprintTests
     [Fact]
     public void EulerRoundTripsThroughTheQuaternion()
     {
-        foreach (float pitch in new[] { -60f, -10f, 0f, 35f, 80f })
+        foreach (float pitch in new[] { -90f, -60f, -10f, 0f, 35f, 80f, 90f }) // ±90: the gimbal branch
         foreach (float yaw in new[] { -170f, -90f, 0f, 45f, 135f, 179f })
         foreach (float roll in new[] { -30f, 0f, 25f })
         {
@@ -237,18 +237,63 @@ public class BlueprintTests
 
     [Theory]
     [InlineData(7f, 4f, 2)]
-    [InlineData(5f, 4f, 1)]
+    [InlineData(5f, 4f, 2)]   // up, never a hole
+    [InlineData(8f, 4f, 2)]   // a whole number stays whole
     [InlineData(0f, 4f, 0)]
     [InlineData(1f, 4f, 1)]
     [InlineData(83.5f, 2f, 42)]
-    public void SpanCountIsTheNearestWholeNumber(float budget, float span, int expected) =>
+    public void SpanCountCoversTheBudget(float budget, float span, int expected) =>
         Assert.Equal(expected, BlueprintComposer.SpanCount(budget, span));
 
     public static IEnumerable<object[]> Kits()
     {
-        yield return new object[] { "wood-bridge", "MeadowsWood", 2f, 2f };
-        yield return new object[] { "stone-arch", "MountainStone", 4f, 4f };
-        yield return new object[] { "hybrid", "HybridStoneWood", 4f, 4f };
+        yield return new object[] { "wood-bridge" };
+        yield return new object[] { "stone-arch" };
+        yield return new object[] { "hybrid" };
+    }
+
+    private static (BridgeStyle style, float spanLength, float deckWidth) KitInfo(string kit) => kit switch
+    {
+        "wood-bridge" => (BridgeStyle.MeadowsWood, 2f, 2f),
+        "stone-arch" => (BridgeStyle.MountainStone, 4f, 4f),
+        "hybrid" => (BridgeStyle.HybridStoneWood, 4f, 4f),
+        _ => throw new ArgumentException(kit),
+    };
+
+    /// <summary>Flat bed under every crossing width: the deck never opens.</summary>
+    private sealed class FlatBedWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy) => 27f;
+        public override Heightmap.Biome GetBiome(float wx, float wy) => Heightmap.Biome.Meadows;
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width) { weight = 0f; width = 0f; }
+    }
+
+    /// <summary>Every width from a kit's minimum up: plate rows run continuously
+    /// bank to bank (no joint wider than a plate), whatever the remainder.</summary>
+    [Theory]
+    [MemberData(nameof(Kits))]
+    public void KitsCoverEveryWidthWithoutAHole(string kit)
+    {
+        var (style, _, _) = KitInfo(kit);
+        var (start, span, end) = Kit(kit);
+        var world = new FlatBedWorld();
+        for (float w = start.Length + end.Length; w < 45f; w += 0.37f)
+        {
+            var c = new RoadCrossing { FromBank = new Vector2(0f, 0f), ToBank = new Vector2(w, 0f), Direction = new Vector2(1f, 0f), Width = w, Center = new Vector2(w / 2f, 0f), WaterLevel = 30f, RiverbedHeight = 27f, Biome = Heightmap.Biome.Meadows };
+            var plan = BlueprintComposer.Tile(c, world, style, start, span, end);
+            var rows = plan.Where(p => p.Kind == BridgePieceKind.Deck).Select(p => Mathf.Round(Along(c, p) * 100f) / 100f).Distinct().OrderBy(a => a).ToList();
+            Assert.True(rows.First() <= 1.01f && rows.Last() >= w - 1.01f, $"{kit} at {w:F2} m: plates {rows.First():F2}..{rows.Last():F2}");
+            for (int i = 1; i < rows.Count; i++)
+                Assert.True(rows[i] - rows[i - 1] <= 2.01f, $"{kit} at {w:F2} m: {rows[i] - rows[i - 1]:F2} m hole after {rows[i - 1]:F2}");
+        }
+    }
+
+    [Fact]
+    public void GroundPostsLeavesABuriedPostAlone()
+    {
+        var world = new FlatBedWorld();
+        var buried = new List<BridgePiece> { new() { Kind = BridgePieceKind.Piling, Prefab = "wood_pole2", Position = new Vector3(0f, 26f, 0f) } };
+        Assert.Single(BlueprintComposer.GroundPosts(buried, world, BridgeStyle.MeadowsWood));
     }
 
     private static BridgeStyle StyleNamed(string name) => name switch
@@ -261,10 +306,10 @@ public class BlueprintTests
 
     [Theory]
     [MemberData(nameof(Kits))]
-    public void EveryKitTilesBankToBankAndStandsUp(string kit, string styleName, float spanLength, float deckWidth)
+    public void EveryKitTilesBankToBankAndStandsUp(string kit)
     {
+        var (style, spanLength, deckWidth) = KitInfo(kit);
         var (c, world) = Crossing();
-        var style = StyleNamed(styleName);
         var (start, span, end) = Kit(kit);
         Assert.Equal(spanLength, span.Length);
         Assert.Equal(2f, start.Length);
@@ -342,11 +387,10 @@ public class BlueprintTests
 
     [Theory]
     [MemberData(nameof(Kits))]
-    public void WeatherRemovesHighPiecesFirstAndKeepsEveryKitGrounded(string kit, string styleName, float spanLength, float deckWidth)
+    public void WeatherRemovesHighPiecesFirstAndKeepsEveryKitGrounded(string kit)
     {
-        _ = spanLength; _ = deckWidth;
+        var (style, _, _) = KitInfo(kit);
         var (c, world) = Crossing();
-        var style = StyleNamed(styleName);
         var (start, span, end) = Kit(kit);
         var full = BlueprintComposer.GroundPosts(BlueprintComposer.Tile(c, world, style, start, span, end), world, style);
         int decksBefore = full.Count(p => p.Kind == BridgePieceKind.Deck);
@@ -422,6 +466,26 @@ public class BlueprintTests
         Assert.NotEqual(plan.Select(p => p.HealthFraction), BridgePlanner.Plan(c, world, 12, kit).Select(p => p.HealthFraction));
     }
 
+    /// <summary>The pathfinder judges a jump by its bank cells, the detector
+    /// records the centre biome: the ban holds when either says Mistlands.</summary>
+    private sealed class MistlandsBankWorld : SupportModelTests.WideSteppedWorld
+    {
+        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+            wx > 40f ? Heightmap.Biome.Mistlands : base.GetBiome(wx, wy);
+    }
+
+    [Fact]
+    public void ABridgeToAMistlandsBankGetsNoPlanEither()
+    {
+        var world = new MistlandsBankWorld();
+        var path = new List<Vector2> { new(-64f, 0f), new(-56f, 0f), new(-48f, 0f), new(48f, 0f), new(56f, 0f), new(64f, 0f) };
+        var c = Assert.Single(RoadCrossingDetector.Detect(path, world));
+        Assert.Equal(Heightmap.Biome.Ocean, c.Biome); // centre is not Mistlands
+        Assert.True(BridgeLayout.TouchesMistlands(c, world));
+        Assert.Empty(BridgeLayout.Solve(c, world, 7, BridgeStyle.MeadowsWood));
+        Assert.Empty(BridgePlanner.Plan(c, world, 7, BridgeKit.Wood));
+    }
+
     [Fact]
     public void PlannerByBiomeFollowsTheSolverStyleMap()
     {
@@ -449,12 +513,16 @@ public class BlueprintTests
             span.Description = "a player's plank";
             span.Pieces.Add(new BlueprintPiece { Prefab = "wood_pole2", LocalPosition = new Vector3(0f, -1.2f, 1f), Data = "kind=Piling" });
             File.WriteAllText(Path.Combine(dir, "wood-bridge-span.blueprint"), span.Write());
+            File.WriteAllText(Path.Combine(dir, "blueprint-metadata.json"), "{\"blueprints\": {\"wood-bridge-span.blueprint\": {\"loadYOffset\": -0.25}}}");
             BridgeKits.OverrideDirectory = dir;
             BridgeKits.ClearCache();
             var (start, loadedSpan, end) = BridgeKits.Load(BridgeKit.Wood);
             Assert.Equal("a player's plank", loadedSpan.Description);
             Assert.Equal(5, loadedSpan.Pieces.Count);
             Assert.Equal(2f, loadedSpan.Length);
+            Assert.Equal(-0.25f, loadedSpan.LoadYOffset);
+            Assert.Equal(0.25f, loadedSpan.Anchor.y, 3); // valheimCreative's sidecar lowers the build
+            Assert.Equal(0f, start.LoadYOffset);
             Assert.Equal("ProceduralRoads wood bridge START", start.Name); // the others still come from the mod
             Assert.Equal("ProceduralRoads wood bridge END", end.Name);
         }
@@ -512,7 +580,7 @@ public class BlueprintTests
             Assert.Equal(1, written);
             string file = Assert.Single(Directory.GetFiles(dir));
             string name = Path.GetFileName(file);
-            Assert.Matches("^proceduralroads_bridge_-?[0-9]+_-?[0-9]+\\.blueprint$", name); // valheimCreative's name rules
+            Assert.Matches("^proceduralroads_(bridge|ford)_-?[0-9]+_-?[0-9]+\\.blueprint$", name); // valheimCreative's name rules
             var bp = RoadBlueprint.Parse(File.ReadAllText(file));
             Assert.Equal(Path.GetFileNameWithoutExtension(file), bp.Name);
             Assert.Contains("Bridge at", bp.Description);
@@ -532,11 +600,10 @@ public class BlueprintTests
     /// (validation-results/kit-*.svg, validation-results/blueprints/kit-*.blueprint).</summary>
     [Theory]
     [MemberData(nameof(Kits))]
-    public void KitExhibits(string kit, string styleName, float spanLength, float deckWidth)
+    public void KitExhibits(string kit)
     {
-        _ = spanLength; _ = deckWidth;
+        var (style, _, _) = KitInfo(kit);
         var (c, world) = Crossing();
-        var style = StyleNamed(styleName);
         var (start, span, end) = Kit(kit);
         var full = BlueprintComposer.GroundPosts(BlueprintComposer.Tile(c, world, style, start, span, end), world, style);
         var ruin = BlueprintComposer.Weather(full, c, style, world, 3);

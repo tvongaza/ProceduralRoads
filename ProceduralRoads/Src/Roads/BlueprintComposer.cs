@@ -34,7 +34,7 @@ public static class BlueprintComposer
     public static BridgePieceKind KindOf(BridgeStyle style, BlueprintPiece p)
     {
         string? kind = p.DataValue("kind");
-        if (kind != null && Enum.TryParse(kind, out BridgePieceKind fromData))
+        if (kind != null && Enum.TryParse(kind, true, out BridgePieceKind fromData))
             return fromData;
         if (Is(p.Prefab, style.PilingPrefab)) return BridgePieceKind.Piling;
         if (Is(p.Prefab, style.BeamPrefab)) return BridgePieceKind.Beam;
@@ -99,10 +99,11 @@ public static class BlueprintComposer
     /// Composes a kit across a crossing: START held at the near bank, SPAN
     /// repeated by snap-point chaining, END held so its far snap point lands
     /// on the far bank. A crossing is rarely a whole number of spans, so the
-    /// spans are pitched evenly over what START and END leave — the nearest
-    /// count, spread by at most half a span in total — which is what a
-    /// builder does when the last plate does not quite fit. Each kit brings
-    /// its own span length (a 2 m plank, a 4 m arch); nothing here assumes one.
+    /// spans are pitched evenly over what START and END leave, one more than
+    /// fits rather than one fewer: joints overlap a little, they never open a
+    /// hole a walker falls through (a 10 m crossing with a 4 m kit left a 2 m
+    /// gap when rounded to nearest). Each kit brings its own span length (a
+    /// 2 m plank, a 4 m arch); nothing here assumes one.
     /// </summary>
     public static List<BridgePiece> Tile(RoadCrossing c, WorldGenerator world, BridgeStyle style,
         RoadBlueprint start, RoadBlueprint span, RoadBlueprint end)
@@ -120,13 +121,14 @@ public static class BlueprintComposer
         return pieces;
     }
 
-    /// <summary>How many spans fill <paramref name="budget"/> metres: the
-    /// nearest whole number, at least one while there is anything to fill.</summary>
+    /// <summary>How many spans fill <paramref name="budget"/> metres: enough
+    /// to cover it (rounded up, with a hair of tolerance for a whole number),
+    /// none when there is nothing to fill.</summary>
     public static int SpanCount(float budget, float spanLength)
     {
         if (budget <= 0.01f || spanLength <= 0.01f)
             return 0;
-        return Mathf.Max(1, Mathf.RoundToInt(budget / spanLength));
+        return Mathf.Max(1, Mathf.CeilToInt(budget / spanLength - 0.001f));
     }
 
     /// <summary>Posts stacked down to the bed: a kit post is one segment

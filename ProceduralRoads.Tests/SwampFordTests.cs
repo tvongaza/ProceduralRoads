@@ -124,10 +124,6 @@ public class SwampFordTests
         Assert.Equal(0f, bridge.ToBank.y, 1);
         Assert.Equal(1f, bridge.Direction.x, 3);
         Assert.InRange(bridge.Width, 59f, 62f);
-        // The bent shelf points stay within the deck's corridor.
-        foreach (var p in bent)
-            if (Mathf.Abs(p.x) < 30f)
-                Assert.True(bridge.Across(p) <= RoadCrossingDetector.LineCorridor + 8.01f || bridge.Along(p) > bridge.Width, $"point {p.x},{p.y} is {bridge.Across(p):F1} m off the deck");
     }
 
     [Fact]

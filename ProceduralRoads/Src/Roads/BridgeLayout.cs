@@ -189,6 +189,14 @@ public static class BridgeLayout
         return sites;
     }
 
+    /// <summary>A crossing in or to the Mistlands: its centre or either
+    /// bank is in that biome (the pathfinder judges by bank cells, the
+    /// detector records the centre; the ban must hold for both).</summary>
+    public static bool TouchesMistlands(RoadCrossing c, WorldGenerator world) =>
+        c.Biome == Heightmap.Biome.Mistlands
+        || world.GetBiome(c.FromBank.x, c.FromBank.y) == Heightmap.Biome.Mistlands
+        || world.GetBiome(c.ToBank.x, c.ToBank.y) == Heightmap.Biome.Mistlands;
+
     public static float FairwayGap(RoadCrossing crossing) =>
         Mathf.Min(crossing.FairwayWidth, Mathf.Max(FairwayGapWidth, crossing.Width * FairwayGapFraction));
 
@@ -223,7 +231,7 @@ public static class BridgeLayout
         // No bridges in or to the Mistlands (Tys, 3 Sep 2026): the pathfinder
         // refuses deep-water jumps there; a bridge crossing it still records
         // (cell sampling is coarser than the detector's) gets no plan.
-        if (crossing.Kind == CrossingKind.Bridge && crossing.Biome == Heightmap.Biome.Mistlands)
+        if (crossing.Kind == CrossingKind.Bridge && TouchesMistlands(crossing, world))
             return pieces;
 
         // Fords: wading and raised fords are road, not pieces; a span is a

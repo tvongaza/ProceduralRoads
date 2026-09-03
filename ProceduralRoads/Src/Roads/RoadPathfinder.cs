@@ -409,6 +409,13 @@ public class RoadPathfinder
 
         bool sawRiverCore = false;
         float deepest = float.MaxValue; // lowest cell the jump passes over
+        bool mistlands = GetCellSample(from).Biome == Heightmap.Biome.Mistlands; // any cell the jump touches
+        void Wet(Vector2i cell)
+        {
+            CellSample sample = GetCellSample(cell);
+            deepest = Mathf.Min(deepest, sample.Height);
+            mistlands |= sample.Biome == Heightmap.Biome.Mistlands;
+        }
         for (int step = 1; step <= RoadConstants.MaxBridgeCrossingCells; step++)
         {
             Vector2i check = new Vector2i(from.x + direction.x * step, from.y + direction.y * step);
@@ -416,7 +423,7 @@ public class RoadPathfinder
             if (IsRiverBlocked(check))
             {
                 sawRiverCore = true;
-                deepest = Mathf.Min(deepest, GetCellSample(check).Height);
+                Wet(check);
                 continue;
             }
 
@@ -427,7 +434,7 @@ public class RoadPathfinder
             {
                 if (IsUnderWaterline(check))
                 {
-                    deepest = Mathf.Min(deepest, GetCellSample(check).Height);
+                    Wet(check);
                     continue;
                 }
                 return false;
@@ -452,14 +459,11 @@ public class RoadPathfinder
             // route exists) and held to a tighter bank-delta limit.
             bool bridge = distance > maxFordDistance;
             // No bridges in or to the Mistlands for now (Tys, 3 Sep 2026):
-            // that biome needs its own tuning pass. Neither a bridge-length
-            // jump nor a ford-length one over water deeper than wading (the
-            // crossing detector would plan a bridge there too; 19 such
-            // short deep crossings on RoadTestMac2 still got wood and
-            // stone). Wadeable fords stay allowed.
+            // neither a bridge-length jump nor a ford-length one over water
+            // deeper than wading (the detector plans a bridge there too).
+            // Wadeable fords stay allowed.
             bool deep = deepest < RoadConstants.SeaLevel - RoadConstants.FordWadeDepth;
-            if ((bridge || deep) && (GetCellSample(from).Biome == Heightmap.Biome.Mistlands
-                                     || GetCellSample(check).Biome == Heightmap.Biome.Mistlands))
+            if ((bridge || deep) && (mistlands || GetCellSample(check).Biome == Heightmap.Biome.Mistlands))
                 return false;
             float bankDelta = Mathf.Abs(GetCellSample(from).Height - GetCellSample(check).Height);
             if (bankDelta > (bridge ? RoadConstants.MaxBridgeBankDelta : RoadConstants.MaxFordBankDelta))

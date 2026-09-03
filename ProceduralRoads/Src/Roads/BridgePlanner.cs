@@ -78,7 +78,13 @@ public static class BridgeKits
         {
             string path = Path.Combine(OverrideDirectory, file);
             if (File.Exists(path))
-                return RoadBlueprint.Parse(File.ReadAllText(path));
+            {
+                RoadBlueprint bp = RoadBlueprint.Parse(File.ReadAllText(path));
+                string sidecar = Path.Combine(OverrideDirectory, "blueprint-metadata.json");
+                if (File.Exists(sidecar))
+                    bp.LoadYOffset = RoadBlueprint.ReadLoadYOffset(File.ReadAllText(sidecar), file);
+                return bp;
+            }
         }
         using Stream stream = typeof(BridgeKits).Assembly.GetManifestResourceStream("blueprints/" + file)
             ?? throw new FileNotFoundException("embedded blueprint missing: " + file);
@@ -106,7 +112,7 @@ public static class BridgePlanner
     {
         if (kit == BridgeKit.Solver || crossing.Kind != CrossingKind.Bridge)
             return BridgeLayout.Solve(crossing, world, worldSeed, BridgeLayout.StyleFor(crossing.Biome));
-        if (crossing.Biome == Heightmap.Biome.Mistlands)
+        if (BridgeLayout.TouchesMistlands(crossing, world))
             return new List<BridgePiece>();
         if (kit == BridgeKit.ByBiome)
             kit = BridgeKits.ForBiome(crossing.Biome);

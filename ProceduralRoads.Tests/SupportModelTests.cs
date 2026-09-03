@@ -45,7 +45,7 @@ public class SupportModelTests
 
     /// <summary>Sailable river: flat 4 m deep bed for |x| &lt; 35, banks
     /// rising over 10 m to 32 (+EastRise on the east bank).</summary>
-    internal sealed class WideSteppedWorld : WorldGenerator
+    internal class WideSteppedWorld : WorldGenerator
     {
         public float EastRise;
         public override float GetHeight(float wx, float wy)

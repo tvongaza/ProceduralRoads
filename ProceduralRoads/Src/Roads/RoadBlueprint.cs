@@ -83,11 +83,25 @@ public sealed class RoadBlueprint
     /// next unit starts.</summary>
     public List<Vector3> SnapPoints = new();
     public List<BlueprintPiece> Pieces = new();
+    /// <summary>valheimCreative's per-file load offset (its sidecar
+    /// blueprint-metadata.json): raises the placed build by this much.</summary>
+    public float LoadYOffset;
 
     /// <summary>The point the blueprint is held by when placed: its first snap
     /// point, or — the rule valheimCreative and Expand World apply to files
-    /// without one — the bottom centre of the piece bounds.</summary>
+    /// without one — the bottom centre of the piece bounds; lowered by
+    /// <see cref="LoadYOffset"/>, which raises the build.</summary>
     public Vector3 Anchor
+    {
+        get
+        {
+            Vector3 a = BaseAnchor;
+            a.y -= LoadYOffset;
+            return a;
+        }
+    }
+
+    private Vector3 BaseAnchor
     {
         get
         {
@@ -158,7 +172,7 @@ public sealed class RoadBlueprint
                     LocalPosition = new Vector3(F(f[2]), F(f[3]), F(f[4])),
                     RotX = F(f[5]), RotY = F(f[6]), RotZ = F(f[7]), RotW = F(f[8]),
                 };
-                if (f.Length > 9 && f[9] != "\"\"")
+                if (f.Length > 9 && f[9].Trim() != "\"\"")
                     p.Data = f[9].Trim();
                 if (f.Length >= 13)
                     p.Scale = new Vector3(F(f[10]), F(f[11]), F(f[12]));
@@ -215,7 +229,7 @@ public sealed class RoadBlueprint
                 p.Prefab, p.Category,
                 S(p.LocalPosition.x), S(p.LocalPosition.y), S(p.LocalPosition.z),
                 S(p.RotX), S(p.RotY), S(p.RotZ), S(p.RotW),
-                p.Data,
+                p.Data.Replace(';', ' '), // ';' is the field separator
                 S(p.Scale.x), S(p.Scale.y), S(p.Scale.z),
             })).Append('\n');
         }
@@ -298,12 +312,6 @@ public static class BlueprintMath
             roll = 0;
         }
         return ((float)(pitch / DegToRad), (float)(yaw / DegToRad), (float)(roll / DegToRad));
-    }
-
-    public static (float x, float y, float z, float w) Mul((float x, float y, float z, float w) a, (float x, float y, float z, float w) b)
-    {
-        (double x, double y, double z, double w) r = Mul((a.x, a.y, a.z, a.w), ((double)b.x, b.y, b.z, b.w));
-        return ((float)r.x, (float)r.y, (float)r.z, (float)r.w);
     }
 
     private static (double x, double y, double z, double w) Mul((double x, double y, double z, double w) a, (double x, double y, double z, double w) b) =>

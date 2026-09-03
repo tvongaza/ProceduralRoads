@@ -570,9 +570,16 @@ public static class ConsoleCommands
             args.Context.AddString("no world");
             return;
         }
-        string dir = args.Length >= 2 ? args[1] : Path.Combine(BepInEx.Paths.ConfigPath, "expand_world", "blueprints");
-        int written = BlueprintComposer.ExportAll(dir, RoadNetworkGenerator.GetRoadCrossings(), WorldGenerator.instance, WorldGenerator.instance.GetSeed());
-        args.Context.AddString($"wrote {written} blueprints to {dir}");
+        string dir = args.Length >= 2 ? Path.GetFullPath(args[1]) : Path.Combine(BepInEx.Paths.ConfigPath, "expand_world", "blueprints");
+        try
+        {
+            int written = BlueprintComposer.ExportAll(dir, RoadNetworkGenerator.GetRoadCrossings(), WorldGenerator.instance, WorldGenerator.instance.GetSeed());
+            args.Context.AddString($"wrote {written} blueprints to {dir}");
+        }
+        catch (IOException e)
+        {
+            args.Context.AddString($"export failed: {e.Message}");
+        }
     }
 
     private static void PieceHealth(Terminal.ConsoleEventArgs args)
