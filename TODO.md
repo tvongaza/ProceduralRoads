@@ -25,6 +25,150 @@
   paths, schedules, MACs) stay in gitignored files (scripts/.nas.env
   pattern) — never in tracked files of this public fork.
 
+## NIGHT PLAN 2026-09-03 (unaided; Tys asleep) — READ THIS FIRST, WORK TOP TO BOTTOM
+
+State at hand-off (00:10, 3 Sep): bridge branch `pc/snap-point-composition`
+tip **65a68b3** (stairs off by default; river-core fix 19f0946; shared-site
+dedupe ffaed85; crypt radius / stub rules / fairway scaling 9d88539 +
+a71009b; walk-through fixes all built and deployed). `pc/stairs` = ffaed85
+(all stair work). Docs: this branch. 148 tests green on net10.0 and net48.
+NAS last baseline 73c6bec7 on 99aa383; **65a68b3 is NOT gated yet** (river
+fix, crypt radius, stub rules are generation changes — gate it first).
+Mac: RoadTestMac2 pristine master in validation-fixtures/ (db md5
+77894963d500cd7b37d90e91ef6021b5); `scripts/mac-shoot.sh RoadTestMac2 <tag>
+200000` restores + regenerates (275-290 s) + shoots; `SHOTS=0` stops after
+selftest. Latest Mac regen on 65a68b3: tag `river-nostairs`, 95 routes,
+hash 496fe5ab, 29 crossings, 0 stair runs, selftest FAIL (13 dry-land
+points, see task 1). The Valheim client is running in-world on RoadTestMac2;
+Tys is asleep, so the client may be quit freely tonight (the ask-first rule
+applies only while Tys is in-world).
+
+Rules for the night: commit small with harness proof; every generation
+change gets a NAS gate (message "NAS Docker"); **a metric redefinition ships
+on its own commit and gate**; never touch upstream (HOLD until PR #18 is
+answered); secrets stay in gitignored files; when a hash moves, read the
+`[CONFIG]` line first. Shots for Tys go in validation-results/screenshots/
+RoadTestMac2-<tag>/ and are listed in the morning report. Write the morning
+report as a new section at the top of this file: what landed (commit
+hashes), what was gated (hash, counts), what needs Tys's eyes (shot files),
+what is blocked.
+
+### Task 1 — bridge work finishable alone (in this order)
+
+1a. **Deck-on-road divergence** (seen on RoadTestMac2 65a68b3: route
+    "Eikthyrnir -> GDKing", crossing 1 at (-587,377) 86 m, deck line tilted
+    ~6° off the road by the outward bank walk; validator flags 13 wet
+    points > 6 m from the deck line). Decide: the crossing line follows the
+    ROUTE (FromBank/ToBank constrained to the path segment through the
+    water, banks found along that line), so deck and road agree. Then the
+    validator corridor stays 6 m. Harness scenario: a diagonal jump whose
+    banks would walk outward. This changes what the validator measures only
+    if the corridor changes — keep the corridor, fix the geometry, and it
+    is a generation change, not a metric change. Gate.
+1b. **Swamp wading-depth crossings get the wade/raise/span mix** (Tys,
+    c6/c7): in the classifier, Swamp + bed >= DeepWaterHeight (28) + no
+    fairway → Ford with the weighted style pick (wade always allowed in
+    swamp; raise; span). Harness: swamp gully census shows all three;
+    deep swamp channel stays a bridge. Gate.
+1c. **Stepped bridge ends as a random sample** (Tys, c12 "looks great"):
+    per site hash, either the deck meets the road flush (today) or sits
+    0.5-1.5 m above the road with stair pieces up to it, both ends; reuse
+    the span-ford step emitter. Harness: both variants appear, steps
+    grounded (support model). Ruin-only change (no hash move); shots.
+1d. **High bridge for steep, narrow channels** (Tys, c4 23 m / c15 20 m:
+    fairway eats the deck, cliff stairs both sides). When both bank tops
+    within ~12 m of the water edge stand >= 2.5 m above the contact point,
+    spring the deck from the bank tops (deck height = min top), abutments
+    at the tops, piers taller. Harness exhibit (WorldRenderer side view) +
+    support model; shots at c4 and c15 for Tys. Ruin-only.
+1e. **c19 crossing-length violation** (180 m of water vs 128 m cap; the
+    swamp bank search walked outward): either cap the outward walk (e.g.
+    16 m) or let the validator measure bank-to-bank of the RECORDED
+    crossing. Prefer capping the walk (generation) and keep the validator.
+1f. **Dry-valley "wade ford" in Mistlands** (bed 33.5 above sea level):
+    a crossing needs riverbed below the waterline; dry core valleys are
+    ordinary road now (19f0946), so this may already be gone — check
+    road_spots on the next regen.
+1g. If time: **road reuse** — pathfinder discount (e.g. 0.2×) for cells
+    within RoadWidth of an existing route so later routes merge and share
+    bridges (c1/c2 and c0/c3 doubled sites). Harness: two locations across
+    one river from a hub build ONE crossing. Gate; expect big hash move.
+1h. If time: **dungeon-entrance endpoints** spike — Harmony postfix on
+    ZoneSystem.SpawnLocation logging (prefab, pos, rot) to LogOutput; a
+    pure function reproducing rot from seed+zone (read ZoneSystem's
+    PlaceLocations order of Random calls); prove equality on RoadTestMac2
+    over all placed locations; only then aim endpoints at the entrance arc
+    for SunkenCrypt/Crypt/TrollCave/MountainCave. Do not aim without proof.
+
+### Task 2 — extract the stairs work into a WIP stairs PR (branch pc/stairs)
+
+Goal: the bridge branch carries NO stair code, so a bridge-only PR can go
+upstream; pc/stairs carries the stairs on top of it. Steps: on the bridge
+branch remove StairRun.cs, StairLayout.cs, StairRunDetector, stair handling
+in RoadNetworkGenerator (exclusions, m_stairRuns, GetStairRuns), RuinPlacement
+(StairLayout.Solve), RoadNetworkPersistence (stair-run section — bump the
+format version, keep loading old saves by skipping the section), validator
+(InStairRun exemption), ConsoleCommands (road_spots STAIRS lines), the
+Stairs/Enabled config, harness (StairTests, SnapChainTests, shims) and
+csproj Compile entries. Keep the span-ford Stair pieces (bridge work).
+Then `pc/stairs` = merge the bridge branch + revert of that removal commit
++ the stair fixes queued below; push; open the PR on the FORK only
+(tvongaza/ProceduralRoads, base pc/snap-point-composition) titled "WIP:
+stair runs" with Tys's observations as the checklist: steps faced downhill
+(fixed 9d88539), snap points not meeting, clipping into ground, run
+descends into the river under an abutment (c18), switchback landings on
+stilts (c1/c2 hill), stairs vs bridge abutment ordering. 148 → fewer tests
+on the bridge branch is expected; both branches green on both runtimes.
+
+### Task 3 — extract tooling into its own future upstream PR (branch pc/tooling)
+
+From `origin/master` (0b97251), a branch with only: scripts/ (world-fixture,
+mac-shoot, ingame/server/nas-validate, deploy.sh), the debug console
+commands (road_selftest/route export already upstream? check; road_spots,
+road_ruins_reset, road_clear_view, road_zone_ready, road_piece_health,
+road_piece_set_health, road_debug_locations, road_mist, road_debug_markers),
+RoadValidationRunner/RoadNetworkValidator if not upstream, and the [CONFIG]
+log line. Cherry-pick or re-commit cleanly; README section "Validation
+tooling". The bridge branch keeps its copies (the ladder merges tooling
+first). Push to the fork; no upstream PR (HOLD). Record the ladder order in
+this file: tooling → cost model + fords → crossings/bridges → cross-section
+→ stairs → placement.
+
+### Task 4 — re-validate and simplify the narrowed bridge code
+
+With stairs gone: read BridgeLayout, RoadCrossing, RoadNetworkGenerator's
+crossing handling, RuinPlacement end to end. Passes: (1) dead code and
+duplicated geometry helpers (bank walks, along/across projections, yaw
+math) into one place; (2) names that say what they mean (FairwayGap,
+SharedSiteRadius, ApproachRadius are the pattern); (3) tests that assert
+behaviour, not structure. Every refactor commit must reproduce the NAS
+hash and the ruin piece census exactly (refactor = no generation change);
+gate at the end of the pass, or after any commit you are unsure of.
+Also run the lever sweeps and support model — they are the safety net.
+
+### Task 5 — blueprint spike (Tys's future direction)
+
+Goal: our simple wood bridge expressed as blueprints — a START end, a
+repeating SPAN unit, an END — assembled at a crossing, then a "weather
+pass" that damages pieces and removes some, starting from the high
+points; player-authored blueprints later. Study first: More World
+Locations' blueprint loading (local checkout mods/MoreWorldLocations is
+empty — clone https://github.com/jneb802/MoreWorldLocations read-only into
+~/dev/valheim-mod-pipeline/mods/ and grep for blueprint/.vbuild/PlanBuild)
+and PlanBuild's .blueprint text format (piece name, pos, rot per line).
+Deliverables: a design note in this file (format, snapping between units,
+how the seed drives the weather pass, how it coexists with BridgeLayout),
+a harness-only prototype that parses a blueprint text into BridgePieces
+and tiles start/span/end across a crossing, with the support model run
+over the result, and three .blueprint files for the wood kit written from
+the current grammar. No in-game placement yet.
+
+### Morning checklist for Tys (fill in)
+
+- Gated commits and hashes; anything that regressed the census.
+- Shots: c4/c15 high bridge, stepped ends, swamp ford mix, c1 deck-on-road.
+- Open questions, one line each.
+
 ## Decisions from Tys (end of 2 Sep 2026) — NEXT SESSION IMPLEMENTS THESE, harness-first
 
 Source: the decision brief (artifact "ProceduralRoads Crossing Decisions").
