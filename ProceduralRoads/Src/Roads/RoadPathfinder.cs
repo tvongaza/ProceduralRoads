@@ -446,6 +446,11 @@ public class RoadPathfinder
             // sailable river: far more expensive (taken only where no land
             // route exists) and held to a tighter bank-delta limit.
             bool bridge = distance > maxFordDistance;
+            // No bridges in or to the Mistlands for now (Tys, 3 Sep 2026):
+            // that biome needs its own tuning pass. Fords stay allowed.
+            if (bridge && (GetCellSample(from).Biome == Heightmap.Biome.Mistlands
+                           || GetCellSample(check).Biome == Heightmap.Biome.Mistlands))
+                return false;
             float bankDelta = Mathf.Abs(GetCellSample(from).Height - GetCellSample(check).Height);
             if (bankDelta > (bridge ? RoadConstants.MaxBridgeBankDelta : RoadConstants.MaxFordBankDelta))
                 return false;

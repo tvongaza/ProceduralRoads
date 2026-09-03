@@ -170,3 +170,50 @@ public class RiverCrossingTests
         Assert.True(System.IO.File.Exists(output));
     }
 }
+
+/// <summary>Tys (3 Sep 2026): no bridges in or to the Mistlands until that
+/// biome gets its own tuning pass. A wide sailable river with a Mistlands
+/// bank gets no bridge jump (the route must go around or fail); a ford-length
+/// crossing is still allowed there.</summary>
+public class MistlandsBridgeBanTests
+{
+    private sealed class BiomeRiverWorld : WorldGenerator
+    {
+        public float HalfWidth = 40f;           // > 24 m: needs a BRIDGE jump
+        public Heightmap.Biome EastBiome = Heightmap.Biome.Mistlands;
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 220f || Mathf.Abs(wy) > 120f) return 20f;
+            float ax = Mathf.Abs(wx);
+            if (ax <= HalfWidth) return 26f;
+            if (ax >= HalfWidth + 10f) return 32f;
+            return Mathf.Lerp(26f, 32f, (ax - HalfWidth) / 10f);
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+            GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean
+            : wx > 0f ? EastBiome : Heightmap.Biome.Meadows;
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / (HalfWidth * 2f));
+            width = weight > 0f ? HalfWidth * 4f : 0f;
+        }
+    }
+
+    [Fact]
+    public void NoBridgeToAMistlandsBank()
+    {
+        var mist = new BiomeRiverWorld();
+        Assert.Null(new RoadPathfinder(mist).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f)));
+
+        // The same river with a Meadows far bank is bridged.
+        var meadows = new BiomeRiverWorld { EastBiome = Heightmap.Biome.Meadows };
+        Assert.NotNull(new RoadPathfinder(meadows).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f)));
+    }
+
+    [Fact]
+    public void FordsIntoTheMistlandsStayAllowed()
+    {
+        var mist = new BiomeRiverWorld { HalfWidth = 12f }; // ~28 m of water: a ford jump
+        Assert.NotNull(new RoadPathfinder(mist).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f)));
+    }
+}
