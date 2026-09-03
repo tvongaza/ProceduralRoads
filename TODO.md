@@ -184,9 +184,71 @@ be split. Almost certainly the join, but that is inference. Rule from now
 on: **a metric redefinition ships on its own commit**, gated alone, before
 any generation change rides with it.
 
-**Next:** Mac: regenerate RoadTestMac1 at 200000, `road_ruins_reset` before
-any shot, shoot the 121 m wood bridge and one ford of each style for Tys. Screen capture on the Mac is verified
-working (no permission prompt outstanding).
+### Mac live pass on 40b7351 (RoadTestMac1, real 200000, 2 Sep evening)
+
+Driven by the new `scripts/mac-shoot.sh` (2cd6473). `[CONFIG]` read back:
+PathfindingMaxIterations=200000 BridgeCostFixed=30000 BridgeCostPerMeter=300
+WetTerminus=Reroute PierPersistence=0.85 FordWeights=1/1/1. Gotcha found on
+the way: the Mac cfg still carried `BridgeCostFixed = 50000` written by the
+previous build, and a file value beats a new default silently — the script
+now pins every lever explicitly. Regeneration took 385 s.
+
+    selftest PASS   97 routes   56 components   106 fords   hash 6165d1d2   0 violations
+    road_spots: 20 crossings (14 bridges: 6 stone Plains 31-111 m, 8 wood 10-82 m; 4 raise fords, 2 span fords, 0 wade)
+    ruins reset: 4433 tagged pieces destroyed, 276 zones respawned
+
+Shots (validation-results/screenshots/RoadTestMac1-40b7351/, sent to Tys
+unread): c6 widest wood bridge 82 m Black Forest (sideA/B/top at t0 and
+after an 8-min soak), c4 span ford 32 m Meadows, c18 raise ford 26 m Swamp.
+No wade shot: no ford on this world is ankle-deep (beds 29.3-29.5 and one
+at 30.3; the single 0.5 m site hashed to raise). The 121 m wood bridge of
+the old baseline no longer exists — the cost change moved that route.
+
+Census at c6 (30 m sphere at the deck): **t8 = 121 wood pieces standing**
+(96 pole2, 17 beam, 7 floor, 1 stair). The t0 census is INVALID — taken 4 s
+after the teleport, before the zone had spawned, it counted four water
+volumes. So this is a standing count after 8 min with the player present,
+not a decay measurement; item 9's clean wood census is still owed.
+
+### Round 5b: lever sweeps found a Reroute weakness; fixed (91e23d9)
+
+Tys: "write tests for all the levers at extremes and in between".
+`LeverSweepTests.cs` (121 tests total, both runtimes): pier persistence
+0..1 monotone with exact endpoints and a clear fairway at every level; each
+ford weight 0..100 against the others, share monotone and tracking
+w/(w+2), ineligible styles inert; wet arcs 0..180 deg at radii 12/20/40;
+bridge cost fixed 0..300000 and per-metre 0..5000 flipping once, and the
+default's break-even bracketed between a 600 m and a 2.4 km river end.
+
+The wet-arc sweep showed Reroute giving up from a 15-degree water pocket
+upward at every radius: the water that wets the circle point lies BETWEEN
+the last dry path point and the circle, so a straight leg always crossed
+it. Now the leg is a flood fill over a 2 m grid of dry cells in the ring
+outside the circle (never inside), string-pulled to its corners; straight
+leg still tried first. **Generation change**: routes with wet ends move.
+The Mac pass above ran the pre-fix build; 2cd6473 needs a gate.
+
+### Tooling: `road_zone_ready` (Tys: "tell us when the zone has loaded")
+
+`road_zone_ready <x> <z> [radius]` reports zones loaded / planned ruin
+zones spawned / pieces instantiated vs planned; ready when all three hold.
+mac-shoot.sh polls it after every teleport instead of sleeping 15 s.
+
+### Future (Tys, 2 Sep evening) — not started
+
+- **Blueprint bridges + weather pass.** Players build a set of blueprints
+  (terminus ends: low / level / high; span pieces) that fit together; the
+  mod assembles a bridge from them at a crossing, then runs a "weather
+  pass" that damages blocks and removes some, starting from the high
+  points. Player-authored diversity on top of the generated kits.
+- **Clutter-aware routing.** Work out how Valheim places vegetation/rock
+  clutter so roads can steer around it naturally, with a policy for what
+  is cleared vs kept (small plants and trees go, big trees and rocks stay).
+  Especially for switchback planning on steep mountain sides.
+
+**Next:** NAS gate on 2cd6473 (hash will move for wet-end routes only);
+then a clean wood decay census (t0 after `road_zone_ready`, t8) at one
+wood site.
 
 ## 2026-09-02 round 4: the raw-height blind spot (fb574ff)
 
