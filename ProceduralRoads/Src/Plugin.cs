@@ -142,9 +142,9 @@ namespace ProceduralRoads
                     "(offered only where the crossing is at least 6 m wide).",
                     new AcceptableValueRange<float>(0f, 100f)));
 
-            StairsEnabled = Config.Bind("Stairs", "Enabled", false,
-                "Turn steep road sections into staircases with stair pieces. Off while the stair grammar is reworked " +
-                "(snapping, ground clipping, landings on stilts); roads still climb, just without steps.");
+            StairsEnabled = Config.Bind("Stairs", "Enabled", true,
+                "Turn steep road sections into staircases with stair pieces (this branch, pc/stairs, is where " +
+                "the stair grammar is reworked; the bridge branch ships without stairs).");
 
             ForceRegenerate = Config.Bind("Debug", "ForceRegenerate", false,
                 "Ignore roads persisted in the world and regenerate the network from " +

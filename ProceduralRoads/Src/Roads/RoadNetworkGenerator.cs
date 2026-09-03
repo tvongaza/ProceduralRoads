@@ -193,8 +193,8 @@ public static class RoadNetworkGenerator
     /// <summary>Stair runs (steep sections become staircases) are their own
     /// line of work on branch pc/stairs; the bridge work keeps them off so
     /// stairs cannot bend routes or pieces around crossings (Tys, 2 Sep 2026).
-    /// Config "Stairs/Enabled".</summary>
-    public static bool StairsEnabled = false;
+    /// Config "Stairs/Enabled" (on by default on pc/stairs).</summary>
+    public static bool StairsEnabled = true;
 
     /// <summary>Player-facing lever (config "Roads/WetTerminus"): what to do
     /// with a route whose end on its location's radius circle is in water.</summary>
