@@ -322,6 +322,54 @@ stone kit reopens). Gate 99aa383 on the NAS (717adf8 is a generation
 change, inert on the fixture). The clean wood decay census is now cheap:
 reload, `road_zone_ready` (planned == loaded is t0), soak, re-probe.
 
+## 2026-09-02 late: Tys's in-game walk-through of RoadTestMac2 (fresh pristine world)
+
+Setup lessons first. The Mac had no pristine fixture and mac-shoot.sh
+never restored one, so RoadTestMac1 showed LAST week's paint under this
+week's routes (magenta route markers through unpainted forest, cobbles 20
+m away). Making a master exposed that IslandRoadPercentage=0 still
+selected one island (Max(1, ...)) — fixed in 48816c5, verified "0
+selected (0%)". RoadTestMac2 master: validation-fixtures/RoadTestMac2.{db,fwl}
+(md5 db 77894963d500cd7b37d90e91ef6021b5). mac-shoot.sh now refuses to
+regenerate without a fixture; SHOTS=0 prepares a world for inspection.
+**Rule from Tys: ask before quitting the client while they are in-world.**
+
+Findings, in the order seen (pre-fix build 99aa383 unless noted):
+
+1. **c19, 171 m wood bridge in a swamp, ending at a Sunken Crypt door**
+   (route ends at the abutment because the crypt's circle IS the far
+   bank). Tys: a bridge may be the last thing before a location; the road
+   continues past the abutment whenever dry ground exists before the
+   circle. 171 m is fine; the collapsed middle must scale with the span →
+   FairwayGap = 30% of width, floor 20 m, cap fairway (9d88539). Validator
+   still flags this route: 180 m of water vs the 128 m cap (the swamp bank
+   search walked outward) — open.
+2. **Crypt-to-crypt stubs (8 routes, 1-34 m).** Two causes, both fixed:
+   circles closer than MinUsefulRoadLength (30 m) now count as connected
+   without a road (9d88539); and routes whose WET ENDS trim them under 30 m
+   are dropped (a71009b) — most stubs were swamp paths reduced to their dry
+   hummock. Crypt approach radius 8 m instead of 25 (9d88539). Tys also
+   asked for roads to prefer the crypt's FRONT: feasible by re-deriving the
+   location rotation from seed+zone the way ZoneSystem does (hook
+   SpawnLocation to log the truth, reproduce, then aim the endpoint at the
+   entrance arc) — roadmap. Open design question: swamp wading roads should
+   probably be raised or paved through the water rather than trimmed.
+   Map of the stubs: scratch svg sent to Tys (whole network + Bonemass swamp).
+3. **Every stair run faced downhill** (runs and ford-span steps): the
+   vanilla stair prefab rises toward local -z; both emitters turned 180°
+   (9d88539), confirmed in-game. Stairs otherwise "not properly connecting
+   with snap points or clipping into the ground" — **parked, own PR**.
+4. **c11, 94 m wood bridge along a shore where a road could walk.**
+   Cause: the pathfinder treats river CORE (river weight > 0.5) as
+   impassable on foot even on dry ground, so the dry bank inside the core
+   band could only be crossed by a jump, and a 94 m "bridge" (58 200) beat
+   walking priced at infinity. Fix direction: block on water (height under
+   the road floor), not on the core band; keep "a crossing must pass over
+   core" for the jump scan. Not yet implemented.
+5. `road_debug_locations` draws purple rings on every road location's
+   approach circle (9d88539); crossings 1/2 and 16/17 sit on identical
+   sites (two routes, two bridge plans on one spot) — to check.
+
 ## 2026-09-02 round 4: the raw-height blind spot (fb574ff)
 
 **Found by:** the NAS regenerating the fixture at 200000 iterations
