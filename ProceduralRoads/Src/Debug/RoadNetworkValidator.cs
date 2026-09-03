@@ -132,10 +132,13 @@ public static class RoadNetworkValidator
                 }
 
                 // Crossing-length invariant: consecutive points over WATER
-                // (below the waterline clearance) must span no more than the
-                // bridge cap. Measured on water, not river core: a core band
-                // can be a dry valley the road simply runs through.
-                bool overWater = height < RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+                // (ground a road may not stand on: below the waterline
+                // clearance, or in a swamp below wading depth — the same rule
+                // the crossing detector uses for its banks) must span no more
+                // than the bridge cap. Measured on water, not river core: a
+                // core band can be a dry valley the road simply runs through,
+                // and a swamp shelf the road wades is road, not crossing.
+                bool overWater = !RoadCrossingDetector.IsRoadGround(new Vector2(p.x, p.z), world);
                 if (overWater)
                 {
                     if (fordRunStart < 0)

@@ -182,4 +182,51 @@ public class ValidatorTests
 
         Assert.Equal(r1.PointsHash, r2.PointsHash);
     }
+
+    /// <summary>Flat land at 33 with a 200 m shelf at 29 (wading depth in a
+    /// swamp, deep water elsewhere) holding a 20 m channel at 26 at its
+    /// centre; biome selectable.</summary>
+    private sealed class ShelfAndChannelWorld : WorldGenerator
+    {
+        public Heightmap.Biome Biome = Heightmap.Biome.Swamp;
+        public override float GetHeight(float wx, float wy)
+        {
+            float ax = Mathf.Abs(wx);
+            if (ax < 10f) return 26f;
+            return ax < 100f ? 29f : 33f;
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy) => Biome;
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / 20f);
+            width = weight > 0f ? 40f : 0f;
+        }
+    }
+
+    [Fact]
+    public void CrossingLengthCountsWaterTheRoadCannotStandOn()
+    {
+        // Night plan 2026-09-03 task 1e (metric side, own commit): a swamp
+        // road wades 200 m of shelf and bridges the 20 m channel; the
+        // crossing-length check measures the water the road could not wade,
+        // not the shelf — RoadTestMac2 c19 read 180 m of "crossing" over an
+        // 83 m recorded bridge. In the Meadows the same shelf is deep water
+        // and the 200 m run is over the cap.
+        var path = new List<Vector2>();
+        for (float x = -120f; x <= 120f; x += 8f)
+            path.Add(new Vector2(x, 0f));
+
+        var swamp = new ShelfAndChannelWorld { Biome = Heightmap.Biome.Swamp };
+        var swampRoute = RoadRoute.FromWaypoints(0, "A -> B", 4f, path, swamp);
+        var swampReport = RoadNetworkValidator.Validate(new[] { swampRoute }, swamp, null,
+            RoadCrossingDetector.Detect(path, swamp));
+        Assert.DoesNotContain(swampReport.Violations, v => v.StartsWith("crossing-length"));
+        Assert.Equal(1, swampReport.FordCount); // the channel, once
+
+        var meadows = new ShelfAndChannelWorld { Biome = Heightmap.Biome.Meadows };
+        var meadowsRoute = RoadRoute.FromWaypoints(0, "A -> B", 4f, path, meadows);
+        var meadowsReport = RoadNetworkValidator.Validate(new[] { meadowsRoute }, meadows, null,
+            RoadCrossingDetector.Detect(path, meadows));
+        Assert.Contains(meadowsReport.Violations, v => v.StartsWith("crossing-length"));
+    }
 }
