@@ -1,5 +1,88 @@
 # Fresh-Start Plan (2026-08-31)
 
+## HANDOFF 2026-09-03 ~09:30 (Tys reviewing; session about to be cleared)
+
+Read this before the MORNING REPORT below; it supersedes its "decisions" list.
+
+**Tip**: `pc/snap-point-composition` **c5c7234** (157 tests, both runtimes).
+Deployed to the Mac client, which is in-world on a FRESH RoadTestMac2
+regen (tag `morning-bf90349`: 93 routes, hash 163f2d1e, 41 crossing
+records at 37 sites, fordCount 47, wetPointsOutsideSpans 12, overGrade 14,
+21 Mistlands crossings). Player parked at (150, 692) above the shoreline
+where GDKing -> Bonemass bobs through 26-29 m water at points 1122-1143
+(three small recorded bridges 26-33 m apart at (128,661), (150,674),
+(181,664)) — decision 5, not yet judged. Fly mode toggled on.
+
+### Tys's decisions this morning
+1. **Swamp abutments**: bridges start and end on land above the water,
+   even if longer — DONE in c689210 (banks walk outward along the road up
+   to 120 m to ground >= 31.25 when the crossing is a Bridge). Span fords
+   NOT extended (open: should a span's steps also stand on dry ground?).
+2. **High bridge over a swamp shelf**: fine. Keep.
+3. **Stepped ends as levers**: not yet; blueprints will change this.
+4. **Mistlands**: no bridges in or to the Mistlands for now (own tuning
+   pass later). PARTLY DONE in b28b317: the pathfinder refuses BRIDGE
+   jumps (> 48 m) when either bank cell is Mistlands. NOT enough: 19
+   Mistlands crossings on Mac2 are still kind=bridge (short deep
+   crossings the ford-length jump still makes) and get wood/stone plans.
+   Next: in RoadCrossingDetector/BridgeLayout, a crossing whose biome is
+   Mistlands gets no bridge plan (treat as a raise ford, or make the
+   pathfinder refuse any jump over deep water there). Decide which.
+5. **Shoreline spline dips**: Tys is looking now; no verdict yet.
+6. **Blueprint format**: see "Elaboration on 6" below.
+7. NAS sftp: still Tys's call. 8. Road reuse: still held.
+
+### Found this morning
+- **Reload painting bug, FIXED in bf90349**: both ZoneSystem hooks gated
+  on RoadsGenerated (true only in the generating session), so on a world
+  loaded from its save every zone first generated after the load got the
+  road in the data and nothing on the ground (no paint, leveling,
+  clearing, or ruin pieces). Now gated on RoadsAvailable. This is the
+  creation-vs-reload divergence. Not yet verified in-game on a reloaded
+  world: do that (relaunch with ForceRegenerate=false, walk to an
+  unvisited zone with a road). OnPrepareSave still saves only when
+  generated this session — revisit for the spawned-ruin-zone set.
+- **REGRESSION from c689210, open**: the swamp dry-bank walk follows the
+  PATH, so where the approach bends (c33 = SunkenCrypt4 -> SunkenCrypt4,
+  (353,5094), now 173 m, dir 0.08,-1.00) the deck chord leaves the road by
+  ~8 m over the channel and 11 route points are flagged (the 12 outside-
+  span points are these plus the one Mistlands point). Fix: walk to dry
+  ground along the crossing LINE (extend `direction` outward, straight),
+  not along the path; the painted lead reaches the abutment as a spur.
+- Maps: `scripts/world-svg.py` now uses light biome tints and heavy dark
+  roads (c5c7234). The exports ARE SVGs (`validation-results/*.world.svg`,
+  6 MB, open in a browser and zoom); the PNGs Tys saw were thumbnails.
+  `--px` sets pixels per metre (default 0.1); `--zoom cx,cz,half` adds an
+  inset (use `--zoom=-590,360,300` for negative coordinates).
+
+### Elaboration on 6 (blueprint format)
+The harness spike reads `.blueprint` text as: `#Name:` / `#Creator:` /
+`#Description:` / `#Category:` headers, a `#SnapPoints` section of
+`x;y;z` lines, a `#Pieces` section of
+`prefab;category;posX;posY;posZ;rotX;rotY;rotZ;rotW;additionalInfo;scaleX;scaleY;scaleZ`.
+That column order is from memory of PlanBuild, not from a file it wrote.
+Before a player's blueprint can be loaded: export one real blueprint from
+PlanBuild in-game (BepInEx/config/PlanBuild/blueprints/*.blueprint), diff
+its header names and column order against the parser, and check the
+rotation convention (quaternion vs euler, and whether pieces are relative
+to the blueprint's first snap point or its centre). MoreWorldLocations
+does not use text blueprints at all (Unity prefabs with MOCK_ children),
+so it is not a reference for the format, only for spawning.
+
+### NAS state
+Gated: everything through e22acaa. Requested, results pending at hand-off:
+c689210 (swamp dry banks: expect hash same, swamp widths/pieces up),
+b28b317 (Mistlands ban: hash moves, routes may drop), bf90349 (must be
+byte-identical to b28b317). Baseline 73c6bec7; 0e9d7e1 onward held.
+Dumps at /Volume1/Docker/data/procedural-roads/world-dumps/<commit>/ (scp -O).
+
+### Next for whoever picks up
+1. Fix the swamp dry-bank chord (above), re-gate, re-regen Mac2.
+2. Finish the Mistlands rule at the crossing/plan level.
+3. Verify bf90349 on a reloaded world in-game.
+4. Get Tys's verdict on 5 (shoreline dips), then fix in the pathfinder.
+5. Update the Night Watch artifact (claude.ai/code/artifact/d0890132-...).
+
 ## MORNING REPORT 2026-09-03 (overnight session, 00:10-~02:00; Tys asleep)
 
 Everything below is on the fork. Bridge branch `pc/snap-point-composition`
