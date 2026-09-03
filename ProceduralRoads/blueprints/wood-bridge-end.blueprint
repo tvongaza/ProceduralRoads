@@ -6,5 +6,5 @@
 0;0;0
 0;0;2
 #Pieces
-wood_floor;Building;0;0;1;0;0;0;1;;1;1;1
-wood_floor;Building;0;-0.3;2;0;0;0;1;;1;1;1
+wood_floor;Building;0;0;1;0;0;0;1;kind=Deck;1;1;1
+wood_floor;Building;0;-0.3;2;0;0;0;1;kind=Abutment;1;1;1

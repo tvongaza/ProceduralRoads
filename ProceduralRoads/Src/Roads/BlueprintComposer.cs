@@ -157,6 +157,52 @@ public static class BlueprintComposer
         return grounded;
     }
 
+    // ---- weather ----
+
+    /// <summary>
+    /// The ruin pass for a composed kit, deterministic per (crossing, seed):
+    /// the fairway is cleared whole (sailing is sacred, the same keep-clear
+    /// BridgeLayout uses); the exposed parts — decks, beams, arches — fall
+    /// with a probability peaking at mid-span; pier columns fall later and
+    /// only whole (a column is one support); abutments stay; every survivor
+    /// is damaged into the ruin health range; and whatever lost its support
+    /// falls with it, so the plan stands under the support model whatever
+    /// the draws.
+    /// </summary>
+    public static List<BridgePiece> Weather(List<BridgePiece> pieces, RoadCrossing c, BridgeStyle style, WorldGenerator world, int seed,
+        float deckLoss = 0.6f, float postLoss = 0.15f)
+    {
+        System.Random rng = new(seed);
+        float fairwayMid = c.Along(c.FairwayCenter);
+        float fairwayHalf = c.FairwayWidth > 0f ? BridgeLayout.FairwayGap(c) * 0.5f + BridgeLayout.FairwayClearance : -1f;
+        float MidCloseness(BridgePiece p) => 1f - Mathf.Abs(c.Along(new Vector2(p.Position.x, p.Position.z)) - c.Width * 0.5f) / (c.Width * 0.5f);
+        bool InFairway(BridgePiece p) => Mathf.Abs(c.Along(new Vector2(p.Position.x, p.Position.z)) - fairwayMid) <= fairwayHalf;
+        (int, int) Column(BridgePiece p) => (Mathf.RoundToInt(p.Position.x * 10f), Mathf.RoundToInt(p.Position.z * 10f));
+
+        // One draw per post column, keyed by its footprint, in plan order.
+        Dictionary<(int, int), bool> columnFalls = new();
+        foreach (BridgePiece p in pieces)
+            if (p.Kind == BridgePieceKind.Piling && !columnFalls.ContainsKey(Column(p)))
+                columnFalls[Column(p)] = InFairway(p) || rng.NextDouble() < postLoss * MidCloseness(p);
+
+        List<BridgePiece> kept = new();
+        foreach (BridgePiece p in pieces)
+        {
+            bool falls = p.Kind == BridgePieceKind.Piling ? columnFalls[Column(p)]
+                : p.Kind == BridgePieceKind.Abutment ? false
+                : InFairway(p) || rng.NextDouble() < deckLoss * MidCloseness(p);
+            if (falls)
+                continue;
+            kept.Add(new BridgePiece
+            {
+                Kind = p.Kind, Prefab = p.Prefab, Position = p.Position,
+                YawDegrees = p.YawDegrees, PitchDegrees = p.PitchDegrees, RollDegrees = p.RollDegrees,
+                HealthFraction = RoadConstants.RuinHealthMin + (float)rng.NextDouble() * (RoadConstants.RuinHealthMax - RoadConstants.RuinHealthMin),
+            });
+        }
+        return SupportModel.DropUnsupported(kept, style, world);
+    }
+
     // ---- export ----
 
     /// <summary>
@@ -202,8 +248,7 @@ public static class BlueprintComposer
         int written = 0;
         foreach (RoadCrossing c in BridgeLayout.DistinctSites(crossings))
         {
-            BridgeStyle style = BridgeLayout.StyleFor(c.Biome);
-            List<BridgePiece> plan = BridgeLayout.Solve(c, world, worldSeed, style);
+            List<BridgePiece> plan = BridgePlanner.Plan(c, world, worldSeed);
             if (plan.Count == 0)
                 continue;
             string file = FileNameFor(c);

@@ -333,36 +333,12 @@ public class BlueprintTests
             Assert.Equal(1f, oneColumn[i - 1].Position.y - oneColumn[i].Position.y, 3);
     }
 
-    // ================= weather (harness model of a ruin pass on a kit) =================
+    // ================= weather =================
 
-    /// <summary>Seed-driven weathering of a composed kit, the spike's rule:
-    /// the exposed parts (decks, beams, arches) go first with a probability
-    /// peaking at mid-span, pier columns go later and only whole, survivors
-    /// are damaged. Columns are grounded by construction, so the result
-    /// stays support-safe whatever falls.</summary>
-    public static List<BridgePiece> Weather(List<BridgePiece> pieces, RoadCrossing c, BridgeStyle style, WorldGenerator world, int seed, float deckLoss = 0.6f, float postLoss = 0.15f)
-    {
-        var rng = new System.Random(seed);
-        float MidCloseness(BridgePiece p) => 1f - Mathf.Abs(Along(c, p) - c.Width * 0.5f) / (c.Width * 0.5f);
-        (int, int) Column(BridgePiece p) => (Mathf.RoundToInt(p.Position.x * 10f), Mathf.RoundToInt(p.Position.z * 10f));
-        var columnFalls = new Dictionary<(int, int), bool>();
-        foreach (BridgePiece p in pieces)
-            if (p.Kind == BridgePieceKind.Piling && !columnFalls.ContainsKey(Column(p)))
-                columnFalls[Column(p)] = rng.NextDouble() < postLoss * MidCloseness(p);
-        var kept = new List<BridgePiece>();
-        foreach (BridgePiece p in pieces)
-        {
-            bool falls = p.Kind == BridgePieceKind.Piling ? columnFalls[Column(p)]
-                : p.Kind == BridgePieceKind.Abutment ? false
-                : rng.NextDouble() < deckLoss * MidCloseness(p);
-            if (falls) continue;
-            kept.Add(new BridgePiece { Kind = p.Kind, Prefab = p.Prefab, Position = p.Position, YawDegrees = p.YawDegrees, PitchDegrees = p.PitchDegrees, RollDegrees = p.RollDegrees,
-                HealthFraction = RoadConstants.RuinHealthMin + (float)rng.NextDouble() * (RoadConstants.RuinHealthMax - RoadConstants.RuinHealthMin) });
-        }
-        // What lost its support falls with it (a plate whose pier and
-        // neighbours all went): the solver decides the ruin, never the game.
-        return SupportModelTests.DropUnsupported(kept, style, world);
-    }
+    /// <summary>Post columns by footprint (the fairway's are the deepest, so
+    /// segment counts would overstate what the fairway keep-clear removes).</summary>
+    private static int Columns(List<BridgePiece> plan) =>
+        plan.Where(p => p.Kind == BridgePieceKind.Piling).Select(p => (Mathf.RoundToInt(p.Position.x * 10f), Mathf.RoundToInt(p.Position.z * 10f))).Distinct().Count();
 
     [Theory]
     [MemberData(nameof(Kits))]
@@ -374,15 +350,15 @@ public class BlueprintTests
         var (start, span, end) = Kit(kit);
         var full = BlueprintComposer.GroundPosts(BlueprintComposer.Tile(c, world, style, start, span, end), world, style);
         int decksBefore = full.Count(p => p.Kind == BridgePieceKind.Deck);
-        int postsBefore = full.Count(p => p.Kind == BridgePieceKind.Piling);
+        int columnsBefore = Columns(full);
         for (int seed = 1; seed <= 10; seed++)
         {
-            var ruin = Weather(full, c, style, world, seed);
+            var ruin = BlueprintComposer.Weather(full, c, style, world, seed);
             int decks = ruin.Count(p => p.Kind == BridgePieceKind.Deck);
-            int posts = ruin.Count(p => p.Kind == BridgePieceKind.Piling);
+            int columns = Columns(ruin);
             Assert.True(decks < decksBefore, "some deck must fall");
-            Assert.True((float)decks / decksBefore < (float)posts / postsBefore, "decks fall before posts");
-            var again = Weather(full, c, style, world, seed);
+            Assert.True((float)decks / decksBefore < (float)columns / columnsBefore, $"decks fall before post columns (seed {seed}: {decks}/{decksBefore} decks, {columns}/{columnsBefore} columns)");
+            var again = BlueprintComposer.Weather(full, c, style, world, seed);
             Assert.Equal(ruin.Select(p => (p.Prefab, p.Position, p.HealthFraction)), again.Select(p => (p.Prefab, p.Position, p.HealthFraction)));
             SupportModelTests.AssertGrounded(ruin, style, world, $"{kit} weathered seed {seed}");
         }
@@ -395,6 +371,99 @@ public class BlueprintTests
         Assert.NotEmpty(BridgeLayout.Solve(c, world, 7, BridgeLayout.StyleFor(c.Biome)));
         c.Biome = Heightmap.Biome.Mistlands;
         Assert.Empty(BridgeLayout.Solve(c, world, 7, BridgeLayout.StyleFor(c.Biome)));
+    }
+
+    [Fact]
+    public void WeatherClearsTheFairwayLikeTheSolver()
+    {
+        var (c, world) = Crossing();
+        Assert.True(c.FairwayWidth > 0f, "the wide river is sailable");
+        var (start, span, end) = Kit("stone-arch");
+        var full = BlueprintComposer.GroundPosts(BlueprintComposer.Tile(c, world, BridgeStyle.MountainStone, start, span, end), world, BridgeStyle.MountainStone);
+        float mid = c.Along(c.FairwayCenter);
+        float half = BridgeLayout.FairwayGap(c) * 0.5f + BridgeLayout.FairwayClearance;
+        Assert.Contains(full, p => Mathf.Abs(Along(c, p) - mid) <= half); // the kit did build there
+        for (int seed = 1; seed <= 5; seed++)
+        {
+            var ruin = BlueprintComposer.Weather(full, c, BridgeStyle.MountainStone, world, seed);
+            Assert.DoesNotContain(ruin, p => Mathf.Abs(Along(c, p) - mid) <= half);
+        }
+    }
+
+    // ================= planner =================
+
+    [Theory]
+    [InlineData("MeadowsWood")]
+    [InlineData("MountainStone")]
+    public void PlannerDefaultIsTheSolverPieceForPiece(string styleName)
+    {
+        var (c, world) = Crossing();
+        c.Biome = styleName == "MountainStone" ? Heightmap.Biome.Mountain : Heightmap.Biome.Meadows;
+        var solved = BridgeLayout.Solve(c, world, 11, BridgeLayout.StyleFor(c.Biome));
+        var planned = BridgePlanner.Plan(c, world, 11, BridgeKit.Solver);
+        Assert.Equal(solved.Select(p => (p.Prefab, p.Position, p.HealthFraction)), planned.Select(p => (p.Prefab, p.Position, p.HealthFraction)));
+        Assert.Equal(BridgeKit.Solver, BridgePlanner.ConfiguredKit); // the shipped default
+    }
+
+    [Theory]
+    [InlineData(BridgeKit.Wood, "wood_pole2")]
+    [InlineData(BridgeKit.StoneArch, "stone_arch")]
+    [InlineData(BridgeKit.Hybrid, "wood_beam")]
+    public void PlannerComposesGroundsAndWeathersTheKit(BridgeKit kit, string signaturePrefab)
+    {
+        var (c, world) = Crossing();
+        var plan = BridgePlanner.Plan(c, world, 11, kit);
+        Assert.Contains(plan, p => p.Prefab == signaturePrefab);
+        Assert.Contains(plan, p => p.Kind == BridgePieceKind.Abutment);
+        Assert.All(plan, p => Assert.InRange(p.HealthFraction, RoadConstants.RuinHealthMin - 0.001f, RoadConstants.RuinHealthMax + 0.001f));
+        SupportModelTests.AssertGrounded(plan, BridgeKits.StyleOf(kit), world, kit + " planned");
+        var again = BridgePlanner.Plan(c, world, 11, kit);
+        Assert.Equal(plan.Select(p => (p.Prefab, p.Position, p.HealthFraction)), again.Select(p => (p.Prefab, p.Position, p.HealthFraction)));
+        Assert.NotEqual(plan.Select(p => p.HealthFraction), BridgePlanner.Plan(c, world, 12, kit).Select(p => p.HealthFraction));
+    }
+
+    [Fact]
+    public void PlannerByBiomeFollowsTheSolverStyleMap()
+    {
+        var (c, world) = Crossing();
+        c.Biome = Heightmap.Biome.Meadows;
+        Assert.Contains(BridgePlanner.Plan(c, world, 11, BridgeKit.ByBiome), p => p.Prefab == "wood_pole2");
+        c.Biome = Heightmap.Biome.Mountain;
+        Assert.Contains(BridgePlanner.Plan(c, world, 11, BridgeKit.ByBiome), p => p.Prefab == "stone_arch");
+        c.Biome = Heightmap.Biome.Mistlands;
+        Assert.Empty(BridgePlanner.Plan(c, world, 11, BridgeKit.ByBiome));
+        // Fords go to the solver whatever the kit.
+        c.Biome = Heightmap.Biome.Meadows;
+        c.Kind = CrossingKind.Ford; c.Style = FordStyle.Wade;
+        Assert.Empty(BridgePlanner.Plan(c, world, 11, BridgeKit.StoneArch));
+    }
+
+    [Fact]
+    public void AKitUnitCanBeReplacedFromTheOverrideDirectory()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "proads-kits-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var span = Load("wood-bridge-span.blueprint");
+            span.Description = "a player's plank";
+            span.Pieces.Add(new BlueprintPiece { Prefab = "wood_pole2", LocalPosition = new Vector3(0f, -1.2f, 1f), Data = "kind=Piling" });
+            File.WriteAllText(Path.Combine(dir, "wood-bridge-span.blueprint"), span.Write());
+            BridgeKits.OverrideDirectory = dir;
+            BridgeKits.ClearCache();
+            var (start, loadedSpan, end) = BridgeKits.Load(BridgeKit.Wood);
+            Assert.Equal("a player's plank", loadedSpan.Description);
+            Assert.Equal(5, loadedSpan.Pieces.Count);
+            Assert.Equal(2f, loadedSpan.Length);
+            Assert.Equal("ProceduralRoads wood bridge START", start.Name); // the others still come from the mod
+            Assert.Equal("ProceduralRoads wood bridge END", end.Name);
+        }
+        finally
+        {
+            BridgeKits.OverrideDirectory = null;
+            BridgeKits.ClearCache();
+            Directory.Delete(dir, true);
+        }
     }
 
     // ================= export =================
@@ -470,7 +539,7 @@ public class BlueprintTests
         var style = StyleNamed(styleName);
         var (start, span, end) = Kit(kit);
         var full = BlueprintComposer.GroundPosts(BlueprintComposer.Tile(c, world, style, start, span, end), world, style);
-        var ruin = Weather(full, c, style, world, 3);
+        var ruin = BlueprintComposer.Weather(full, c, style, world, 3);
         SideViewExhibit.Write($"kit-{kit}-side.svg", c, ruin, world, style, $"{kit} kit composed from blueprints, weathered (seed 3)");
         string dir = Path.Combine(SideViewExhibit.OutputDir, "blueprints");
         Directory.CreateDirectory(dir);

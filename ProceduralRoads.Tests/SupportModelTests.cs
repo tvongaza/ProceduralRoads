@@ -19,78 +19,10 @@ namespace ProceduralRoads.Tests;
 /// </summary>
 public class SupportModelTests
 {
-    // ---- piece extents: vertical interval relative to Position.y, and a
-    // horizontal reach from the origin, per kind and kit ----
-
-    private static (float bottom, float top, float reach) Extent(BridgePiece p, BridgeStyle style)
-    {
-        float half = style.PilingSegment * 0.5f;
-        float deckThickness = style.DeckTopOffset > 0f ? style.DeckTopOffset * 2f : 0.1f; // stone slab vs wood plate
-        return p.Kind switch
-        {
-            BridgePieceKind.Piling => (-half, half, style.PilingAcross ? 1f : 0.25f),
-            BridgePieceKind.Beam => (-0.15f, 0.15f, 1f),
-            BridgePieceKind.Deck => (style.DeckTopOffset - deckThickness, style.DeckTopOffset, 1f),
-            BridgePieceKind.Abutment => (style.DeckTopOffset - deckThickness, style.DeckTopOffset, 1f),
-            BridgePieceKind.Stair => (0f, 1f, 1f),      // step: 2 m run, 1 m rise, origin at the foot
-            BridgePieceKind.Debris => (-0.5f, 0.5f, 1f),
-            BridgePieceKind.Arch => (-0.5f, 0.5f, 1f),
-            _ => (-0.5f, 0.5f, 1f),
-        };
-    }
-
-    private const float GroundTolerance = 0.15f;
-    private const float ContactTolerance = 0.3f;
-
-    /// <summary>Indices of pieces the model cannot support: neither buried
-    /// nor connected through touching pieces to one that is.</summary>
-    private static List<int> Floaters(List<BridgePiece> plan, BridgeStyle style, WorldGenerator world)
-    {
-        int n = plan.Count;
-        var ext = plan.Select(p => Extent(p, style)).ToList();
-        var supported = new bool[n];
-        var queue = new Queue<int>();
-
-        for (int i = 0; i < n; i++)
-        {
-            Vector3 pos = plan[i].Position;
-            float ground = BiomeBlendedHeight.GetBlendedHeight(pos.x, pos.z, world);
-            if (pos.y + ext[i].bottom <= ground + GroundTolerance)
-            {
-                supported[i] = true;
-                queue.Enqueue(i);
-            }
-        }
-
-        while (queue.Count > 0)
-        {
-            int a = queue.Dequeue();
-            for (int b = 0; b < n; b++)
-            {
-                if (supported[b] || !Touch(plan[a], ext[a], plan[b], ext[b]))
-                    continue;
-                supported[b] = true;
-                queue.Enqueue(b);
-            }
-        }
-
-        return Enumerable.Range(0, n).Where(i => !supported[i]).ToList();
-    }
-
-    /// <summary>Two pieces touch when their vertical intervals overlap (or
-    /// meet within tolerance) and their origins lie within reach of each
-    /// other horizontally — resting, hanging, side-snapped or interpenetrating
-    /// all count, as they do for vanilla colliders.</summary>
-    private static bool Touch(BridgePiece a, (float bottom, float top, float reach) ea,
-                              BridgePiece b, (float bottom, float top, float reach) eb)
-    {
-        float dx = a.Position.x - b.Position.x, dz = a.Position.z - b.Position.z;
-        if (dx * dx + dz * dz > (ea.reach + eb.reach) * (ea.reach + eb.reach))
-            return false;
-        float aBottom = a.Position.y + ea.bottom, aTop = a.Position.y + ea.top;
-        float bBottom = b.Position.y + eb.bottom, bTop = b.Position.y + eb.top;
-        return aBottom <= bTop + ContactTolerance && aTop >= bBottom - ContactTolerance;
-    }
+    // The model itself lives in the mod (Src/Roads/SupportModel.cs) so the
+    // blueprint weathering pass can use it in-game; the harness asserts with it.
+    private static List<int> Floaters(List<BridgePiece> plan, BridgeStyle style, WorldGenerator world) =>
+        SupportModel.Floaters(plan, style, world);
 
     private static string Describe(List<BridgePiece> plan, List<int> floaters, WorldGenerator world) =>
         string.Join("; ", floaters.Take(6).Select(i =>
@@ -99,11 +31,8 @@ public class SupportModelTests
     /// <summary>The plan without the pieces the model cannot support. One
     /// pass is enough: support is a closure from the ground, so removing
     /// what lies outside it changes nothing inside it.</summary>
-    internal static List<BridgePiece> DropUnsupported(List<BridgePiece> plan, BridgeStyle style, WorldGenerator world)
-    {
-        var floaters = new HashSet<int>(Floaters(plan, style, world));
-        return plan.Where((_, i) => !floaters.Contains(i)).ToList();
-    }
+    internal static List<BridgePiece> DropUnsupported(List<BridgePiece> plan, BridgeStyle style, WorldGenerator world) =>
+        SupportModel.DropUnsupported(plan, style, world);
 
     internal static void AssertGrounded(List<BridgePiece> plan, BridgeStyle style, WorldGenerator world, string site)
     {

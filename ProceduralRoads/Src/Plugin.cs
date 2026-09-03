@@ -52,6 +52,7 @@ namespace ProceduralRoads
         public static ConfigEntry<WetTerminusMode> WetTerminus = null!;
         public static ConfigEntry<float> ReuseDiscount = null!;
         public static ConfigEntry<float> PierPersistence = null!;
+        public static ConfigEntry<BridgeKit> Kit = null!;
         public static ConfigEntry<float> FordWadeWeight = null!;
         public static ConfigEntry<float> FordRaiseWeight = null!;
         public static ConfigEntry<float> FordSpanWeight = null!;
@@ -133,6 +134,12 @@ namespace ProceduralRoads
                     "0 = each station is one coin flip, piers and deck fall together, so long spans read as jetties; " +
                     "0.85 (default) = the piers march across the river and the deck is what collapsed.",
                     new AcceptableValueRange<float>(0f, 1f)));
+
+            Kit = Config.Bind("Bridges", "Kit", BridgeKit.Solver,
+                "Where a bridge's pieces come from. Solver (default): the station solver. Wood / StoneArch / Hybrid: that blueprint kit " +
+                "(START, SPAN, END units in PlanBuild .blueprint format, composed across the crossing and weathered); ByBiome: stone arches where " +
+                "the solver builds stone, wood elsewhere. A kit unit can be replaced by a file of the same name in BepInEx/config/ProceduralRoads/blueprints " +
+                "(save one with valheimCreative or PlanBuild). Fords always use the solver.");
 
             FordWadeWeight = Config.Bind("Fords", "WadeWeight", RoadConstants.DefaultFordStyleWeight,
                 new ConfigDescription("Relative odds that a knee-deep crossing is WADED: the road is painted through the shallows at ground height " +
@@ -229,6 +236,8 @@ namespace ProceduralRoads
             RoadPathfinder.ConfiguredRoadReuseDiscount = ReuseDiscount.Value;
             RoadNetworkGenerator.WetTerminus = WetTerminus.Value;
             BridgeLayout.ConfiguredPierPersistence = PierPersistence.Value;
+            BridgePlanner.ConfiguredKit = Kit.Value;
+            BridgeKits.OverrideDirectory = System.IO.Path.Combine(BepInEx.Paths.ConfigPath, "ProceduralRoads", "blueprints");
             RoadCrossingDetector.SetFordStyleWeights(FordWadeWeight.Value, FordRaiseWeight.Value, FordSpanWeight.Value);
             // CustomLocations is parsed at generation time to preserve API registrations
 

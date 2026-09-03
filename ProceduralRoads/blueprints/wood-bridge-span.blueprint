@@ -6,7 +6,7 @@
 0;0;0
 0;0;2
 #Pieces
-wood_floor;Building;0;0;1;0;0;0;1;;1;1;1
-wood_pole2;Building;-0.75;-1.2;2;0;0;0;1;;1;1;1
-wood_pole2;Building;0.75;-1.2;2;0;0;0;1;;1;1;1
-wood_beam;Building;0;-0.13;2;0;0;0;1;;1;1;1
+wood_floor;Building;0;0;1;0;0;0;1;kind=Deck;1;1;1
+wood_pole2;Building;-0.75;-1.2;2;0;0;0;1;kind=Piling;1;1;1
+wood_pole2;Building;0.75;-1.2;2;0;0;0;1;kind=Piling;1;1;1
+wood_beam;Building;0;-0.13;2;0;0;0;1;kind=Beam;1;1;1

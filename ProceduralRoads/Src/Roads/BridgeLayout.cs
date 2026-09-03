@@ -603,7 +603,7 @@ public static class BridgeLayout
 
     private static float NextFloat(System.Random rng) => (float)rng.NextDouble();
 
-    private static int StableSeed(RoadCrossing crossing)
+    public static int StableSeed(RoadCrossing crossing)
     {
         unchecked
         {

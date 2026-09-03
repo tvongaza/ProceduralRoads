@@ -34,6 +34,8 @@
     <ItemGroup>
         <None Include="App.config"/>
         <None Include="assets/**" CopyToOutputDirectory="PreserveNewest"/>
+        <!-- Bridge blueprint kits (PlanBuild-format text), read by BridgeKits; a file of the same name in BepInEx/config/ProceduralRoads/blueprints overrides. -->
+        <EmbeddedResource Include="blueprints/*.blueprint" LogicalName="blueprints/%(Filename)%(Extension)"/>
         <None Include="icons/**"/>
         <None Include="Thunderstore/**"/>
         <None Include="*.md"/>

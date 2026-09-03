@@ -41,6 +41,10 @@
                  Condition="Exists('../ProceduralRoads/Src/Roads/RoadBlueprint.cs')"/>
         <Compile Include="../ProceduralRoads/Src/Roads/BlueprintComposer.cs" Link="ModSrc/BlueprintComposer.cs"
                  Condition="Exists('../ProceduralRoads/Src/Roads/BlueprintComposer.cs')"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/SupportModel.cs" Link="ModSrc/SupportModel.cs"
+                 Condition="Exists('../ProceduralRoads/Src/Roads/SupportModel.cs')"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/BridgePlanner.cs" Link="ModSrc/BridgePlanner.cs"
+                 Condition="Exists('../ProceduralRoads/Src/Roads/BridgePlanner.cs')"/>
         <Compile Remove="BlueprintTests.cs"
                  Condition="!Exists('../ProceduralRoads/Src/Roads/BlueprintComposer.cs')"/>
         <Compile Remove="BridgeLayoutTests.cs"
@@ -64,6 +68,7 @@
     </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="blueprints/*.blueprint" LogicalName="blueprints/%(Filename)%(Extension)"/>
+    <!-- The bridge kits ship inside the mod; the harness embeds the same files under the same names. -->
+    <EmbeddedResource Include="../ProceduralRoads/blueprints/*.blueprint" LogicalName="blueprints/%(Filename)%(Extension)"/>
   </ItemGroup>
 </Project>
