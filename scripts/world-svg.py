@@ -14,6 +14,7 @@ import argparse
 import csv
 import math
 import sys
+from xml.sax.saxutils import escape
 from collections import defaultdict
 
 SEA = 30.0
@@ -93,7 +94,7 @@ class View:
         return self.x0 - pad <= x <= self.x1 + pad and self.z0 - pad <= z <= self.z1 + pad
 
 
-def render(view, xs, zs, cells, locations, routes, contour, title):
+def render(view, xs, zs, cells, locations, routes, contour, title, min_radius):
     out = []
     step = xs[1] - xs[0]
     out.append(f'<g>')
@@ -156,14 +157,14 @@ def render(view, xs, zs, cells, locations, routes, contour, title):
                        f'stroke="{color}" stroke-width="{width}" stroke-linecap="round"/>')
     # locations
     for name, x, z, r in locations:
-        if not view.inside(x, z, r):
+        if r < min_radius or not view.inside(x, z, r):
             continue
         out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="{f(r * view.px)}" fill="none" '
                    f'stroke="#7a2ea0" stroke-width="0.6" stroke-opacity="0.5"/>')
         out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="2.2" fill="#7a2ea0"/>')
         if any(k in name for k in LABEL_KEYS):
-            out.append(f'<text x="{f(view.X(x) + 4)}" y="{f(view.Y(z) - 3)}" font-size="9" fill="#3b1050">{name}</text>')
-    out.append(f'<text x="6" y="14" font-size="12" fill="#111">{title}</text>')
+            out.append(f'<text x="{f(view.X(x) + 4)}" y="{f(view.Y(z) - 3)}" font-size="9" fill="#3b1050">{escape(name)}</text>')
+    out.append(f'<text x="6" y="14" font-size="12" fill="#111">{escape(title)}</text>')
     out.append('</g>')
     return '\n'.join(out)
 
@@ -177,6 +178,8 @@ def main():
     ap.add_argument('--zoom', help='cx,cz,half (metres): inset window rendered beside the world')
     ap.add_argument('--contour', type=int, default=10)
     ap.add_argument('--px', type=float, default=0.1, help='pixels per metre for the world view')
+    ap.add_argument('--min-radius', type=float, default=10.0,
+                    help='hide locations whose approach radius is smaller (runestones, spawners)')
     a = ap.parse_args()
 
     xs, zs, cells = read_world(a.world)
@@ -203,18 +206,21 @@ def main():
     n_routes = len(routes)
     stubs = sum(1 for pts in routes.values()
                 if sum(math.dist(pts[i][:2], pts[i + 1][:2]) for i in range(len(pts) - 1)) < 40)
-    title = f'{a.world.split("/")[-1]} — {len(locations)} locations, {n_routes} routes ({stubs} stubs < 40 m), contours every {a.contour} m, 30 m coast'
-    parts = [render(world_view, xs, zs, cells, locations, routes, a.contour, title)]
+    shown = sum(1 for l in locations if l[3] >= a.min_radius)
+    title = (f'{a.world.split("/")[-1]}: {len(locations)} locations ({shown} with radius >= {a.min_radius:.0f} m shown), '
+             f'{n_routes} routes ({stubs} stubs < 40 m), contours every {a.contour} m, 30 m coast heavy; '
+             f'grey road, orange over deep water, teal over knee-deep, red stub')
+    parts = [render(world_view, xs, zs, cells, locations, routes, a.contour, title, a.min_radius)]
     total_w, total_h = world_view.w, world_view.h
     if a.zoom:
         cx, cz, half = (float(v) for v in a.zoom.split(','))
         zpx = min(2.0, 700 / (2 * half))
         zoom_view = View(cx - half, cz - half, cx + half, cz + half, zpx)
-        inner = render(zoom_view, xs, zs, cells, locations, routes, a.contour, f'zoom ({cx:.0f},{cz:.0f}) ±{half:.0f} m')
+        inner = render(zoom_view, xs, zs, cells, locations, routes, a.contour, f'zoom ({cx:.0f},{cz:.0f}) +-{half:.0f} m', a.min_radius)
         parts.append(f'<g transform="translate({f(world_view.w + 20)},0)">{inner}</g>')
         total_w += 20 + zoom_view.w
         total_h = max(total_h, zoom_view.h)
-    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{f(total_w)}" height="{f(total_h)}" '
+    svg = ('<?xml version="1.0" encoding="UTF-8"?>\n' + f'<svg xmlns="http://www.w3.org/2000/svg" width="{f(total_w)}" height="{f(total_h)}" '
            f'viewBox="0 0 {f(total_w)} {f(total_h)}" font-family="sans-serif">\n' + '\n'.join(parts) + '\n</svg>\n')
     out = a.out or a.world.replace('.world.csv', '.world.svg')
     with open(out, 'w') as fh:
