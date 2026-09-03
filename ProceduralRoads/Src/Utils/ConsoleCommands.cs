@@ -130,6 +130,23 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_mist",
+            "Photography helper: switch every loaded Mistlands mist volume off (or back on): road_mist off|on. Volumes in zones loaded later need the command again.",
+            (args) =>
+            {
+                bool on = args.Length >= 2 && args[1].Equals("on", System.StringComparison.OrdinalIgnoreCase);
+                Mister[] misters = Object.FindObjectsOfType<Mister>(true);
+                foreach (Mister m in misters)
+                    m.gameObject.SetActive(on);
+                args.Context.AddString($"OK: {misters.Length} mist volume(s) {(on ? "on" : "off")}");
+            },
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_zone_ready",
             "Is the world in around a point? Every zone within the radius loaded, every planned ruin zone there spawned, and its pieces instantiated: " +
             "road_zone_ready <x> <z> [radius=32]. Validation scripts poll this after a teleport instead of sleeping a fixed time.",

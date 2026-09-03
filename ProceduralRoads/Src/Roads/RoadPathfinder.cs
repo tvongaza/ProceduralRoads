@@ -241,8 +241,13 @@ public class RoadPathfinder
         float h2 = toCell.Height;
         float slope = Mathf.Abs(h2 - h1) / dist;
 
+        // River core blocks a road only where it is WATER. A river's core
+        // band also covers dry banks and dry valley floors, and treating
+        // those as impassable made the pathfinder jump them: RoadTestMac2
+        // c11 was a 94 m "bridge" along a shore a road could walk (Tys,
+        // 2 Sep 2026). Water itself is refused by GetWaterCost below.
         float riverWeight = toCell.RiverWeight;
-        if (riverWeight > RoadConstants.RiverImpassableThreshold)
+        if (riverWeight > RoadConstants.RiverImpassableThreshold && IsUnderWaterline(to))
             return ImpassableCost;
 
         // Along-path grades above the traversable cap are unroadable; A* is
@@ -303,7 +308,10 @@ public class RoadPathfinder
                 : TerrainVariancePenalty;
         }
 
-        if (riverWeight > 0f)
+        // The river penalty prices the wet margin (flood-prone ground within
+        // a metre of the road floor); dry ground inside the river band is
+        // ordinary ground and pays only its slope and roughness.
+        if (riverWeight > 0f && h2 < RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance + 1f)
             cost += RiverPenalty * riverWeight;
 
         return cost;
@@ -328,9 +336,13 @@ public class RoadPathfinder
         return 0f;
     }
 
+    /// <summary>River core under the waterline: what a crossing spans.
+    /// Dry ground inside the core band is ordinary ground.</summary>
     private bool IsRiverBlocked(Vector2i grid)
     {
-        return GetCellSample(grid).RiverWeight > RoadConstants.RiverImpassableThreshold;
+        CellSample cell = GetCellSample(grid);
+        return cell.RiverWeight > RoadConstants.RiverImpassableThreshold
+            && cell.Height < RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
     }
 
     private bool IsUnderWaterline(Vector2i grid)
@@ -342,10 +354,8 @@ public class RoadPathfinder
     {
         Vector2 world = GridToWorld(grid);
 
-        m_worldGen.GetRiverWeight(world.x, world.y, out float riverWeight, out _);
-        if (riverWeight > RoadConstants.RiverImpassableThreshold)
-            return false;
-
+        // Any dry ground lands a crossing, river band or not: the deck
+        // stops at the first dry cell instead of jumping the dry bank too.
         return BiomeBlendedHeight.GetBlendedHeight(world.x, world.y, m_worldGen)
             >= RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
     }
