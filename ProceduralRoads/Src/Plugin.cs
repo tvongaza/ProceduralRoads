@@ -57,6 +57,7 @@ namespace ProceduralRoads
         public static ConfigEntry<bool> DebugValidation = null!;
         public static ConfigEntry<bool> ForceRegenerate = null!;
         public static ConfigEntry<bool> SpawnRuinsHeadless = null!;
+        public static ConfigEntry<bool> WorldDump = null!;
 
         private float m_nextDeferredRetry;
 
@@ -150,6 +151,11 @@ namespace ProceduralRoads
                 "Run automatic road-network validation after generation and write " +
                 "ProceduralRoads.selftest.json plus ProceduralRoads.routes.csv to the config folder. " +
                 "Also available on demand via the road_selftest console command.");
+
+            WorldDump = Config.Bind("Debug", "WorldDump", false,
+                "After the self-test, dump the world grid (height, biome, river at 50 m) and every placed location " +
+                "to ProceduralRoads.world.csv / ProceduralRoads.locations.csv in the config folder (scripts/world-svg.py renders them). " +
+                "Also available on demand as road_world_dump.");
 
             SpawnRuinsHeadless = Config.Bind("Debug", "SpawnRuinsHeadless", false,
                 "Spawn every planned ruin piece as ZDOs immediately after road generation, " +

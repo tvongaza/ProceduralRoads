@@ -57,6 +57,8 @@ public static class RoadValidationRunner
         {
             File.WriteAllText(ReportPath, RoadNetworkValidator.ToJson(report));
             File.WriteAllText(RoutesCsvPath, RoadNetworkValidator.ToRoutesCsv(routes));
+            if (ProceduralRoadsPlugin.WorldDump != null && ProceduralRoadsPlugin.WorldDump.Value)
+                WorldDump.Write();
             Log.LogInfo($"[SELFTEST] Report: {ReportPath}");
             Log.LogInfo($"[SELFTEST] Routes CSV: {RoutesCsvPath}");
         }

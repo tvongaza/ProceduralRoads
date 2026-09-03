@@ -241,6 +241,24 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_world_dump",
+            "Dump the world grid (height, biome, river) over +-10 km and every placed location to the config folder for scripts/world-svg.py: road_world_dump [step=50]",
+            (args) =>
+            {
+                int step = WorldDump.DefaultStep;
+                if (args.Length >= 2)
+                    int.TryParse(args[1], out step);
+                int n = WorldDump.Write(step);
+                args.Context.AddString(n < 0 ? "World dump unavailable (no world loaded)"
+                    : $"OK: {n} samples -> {WorldDump.WorldCsvPath} + {WorldDump.LocationsCsvPath}");
+            },
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_selftest",
             "Validate the generated road network (dry land, ford lengths, slopes, connectivity) and write a JSON report + routes CSV to the config folder.",
             (args) => RunSelfTest(args),

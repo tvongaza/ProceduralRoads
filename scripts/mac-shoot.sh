@@ -100,6 +100,10 @@ sleep 2
 sleep 3
 cp "$VALHEIM/BepInEx/config/ProceduralRoads.selftest.json" "$REPO_DIR/validation-results/$WORLD.selftest.json"
 cp "$VALHEIM/BepInEx/config/ProceduralRoads.routes.csv" "$REPO_DIR/validation-results/$WORLD.routes.csv"
+"$CLI" road_world_dump > /dev/null 2>&1 || true
+sleep 4
+cp "$VALHEIM/BepInEx/config/ProceduralRoads.world.csv" "$REPO_DIR/validation-results/$WORLD.world.csv" 2>/dev/null || true
+cp "$VALHEIM/BepInEx/config/ProceduralRoads.locations.csv" "$REPO_DIR/validation-results/$WORLD.locations.csv" 2>/dev/null || true
 grep -E '"passed"|"routeCount"|"networkComponents"|"fordCount"|"wetPoints"|"wetPointsOutsideSpans"|"pointsHash"' "$REPO_DIR/validation-results/$WORLD.selftest.json"
 
 # ---- 5. pick the sites ----
