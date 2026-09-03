@@ -54,6 +54,7 @@ namespace ProceduralRoads
         public static ConfigEntry<float> FordWadeWeight = null!;
         public static ConfigEntry<float> FordRaiseWeight = null!;
         public static ConfigEntry<float> FordSpanWeight = null!;
+        public static ConfigEntry<bool> StairsEnabled = null!;
         public static ConfigEntry<bool> DebugValidation = null!;
         public static ConfigEntry<bool> ForceRegenerate = null!;
         public static ConfigEntry<bool> SpawnRuinsHeadless = null!;
@@ -141,6 +142,10 @@ namespace ProceduralRoads
                     "(offered only where the crossing is at least 6 m wide).",
                     new AcceptableValueRange<float>(0f, 100f)));
 
+            StairsEnabled = Config.Bind("Stairs", "Enabled", false,
+                "Turn steep road sections into staircases with stair pieces. Off while the stair grammar is reworked " +
+                "(snapping, ground clipping, landings on stilts); roads still climb, just without steps.");
+
             ForceRegenerate = Config.Bind("Debug", "ForceRegenerate", false,
                 "Ignore roads persisted in the world and regenerate the network from " +
                 "scratch on every load. For validation/testing against fixture worlds " +
@@ -210,6 +215,7 @@ namespace ProceduralRoads
             RoadPathfinder.ConfiguredBridgeCostFixed = BridgeCostFixed.Value;
             RoadPathfinder.ConfiguredBridgeCostPerMeter = BridgeCostPerMeter.Value;
             RoadNetworkGenerator.WetTerminus = WetTerminus.Value;
+            RoadNetworkGenerator.StairsEnabled = StairsEnabled.Value;
             BridgeLayout.ConfiguredPierPersistence = PierPersistence.Value;
             RoadCrossingDetector.SetFordStyleWeights(FordWadeWeight.Value, FordRaiseWeight.Value, FordSpanWeight.Value);
             // CustomLocations is parsed at generation time to preserve API registrations
@@ -221,7 +227,7 @@ namespace ProceduralRoads
                 $"[CONFIG] RoadWidth={RoadWidth.Value} IslandRoadPercentage={IslandRoadPercentage.Value} " +
                 $"PathfindingMaxIterations={PathfindingMaxIterations.Value} MaxLocationsPerIsland={MaxLocationsPerIsland.Value} " +
                 $"BridgeCostFixed={BridgeCostFixed.Value} BridgeCostPerMeter={BridgeCostPerMeter.Value} " +
-                $"WetTerminus={WetTerminus.Value} PierPersistence={PierPersistence.Value} " +
+                $"WetTerminus={WetTerminus.Value} PierPersistence={PierPersistence.Value} StairsEnabled={StairsEnabled.Value} " +
                 $"FordWeights(wade/raise/span)={FordWadeWeight.Value}/{FordRaiseWeight.Value}/{FordSpanWeight.Value}");
         }
 

@@ -190,6 +190,12 @@ public static class RoadNetworkGenerator
     /// <summary>Locations the current generation connected (debug rings);
     /// empty after a load from ZDO, which stores routes only.</summary>
     public static IReadOnlyList<(string name, Vector3 position, float radius)> GetRoadLocations() => m_roadLocations;
+    /// <summary>Stair runs (steep sections become staircases) are their own
+    /// line of work on branch pc/stairs; the bridge work keeps them off so
+    /// stairs cannot bend routes or pieces around crossings (Tys, 2 Sep 2026).
+    /// Config "Stairs/Enabled".</summary>
+    public static bool StairsEnabled = false;
+
     /// <summary>Player-facing lever (config "Roads/WetTerminus"): what to do
     /// with a route whose end on its location's radius circle is in water.</summary>
     public static WetTerminusMode WetTerminus = WetTerminusMode.Reroute;
@@ -457,7 +463,9 @@ public static class RoadNetworkGenerator
         // and steep sections become staircases with untouched ground: paint
         // and level only the ordinary road spans between those exclusions.
         List<RoadCrossing> crossings = RoadCrossingDetector.Detect(path, WorldGenerator.instance);
-        List<StairRun> stairRuns = StairRunDetector.Detect(path, WorldGenerator.instance);
+        List<StairRun> stairRuns = StairsEnabled
+            ? StairRunDetector.Detect(path, WorldGenerator.instance)
+            : new List<StairRun>();
 
         // A stair run that ends at a crossing's dry point descends the rest of
         // the way to the abutment at the water's edge, so stairs meet the deck

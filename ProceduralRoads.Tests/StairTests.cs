@@ -108,6 +108,8 @@ public class StairTests
     [Fact]
     public void GenerateRoadRecordsStairRunsAndSkipsTerrainThere()
     {
+        RoadNetworkGenerator.StairsEnabled = true; // stairs are off by default on the bridge branch
+
         var world = new SyntheticWorld
         {
             HasRiver = false,
@@ -145,7 +147,7 @@ public class StairTests
             }
         }
         finally
-        {
+        { RoadNetworkGenerator.StairsEnabled = false;
             typeof(RoadNetworkGenerator)
                 .GetField("m_pathfinder", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
                 .SetValue(null, null);
