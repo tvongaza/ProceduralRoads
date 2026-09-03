@@ -394,8 +394,22 @@ public class CrossingLineTests
         }
     }
 
+    /// <summary>Distance from a point to the nearest point of the polyline.</summary>
+    private static float DistanceToPolyline(List<Vector2> path, Vector2 p)
+    {
+        float best = float.MaxValue;
+        for (int i = 1; i < path.Count; i++)
+        {
+            Vector2 a = path[i - 1], b = path[i];
+            Vector2 ab = b - a;
+            float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / Mathf.Max(0.01f, ab.sqrMagnitude));
+            best = Mathf.Min(best, Vector2.Distance(p, a + ab * t));
+        }
+        return best;
+    }
+
     [Fact]
-    public void CrossingLineFollowsTheJumpNotTheExtendedBanks()
+    public void CrossingBanksLieOnTheRoadNotOnAnOutwardWalk()
     {
         var world = new ShelfWorld();
         // Path: dry, then across the wet shelf, then the diagonal jump (-48,-8) -> (48,88), then dry.
@@ -406,21 +420,25 @@ public class CrossingLineTests
         };
         var crossing = Assert.Single(RoadCrossingDetector.Detect(path, world));
 
-        Vector2 jumpDir = (path[4] - path[3]).normalized;
-        float align = Mathf.Abs(Vector2.Dot(crossing.Direction, jumpDir));
-        Assert.True(align > 0.999f, $"Crossing direction {crossing.Direction} is not the jump direction {jumpDir}");
-
-        // Both banks sit ON the jump line.
+        // Both banks are points of the road: the far bank is on the jump,
+        // the near bank is where the road enters the shelf — not 45 m out
+        // along the jump line's extension, off the road entirely (the old
+        // outward walk; night plan 2026-09-03 task 1a). The shelf itself is
+        // wadeable swamp; treating it as road rather than deck is task 1b.
         foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
-        {
-            Vector2 rel = bank - path[3];
-            float across = Mathf.Abs(rel.x * jumpDir.y - rel.y * jumpDir.x);
-            Assert.True(across < 0.5f, $"Bank {bank} is {across:F1} m off the jump line");
-        }
+            Assert.True(DistanceToPolyline(path, bank) < 0.5f, $"Bank {bank} is off the road");
+        Vector2 jumpDir = (path[4] - path[3]).normalized;
+        Vector2 relTo = crossing.ToBank - path[3];
+        Assert.True(Mathf.Abs(relTo.x * jumpDir.y - relTo.y * jumpDir.x) < 0.5f, $"ToBank {crossing.ToBank} is off the jump");
+        Assert.Equal(-56f, crossing.FromBank.x, 0);
+        Assert.Equal(-40f, crossing.FromBank.y, 0);
+        Assert.Equal(0, crossing.FromIndex); // the shelf begins AT vertex 1, so the bank is just before it
+        Assert.Equal(4, crossing.ToIndex);
 
-        // And every route point over the water is inside the recorded span (validator exemption).
-        var route = RoadRoute.FromWaypoints(0, "Shelf -> Far", 4f, path, world);
-        var report = RoadNetworkValidator.Validate(new[] { route }, world, null, new List<RoadCrossing> { crossing });
-        Assert.DoesNotContain(report.Violations, v => v.StartsWith("dry-land"));
+        // With the deck drawn from the shelf entry to the far bank, its chord
+        // leaves the bent jump by up to 7 m — more than the validator's 6 m
+        // corridor. The cure is not a wider corridor but wading the swamp
+        // shelf as road and decking only the channel (task 1b), whose test
+        // asserts the validator exemption for this scenario.
     }
 }

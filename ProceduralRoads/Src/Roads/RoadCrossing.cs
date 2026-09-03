@@ -80,7 +80,6 @@ public static class RoadCrossingDetector
             return crossings;
 
         int runStart = -1; // index of the dry point before the first wet segment
-        int lineFrom = -1; // the wet run's own start point (the jump endpoint)
         int lastEnd = -1;  // ToIndex of the previous crossing (banks never overlap)
 
         // A bank is the nearest path point that stands above the waterline
@@ -98,7 +97,6 @@ public static class RoadCrossingDetector
             if (wet && runStart < 0)
             {
                 runStart = i - 1;
-                lineFrom = runStart; // the jump's own endpoint: the crossing LINE follows it
                 while (runStart > lastEnd + 1 && !AboveWater(runStart))
                     runStart--;      // painting exclusion may reach further back over wet shelves
             }
@@ -106,10 +104,9 @@ public static class RoadCrossingDetector
             if (!wet && runStart >= 0)
             {
                 int end = i - 1;
-                int lineTo = end;
                 while (end < path.Count - 1 && !AboveWater(end))
                     end++;
-                RoadCrossing? crossing = BuildCrossing(path, runStart, end, lineFrom, lineTo, world);
+                RoadCrossing? crossing = BuildCrossing(path, runStart, end, world);
                 if (crossing != null)
                     crossings.Add(crossing);
                 lastEnd = end;
@@ -122,7 +119,7 @@ public static class RoadCrossingDetector
         // A path should never end inside a river, but guard anyway.
         if (runStart >= 0)
         {
-            RoadCrossing? crossing = BuildCrossing(path, runStart, path.Count - 1, lineFrom, path.Count - 1, world);
+            RoadCrossing? crossing = BuildCrossing(path, runStart, path.Count - 1, world);
             if (crossing != null)
                 crossings.Add(crossing);
         }
@@ -151,24 +148,25 @@ public static class RoadCrossingDetector
     /// the channel is a knee-deep, unsailable gully that a leveled road can
     /// simply go through (no bridge, no painting exclusion).
     /// </summary>
-    private static RoadCrossing? BuildCrossing(List<Vector2> path, int fromIndex, int toIndex,
-        int lineFromIndex, int lineToIndex, WorldGenerator world)
+    private static RoadCrossing? BuildCrossing(List<Vector2> path, int fromIndex, int toIndex, WorldGenerator world)
     {
-        // The crossing LINE (deck, banks, profile) follows the wet run's own
-        // endpoints — the jump segment — never the indices extended outward
-        // over wet shelves for painting; otherwise the deck is planned along a
-        // line that cuts across the road (fixture witness: 6-12 m off).
-        Vector2 dryFrom = path[lineFromIndex];
-        Vector2 dryTo = path[lineToIndex];
-
         // The deck spans the WATER, not the dry approaches: the path's last
         // dry cells can sit 8-10 m up the bank (a 36 m "crossing" over a
         // 15 m pond, decks running into hillsides). Each bank is the last
-        // point along the ford line that can legally carry road, so the
-        // painted road runs down the approach and stops at the abutment.
+        // point ALONG THE PATH that can legally carry road, walking in from
+        // the run's dry ends, so the painted road runs down the approach and
+        // stops at the abutment — and the deck line, drawn bank to bank,
+        // lies on the road. Walking along a chord between the run's ends
+        // instead put the banks off the road wherever the run bent: a wet
+        // run swallows the shelf before a jump and the bank-hugging road
+        // after it (river core covers dry bank land), and the chord through
+        // those ends tilted the deck 6 degrees off an 86 m bridge
+        // (RoadTestMac2 65a68b3, "Eikthyrnir -> GDKing", 13 points 6-13 m off).
         float minBank = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
-        Vector2 from = Bank(dryFrom, dryTo, world, minBank);
-        Vector2 to = Bank(dryTo, dryFrom, world, minBank);
+        (Vector2 from, int fromOrdinal) = ShoreAlongPath(path, fromIndex, toIndex, world, minBank);
+        (Vector2 to, int toOrdinal) = ShoreAlongPath(path, toIndex, fromIndex, world, minBank);
+        fromIndex += fromOrdinal;
+        toIndex -= toOrdinal;
         float width = Vector2.Distance(from, to);
         if (width < 0.5f)
             return null;
@@ -325,51 +323,64 @@ public static class RoadCrossingDetector
     }
 
     /// <summary>
-    /// The bank on one side of the crossing line: if the run endpoint stands
-    /// on legal road ground, walk inward to the water's edge; if it is itself
-    /// wet (a marsh point on an ordinary path, a swamp shelf before a jump),
-    /// walk OUTWARD along the same line to the first legal point. Either way
-    /// the bank lies on the crossing line, so the deck follows the road.
+    /// Walks the path from the vertex at <paramref name="start"/> toward the
+    /// vertex at <paramref name="stop"/> and returns the last point whose
+    /// ground can legally carry road (>= minBank), with the ordinal (0-based,
+    /// counted from start along the walk) of the path vertex at or before it.
+    /// If the start vertex is itself wet — only at a path boundary, since the
+    /// run's ends were walked out to dry vertices — the bank is sought
+    /// OUTWARD along the first segment's line instead.
     /// </summary>
-    private static Vector2 Bank(Vector2 endpoint, Vector2 other, WorldGenerator world, float minBank)
+    private static (Vector2 bank, int ordinal) ShoreAlongPath(List<Vector2> path, int start, int stop, WorldGenerator world, float minBank)
     {
-        if (BiomeBlendedHeight.GetBlendedHeight(endpoint.x, endpoint.y, world) >= minBank)
-            return Shore(endpoint, other, world, minBank);
+        int step = stop >= start ? 1 : -1;
+        Vector2 first = path[start];
+        bool Legal(Vector2 p) => BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world) >= minBank;
 
-        Vector2 outward = (endpoint - other).normalized;
-        for (float d = 0.5f; d <= 60f; d += 0.5f)
+        if (!Legal(first))
         {
-            Vector2 p = endpoint + outward * d;
-            if (BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world) >= minBank)
-                return p;
+            if (start == stop)
+                return (first, 0);
+            Vector2 outward = (first - path[start + step]).normalized;
+            for (float d = 0.5f; d <= 60f; d += 0.5f)
+            {
+                Vector2 p = first + outward * d;
+                if (Legal(p))
+                    return (p, 0);
+            }
+            return (first, 0);
         }
-        return endpoint;
-    }
 
-    /// <summary>Walks from a dry point toward the water and returns the last
-    /// point whose ground can legally carry road (>= minBank).</summary>
-    private static Vector2 Shore(Vector2 dry, Vector2 wet, WorldGenerator world, float minBank)
-    {
-        float length = Vector2.Distance(dry, wet);
-        if (length < 0.01f)
-            return dry;
-        Vector2 dir = (wet - dry).normalized;
-
-        Vector2 last = dry;
-        for (float d = 0.5f; d < length; d += 0.5f)
+        // Sample the polyline at 0.5 m; every vertex is a sample of its own,
+        // so a bank that IS a vertex comes back exactly.
+        List<(Vector2 p, int ordinal)> samples = new() { (first, 0) };
+        int ordinal = 0;
+        for (int i = start; i != stop; i += step, ordinal++)
         {
-            Vector2 p = dry + dir * d;
-            if (BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world) < minBank)
+            Vector2 a = path[i], b = path[i + step];
+            float length = Vector2.Distance(a, b);
+            if (length < 0.01f)
+                continue;
+            Vector2 dir = (b - a) * (1f / length);
+            for (float d = 0.5f; d < length; d += 0.5f)
+                samples.Add((a + dir * d, ordinal));
+            samples.Add((b, ordinal + 1));
+        }
+
+        (Vector2 p, int ordinal) last = samples[0];
+        for (int k = 1; k < samples.Count; k++)
+        {
+            if (!Legal(samples[k].p))
             {
                 // A 1-2 m pothole on the approach is not the shore: keep
                 // walking if the ground recovers just beyond it.
-                Vector2 p1 = dry + dir * Mathf.Min(d + 1f, length);
-                Vector2 p2 = dry + dir * Mathf.Min(d + 2f, length);
-                if (BiomeBlendedHeight.GetBlendedHeight(p1.x, p1.y, world) < minBank && BiomeBlendedHeight.GetBlendedHeight(p2.x, p2.y, world) < minBank)
+                int k1 = Mathf.Min(k + 2, samples.Count - 1);
+                int k2 = Mathf.Min(k + 4, samples.Count - 1);
+                if (!Legal(samples[k1].p) && !Legal(samples[k2].p))
                     break;
                 continue;
             }
-            last = p;
+            last = samples[k];
         }
         return last;
     }
