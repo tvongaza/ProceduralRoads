@@ -5,7 +5,8 @@ using UnityEngine;
 namespace ProceduralRoads;
 
 /// <summary>
-/// Spawns the solved ruin plans (bridges at crossings) into the world as persistent ZDOs when their zones first generate.
+/// Spawns the solved ruin plans (bridges at crossings, staircases on stair
+/// runs) into the world as persistent ZDOs when their zones first generate.
 /// Vanilla prefabs only, so unmodded clients see everything. Pieces carry
 /// WearNTear health fractions for the built-in damage visuals. Zones are
 /// spawned exactly once (the set is persisted); plans are recomputed
@@ -103,6 +104,8 @@ public static class RuinPlacement
         foreach (RoadCrossing crossing in BridgeLayout.DistinctSites(RoadNetworkGenerator.GetRoadCrossings()))
             Bucket(BridgeLayout.Solve(crossing, WorldGenerator.instance, seed, BridgeLayout.StyleFor(crossing.Biome)));
 
+        foreach (StairRun run in RoadNetworkGenerator.GetStairRuns())
+            Bucket(StairLayout.Solve(run, WorldGenerator.instance, seed, StairLayout.StyleFor(run.Biome)));
 
         int total = 0;
         foreach (var kv in m_plansByZone) total += kv.Value.Count;

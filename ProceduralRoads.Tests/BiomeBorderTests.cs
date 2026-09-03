@@ -60,7 +60,7 @@ public class BiomeBorderTests
         for (float y = -60f; y <= 60f; y += 4f) waypoints.Add(new Vector2(-6f, y));
         var route = RoadRoute.FromWaypoints(0, "Along the border", 4f, waypoints, world);
 
-        var report = RoadNetworkValidator.Validate(new[] { route }, world, new List<RoadCrossing>());
+        var report = RoadNetworkValidator.Validate(new[] { route }, world, null, new List<RoadCrossing>());
         Assert.Contains(report.Violations, v => v.StartsWith("dry-land"));
     }
 

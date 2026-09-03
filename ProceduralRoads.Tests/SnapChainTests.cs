@@ -10,7 +10,7 @@ namespace ProceduralRoads.Tests;
 /// columns are grounded by burial, the deck grades between the banks
 /// instead of running level at the higher one, wood stations are post-pair
 /// assemblies, stone abutments spring grounded arches and stone piers stack
-/// without air gaps. The stair-chain tests live on branch pc/stairs.
+/// without air gaps. The stair-chain tests live in StairTests.cs.
 ///
 /// Piece dimensions mirror road_snap_probe output: wood_pole2 is 2m tall;
 /// stone walls are 1m tall.

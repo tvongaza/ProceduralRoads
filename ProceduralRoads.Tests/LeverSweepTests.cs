@@ -471,7 +471,7 @@ public class LeverSweepTests
             foreach (Vector3 p in rerouted.Points)
                 Assert.True(new Vector2(p.x, p.z).magnitude >= radius - 0.6f, $"route point {p} is inside the location");
             var report = RoadNetworkValidator.Validate(RoadNetworkGenerator.GetRoadRoutes(), world,
-                RoadNetworkGenerator.GetRoadCrossings());
+                RoadNetworkGenerator.GetStairRuns(), RoadNetworkGenerator.GetRoadCrossings());
             Assert.True(report.Passed, string.Join("; ", report.Violations));
 
             // Drop: the location gets no road at all.
