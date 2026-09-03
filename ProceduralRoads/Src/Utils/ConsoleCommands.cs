@@ -98,6 +98,17 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_zone_ready",
+            "Is the world in around a point? Every zone within the radius loaded, every planned ruin zone there spawned, and its pieces instantiated: " +
+            "road_zone_ready <x> <z> [radius=32]. Validation scripts poll this after a teleport instead of sleeping a fixed time.",
+            (args) => ZoneReady(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_ruins_reset",
             "Destroy every mod-spawned ruin piece (pr_ruin ZDO marker) and respawn all planned zones from the current layout code. Fixture-world iteration: same world, same problem spots, fresh pieces per build.",
             (args) =>
@@ -452,6 +463,76 @@ public static class ConsoleCommands
         }
 
         args.Context.AddString($"total: {crossings.Count} crossings, {runs.Count} stair runs");
+    }
+
+    /// <summary>
+    /// Readiness probe for scripted validation (Tys, 2 Sep 2026: "tell us
+    /// when the zone has fully loaded instead of long waits"). Counts, over
+    /// every zone the disc touches: zones loaded by ZoneSystem, planned ruin
+    /// zones that have spawned, and mod-tagged pieces ZNetScene has actually
+    /// instantiated (ZDOs become objects a few frames after the zone spawns).
+    /// ready = all loaded, all planned zones spawned, instances >= planned.
+    /// A decayed site (pieces destroyed since) reports settled=true with
+    /// fewer instances than planned; callers time out on that honestly.
+    /// </summary>
+    private static void ZoneReady(Terminal.ConsoleEventArgs args)
+    {
+        if (args.Length < 3 ||
+            !float.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float x) ||
+            !float.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float z))
+        {
+            args.Context.AddString("Usage: road_zone_ready <x> <z> [radius=32]");
+            return;
+        }
+        float radius = 32f;
+        if (args.Length >= 4)
+            float.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out radius);
+        radius = Mathf.Clamp(radius, 1f, 200f);
+
+        if (ZoneSystem.instance == null || ZNetScene.instance == null)
+        {
+            args.Context.AddString("ZONE_READY ready=false settled=false reason=no-world");
+            return;
+        }
+
+        Vector2i min = ZoneSystem.GetZone(new Vector3(x - radius, 0f, z - radius));
+        Vector2i max = ZoneSystem.GetZone(new Vector3(x + radius, 0f, z + radius));
+        int zones = 0, loaded = 0, plannedZones = 0, spawnedZones = 0, piecesPlanned = 0;
+        for (int zx = min.x; zx <= max.x; zx++)
+        {
+            for (int zy = min.y; zy <= max.y; zy++)
+            {
+                Vector2i zone = new Vector2i(zx, zy);
+                zones++;
+                if (ZoneSystem.instance.IsZoneLoaded(zone))
+                    loaded++;
+                int planned = RuinPlacement.PlannedPieceCount(zone);
+                if (planned > 0)
+                {
+                    plannedZones++;
+                    piecesPlanned += planned;
+                    if (RuinPlacement.SpawnedZones.Contains(zone))
+                        spawnedZones++;
+                }
+            }
+        }
+
+        int piecesLoaded = 0;
+        foreach (KeyValuePair<ZDO, ZNetView> kv in ZNetScene.instance.m_instances)
+        {
+            if (kv.Key == null || kv.Key.GetInt(RuinPlacement.RuinMarkerHash) != 1)
+                continue;
+            Vector2i zone = ZoneSystem.GetZone(kv.Key.GetPosition());
+            if (zone.x >= min.x && zone.x <= max.x && zone.y >= min.y && zone.y <= max.y)
+                piecesLoaded++;
+        }
+
+        bool settled = loaded == zones && spawnedZones == plannedZones;
+        bool ready = settled && piecesLoaded >= piecesPlanned;
+        args.Context.AddString(
+            $"ZONE_READY ready={(ready ? "true" : "false")} settled={(settled ? "true" : "false")} " +
+            $"zones={zones} loaded={loaded} plannedZones={plannedZones} spawnedZones={spawnedZones} " +
+            $"piecesPlanned={piecesPlanned} piecesLoaded={piecesLoaded}");
     }
 
     /// <summary>

@@ -72,6 +72,15 @@ public static class RuinPlacement
             m_spawnedZones.Add(zone);
     }
 
+    /// <summary>Pieces planned for one zone (0 when the zone has no ruins).
+    /// Debug tooling compares this against what ZNetScene has instantiated
+    /// to know when a zone is fully in, instead of waiting a fixed time.</summary>
+    public static int PlannedPieceCount(Vector2i zone)
+    {
+        EnsurePlans();
+        return m_plansByZone != null && m_plansByZone.TryGetValue(zone, out List<BridgePiece>? list) ? list.Count : 0;
+    }
+
     /// <summary>Total planned pieces (for the selftest report — plans exist
     /// even when no zones have spawned yet, e.g. on a headless server).</summary>
     public static int GetPlannedPieceCount()
