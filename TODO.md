@@ -1,5 +1,119 @@
 # Fresh-Start Plan (2026-08-31)
 
+## MORNING REPORT 2026-09-03 (overnight session, 00:10-~02:00; Tys asleep)
+
+Everything below is on the fork. Bridge branch `pc/snap-point-composition`
+tip **2031bf3** (153 tests, both runtimes). Stairs live on `pc/stairs`
+(f8cdf0f, 159 tests; fork PR #1 "WIP: stair runs", base the bridge branch).
+Tooling on `pc/tooling` (18bed48, from upstream master + PR #18 harness +
+routes; 26 tests; no upstream PR, HOLD). NAS gates: every commit below was
+gated on RoadTestAuto1 at 200000; hash stayed **c4b6895c** all night (no
+route moved), baseline stays 73c6bec7 because 8 slope violations remain
+(see "open").
+
+### What landed (bridge branch, in order)
+
+| commit | task | what | gate (NAS, RoadTestAuto1) |
+|---|---|---|---|
+| 492c87b | 1a | crossing banks found along the path: deck on the road | hash same; wet points outside spans 42 -> 24 |
+| c43bc91 | 1b | swamp shallows are road (>= 28 legal in Swamp); wading-depth swamp channels become fords in the wade/raise/span mix (fairway < 8 m); wade paints along the road | inert on Auto1 (no wading-depth swamp sites); on RoadTestMac2 c6 60 m bridge -> 56 m span ford, c19 177 m -> 83 m bridge over the channel only |
+| dd0daa9 | 1a/1e/1f | crossing line = the jump; wet vertices join only within 4 m of that line (bent shelf after landing is road); braided channels get one crossing each; 60 m outward walk gone, 16 m cap at path ends; dry-bed crossings dropped | **outside-span wet points 24 -> 0**; crossings 12 -> 17; violations 21 -> 8 (all slope) |
+| 4bcce3e | reporting | selftest JSON: wetPoints, wetPointsOutsideSpans, overLengthCrossings, overGradePoints; "outside recorded spans" wording | identical |
+| fffd3d1 | 1e metric (alone) | crossing-length/fordCount measured on road-legal ground | fordCount 152 -> 20, all else identical (132 "fords" were swamp shelf) |
+| 7eee1e1 | 1d | high bridge: banks move to cliff tops when both rise >= 2.5 m within 12 m; deck at top height, painted road stops at the top | pieces 854 -> 934, all else identical |
+| a8373d1 | 1c | stepped ends: per site hash, deck 0.5-1.5 m above the road with steps (posts under raised steps) | pieces 934 -> 1024, all else identical |
+| a35755e, d636895 | 2 | stair tests moved, then all stair code removed from the bridge branch | routes CSV MD5 identical, pieces identical |
+| 2b6640c, 22fd66e | 6 | road_world_dump + [Debug] WorldDump + scripts/world-svg.py; mac-launch.sh, mac-shot-sites.sh | identical; dump costs ~2.5 s |
+| d7b9825 | 4 | simplify: RoadCrossing.Along/Across, BridgeLayout.YawDegrees, no nullable painting tuple | MD5 identical |
+| 2031bf3 | 5 | blueprint spike, harness only | n/a |
+
+### What needs your eyes (files on the Mac)
+
+- **World maps** (Task 6): `validation-results/RoadTestMac2.world.svg`
+  (with a zoom inset on c1) and `validation-results/RoadTestAuto1.world.svg`
+  (from the NAS dump). Open in a browser. Grey road, orange over deep
+  water, teal over knee-deep, red stubs; purple = locations >= 10 m radius.
+- **High bridge exhibit**: `ProceduralRoads.Tests/validation-results/high-bridge-side.svg`.
+- **Shots** in `validation-results/screenshots/`:
+  - `RoadTestMac2-night-a8373d1-sites/`: c1 (Eikthyrnir->GDKing, the
+    deck-on-road fix, 97 m wood), c6 (BlackForest 83 m, banks 34/35.6:
+    a high-bridge candidate), c23 (SunkenCrypt 83 m swamp bridge,
+    abutments at 28.1 IN the swamp water — decision below), c28 (Mistlands
+    stone 32 m, banks 36.4/34.5). Four views each: sideA/B, endA, top.
+  - `RoadTestMac2-night-a8373d1/`: c2 (113 m wood, widest), c7 raise ford,
+    c8 span ford (swamp, the old c6). The auto camera sat in the grass for
+    c2 sideA; the -sites set uses a higher camera.
+  - Stepped ends: about half the bridge sites; c2 or c1 may be one — look
+    for steps at the abutments.
+
+### Decisions open for you (one line each)
+
+1. Swamp bridge abutments may now stand in up to 2 m of swamp water (c23
+   fromY 28.1; deck clamped above the waterline). Keep (stilts in a swamp)
+   or raise the swamp bank threshold to 29.5 (ankle deep)?
+2. High-bridge rule fires on a swamp channel with dry land within 12 m
+   (deck springs from the dry land, shelf under the deck) — kept on
+   purpose, pinned in SwampFordTests. Fine?
+3. Stepped ends: rise 0.5-1.5 m, 50% of sites. Chance/range as levers?
+4. The 8 remaining Auto1 violations are all slope, two Mistlands routes,
+   six on approaches to DvergrTownEntrance1 — one terrain feature. Not on
+   tonight's list; look at that location's approach.
+5. Spline corner-cutting into water on shoreline bends (Mac route 9,
+   GDKing -> Bonemass 1063-1085: the road bobs through 27-29 m water
+   between dry waypoints). Pathfinder samples straight segments; the
+   spline does not. Needs its own fix (sample the spline in the move cost,
+   or straighten near water).
+6. Blueprint format: our .blueprint reading (see below) must be verified
+   against a real PlanBuild export before it ships.
+7. NAS: sshd's sftp Subsystem points at a missing binary (scp needs -O
+   from macOS). The NAS session flagged it; host config is your call.
+
+### Not done / blocked
+
+- 1g road reuse (pathfinder discount near existing routes): started after
+  this report if time allowed — see the commit list on the fork; it moves
+  the hash and every count, so it is gated separately.
+- 1h dungeon-entrance spike: not started (needs a live client session
+  with the Harmony postfix; lower priority than 1g).
+- Task 4 second pass (names, tests-assert-behaviour): only the helper
+  consolidation shipped.
+- pc/tooling has no upstream PR (HOLD until PR #18 is answered).
+
+### Task 5 design note — bridges as blueprints (spike in ProceduralRoads.Tests/BlueprintTests.cs)
+
+- **Units**: START (abutment plate sunk 0.3, first deck plate, post pair
+  + crossbeam under its far edge), SPAN (one 2 m station: plate, post
+  pair, beam), END (last plate + far abutment). Files:
+  `ProceduralRoads.Tests/blueprints/wood-bridge-{start,span,end}.blueprint`.
+- **Format** (PlanBuild text, as we read it): `#Name:`, `#Creator:`,
+  `#Description:`, `#Category:` headers; `#SnapPoints` section of `x;y;z`;
+  `#Pieces` section of `prefab;category;posX;posY;posZ;rotX;rotY;rotZ;rotW;info;scaleX;scaleY;scaleZ`.
+  Local frame: +z along the bridge, +y up, origin at the unit's near snap
+  point at deck height; the two snap points give the unit's length.
+  MoreWorldLocations does NOT use this: it ships Unity prefabs whose
+  `MOCK_<prefab>` children are swapped for real prefabs at load
+  (Blueprint.cs / BlueprintLocation.cs) — a prefab-in-asset-bundle model,
+  not a text one. Player-authored blueprints would come from PlanBuild.
+- **Snapping between units**: each unit's far snap point is the next
+  unit's origin; the tiler chains START, n x SPAN, END along the crossing
+  line at the graded deck height (same rule as BridgeLayout: lerp between
+  bank contact heights, clamped above water + freeboard); the last SPAN
+  absorbs the remainder (n = floor((width - start - end) / span)).
+- **Seed and weather**: System.Random(seed): decks/beams fall first with
+  probability peaking at mid-span (0.6 x mid-closeness), post columns
+  fall later and only whole (0.15 x mid-closeness), survivors get health
+  0.3-0.8. Fairway keep-clear would be applied as an extra removal window
+  exactly as BridgeLayout does today.
+- **Coexistence with BridgeLayout**: BridgeLayout stays the solver for
+  fords and for the ruin grammar; a blueprint kit is an alternative
+  plan source for Bridge crossings selected per style (e.g.
+  BridgeStyle.Blueprints = {start,span,end}); RuinPlacement does not
+  change (it consumes BridgePieces). The support model (SupportModelTests)
+  is the acceptance test for any kit.
+- **Upstream PR ladder** (recorded, Task 3): tooling -> cost model + fords
+  -> crossings/bridges -> cross-section -> stairs -> placement.
+
+
 ## Operating model (2026-09-01)
 
 - **NAS = hub**: development AND coordination run from the always-on NAS
