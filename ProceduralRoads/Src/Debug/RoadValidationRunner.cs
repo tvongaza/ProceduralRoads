@@ -37,8 +37,10 @@ public static class RoadValidationRunner
 
         var routes = RoadNetworkGenerator.GetRoadRoutes();
         System.DateTime validateStart = System.DateTime.Now;
-        var report = RoadNetworkValidator.Validate(routes, WorldGenerator.instance,
-            RoadNetworkGenerator.GetRoadCrossings());
+        var crossings = RoadNetworkGenerator.GetRoadCrossings();
+        var report = RoadNetworkValidator.Validate(routes, WorldGenerator.instance, crossings);
+        report.CrossingRecords = crossings.Count;
+        report.CrossingSites = BridgeLayout.DistinctSites(crossings).Count;
         Log.LogInfo(
             $"[TIMING] validator ms={(System.DateTime.Now - validateStart).TotalMilliseconds:F0} " +
             $"pathfinderIterations={RoadPathfinder.TotalIterations} terrainSamples={RoadPathfinder.TotalTerrainSamples}");
@@ -46,7 +48,7 @@ public static class RoadValidationRunner
         Log.LogInfo(
             $"[SELFTEST] {(report.Passed ? "PASS" : "FAIL")}: {report.RouteCount} routes, " +
             $"{report.TotalLengthMeters:F0}m total, {report.NetworkComponents} network component(s), " +
-            $"{report.FordCount} ford(s), {RoadNetworkGenerator.GetRoadCrossings().Count} crossing(s), " +
+            $"{report.FordCount} ford(s), {report.CrossingRecords} crossing(s) at {report.CrossingSites} site(s), " +
             $"{RuinPlacement.GetPlannedPieceCount()} ruin piece(s) planned, " +
             $"hash {report.PointsHash}, {report.Violations.Count} violation(s)");
 

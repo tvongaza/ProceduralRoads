@@ -35,6 +35,12 @@ public static class RoadNetworkValidator
         public int WetPointsOutsideSpans;
         public int OverLengthCrossings;
         public int OverGradePoints;
+        /// <summary>Crossing records (one per route that crosses) and the
+        /// distinct SITES they resolve to (one bridge each): two routes
+        /// sharing a bridge are two records, one site. Consolidation moves
+        /// sites, not records — set by the runner, which has the crossings.</summary>
+        public int CrossingRecords;
+        public int CrossingSites;
         public string PointsHash = "";
         public readonly List<string> Violations = new();
         public bool Passed => Violations.Count == 0;
@@ -319,6 +325,8 @@ public static class RoadNetworkValidator
         sb.Append($"  \"wetPointsOutsideSpans\": {report.WetPointsOutsideSpans},\n");
         sb.Append($"  \"overLengthCrossings\": {report.OverLengthCrossings},\n");
         sb.Append($"  \"overGradePoints\": {report.OverGradePoints},\n");
+        sb.Append($"  \"crossingRecords\": {report.CrossingRecords},\n");
+        sb.Append($"  \"crossingSites\": {report.CrossingSites},\n");
         sb.Append($"  \"pointsHash\": \"{report.PointsHash}\",\n");
         sb.Append("  \"violations\": [\n");
         for (int i = 0; i < report.Violations.Count; i++)
