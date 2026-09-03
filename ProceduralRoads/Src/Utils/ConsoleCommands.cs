@@ -98,6 +98,27 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_piece_health",
+            "List the mod's ruin pieces near the player with their stored health, the prefab's full health, and which vanilla damage visual is active (new / worn / broken): road_piece_health [radius=30]. " +
+            "Diagnoses whether planned health fractions reach the game.",
+            (args) => PieceHealth(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
+            "road_piece_set_health",
+            "SCREENSHOT WORLDS ONLY (DebugValidation): set every nearby ruin piece's health to a percentage of full and refresh its damage visual, to see what vanilla shows at each level: road_piece_set_health <pct> [radius=30]. Mutates world ZDOs; road_ruins_reset restores the plans.",
+            (args) => PieceSetHealth(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_zone_ready",
             "Is the world in around a point? Every zone within the radius loaded, every planned ruin zone there spawned, and its pieces instantiated: " +
             "road_zone_ready <x> <z> [radius=32]. Validation scripts poll this after a teleport instead of sleeping a fixed time.",
@@ -463,6 +484,100 @@ public static class ConsoleCommands
         }
 
         args.Context.AddString($"total: {crossings.Count} crossings, {runs.Count} stair runs");
+    }
+
+    private static void PieceHealth(Terminal.ConsoleEventArgs args)
+    {
+        float radius = 30f;
+        if (args.Length >= 2)
+            float.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out radius);
+        if (Player.m_localPlayer == null || ZNetScene.instance == null)
+        {
+            args.Context.AddString("ERROR: no local player / world");
+            return;
+        }
+
+        Vector3 origin = Player.m_localPlayer.transform.position;
+        int total = 0, newCount = 0, wornCount = 0, brokenCount = 0, noVisual = 0;
+        List<string> lines = new();
+        foreach (KeyValuePair<ZDO, ZNetView> kv in ZNetScene.instance.m_instances)
+        {
+            if (kv.Key == null || kv.Value == null || kv.Key.GetInt(RuinPlacement.RuinMarkerHash) != 1)
+                continue;
+            Vector3 p = kv.Value.transform.position;
+            if (Vector3.Distance(p, origin) > radius)
+                continue;
+            WearNTear wnt = kv.Value.GetComponent<WearNTear>();
+            if (wnt == null)
+                continue;
+            total++;
+            float stored = kv.Key.GetFloat("health", -1f);
+            string visual;
+            if (wnt.m_new == null && wnt.m_worn == null && wnt.m_broken == null) { visual = "none"; noVisual++; }
+            else if (wnt.m_broken != null && wnt.m_broken.activeSelf) { visual = "broken"; brokenCount++; }
+            else if (wnt.m_worn != null && wnt.m_worn.activeSelf) { visual = "worn"; wornCount++; }
+            else { visual = "new"; newCount++; }
+            if (lines.Count < 40)
+                lines.Add($"PIECE {kv.Value.name.Replace("(Clone)", "")} stored={stored:F1} full={wnt.m_health:F0} pct={(stored >= 0f ? stored / wnt.m_health * 100f : -1f):F0} visual={visual} pos={p.x:F1},{p.y:F1},{p.z:F1}");
+            // What the prefab actually has, once per prefab: the visual
+            // mapping is not documented, so the readout shows the children.
+            string prefabName = kv.Value.name.Replace("(Clone)", "");
+            if (!m_visualDumped.Contains(prefabName))
+            {
+                m_visualDumped.Add(prefabName);
+                lines.Add($"VISUALS {prefabName} new={Describe(wnt.m_new)} worn={Describe(wnt.m_worn)} broken={Describe(wnt.m_broken)}");
+            }
+        }
+        foreach (string line in lines)
+            args.Context.AddString(line);
+        args.Context.AddString($"PIECE_HEALTH total={total} new={newCount} worn={wornCount} broken={brokenCount} noVisual={noVisual} radius={radius:F0}");
+    }
+
+    private static readonly HashSet<string> m_visualDumped = new();
+
+    private static string Describe(GameObject? go) =>
+        go == null ? "null" : $"{go.name}({(go.activeSelf ? "on" : "off")})";
+
+    private static void PieceSetHealth(Terminal.ConsoleEventArgs args)
+    {
+        if (!ProceduralRoadsPlugin.DebugValidation.Value)
+        {
+            args.Context.AddString("ERROR: road_piece_set_health is debug-gated (DebugValidation = true)");
+            return;
+        }
+        if (args.Length < 2 || !float.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float pct))
+        {
+            args.Context.AddString("Usage: road_piece_set_health <pct> [radius=30]");
+            return;
+        }
+        float radius = 30f;
+        if (args.Length >= 3)
+            float.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out radius);
+        if (Player.m_localPlayer == null || ZNetScene.instance == null)
+        {
+            args.Context.AddString("ERROR: no local player / world");
+            return;
+        }
+
+        Vector3 origin = Player.m_localPlayer.transform.position;
+        int changed = 0;
+        foreach (KeyValuePair<ZDO, ZNetView> kv in ZNetScene.instance.m_instances)
+        {
+            if (kv.Key == null || kv.Value == null || kv.Key.GetInt(RuinPlacement.RuinMarkerHash) != 1)
+                continue;
+            if (Vector3.Distance(kv.Value.transform.position, origin) > radius)
+                continue;
+            WearNTear wnt = kv.Value.GetComponent<WearNTear>();
+            if (wnt == null)
+                continue;
+            float health = wnt.m_health * Mathf.Clamp(pct, 0.1f, 100f) / 100f;
+            kv.Key.Set("health", health);
+            // Vanilla refreshes the damage visual through this RPC on every
+            // client, the owner included.
+            kv.Value.InvokeRPC(ZNetView.Everybody, "RPC_HealthChanged", health);
+            changed++;
+        }
+        args.Context.AddString($"OK: set {changed} ruin piece(s) within {radius:F0} m to {pct:F0}% health");
     }
 
     /// <summary>
