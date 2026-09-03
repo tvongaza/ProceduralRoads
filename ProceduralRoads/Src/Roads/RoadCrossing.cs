@@ -73,57 +73,126 @@ public static class RoadCrossingDetector
 
     private const float SampleSpacing = 2f;
 
+    /// <summary>Vertices join a crossing only within this distance of its
+    /// line (the jump segment): the deck is straight, so a road that bends
+    /// along a wet shelf after landing is road, not deck. Inside the
+    /// validator's 6 m corridor with margin for the chord's own tilt.</summary>
+    public const float LineCorridor = 4f;
+
+    /// <summary>At a path end a wet vertex may seek its bank this far out
+    /// along the last segment's line; further is a route that ends in
+    /// water, which the terminus rules should have prevented.</summary>
+    public const float EndBankReach = 16f;
+
     public static List<RoadCrossing> Detect(List<Vector2> path, WorldGenerator world)
     {
         List<RoadCrossing> crossings = new();
         if (path == null || path.Count < 2 || world == null)
             return crossings;
 
-        int runStart = -1; // index of the dry point before the first wet segment
-        int lastEnd = -1;  // ToIndex of the previous crossing (banks never overlap)
-
-        // A bank is the nearest path point that stands on road-legal ground
-        // (see RoadFloor), not merely the last point outside the river core:
-        // splined centerlines dip through marshy shelves below the waterline
-        // on their way into the channel, and an abutment placed there sits in
-        // the water (live witness: banks at 29.0/29.4 vs water 30.0).
-        bool AboveWater(int index) => IsRoadGround(path[index], world);
+        int runFirst = -1; // first vertex of the current core-touching run
+        int lastEnd = -1;  // highest vertex any crossing reached (banks never overlap)
 
         for (int i = 1; i < path.Count; i++)
         {
             bool wet = SegmentTouchesRiverCore(path[i - 1], path[i], world);
+            if (wet && runFirst < 0)
+                runFirst = i - 1;
+            if (runFirst < 0)
+                continue;
+            bool lastSegment = i == path.Count - 1;
+            if (wet && !lastSegment)
+                continue;
 
-            if (wet && runStart < 0)
-            {
-                runStart = i - 1;
-                while (runStart > lastEnd + 1 && !AboveWater(runStart))
-                    runStart--;      // painting exclusion may reach further back over wet shelves
-            }
-
-            if (!wet && runStart >= 0)
-            {
-                int end = i - 1;
-                while (end < path.Count - 1 && !AboveWater(end))
-                    end++;
-                RoadCrossing? crossing = BuildCrossing(path, runStart, end, world);
-                if (crossing != null)
-                    crossings.Add(crossing);
-                lastEnd = end;
-                runStart = -1;
-                if (end > i)
-                    i = end; // resume scanning past the extended far bank
-            }
+            int runLast = wet ? i : i - 1;
+            int reached = CollectCrossings(path, runFirst, runLast, lastEnd + 1, path.Count - 1, world, crossings);
+            lastEnd = Mathf.Max(lastEnd, reached);
+            runFirst = -1;
+            if (lastEnd > i)
+                i = lastEnd; // resume scanning past the extended far bank
         }
 
-        // A path should never end inside a river, but guard anyway.
-        if (runStart >= 0)
-        {
-            RoadCrossing? crossing = BuildCrossing(path, runStart, path.Count - 1, world);
-            if (crossing != null)
-                crossings.Add(crossing);
-        }
-
+        crossings.Sort((x, y) => x.FromIndex.CompareTo(y.FromIndex));
         return crossings;
+    }
+
+    /// <summary>
+    /// Builds the crossings of one core-touching run of segments
+    /// [first..last]. The crossing LINE is the run's longest segment over
+    /// water — the jump — and a bank is sought along the path from the
+    /// jump's ends: outward over wet vertices as long as they stay near
+    /// the line (a shelf the road runs straight across is deck), never
+    /// around a bend (a shelf the road turns along after landing is road:
+    /// RoadTestMac2 route 49, whose deck ran 15 m south of the road because
+    /// the run's chord followed the bend). The rest of the run may hold a
+    /// further channel (a braided river with a dry bar the road walks), so
+    /// the parts before and after the crossing are searched again.
+    /// Returns the highest vertex index any crossing reached, or -1.
+    /// </summary>
+    private static int CollectCrossings(List<Vector2> path, int first, int last, int lo, int hi,
+        WorldGenerator world, List<RoadCrossing> crossings)
+    {
+        int jump = -1;
+        float jumpLength = 0f;
+        for (int s = first; s < last; s++)
+        {
+            if (!SegmentHasWater(path[s], path[s + 1], world))
+                continue;
+            float length = Vector2.Distance(path[s], path[s + 1]);
+            if (length > jumpLength)
+            {
+                jump = s;
+                jumpLength = length;
+            }
+        }
+        if (jump < 0)
+            return -1; // dry ground inside the core band: ordinary road
+
+        Vector2 a = path[jump], b = path[jump + 1];
+        int start = jump, end = jump + 1;
+        while (start > lo && !IsRoadGround(path[start], world) && NearLine(path[start - 1], a, b))
+            start--;
+        while (end < hi && !IsRoadGround(path[end], world) && NearLine(path[end + 1], a, b))
+            end++;
+
+        RoadCrossing? crossing = BuildCrossing(path, start, end, world);
+        if (crossing != null)
+            crossings.Add(crossing);
+
+        int reached = end;
+        if (start > first)
+            reached = Mathf.Max(reached, CollectCrossings(path, first, start, lo, start, world, crossings));
+        if (end < last)
+            reached = Mathf.Max(reached, CollectCrossings(path, end, last, end, hi, world, crossings));
+        return reached;
+    }
+
+    private static bool NearLine(Vector2 p, Vector2 a, Vector2 b)
+    {
+        Vector2 dir = b - a;
+        float length = dir.magnitude;
+        if (length < 0.01f)
+            return true;
+        Vector2 rel = p - a;
+        float across = Mathf.Abs(rel.x * dir.y - rel.y * dir.x) / length;
+        return across <= LineCorridor;
+    }
+
+    /// <summary>A segment with water under it somewhere: a candidate crossing.
+    /// Damp ground above the waterline never makes a crossing on its own.</summary>
+    private static bool SegmentHasWater(Vector2 a, Vector2 b, WorldGenerator world)
+    {
+        float length = Vector2.Distance(a, b);
+        int samples = Mathf.Max(1, Mathf.CeilToInt(length / SampleSpacing));
+        for (int s = 0; s <= samples; s++)
+        {
+            float t = (float)s / samples;
+            float x = a.x + (b.x - a.x) * t;
+            float y = a.y + (b.y - a.y) * t;
+            if (BiomeBlendedHeight.GetBlendedHeight(x, y, world) < RoadConstants.SeaLevel)
+                return true;
+        }
+        return false;
     }
 
     private static bool SegmentTouchesRiverCore(Vector2 a, Vector2 b, WorldGenerator world)
@@ -218,6 +287,11 @@ public static class RoadCrossingDetector
             fairwayCenter = new Vector2(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
             fairwayWidth = bestRunLength * step;
         }
+
+        // A crossing needs water under it: a dry core valley is ordinary road
+        // (night plan 2026-09-03 task 1f, "wade ford" over a bed at 33.5).
+        if (riverbed >= RoadConstants.SeaLevel)
+            return null;
 
         Vector2 center = (from + to) * 0.5f;
         Heightmap.Biome biome = world.GetBiome(center.x, center.y);
@@ -335,9 +409,7 @@ public static class RoadCrossingDetector
     /// vertex at <paramref name="stop"/> and returns the last point whose
     /// ground can legally carry road (IsRoadGround), with the ordinal (0-based,
     /// counted from start along the walk) of the path vertex at or before it.
-    /// If the start vertex is itself wet — only at a path boundary, since the
-    /// run's ends were walked out to dry vertices — the bank is sought
-    /// OUTWARD along the first segment's line instead. A walk that reaches
+    /// A wet start vertex is its own bank (see below). A walk that reaches
     /// the far vertex without meeting water (the run is wadeable or dry all
     /// the way) keeps the start vertex as its bank.
     /// </summary>
@@ -349,10 +421,14 @@ public static class RoadCrossingDetector
 
         if (!Legal(first))
         {
-            if (start == stop)
+            // A wet run end is the bank itself (the run stopped at a bend or
+            // at the previous crossing) — except at a path end, where the
+            // bank is sought a short way out along the last segment's line.
+            bool pathEnd = start == 0 || start == path.Count - 1;
+            if (!pathEnd || start == stop)
                 return (first, 0);
             Vector2 outward = (first - path[start + step]).normalized;
-            for (float d = 0.5f; d <= 60f; d += 0.5f)
+            for (float d = 0.5f; d <= EndBankReach; d += 0.5f)
             {
                 Vector2 p = first + outward * d;
                 if (Legal(p))

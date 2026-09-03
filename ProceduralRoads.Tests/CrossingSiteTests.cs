@@ -455,3 +455,184 @@ public class CrossingLineTests
         }
     }
 }
+
+/// <summary>
+/// Night plan 2026-09-03 task 1a: the deck must lie on the road. Live
+/// witness RoadTestMac2 65a68b3, "Eikthyrnir -> GDKing" crossing 1: an
+/// 86 m wood bridge whose recorded line ran from the route's first waypoint
+/// to a point 13 m north of the road, because the wet run (segments that
+/// touch river core) swallowed the shelf before the jump and the
+/// bank-hugging road after it, and the banks were then sought along the
+/// chord between the run's ends. The crossing line is the jump; banks are
+/// found along the PATH.
+/// </summary>
+public class DeckOnRoadTests
+{
+    /// <summary>
+    /// River along x = 0: water (bed 26) for |x| &lt; 6, a marshy shelf at
+    /// 29.4 out to |x| = 10, dry land at 33 beyond — but the river CORE band
+    /// (weight &gt; 0.5) reaches out to |x| = 20, covering 10 m of dry bank on
+    /// each side, as a real river's does.
+    /// </summary>
+    private sealed class WideCoreRiverWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy)
+        {
+            float ax = Mathf.Abs(wx);
+            if (ax <= 6f) return 26f;
+            if (ax < 10f) return 29.4f;
+            return 33f;
+        }
+
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / 40f); // core |x| < 20
+            width = weight > 0f ? 80f : 0f;
+        }
+    }
+
+    /// <summary>Dry approach from the south-west, a straight jump across
+    /// the water at y = -10, then the road turns north along the far bank
+    /// inside the core band before leaving it.</summary>
+    private static readonly List<Vector2> BentRunPath = new()
+    {
+        new(-40f, -40f), new(-24f, -20f), new(-12f, -10f),
+        new(12f, -10f), new(16f, 10f), new(22f, 30f), new(44f, 34f),
+    };
+
+    private static float DistanceFromDeckLine(RoadCrossing c, Vector2 p)
+    {
+        Vector2 rel = p - c.FromBank;
+        return Mathf.Abs(rel.x * c.Direction.y - rel.y * c.Direction.x);
+    }
+
+    [Fact]
+    public void WetRunWithBentEndsStillPutsTheDeckOnTheJump()
+    {
+        var world = new WideCoreRiverWorld();
+        var path = BentRunPath;
+
+        var crossing = Assert.Single(RoadCrossingDetector.Detect(path, world));
+
+        // The run spans five segments (the approach and the bank road touch
+        // core), but the deck is the jump: banks at the shelf edge on y = -10.
+        Assert.Equal(-10f, crossing.FromBank.y, 1);
+        Assert.Equal(-10f, crossing.ToBank.y, 1);
+        Assert.Equal(-10f, crossing.FromBank.x, 1);
+        Assert.Equal(10f, crossing.ToBank.x, 1);
+        Assert.InRange(crossing.Width, 19f, 21f);
+
+        // Every path vertex the deck replaces lies on the deck line, and the
+        // painting indices bracket the jump so the road is painted up to the
+        // abutment and resumes from the other one.
+        for (int i = crossing.FromIndex; i <= crossing.ToIndex; i++)
+            Assert.True(DistanceFromDeckLine(crossing, path[i]) <= 0.5f,
+                $"path[{i}] {path[i]} lies {DistanceFromDeckLine(crossing, path[i]):F1} m off the deck line");
+        Assert.Equal(2, crossing.FromIndex);
+        Assert.Equal(3, crossing.ToIndex);
+    }
+
+    [Fact]
+    public void RouteThroughTheBentRunHasNoWetPointOutsideTheDeck()
+    {
+        // The validator's 6 m corridor is unchanged; with the deck on the
+        // road it accepts every wet centerline point of the splined route.
+        var world = new WideCoreRiverWorld();
+        var path = BentRunPath;
+        var crossing = Assert.Single(RoadCrossingDetector.Detect(path, world));
+        crossing.RouteIndex = 0;
+        var route = RoadRoute.FromWaypoints(0, "A -> B", 4f, path, world);
+
+        var report = RoadNetworkValidator.Validate(new[] { route }, world, null, new[] { crossing });
+
+        Assert.DoesNotContain(report.Violations, v => v.StartsWith("dry-land"));
+    }
+
+    /// <summary>
+    /// WideCoreRiverWorld (water |x| &lt; 10) plus a damp pond east of the
+    /// river: ground at 30.5 (above the waterline, below the road clearance)
+    /// for x in [14, 40], y in [5, 40], where a rugged spline dips after landing.
+    /// </summary>
+    private sealed class PondAfterLandingWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy)
+        {
+            float ax = Mathf.Abs(wx);
+            if (ax <= 10f) return 26f;
+            if (ax < 14f) return 29.4f;
+            if (wx >= 14f && wx <= 40f && wy >= 5f && wy <= 40f) return 30.5f;
+            return 33f;
+        }
+
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / 40f); // core |x| < 20
+            width = weight > 0f ? 80f : 0f;
+        }
+    }
+
+    [Fact]
+    public void JumpThenBentDampShelfIsDeckedOnlyAlongTheJump()
+    {
+        // RoadTestMac2 492c87b route 49 (GoblinKing -> Crypt4): after an
+        // 84 m jump the road turned south along 30 m of 29-30.5 shelf inside
+        // the core band; the run's chord followed the bend and the deck ran
+        // 15 m south of the road over the channel. The deck is the jump;
+        // the shelf beyond the bend is road.
+        var world = new PondAfterLandingWorld();
+        var path = new List<Vector2>
+        {
+            new(-44f, -40f), new(-28f, -20f), new(-16f, -10f),
+            new(16f, -10f), new(20f, 10f), new(26f, 30f), new(48f, 34f),
+        };
+
+        var crossing = Assert.Single(RoadCrossingDetector.Detect(path, world));
+
+        Assert.Equal(-10f, crossing.FromBank.y, 1);
+        Assert.Equal(-10f, crossing.ToBank.y, 1);
+        Assert.Equal(-14f, crossing.FromBank.x, 1);
+        Assert.Equal(14f, crossing.ToBank.x, 1);
+        Assert.Equal(2, crossing.FromIndex);
+        Assert.Equal(3, crossing.ToIndex);
+
+        var route = RoadRoute.FromWaypoints(0, "A -> B", 4f, path, world);
+        var report = RoadNetworkValidator.Validate(new[] { route }, world, null, new[] { crossing });
+        Assert.DoesNotContain(report.Violations, v => v.StartsWith("dry-land"));
+    }
+
+    /// <summary>Two channels (bed 26, |x - ±20| &lt; 5) under one core band
+    /// (|x| &lt; 30) with a dry bar at 33 between them that the road walks.</summary>
+    private sealed class BraidedRiverWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy) =>
+            Mathf.Abs(Mathf.Abs(wx) - 20f) < 5f ? 26f : 33f;
+
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / 60f); // core |x| < 30
+            width = weight > 0f ? 120f : 0f;
+        }
+    }
+
+    [Fact]
+    public void BraidedChannelsInOneCoreBandGetOneCrossingEach()
+    {
+        var world = new BraidedRiverWorld();
+        var path = new List<Vector2>
+        {
+            new(-48f, 0f), new(-32f, 0f), new(-8f, 0f), new(8f, 0f), new(32f, 0f), new(48f, 0f),
+        };
+
+        var crossings = RoadCrossingDetector.Detect(path, world);
+
+        Assert.Equal(2, crossings.Count);
+        Assert.Equal(1, crossings[0].FromIndex);
+        Assert.Equal(2, crossings[0].ToIndex);
+        Assert.Equal(3, crossings[1].FromIndex);
+        Assert.Equal(4, crossings[1].ToIndex);
+        Assert.InRange(crossings[0].Center.x, -21f, -19f);
+        Assert.InRange(crossings[1].Center.x, 19f, 21f);
+        foreach (var c in crossings)
+            Assert.InRange(c.Width, 9f, 11f); // the 10 m channel, not the 24 m jump
+    }
+}
