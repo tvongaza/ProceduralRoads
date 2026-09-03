@@ -370,6 +370,39 @@ Findings, in the order seen (pre-fix build 99aa383 unless noted):
    approach circle (9d88539); crossings 1/2 and 16/17 sit on identical
    sites (two routes, two bridge plans on one spot) — to check.
 
+### Walk-through, continued (build 9d88539 + a71009b in-world; 19f0946 / ffaed85 built, awaiting relaunch)
+
+6. **c4 river-core fix built (19f0946):** dry ground inside the river band
+   is walkable, a crossing lands on any dry cell, the river penalty prices
+   only the wet margin. Generation change, not yet regenerated or gated.
+7. **c1/c2 doubled bridge, seen:** piers at 1 m spacing where two plans
+   interleave (shot `tys-c1c2-double-piers.png`). Patch built (ffaed85):
+   one plan per site within 6 m. **Real fix, roadmap: road reuse** — the
+   pathfinder should price cells that already carry a road cheaply so a
+   later route merges onto an existing road and shares its bridge, instead
+   of a parallel road and a second crossing.
+8. **Stairs, for the stairs PR:** a run at c18 descends into the river
+   under the bridge abutment (the "stairs run on to the crossing's dry
+   point" rule); a switchback landing above c1/c2 sits on stilts and reads
+   as a lookout deck (`tys-c1c2-hill-platform.png`) — landings should be
+   cut into the hill, not perched on posts.
+9. **c6/c7 swamp shallows (bed 28.5, fairway 3-7 m) built as bridges** where
+   the path waded. Tys: fine for swamps — elsewhere along the same road the
+   bed is raised or the road is painted under the water. **Decision: swamp
+   crossings of wading depth get the wade / raise / span mix like fords,
+   per site.** To implement in the crossing classifier.
+10. **c12 span ford: "looks great", steps meet the deck nicely.** Decision:
+    offer the same treatment to bridges as a random sample — sometimes the
+    deck meets the road flush (today's abutment), sometimes the deck sits a
+    step or two above the road with stairs up to it.
+11. **Dungeon entrances (Tys):** roads should start/end at the ENTRANCE of
+    troll caves, crypts and every other dungeon, not at a random point on
+    the radius. Same mechanism as the crypt-front item (derive the
+    location rotation from seed+zone as ZoneSystem does; aim the endpoint
+    at the entrance arc), generalised to all dungeon prefabs. Roadmap.
+12. `road_mist off|on` (19f0946) switches loaded Mistlands mist volumes for
+    photography.
+
 ## 2026-09-02 round 4: the raw-height blind spot (fb574ff)
 
 **Found by:** the NAS regenerating the fixture at 200000 iterations
