@@ -14,3 +14,6 @@ station repo, sites/RoadTestPC4.txt.
 - <site>-<pose>.jpg: master | cross-section only | cross-section + ramp,
   HUD corners cropped.
 - RoadTestPC4-map.png: biome map with bosses, spawn and the two sites.
+- site-H-owner-view.jpg: the owner's own view (master build, Mac) of site H, a
+  cross-slope road 95 m south of spawn where master paints down the hill;
+  not yet shot on the other builds.
