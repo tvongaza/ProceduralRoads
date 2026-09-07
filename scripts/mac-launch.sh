@@ -14,7 +14,7 @@ if "$CLI" --status 2>/dev/null | grep -q "process=true"; then
     pkill -x Valheim 2>/dev/null || true
     for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -x Valheim >/dev/null || break; sleep 2; done
 fi
-nohup "$VALHEIM/run_bepinex.sh" > /dev/null 2>&1 &
+nohup "$VALHEIM/run_bepinex.sh" -console > /dev/null 2>&1 &
 "$CLI" wait --for terminal --timeout 240s | tail -1
 "$CLI" wait --for mainmenu --timeout 240s | tail -1
 "$CLI" cli_select_character "$CHAR" | tail -1

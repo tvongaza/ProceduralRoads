@@ -78,7 +78,7 @@ grep -E '^(ForceRegenerate|DebugValidation|PathfindingMaxIterations|BridgeCost|W
 
 # ---- 3. launch, load, safety ----
 say "3/8 launching"
-nohup "$VALHEIM/run_bepinex.sh" > /dev/null 2>&1 &
+nohup "$VALHEIM/run_bepinex.sh" -console > /dev/null 2>&1 &
 "$CLI" wait --for terminal --timeout 240s | tail -1
 "$CLI" wait --for mainmenu --timeout 240s | tail -1
 "$CLI" cli_select_character "$CHAR" | tail -1
