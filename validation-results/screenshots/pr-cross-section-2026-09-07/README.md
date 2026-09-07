@@ -26,3 +26,9 @@ station repo, sites/RoadTestPC4.txt.
   the end, and the mean/min/max natural height on an 8 m ring, from the
   scratch `road_ends` command (master build). Sorted by |end - ring mean|;
   the mountain caves top the list (up to +16.7 m).
+- round2-cross-section/ (H, I: master | cross-section profile) and
+  round2-endpoint-ramp/ (J: master | profile only | profile + ramp), shot
+  on the PC 7 Sep 2026 late: generation GLOBAL (46 roads, 20 626 points,
+  same on every build), terrain re-applied per site by road_generate,
+  world = RoadTestPC4 fixture restored per build. H-along on master is
+  blocked by a tree that cli_clear_view missed on that run.
