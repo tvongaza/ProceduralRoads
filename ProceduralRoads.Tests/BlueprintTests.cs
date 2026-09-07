@@ -548,6 +548,56 @@ public class BlueprintTests
         }
     }
 
+    // ================= kit check (a player's unit) =================
+
+    [Theory]
+    [MemberData(nameof(Kits))]
+    public void ShippedKitsPassTheCheck(string kit)
+    {
+        var (style, _, _) = KitInfo(kit);
+        var (start, span, end) = Kit(kit);
+        foreach ((string role, RoadBlueprint unit) in new[] { ("start", start), ("span", span), ("end", end) })
+        {
+            var r = KitCheck.Check(unit, style, role);
+            Assert.True(r.Ok, $"{kit}-{role}: {string.Join("; ", r.Problems)}");
+            Assert.Empty(r.Notes);
+        }
+    }
+
+    [Fact]
+    public void KitCheckNamesWhatAPlayerGotWrong()
+    {
+        var (_, span, end) = Kit("wood-bridge");
+
+        var noSnaps = RoadBlueprint.Parse(span.Write());
+        noSnaps.SnapPoints.Clear();
+        Assert.Contains(KitCheck.Check(noSnaps, BridgeStyle.MeadowsWood, "span").Problems, p => p.StartsWith("needs two snap points"));
+
+        var crooked = RoadBlueprint.Parse(span.Write());
+        crooked.SnapPoints[1] = new Vector3(0.5f, 0f, 2f);
+        Assert.Contains(KitCheck.Check(crooked, BridgeStyle.MeadowsWood, "span").Problems, p => p.Contains("straight along +z"));
+
+        var foreign = RoadBlueprint.Parse(span.Write());
+        foreign.Pieces.Add(new BlueprintPiece { Prefab = "piece_chair", LocalPosition = new Vector3(0f, 0f, 1f) });
+        Assert.Contains(KitCheck.Check(foreign, BridgeStyle.MeadowsWood, "span").Problems, p => p.Contains("piece_chair") && p.Contains("kind="));
+
+        var tagged = RoadBlueprint.Parse(span.Write());
+        tagged.Pieces.Add(new BlueprintPiece { Prefab = "piece_chair", LocalPosition = new Vector3(0f, 0f, 1f), Data = "kind=Deck" });
+        Assert.True(KitCheck.Check(tagged, BridgeStyle.MeadowsWood, "span").Ok);
+
+        var noStair = RoadBlueprint.Parse(end.Write());
+        noStair.Pieces.RemoveAll(p => p.Prefab == "wood_stair");
+        Assert.Contains(KitCheck.Check(noStair, BridgeStyle.MeadowsWood, "end").Problems, p => p.Contains("END needs a stair"));
+
+        var drifted = RoadBlueprint.Parse(span.Write());
+        drifted.Pieces[0].LocalPosition = new Vector3(0f, 0f, 1.3f);
+        Assert.Contains(KitCheck.Check(drifted, BridgeStyle.MeadowsWood, "span").Notes, n => n.Contains("off the 1 m snap lattice"));
+
+        var noDeck = RoadBlueprint.Parse(span.Write());
+        noDeck.Pieces.RemoveAll(p => p.Prefab == "wood_floor");
+        Assert.Contains(KitCheck.Check(noDeck, BridgeStyle.MeadowsWood, "span").Problems, p => p.Contains("no deck piece"));
+    }
+
     // ================= export =================
 
     [Theory]

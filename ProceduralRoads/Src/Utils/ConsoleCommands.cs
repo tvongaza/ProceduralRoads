@@ -119,6 +119,26 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_kits_check",
+            "Validate kit units for the composer: road_kits_check [dir] reads <kit>-{start,span,end}.blueprint from dir (default: the override folder BepInEx/config/ProceduralRoads/blueprints, falling back to the shipped units) and reports snap points, deck, stairs, unknown pieces, off-lattice positions, and prefabs the game does not have.",
+            (args) => CheckKits(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
+            "road_kits_bridge",
+            "Test-combine a kit into a whole bridge on flat ground north of the player: road_kits_bridge <wood|stonearch|hybrid> [width=40] [seed=1] [ruin=0|1]. Deck 2 m up, composed on snap points like a real crossing; ruin=1 also weathers it. Pieces carry the ruin tag, so road_ruins_reset removes them.",
+            (args) => KitBridge(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_kits_export",
             "Write every kit unit as the mod will compose it (overrides included) to .blueprint files: road_kits_export [dir]; default BepInEx/config/PlanBuild/blueprints, so PlanBuild's rune lists them for placing and editing.",
             (args) => ExportKits(args),
@@ -634,6 +654,86 @@ public static class ConsoleCommands
             args.Context.AddString($"{kit}: lane at x={from.x:F0}, z={from.y:F0}..{from.y + chain:F0}, {spawned} pieces");
             lane++;
         }
+    }
+
+    private static void CheckKits(Terminal.ConsoleEventArgs args)
+    {
+        string? saved = BridgeKits.OverrideDirectory;
+        if (args.Length >= 2)
+            BridgeKits.OverrideDirectory = Path.GetFullPath(args[1]);
+        BridgeKits.ClearCache();
+        try
+        {
+            foreach (BridgeKit kit in s_kits)
+            {
+                (RoadBlueprint start, RoadBlueprint span, RoadBlueprint end) = BridgeKits.Load(kit);
+                BridgeStyle style = BridgeKits.StyleOf(kit);
+                foreach ((string role, RoadBlueprint unit) in new[] { ("start", start), ("span", span), ("end", end) })
+                {
+                    KitCheck.Report r = KitCheck.Check(unit, style, role);
+                    if (ZNetScene.instance != null)
+                        foreach (BlueprintPiece p in unit.Pieces)
+                            if (!string.IsNullOrEmpty(p.Prefab) && ZNetScene.instance.GetPrefab(p.Prefab) == null)
+                                r.Problems.Add($"the game has no prefab named {p.Prefab}");
+                    string file = BridgeKits.Prefix(kit) + "-" + role;
+                    args.Context.AddString($"{file}: {(r.Ok ? "OK" : "PROBLEMS")} — {unit.Pieces.Count} pieces, {unit.Length:F1} m");
+                    foreach (string s in r.Problems) args.Context.AddString("  ! " + s);
+                    foreach (string s in r.Notes) args.Context.AddString("  - " + s);
+                }
+            }
+        }
+        finally
+        {
+            BridgeKits.OverrideDirectory = saved;
+            BridgeKits.ClearCache();
+        }
+    }
+
+    private static void KitBridge(Terminal.ConsoleEventArgs args)
+    {
+        if (Player.m_localPlayer == null || WorldGenerator.instance == null)
+        {
+            args.Context.AddString("no player in a world");
+            return;
+        }
+        BridgeKit kit = args.Length >= 2 && args[1].ToLowerInvariant() switch { "wood" => true, "stonearch" => true, "stone-arch" => true, "hybrid" => true, _ => false }
+            ? args[1].ToLowerInvariant() switch { "wood" => BridgeKit.Wood, "hybrid" => BridgeKit.Hybrid, _ => BridgeKit.StoneArch }
+            : BridgeKit.Wood;
+        float width = 40f;
+        int seed = 1;
+        bool ruin = false;
+        if (args.Length >= 3) float.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out width);
+        if (args.Length >= 4) int.TryParse(args[3], out seed);
+        if (args.Length >= 5) ruin = args[4] == "1";
+
+        Vector3 at = Player.m_localPlayer.transform.position;
+        Vector2 from = new(at.x, at.z + 4f);
+        float ground = BiomeBlendedHeight.GetBlendedHeight(from.x, from.y, WorldGenerator.instance);
+        RoadCrossing c = new()
+        {
+            FromBank = from, ToBank = from + new Vector2(0f, width), Direction = new Vector2(0f, 1f),
+            Width = width, Center = from + new Vector2(0f, width * 0.5f), WaterLevel = ground - 100f,
+            RiverbedHeight = ground, FairwayCenter = from + new Vector2(0f, width * 0.5f), FairwayWidth = 0f,
+            Biome = Heightmap.Biome.Meadows,
+        };
+        (RoadBlueprint start, RoadBlueprint span, RoadBlueprint end) = BridgeKits.Load(kit);
+        BridgeStyle style = BridgeKits.StyleOf(kit);
+        // Flat ground: the deck runs 2 m up along the whole length so the supports show.
+        List<BridgePiece> pieces = new();
+        int spans = BlueprintComposer.SpanCount(width - start.Length - end.Length, span.Length);
+        float chain = start.Length + spans * span.Length + end.Length;
+        float origin = BlueprintComposer.ChainOrigin(width, chain);
+        float deck = ground + 2f;
+        BlueprintComposer.Place(pieces, start, c, style, origin, _ => deck);
+        for (int i = 0; i < spans; i++)
+            BlueprintComposer.Place(pieces, span, c, style, origin + start.Length + i * span.Length, _ => deck);
+        BlueprintComposer.Place(pieces, end, c, style, origin + chain - end.Length, _ => deck);
+        pieces = BlueprintComposer.GroundPosts(pieces, WorldGenerator.instance, style);
+        if (ruin)
+            pieces = BlueprintComposer.Weather(pieces, c, style, WorldGenerator.instance, seed);
+        int floaters = SupportModel.Floaters(pieces, style, WorldGenerator.instance).Count;
+        int spawned = RuinPlacement.SpawnPieces(pieces, ghost: false);
+        args.Context.AddString($"{kit}: {spans} spans of {span.Length:F0} m, chain {chain:F0} m for {width:F0} m, {spawned} pieces spawned, {floaters} the support model calls unsupported, from z={from.y:F0} to {from.y + width:F0}");
     }
 
     private static void ExportKits(Terminal.ConsoleEventArgs args)
