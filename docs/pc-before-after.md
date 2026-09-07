@@ -63,6 +63,29 @@ implement it.
    C:\Users\Public\station\desktop.png plus windows.log (every top-level
    window title). Session 0 cannot see session 1 any other way.
 
+## Say what a run is (the owner, 7 Sep 2026)
+
+Every round states three things, in the log, the exhibit README and the
+PR text:
+
+- **Generation scope**: global (every selected island; RoadTestPC4 = 61
+  islands, 46 roads, 20 626 points, ~60 s on the PC, 259 s on the Mac) /
+  one island (`road_regen_island`, lead branch only so far) / nearby
+  loaded zones (no such mode yet; `road_generate` only re-applies terrain
+  to loaded zones, it still generates globally) / point to point (not
+  built; the earlier ChatGPT prototype had it).
+- **Painting**: which terrain/paint code ran (master profile, cross-section
+  profile, ramp), and whether terrain was applied at zone spawn or
+  re-applied by `road_generate`.
+- **World**: the pristine fixture (RoadTestPC4, restored per build) or an
+  already generated world (roads loaded from the save).
+
+Use the smallest scope that answers the question: a cross-section or
+ramp shot needs one island, not the world. Master-based PR builds only
+have global generation today; porting `road_regen_island` into a test
+tooling overlay (zone-hook fix + road_ends + regen_island, applied on top
+of any branch for test builds only) is the planned fix.
+
 ## Procedure (measured on the gaming PC, 7 Sep 2026)
 
 Preconditions: PC awake (`pc.sh status`), Steam running in the desktop
