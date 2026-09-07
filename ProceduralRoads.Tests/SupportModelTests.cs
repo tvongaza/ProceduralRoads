@@ -189,11 +189,10 @@ public class SupportModelTests
                 var plan = BridgeLayout.Solve(crossing, world, seed, style);
                 AssertGrounded(plan, style, world, $"high bridge {style.PilingPrefab} seed {seed}");
                 // The deck runs at plateau height (plus any stepped-end rise), not at the water,
-                // and the abutments sit on the tops.
+                // and the end stairs step down onto the tops.
                 foreach (var deck in plan.Where(p => p.Kind == BridgePieceKind.Deck))
                     Assert.InRange(deck.Position.y + style.DeckTopOffset, 35.5f, 38f);
-                foreach (var abutment in plan.Where(p => p.Kind == BridgePieceKind.Abutment))
-                    Assert.InRange(Mathf.Abs(abutment.Position.x), 15.5f, 16.5f);
+                Assert.Contains(plan, p => p.Kind == BridgePieceKind.Stair && Mathf.Abs(p.Position.x) >= 16.4f);
                 if (seed == 1 && style.PilingPrefab == "wood_pole2")
                     SideViewExhibit.Write("high-bridge-side.svg", crossing, plan, world, style, "High bridge: deck springs from the cliff tops (task 1d)");
             }

@@ -35,17 +35,18 @@ public class SteppedEndTests
             float bankH = world.GetHeight(crossing.FromBank.x, crossing.FromBank.y);
             var endDeck = plan.Where(p => p.Kind == BridgePieceKind.Deck)
                 .OrderBy(p => Vector2.Distance(new Vector2(p.Position.x, p.Position.z), crossing.FromBank)).First();
+            int stairs = plan.Count(p => p.Kind == BridgePieceKind.Stair);
             if (rise > 0f)
             {
                 stepped++;
                 Assert.InRange(rise, RoadConstants.SteppedEndMinRise, RoadConstants.SteppedEndMaxRise);
-                Assert.Contains(plan, p => p.Kind == BridgePieceKind.Stair);
+                Assert.True(stairs >= 2 * Mathf.CeilToInt(rise - 0.02f), $"a stepped end of {rise:F2} m needs {Mathf.CeilToInt(rise - 0.02f)} steps per end, got {stairs} in all");
                 Assert.InRange(endDeck.Position.y - bankH, rise - 0.3f, rise + 0.3f);
             }
             else
             {
                 flush++;
-                Assert.DoesNotContain(plan, p => p.Kind == BridgePieceKind.Stair);
+                Assert.Equal(2, stairs); // one step per end, clipped into the dirt (Tys, 3 Sep 2026)
                 Assert.InRange(endDeck.Position.y - bankH, -0.3f, 0.3f);
             }
         }

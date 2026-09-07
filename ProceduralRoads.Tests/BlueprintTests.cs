@@ -282,9 +282,9 @@ public class BlueprintTests
             var c = new RoadCrossing { FromBank = new Vector2(0f, 0f), ToBank = new Vector2(w, 0f), Direction = new Vector2(1f, 0f), Width = w, Center = new Vector2(w / 2f, 0f), WaterLevel = 30f, RiverbedHeight = 27f, Biome = Heightmap.Biome.Meadows };
             var plan = BlueprintComposer.Tile(c, world, style, start, span, end);
             var rows = plan.Where(p => p.Kind == BridgePieceKind.Deck).Select(p => Mathf.Round(Along(c, p) * 100f) / 100f).Distinct().OrderBy(a => a).ToList();
-            Assert.True(rows.First() <= 1.01f && rows.Last() >= w - 1.01f, $"{kit} at {w:F2} m: plates {rows.First():F2}..{rows.Last():F2}");
+            Assert.True(rows.First() <= 1.01f && rows.Last() >= w - 1.01f && rows.First() >= 1f - span.Length / 2f - 0.01f, $"{kit} at {w:F2} m: plates {rows.First():F2}..{rows.Last():F2}");
             for (int i = 1; i < rows.Count; i++)
-                Assert.True(rows[i] - rows[i - 1] <= 2.01f, $"{kit} at {w:F2} m: {rows[i] - rows[i - 1]:F2} m hole after {rows[i - 1]:F2}");
+                Assert.True(rows[i] - rows[i - 1] <= 2.02f, $"{kit} at {w:F2} m: {rows[i] - rows[i - 1]:F2} m hole after {rows[i - 1]:F2}");
         }
     }
 
@@ -317,19 +317,31 @@ public class BlueprintTests
 
         var plan = BlueprintComposer.GroundPosts(BlueprintComposer.Tile(c, world, style, start, span, end), world, style);
 
-        // Deck runs continuously from bank to bank; joints never open wider
-        // than the pitch rounding allows (half a span over the whole bridge).
-        var plateRows = plan.Where(p => p.Kind == BridgePieceKind.Deck).Select(p => Along(c, p)).Distinct().OrderBy(a => a).ToList();
-        Assert.True(plateRows.First() <= 1.5f, $"first plate at {plateRows.First():F1} m");
-        Assert.True(plateRows.Last() >= c.Width - 1.5f, $"last plate at {plateRows.Last():F1} m of {c.Width:F1}");
-        float plateStep = deckWidth >= 4f ? 2f : span.Length; // plates are 2 m long in every kit
-        for (int i = 1; i < plateRows.Count; i++)
-            Assert.True(plateRows[i] - plateRows[i - 1] <= plateStep * 1.5f + 0.01f, $"{kit}: {plateRows[i] - plateRows[i - 1]:F2} m between plate rows at {plateRows[i - 1]:F1}");
-
-        // The spans are pitched at the kit's own length (rounded to fit), not a global 2 m.
+        // On snap points: plate rows exactly 2 m apart (every kit's plate is
+        // 2 m long), pier rows exactly one span apart, nothing stretched or
+        // overlapped; the chain covers the water and overshoots each bank by
+        // the same amount, never more than half a span.
+        var plateRows = plan.Where(p => p.Kind == BridgePieceKind.Deck).Select(p => Mathf.Round(Along(c, p) * 1000f) / 1000f).Distinct().OrderBy(a => a).ToList();
         int spans = BlueprintComposer.SpanCount(c.Width - 4f, spanLength);
-        var pierRows = plan.Where(p => p.Kind == BridgePieceKind.Piling).Select(p => Mathf.Round(Along(c, p) * 10f) / 10f).Distinct().Count();
-        Assert.Equal(spans + 1, pierRows); // START's pier plus one per span
+        float chain = 4f + spans * spanLength;
+        float origin = BlueprintComposer.ChainOrigin(c.Width, chain);
+        Assert.InRange(origin, -spanLength / 2f - 0.001f, 0.001f);
+        Assert.Equal(origin + 1f, plateRows.First(), 2);
+        Assert.Equal(origin + chain - 1f, plateRows.Last(), 2);
+        for (int i = 1; i < plateRows.Count; i++)
+            Assert.Equal(2f, plateRows[i] - plateRows[i - 1], 2);
+        var pierRows = plan.Where(p => p.Kind == BridgePieceKind.Piling).Select(p => Mathf.Round(Along(c, p) * 1000f) / 1000f).Distinct().OrderBy(a => a).ToList();
+        Assert.Equal(spans + 1, pierRows.Count); // START's pier plus one per span
+        for (int i = 1; i < pierRows.Count; i++)
+            Assert.Equal(spanLength, pierRows[i] - pierRows[i - 1], 2);
+
+        // Both ends step down into the bank: a stair outside each end of the
+        // chain, its foot below the bank ground (it clips into the dirt).
+        var stairs = plan.Where(p => p.Kind == BridgePieceKind.Stair).ToList();
+        Assert.Contains(stairs, s => Along(c, s) < origin);
+        Assert.Contains(stairs, s => Along(c, s) > origin + chain);
+        foreach (var s in stairs)
+            Assert.True(s.Position.y <= BiomeBlendedHeight.GetBlendedHeight(s.Position.x, s.Position.z, world) + 0.15f, $"{kit}: stair at {Along(c, s):F1} m floats");
 
         // Double-wide kits carry two of everything abreast, ±1 m off the centreline: the causeway's 4 m.
         if (deckWidth >= 4f)
@@ -369,7 +381,8 @@ public class BlueprintTests
         var (start, span, end) = Kit("hybrid");
         var plan = BlueprintComposer.GroundPosts(BlueprintComposer.Tile(c, world, BridgeStyle.HybridStoneWood, start, span, end), world, BridgeStyle.HybridStoneWood);
         Assert.All(plan.Where(p => p.Kind == BridgePieceKind.Piling), p => Assert.Equal("stone_wall_2x1", p.Prefab));
-        Assert.All(plan.Where(p => p.Kind is BridgePieceKind.Deck or BridgePieceKind.Abutment), p => Assert.Equal("wood_floor", p.Prefab));
+        Assert.All(plan.Where(p => p.Kind == BridgePieceKind.Deck), p => Assert.Equal("wood_floor", p.Prefab));
+        Assert.All(plan.Where(p => p.Kind == BridgePieceKind.Stair), p => Assert.Equal("wood_stair", p.Prefab));
         Assert.All(plan.Where(p => p.Kind == BridgePieceKind.Beam), p => Assert.Equal("wood_beam", p.Prefab));
         // Stone piers stack in 1 m courses down to the bed.
         var oneColumn = plan.Where(p => p.Kind == BridgePieceKind.Piling && Mathf.Abs(Along(c, p) - 2f) < 0.01f && Across(c, p) > 0f).OrderByDescending(p => p.Position.y).ToList();
@@ -458,7 +471,8 @@ public class BlueprintTests
         var (c, world) = Crossing();
         var plan = BridgePlanner.Plan(c, world, 11, kit);
         Assert.Contains(plan, p => p.Prefab == signaturePrefab);
-        Assert.Contains(plan, p => p.Kind == BridgePieceKind.Abutment);
+        Assert.Contains(plan, p => p.Kind == BridgePieceKind.Stair);
+        Assert.DoesNotContain(plan, p => p.Kind == BridgePieceKind.Abutment);
         Assert.All(plan, p => Assert.InRange(p.HealthFraction, RoadConstants.RuinHealthMin - 0.001f, RoadConstants.RuinHealthMax + 0.001f));
         SupportModelTests.AssertGrounded(plan, BridgeKits.StyleOf(kit), world, kit + " planned");
         var again = BridgePlanner.Plan(c, world, 11, kit);

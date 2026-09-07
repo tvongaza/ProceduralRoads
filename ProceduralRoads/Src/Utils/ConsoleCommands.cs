@@ -109,6 +109,26 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_kits_show",
+            "Build one bay of every blueprint kit (START, SPAN, END on their snap points) in lanes running north from the player, deck 2 m up so the supports show; lanes west to east: wood, stone-arch, hybrid. Pieces carry the ruin tag, so road_ruins_reset removes them.",
+            (args) => ShowKits(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
+            "road_kits_export",
+            "Write every kit unit as the mod will compose it (overrides included) to .blueprint files: road_kits_export [dir]; default BepInEx/config/PlanBuild/blueprints, so PlanBuild's rune lists them for placing and editing.",
+            (args) => ExportKits(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_piece_health",
             "List the mod's ruin pieces near the player with their stored health, the prefab's full health, and which vanilla damage visual is active (new / worn / broken): road_piece_health [radius=30]. " +
             "Diagnoses whether planned health fractions reach the game.",
@@ -575,6 +595,65 @@ public static class ConsoleCommands
         {
             int written = BlueprintComposer.ExportAll(dir, RoadNetworkGenerator.GetRoadCrossings(), WorldGenerator.instance, WorldGenerator.instance.GetSeed());
             args.Context.AddString($"wrote {written} blueprints to {dir}");
+        }
+        catch (IOException e)
+        {
+            args.Context.AddString($"export failed: {e.Message}");
+        }
+    }
+
+    private static readonly BridgeKit[] s_kits = { BridgeKit.Wood, BridgeKit.StoneArch, BridgeKit.Hybrid };
+
+    private static void ShowKits(Terminal.ConsoleEventArgs args)
+    {
+        if (Player.m_localPlayer == null || WorldGenerator.instance == null)
+        {
+            args.Context.AddString("no player in a world");
+            return;
+        }
+        Vector3 at = Player.m_localPlayer.transform.position;
+        int lane = 0;
+        foreach (BridgeKit kit in s_kits)
+        {
+            (RoadBlueprint start, RoadBlueprint span, RoadBlueprint end) = BridgeKits.Load(kit);
+            BridgeStyle style = BridgeKits.StyleOf(kit);
+            float chain = start.Length + span.Length + end.Length;
+            Vector2 from = new(at.x + lane * 8f, at.z + 4f);
+            RoadCrossing c = new()
+            {
+                FromBank = from, ToBank = from + new Vector2(0f, chain), Direction = new Vector2(0f, 1f),
+                Width = chain, Center = from + new Vector2(0f, chain * 0.5f), WaterLevel = -100f, Biome = Heightmap.Biome.Meadows,
+            };
+            float deck = BiomeBlendedHeight.GetBlendedHeight(from.x, from.y, WorldGenerator.instance) + 2f;
+            List<BridgePiece> pieces = new();
+            BlueprintComposer.Place(pieces, start, c, style, 0f, _ => deck);
+            BlueprintComposer.Place(pieces, span, c, style, start.Length, _ => deck);
+            BlueprintComposer.Place(pieces, end, c, style, start.Length + span.Length, _ => deck);
+            pieces = BlueprintComposer.GroundPosts(pieces, WorldGenerator.instance, style);
+            int spawned = RuinPlacement.SpawnPieces(pieces, ghost: false);
+            args.Context.AddString($"{kit}: lane at x={from.x:F0}, z={from.y:F0}..{from.y + chain:F0}, {spawned} pieces");
+            lane++;
+        }
+    }
+
+    private static void ExportKits(Terminal.ConsoleEventArgs args)
+    {
+        string dir = args.Length >= 2 ? Path.GetFullPath(args[1]) : Path.Combine(BepInEx.Paths.ConfigPath, "PlanBuild", "blueprints");
+        try
+        {
+            Directory.CreateDirectory(dir);
+            int written = 0;
+            foreach (BridgeKit kit in s_kits)
+            {
+                (RoadBlueprint start, RoadBlueprint span, RoadBlueprint end) = BridgeKits.Load(kit);
+                string prefix = BridgeKits.Prefix(kit);
+                foreach ((string unit, RoadBlueprint bp) in new[] { ("start", start), ("span", span), ("end", end) })
+                {
+                    File.WriteAllText(Path.Combine(dir, prefix + "-" + unit + ".blueprint"), bp.Write());
+                    written++;
+                }
+            }
+            args.Context.AddString($"wrote {written} kit units to {dir}");
         }
         catch (IOException e)
         {

@@ -6,18 +6,18 @@
 0;0;0
 0;0;88
 #Pieces
-wood_floor;Building;-1;-0.299999237;0;0;0;0;1;kind=Abutment health=0.294045359;1;1;1
-wood_floor;Building;1;-0.299999237;0;0;0;0;1;kind=Abutment health=0.373172671;1;1;1
-wood_floor;Building;-1;0;1;0;0;0;1;kind=Deck health=0.20830597;1;1;1
-wood_floor;Building;1;0;1;0;0;0;1;kind=Deck health=0.0914411694;1;1;1
-stone_wall_2x1;Building;-1;-0.600000381;2;0;0.707106769;0;0.707106769;kind=Piling health=0.498651683;1;1;1
-stone_wall_2x1;Building;-1;-1.60000038;2;0;0.707106769;0;0.707106769;kind=Piling health=0.630435467;1;1;1
-stone_wall_2x1;Building;-1;-2.60000038;2;0;0.707106769;0;0.707106769;kind=Piling health=0.385037422;1;1;1
-stone_wall_2x1;Building;1;-0.600000381;2;0;0.707106769;0;0.707106769;kind=Piling health=0.326575637;1;1;1
-stone_wall_2x1;Building;1;-1.60000038;2;0;0.707106769;0;0.707106769;kind=Piling health=0.606983423;1;1;1
-stone_wall_2x1;Building;1;-2.60000038;2;0;0.707106769;0;0.707106769;kind=Piling health=0.479561865;1;1;1
-wood_beam;Building;-1;-0.129999161;2;0;0;0;1;kind=Beam health=0.407138616;1;1;1
-wood_beam;Building;1;-0.129999161;2;0;0;0;1;kind=Beam health=0.448413253;1;1;1
+wood_floor;Building;-1;0;1;0;0;0;1;kind=Deck health=0.373172671;1;1;1
+wood_floor;Building;1;0;1;0;0;0;1;kind=Deck health=0.20830597;1;1;1
+stone_wall_2x1;Building;-1;-0.600000381;2;0;0.707106769;0;0.707106769;kind=Piling health=0.377303451;1;1;1
+stone_wall_2x1;Building;-1;-1.60000038;2;0;0.707106769;0;0.707106769;kind=Piling health=0.0914411694;1;1;1
+stone_wall_2x1;Building;-1;-2.60000038;2;0;0.707106769;0;0.707106769;kind=Piling health=0.498651683;1;1;1
+stone_wall_2x1;Building;1;-0.600000381;2;0;0.707106769;0;0.707106769;kind=Piling health=0.630435467;1;1;1
+stone_wall_2x1;Building;1;-1.60000038;2;0;0.707106769;0;0.707106769;kind=Piling health=0.385037422;1;1;1
+stone_wall_2x1;Building;1;-2.60000038;2;0;0.707106769;0;0.707106769;kind=Piling health=0.326575637;1;1;1
+wood_beam;Building;-1;-0.129999161;2;0;0;0;1;kind=Beam health=0.479561865;1;1;1
+wood_beam;Building;1;-0.129999161;2;0;0;0;1;kind=Beam health=0.407138616;1;1;1
+wood_stair;Building;-1;-1;-1;0;1;0;6.12323426E-17;kind=Stair health=0.593008578;1;1;1
+wood_stair;Building;1;-1;-1;0;1;0;6.12323426E-17;kind=Stair health=0.448413253;1;1;1
 wood_floor;Building;-1;0;3;0;0;0;1;kind=Deck health=0.333845526;1;1;1
 wood_floor;Building;1;0;3;0;0;0;1;kind=Deck health=0.377734214;1;1;1
 wood_floor;Building;-1;0;5;0;0;0;1;kind=Deck health=0.451584846;1;1;1
@@ -237,5 +237,5 @@ wood_beam;Building;-1;-0.129999161;86;0;0;0;1;kind=Beam health=0.629665017;1;1;1
 wood_beam;Building;1;-0.129999161;86;0;0;0;1;kind=Beam health=0.201736584;1;1;1
 wood_floor;Building;-1;0;87;0;0;0;1;kind=Deck health=0.62327826;1;1;1
 wood_floor;Building;1;0;87;0;0;0;1;kind=Deck health=0.0621009469;1;1;1
-wood_floor;Building;-1;-0.299999237;88;0;0;0;1;kind=Abutment health=0.168406069;1;1;1
-wood_floor;Building;1;-0.299999237;88;0;0;0;1;kind=Abutment health=0.665445328;1;1;1
+wood_stair;Building;-1;-1;89;0;0;0;1;kind=Stair health=0.168406069;1;1;1
+wood_stair;Building;1;-1;89;0;0;0;1;kind=Stair health=0.665445328;1;1;1

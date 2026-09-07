@@ -142,10 +142,21 @@ public static class RuinPlacement
             return 0;
 
         m_spawnedZones.Add(zoneID);
+        int spawned = SpawnPieces(pieces, mode == ZoneSystem.SpawnMode.Ghost);
 
-        bool ghost = mode == ZoneSystem.SpawnMode.Ghost;
+        if (spawned > 0)
+            Log.LogInfo($"[RUINS] zone {zoneID}: spawned {spawned} ruin pieces");
+        return spawned;
+    }
+
+    /// <summary>Instantiates planned pieces as persistent ZDOs (ghost: ZDO
+    /// only, the way zone generation does it), each tagged with the ruin
+    /// marker and carrying its planned health. Returns how many spawned.</summary>
+    public static int SpawnPieces(List<BridgePiece> pieces, bool ghost)
+    {
+        if (ZNetScene.instance == null)
+            return 0;
         int spawned = 0;
-
         foreach (BridgePiece piece in pieces)
         {
             GameObject? prefab = ZNetScene.instance.GetPrefab(piece.Prefab);
@@ -180,9 +191,6 @@ public static class RuinPlacement
 
             spawned++;
         }
-
-        if (spawned > 0)
-            Log.LogInfo($"[RUINS] zone {zoneID}: spawned {spawned} ruin pieces");
         return spawned;
     }
 

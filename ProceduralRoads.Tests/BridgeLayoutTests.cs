@@ -134,7 +134,7 @@ public class BridgeLayoutTests
         var (crossing, world) = SolveSetup();
         var plan = BridgeLayout.Solve(crossing, world, 3, BridgeStyle.MeadowsWood);
 
-        Assert.Equal(2, plan.Count(p => p.Kind == BridgePieceKind.Abutment));
+        Assert.DoesNotContain(plan, p => p.Kind == BridgePieceKind.Abutment); // no overlapping plate at the banks
         Assert.True(plan.Count(p => p.Kind == BridgePieceKind.Piling) >= 2, "Expected surviving piers");
 
         // Ruin means the deck is incomplete: fewer deck pieces than stations.
@@ -146,11 +146,16 @@ public class BridgeLayoutTests
         Assert.All(plan, p => Assert.True(p.HealthFraction >= RoadConstants.RuinHealthMin - 0.001f && p.HealthFraction < 0.95f,
             $"{p.Kind} health {p.HealthFraction:F2} outside ruin range"));
 
-        // Abutments sit sunk below the bank surface (road laps onto them).
-        foreach (var ab in plan.Where(p => p.Kind == BridgePieceKind.Abutment))
+        // Each end is a stair down from the deck edge into the bank (Tys, 3 Sep
+        // 2026): its top meets the deck, its body is in the dirt.
+        (float deckFromH, float deckToH) = BridgeLayout.DeckEndHeights(crossing, world);
+        foreach ((Vector2 bank, float deckH) in new[] { (crossing.FromBank, deckFromH), (crossing.ToBank, deckToH) })
         {
-            float ground = world.GetHeight(ab.Position.x, ab.Position.z);
-            Assert.True(ab.Position.y < ground, "Abutment should be sunk into the bank");
+            var stairs = plan.Where(p => p.Kind == BridgePieceKind.Stair && Vector2.Distance(new Vector2(p.Position.x, p.Position.z), bank) < 2.5f).ToList();
+            Assert.NotEmpty(stairs);
+            var top = stairs.OrderByDescending(s => s.Position.y).First();
+            Assert.InRange(top.Position.y + 1f, deckH - 0.05f, deckH + 0.05f);
+            Assert.True(top.Position.y <= world.GetHeight(top.Position.x, top.Position.z) + 0.15f, "the stair's foot is in the dirt");
         }
 
         // Debris is tilted, not standing.

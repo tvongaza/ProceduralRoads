@@ -96,14 +96,15 @@ public static class BlueprintComposer
     }
 
     /// <summary>
-    /// Composes a kit across a crossing: START held at the near bank, SPAN
-    /// repeated by snap-point chaining, END held so its far snap point lands
-    /// on the far bank. A crossing is rarely a whole number of spans, so the
-    /// spans are pitched evenly over what START and END leave, one more than
-    /// fits rather than one fewer: joints overlap a little, they never open a
-    /// hole a walker falls through (a 10 m crossing with a 4 m kit left a 2 m
-    /// gap when rounded to nearest). Each kit brings its own span length (a
-    /// 2 m plank, a 4 m arch); nothing here assumes one.
+    /// Composes a kit across a crossing on Valheim's snap points: START, then
+    /// enough SPANs to cover the water, then END, every unit exactly its
+    /// length after the last (the units' snap points coincide, as they would
+    /// in a player's hands), never stretched or overlapped. A crossing is
+    /// rarely a whole number of spans, so the chain is a little longer than
+    /// the water and sits centred on it: each end runs up to half a span
+    /// past its bank and clips into the dirt, where the END/START stairs
+    /// take the road down (Tys, 3 Sep 2026). Each kit brings its own span
+    /// length (a 2 m plank, a 4 m arch); nothing here assumes one.
     /// </summary>
     public static List<BridgePiece> Tile(RoadCrossing c, WorldGenerator world, BridgeStyle style,
         RoadBlueprint start, RoadBlueprint span, RoadBlueprint end)
@@ -111,15 +112,20 @@ public static class BlueprintComposer
         List<BridgePiece> pieces = new();
         Func<float, float> deckAt = DeckGrade(c, world, style);
 
-        Place(pieces, start, c, style, 0f, deckAt);
-        float budget = c.Width - start.Length - end.Length;
-        int spans = SpanCount(budget, span.Length);
-        float pitch = spans > 0 ? budget / spans : 0f;
+        int spans = SpanCount(c.Width - start.Length - end.Length, span.Length);
+        float chain = start.Length + spans * span.Length + end.Length;
+        float origin = ChainOrigin(c.Width, chain);
+        Place(pieces, start, c, style, origin, deckAt);
         for (int i = 0; i < spans; i++)
-            Place(pieces, span, c, style, start.Length + i * pitch, deckAt);
-        Place(pieces, end, c, style, c.Width - end.Length, deckAt);
+            Place(pieces, span, c, style, origin + start.Length + i * span.Length, deckAt);
+        Place(pieces, end, c, style, origin + chain - end.Length, deckAt);
         return pieces;
     }
+
+    /// <summary>Where the chain starts along the crossing line: centred, so
+    /// a chain longer than the water overshoots each bank by the same
+    /// amount (never more than half a span).</summary>
+    public static float ChainOrigin(float width, float chainLength) => Mathf.Min(0f, (width - chainLength) * 0.5f);
 
     /// <summary>How many spans fill <paramref name="budget"/> metres: enough
     /// to cover it (rounded up, with a hair of tolerance for a whole number),
@@ -191,7 +197,7 @@ public static class BlueprintComposer
         foreach (BridgePiece p in pieces)
         {
             bool falls = p.Kind == BridgePieceKind.Piling ? columnFalls[Column(p)]
-                : p.Kind == BridgePieceKind.Abutment ? false
+                : p.Kind is BridgePieceKind.Abutment or BridgePieceKind.Stair ? false // the approach stays
                 : InFairway(p) || rng.NextDouble() < deckLoss * MidCloseness(p);
             if (falls)
                 continue;

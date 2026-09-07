@@ -256,7 +256,6 @@ public static class BridgeLayout
         // Stepped ends: per site (by hash, so unstepped sites keep their
         // plans byte for byte) the deck sits SteppedEndRise above the road
         // at both ends, with steps up to it; otherwise it meets the road flush.
-        float endRise = SteppedEndRise(crossing);
         (float deckFromH, float deckToH) = DeckEndHeights(crossing, world);
 
         // Fairway keep-clear interval, projected onto the crossing line.
@@ -337,24 +336,13 @@ public static class BridgeLayout
             });
         }
 
-        // Abutments: bank platforms sunk slightly below the road surface so
-        // terrain and paint lap onto the wood/stone. Stone kits also spring a
-        // quarter-arch from each bank out over the water — the surviving
-        // half of a broken arch bridge.
+        // Stone kits spring a quarter-arch from each bank out over the
+        // water — the surviving half of a broken arch bridge.
         foreach (Vector2 bank in new[] { from, to })
         {
-            float bankGround = BiomeBlendedHeight.GetBlendedHeight(bank.x, bank.y, world);
-            pieces.Add(new BridgePiece
-            {
-                Kind = BridgePieceKind.Abutment,
-                Prefab = style.AbutmentPrefab,
-                Position = new Vector3(bank.x, bankGround - 0.3f, bank.y),
-                YawDegrees = yaw,
-                HealthFraction = 0.5f + NextFloat(rng) * 0.4f,
-            });
-
             if (string.IsNullOrEmpty(style.ArchPrefab))
                 continue;
+            float bankGround = BiomeBlendedHeight.GetBlendedHeight(bank.x, bank.y, world);
 
             // Springing only makes sense off a bank that stands clear of the
             // water; a near-ford bank would put the arch in the mud.
@@ -365,13 +353,12 @@ public static class BridgeLayout
                 EmitArch(pieces, style, bank, inward, bankGround, rng);
         }
 
-        // Steps up onto a stepped end, last so the rest of the plan draws the
-        // same random sequence whether or not the site is stepped.
-        if (endRise > 0f)
-        {
-            EmitSteps(pieces, style, world, from, dir, bankFromH, stationDeckH[0], yaw, rng);
-            EmitSteps(pieces, style, world, to, -dir, bankToH, stationDeckH[stationCount - 1], yaw, rng);
-        }
+        // Every end is a stair down from the deck edge into the bank (Tys,
+        // 3 Sep 2026: no overlapping abutment plate; a flush end is one step
+        // clipped into the dirt, a stepped end a flight). Last, so the rest
+        // of the plan draws the same random sequence either way.
+        EmitSteps(pieces, style, world, from, dir, bankFromH, stationDeckH[0], yaw, rng);
+        EmitSteps(pieces, style, world, to, -dir, bankToH, stationDeckH[stationCount - 1], yaw, rng);
 
         return pieces;
     }
@@ -485,15 +472,16 @@ public static class BridgeLayout
         EmitSteps(pieces, style, world, to, -dir, bankToH, deckH, yaw, rng);
     }
 
-    /// <summary>Steps from the road at a bank up onto a deck edge that sits
-    /// above it: one step piece per metre of rise, marching outward from the
-    /// abutment so the top step meets the deck edge. A step whose foot is
-    /// above the ground gets a post under it (grounded by construction, like
-    /// a station).</summary>
+    /// <summary>Steps down from a deck edge into the bank: one step piece per
+    /// metre the deck sits above the road, at least one, marching outward so
+    /// the top step meets the deck edge. A flush end's single step is mostly
+    /// inside the dirt, which is the point: the road meets the deck through
+    /// a stair, never an overlapping plate. A step whose foot is above the
+    /// ground gets a post under it (grounded by construction, like a station).</summary>
     private static void EmitSteps(List<BridgePiece> pieces, BridgeStyle style, WorldGenerator world,
         Vector2 bank, Vector2 inward, float bankH, float deckH, float yaw, System.Random rng)
     {
-        if (string.IsNullOrEmpty(style.StairPrefab) || deckH - bankH < 0.4f)
+        if (string.IsNullOrEmpty(style.StairPrefab))
             return;
         int steps = Mathf.Max(1, Mathf.CeilToInt((deckH - bankH) / 1f - 0.02f)); // tolerate float noise
         float stepYaw = YawDegrees(inward) + 180f; // stair prefab rises toward local -z

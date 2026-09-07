@@ -6,13 +6,13 @@
 0;0;0
 0;0;88
 #Pieces
-wood_floor;Building;0;-0.299999237;0;0;0;0;1;kind=Abutment health=0.179131597;1;1;1
-wood_floor;Building;0;0;1;0;0;0;1;kind=Deck health=0.182945058;1;1;1
-wood_pole2;Building;-0.75;-1.20000076;2;0;0;0;1;kind=Piling health=0.11802718;1;1;1
-wood_pole2;Building;-0.75;-3.20000076;2;0;0;0;1;kind=Piling health=0.483722001;1;1;1
-wood_pole2;Building;0.75;-1.20000076;2;0;0;0;1;kind=Piling health=0.507439435;1;1;1
-wood_pole2;Building;0.75;-3.20000076;2;0;0;0;1;kind=Piling health=0.42165485;1;1;1
-wood_beam;Building;0;-0.129999161;2;0;0;0;1;kind=Beam health=0.105444968;1;1;1
+wood_floor;Building;0;0;1;0;0;0;1;kind=Deck health=0.55981046;1;1;1
+wood_pole2;Building;-0.75;-1.20000076;2;0;0;0;1;kind=Piling health=0.182945058;1;1;1
+wood_pole2;Building;-0.75;-3.20000076;2;0;0;0;1;kind=Piling health=0.11802718;1;1;1
+wood_pole2;Building;0.75;-1.20000076;2;0;0;0;1;kind=Piling health=0.483722001;1;1;1
+wood_pole2;Building;0.75;-3.20000076;2;0;0;0;1;kind=Piling health=0.507439435;1;1;1
+wood_beam;Building;0;-0.129999161;2;0;0;0;1;kind=Beam health=0.603482246;1;1;1
+wood_stair;Building;-0;-1;-1;0;1;0;6.12323426E-17;kind=Stair health=0.105444968;1;1;1
 wood_floor;Building;0;0;3;0;0;0;1;kind=Deck health=0.248844281;1;1;1
 wood_pole2;Building;-0.75;-1.20000076;4;0;0;0;1;kind=Piling health=0.460316777;1;1;1
 wood_pole2;Building;-0.75;-3.20000076;4;0;0;0;1;kind=Piling health=0.271028817;1;1;1
@@ -246,4 +246,4 @@ wood_pole2;Building;0.75;-1.20000076;86;0;0;0;1;kind=Piling health=0.665445328;1
 wood_pole2;Building;0.75;-3.20000076;86;0;0;0;1;kind=Piling health=0.197981223;1;1;1
 wood_beam;Building;0;-0.129999161;86;0;0;0;1;kind=Beam health=0.176506147;1;1;1
 wood_floor;Building;0;0;87;0;0;0;1;kind=Deck health=0.314993769;1;1;1
-wood_floor;Building;0;-0.299999237;88;0;0;0;1;kind=Abutment health=0.354296982;1;1;1
+wood_stair;Building;0;-1;89;0;0;0;1;kind=Stair health=0.354296982;1;1;1

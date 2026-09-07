@@ -1,6 +1,6 @@
 #Name:ProceduralRoads stone arch END
 #Creator:ProceduralRoads
-#Description:"Last pair of slabs and the double-wide abutment on the far bank. Origin = near edge at deck height; +z reaches the far bank at z=2."
+#Description:"Last pair of slabs and two stairs down into the far bank. Origin = near edge at deck height; +z reaches the far bank at z=2."
 #Category:ProceduralRoads
 #SnapPoints
 0;0;0
@@ -8,5 +8,5 @@
 #Pieces
 stone_floor_2x2;Building;-1;-0.5;1;0;0;0;1;kind=Deck;1;1;1
 stone_floor_2x2;Building;1;-0.5;1;0;0;0;1;kind=Deck;1;1;1
-stone_floor_2x2;Building;-1;-0.8;2;0;0;0;1;kind=Abutment;1;1;1
-stone_floor_2x2;Building;1;-0.8;2;0;0;0;1;kind=Abutment;1;1;1
+stone_stair;Building;-1;-1;3;0;0;0;1;kind=Stair;1;1;1
+stone_stair;Building;1;-1;3;0;0;0;1;kind=Stair;1;1;1
