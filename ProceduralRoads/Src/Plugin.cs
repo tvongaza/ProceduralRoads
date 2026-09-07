@@ -50,6 +50,7 @@ namespace ProceduralRoads
         public static ConfigEntry<bool> DebugValidation = null!;
         public static ConfigEntry<bool> ForceRegenerate = null!;
         public static ConfigEntry<bool> SpawnRuinsHeadless = null!;
+        public static ConfigEntry<string> ForceBridgeStyle = null!;
 
         private float m_nextDeferredRetry;
 
@@ -108,6 +109,13 @@ namespace ProceduralRoads
                 "a dedicated server has no console input and never spawns zones, so this is the " +
                 "only way its census can compare spawned pieces against plans. Leave off for " +
                 "normal play (zones spawn lazily as players explore).");
+
+            ForceBridgeStyle = Config.Bind("Debug", "ForceBridgeStyle", "",
+                "Override the per-biome bridge kit at every crossing: \"wood\" or \"stone\". " +
+                "For visual validation only — a kit can otherwise only be photographed where " +
+                "the world happens to put a river in a biome that uses it, and stone crossings " +
+                "are scarce outside Mistlands. Empty (default) keeps the normal " +
+                "progression-aligned mapping.");
 
             CustomLocations = Config.Bind("Locations", "CustomLocations", "",
                 "Comma-separated list of location names to include in road generation. " +

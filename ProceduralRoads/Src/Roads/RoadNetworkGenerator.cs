@@ -607,10 +607,13 @@ public static class RoadNetworkGenerator
         return candidates;
     }
 
-    private static int GetIslandRing(Island island)
+    private static int GetIslandRing(Island island) => GetRing(island.Center);
+
+    /// <summary>World ring (0 inner, 1 middle, 2 outer) for any point. Island
+    /// selection and bridge material progression share this one definition.</summary>
+    public static int GetRing(Vector2 position)
     {
-        float distanceFromCenter = island.Center.magnitude;
-        float normalizedDistance = Mathf.Clamp01(distanceFromCenter / WorldRadius);
+        float normalizedDistance = Mathf.Clamp01(position.magnitude / WorldRadius);
         if (normalizedDistance < 0.33f)
             return 0;
         if (normalizedDistance < 0.66f)

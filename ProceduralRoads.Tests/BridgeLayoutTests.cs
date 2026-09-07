@@ -133,7 +133,13 @@ public class BridgeLayoutTests
         var (crossing, world) = SolveSetup();
         var plan = BridgeLayout.Solve(crossing, world, 3, BridgeStyle.MeadowsWood);
 
-        Assert.Equal(2, plan.Count(p => p.Kind == BridgePieceKind.Abutment));
+        // One abutment lands on each bank; the approach may lap a second slab
+        // outward under the road paint where the deck meets grade.
+        var abutments = plan.Where(p => p.Kind == BridgePieceKind.Abutment).ToList();
+        Assert.InRange(abutments.Count, 2, 4);
+        foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
+            Assert.Contains(abutments, a =>
+                Vector2.Distance(new Vector2(a.Position.x, a.Position.z), bank) < 0.5f);
         Assert.True(plan.Count(p => p.Kind == BridgePieceKind.Piling) >= 2, "Expected surviving piers");
 
         // Ruin means the deck is incomplete: fewer deck pieces than stations.

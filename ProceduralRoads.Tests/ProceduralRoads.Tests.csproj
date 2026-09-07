@@ -37,6 +37,8 @@
                  Condition="Exists('../ProceduralRoads/Src/Roads/RoadProfile.cs')"/>
         <Compile Include="../ProceduralRoads/Src/Roads/BridgeLayout.cs" Link="ModSrc/BridgeLayout.cs"
                  Condition="Exists('../ProceduralRoads/Src/Roads/BridgeLayout.cs')"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/BridgeStyleSelection.cs" Link="ModSrc/BridgeStyleSelection.cs"
+                 Condition="Exists('../ProceduralRoads/Src/Roads/BridgeStyleSelection.cs')"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StairRun.cs" Link="ModSrc/StairRun.cs"
                  Condition="Exists('../ProceduralRoads/Src/Roads/StairRun.cs')"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StairLayout.cs" Link="ModSrc/StairLayout.cs"

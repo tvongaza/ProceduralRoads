@@ -24,8 +24,12 @@ public static class RoadTerrainModifier
         if (context == null)
             return;
 
+        roadPoints = DryLandOnly(roadPoints);
+        if (roadPoints.Count == 0)
+            return;
+
         ModificationStats stats = ModifyVertexHeights(zoneID, roadPoints, context.Value);
-        ApplyRoadPaint(roadPoints, context.Value.TerrainComp, stats.PaintedCells);
+        ApplyRoadPaint(NotUnderBridgeSpan(roadPoints), context.Value.TerrainComp, stats.PaintedCells);
         stats.VegetationRemoved = RoadVegetationCleaner.RemoveOverlappingVegetation(zoneID, roadPoints);
         FinalizeTerrainMods(zoneID, roadPoints.Count, stats, context.Value);
     }
@@ -56,10 +60,86 @@ public static class RoadTerrainModifier
             VertexSpacing = RoadConstants.ZoneSize / terrainComp.m_width
         };
 
+        roadPoints = DryLandOnly(roadPoints);
+        if (roadPoints.Count == 0)
+            return;
+
         ModificationStats stats = ModifyVertexHeights(zoneID, roadPoints, context);
-        ApplyRoadPaint(roadPoints, context.TerrainComp, stats.PaintedCells);
+        ApplyRoadPaint(NotUnderBridgeSpan(roadPoints), context.TerrainComp, stats.PaintedCells);
         stats.VegetationRemoved = RoadVegetationCleaner.RemoveOverlappingVegetation(zoneID, roadPoints);
         FinalizeTerrainMods(zoneID, roadPoints.Count, stats, context);
+    }
+
+    /// <summary>
+    /// Road points standing on dry land. The road is carried over water by a
+    /// bridge or not at all — paving and painting the riverbed would leave a
+    /// road running into the water and out the other side. Dropping the
+    /// submerged points is what puts the GAP in an unbridged crossing, and
+    /// under a bridge it stops the paint showing through the water.
+    /// </summary>
+    private static List<RoadSpatialGrid.RoadPoint> DryLandOnly(List<RoadSpatialGrid.RoadPoint> roadPoints)
+    {
+        if (WorldGenerator.instance == null)
+            return roadPoints;
+
+        List<RoadSpatialGrid.RoadPoint> dry = new(roadPoints.Count);
+        foreach (RoadSpatialGrid.RoadPoint rp in roadPoints)
+        {
+            if (WorldGenerator.instance.GetHeight(rp.p.x, rp.p.y) >= RoadConstants.SeaLevel)
+                dry.Add(rp);
+        }
+        return dry;
+    }
+
+    /// <summary>How far the paint laps in from each bank before the bridge
+    /// takes over — enough to meet the abutment, not enough to show through
+    /// the span.</summary>
+    public const float PaintEdgeMargin = 2f;
+
+    /// <summary>Half-width of the corridor a crossing suppresses paint in.</summary>
+    private const float BridgeCorridorHalfWidth = 4f;
+
+    /// <summary>
+    /// Road points outside the bridged part of any crossing. The bridge deck
+    /// carries the road between the banks, so painting the ground under it
+    /// would show a second road through and beside the structure. The very
+    /// edges keep their paint, so the road still runs up to the abutment
+    /// rather than stopping short of it.
+    /// </summary>
+    private static List<RoadSpatialGrid.RoadPoint> NotUnderBridgeSpan(List<RoadSpatialGrid.RoadPoint> roadPoints)
+    {
+        var crossings = RoadNetworkGenerator.GetRoadCrossings();
+        if (crossings == null || crossings.Count == 0)
+            return roadPoints;
+
+        List<RoadSpatialGrid.RoadPoint> keep = new(roadPoints.Count);
+        foreach (RoadSpatialGrid.RoadPoint rp in roadPoints)
+        {
+            if (!InsideAnyBridgeSpan(rp.p, crossings))
+                keep.Add(rp);
+        }
+        return keep;
+    }
+
+    private static bool InsideAnyBridgeSpan(Vector2 point, IReadOnlyList<RoadCrossing> crossings)
+    {
+        foreach (RoadCrossing crossing in crossings)
+        {
+            Vector2 span = crossing.ToBank - crossing.FromBank;
+            float length = span.magnitude;
+            if (length < 2f * PaintEdgeMargin)
+                continue;
+
+            Vector2 dir = span / length;
+            float along = Vector2.Dot(point - crossing.FromBank, dir);
+            if (along <= PaintEdgeMargin || along >= length - PaintEdgeMargin)
+                continue; // at the very edges: the road still meets the bridge
+
+            float lateral = Mathf.Abs(Vector2.Dot(point - crossing.FromBank, new Vector2(-dir.y, dir.x)));
+            if (lateral <= BridgeCorridorHalfWidth)
+                return true;
+        }
+        return false;
     }
 
     private struct TerrainContext

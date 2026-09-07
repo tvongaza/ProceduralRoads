@@ -417,8 +417,22 @@ public static class ConsoleCommands
         for (int i = 0; i < crossings.Count; i++)
         {
             var c = crossings[i];
+            int seed = WorldGenerator.instance != null ? WorldGenerator.instance.GetSeed() : 0;
+            string shores = "shores=?";
+            if (WorldGenerator.instance != null)
+            {
+                float drop = Mathf.Abs(
+                    WorldGenerator.instance.GetHeight(c.FromBank.x, c.FromBank.y)
+                    - WorldGenerator.instance.GetHeight(c.ToBank.x, c.ToBank.y));
+                bool bridged = BridgeLayout.CanBridge(c, WorldGenerator.instance);
+                shores = $"drop={drop:F1} grade={(c.Width > 0.01f ? drop / c.Width : 0f):F2} " +
+                    $"bridged={(bridged ? "yes" : "NO")}";
+            }
+
             args.Context.AddString(
-                $"CROSSING {i} x={c.Center.x:F0} z={c.Center.y:F0} width={c.Width:F0} biome={c.Biome}");
+                $"CROSSING {i} x={c.Center.x:F0} z={c.Center.y:F0} width={c.Width:F0} biome={c.Biome} " +
+                $"ring={RoadNetworkGenerator.GetRing(c.Center)} kit={RuinPlacement.BridgeStyleFor(c, seed).Name} " +
+                shores);
         }
 
         var runs = new List<StairRun>(RoadNetworkGenerator.GetStairRuns());

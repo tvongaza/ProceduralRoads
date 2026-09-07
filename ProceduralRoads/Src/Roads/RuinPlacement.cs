@@ -93,7 +93,7 @@ public static class RuinPlacement
         int seed = WorldGenerator.instance.GetSeed();
 
         foreach (RoadCrossing crossing in RoadNetworkGenerator.GetRoadCrossings())
-            Bucket(BridgeLayout.Solve(crossing, WorldGenerator.instance, seed, BridgeStyleFor(crossing.Biome)));
+            Bucket(BridgeLayout.Solve(crossing, WorldGenerator.instance, seed, BridgeStyleFor(crossing, seed)));
 
         foreach (StairRun run in RoadNetworkGenerator.GetStairRuns())
             Bucket(StairLayout.Solve(run, WorldGenerator.instance, seed, StairLayout.StyleFor(run.Biome)));
@@ -103,15 +103,28 @@ public static class RuinPlacement
         Log.LogInfo($"[RUINS] planned {total} pieces across {m_plansByZone.Count} zones");
     }
 
-    private static BridgeStyle BridgeStyleFor(Heightmap.Biome biome)
+    public static BridgeStyle BridgeStyleFor(RoadCrossing crossing, int worldSeed)
     {
-        // Progression-aligned kits; Mistlands gets black marble later.
-        return biome switch
+        // Debug override for visual validation: pin every crossing to one kit
+        // so a kit can be photographed without waiting for the weighted draw
+        // to put one somewhere shootable.
+        string? forced = ProceduralRoadsPlugin.ForceBridgeStyle?.Value;
+        if (!string.IsNullOrEmpty(forced))
         {
-            Heightmap.Biome.Mountain or Heightmap.Biome.Plains or Heightmap.Biome.Mistlands
-                => BridgeStyle.MountainStone,
-            _ => BridgeStyle.MeadowsWood,
-        };
+            if (forced!.Equals("stone", System.StringComparison.OrdinalIgnoreCase))
+                return BridgeStyle.MountainStone;
+            if (forced.Equals("wood", System.StringComparison.OrdinalIgnoreCase))
+                return BridgeStyle.MeadowsWood;
+            if (forced.Equals("hybrid", System.StringComparison.OrdinalIgnoreCase))
+                return BridgeStyle.StoneAndTimber;
+        }
+
+        // Weighted by biome tier and world ring, drawn per crossing.
+        return BridgeStyleSelection.StyleFor(
+            crossing.Biome,
+            RoadNetworkGenerator.GetRing(crossing.Center),
+            worldSeed,
+            crossing.Center);
     }
 
     private static void Bucket(List<BridgePiece> pieces)
