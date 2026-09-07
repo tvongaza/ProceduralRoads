@@ -85,6 +85,7 @@ valheimCLI dll from PR #26+ (needs `cli_screenshot`, `cli_zone_ready`,
 | E | NE road end at the Eikthyrnir altar, 10 m from the altar centre | 331.1, -515.6 | 0.38, 0.92 | 51.5 |
 | M | mid-road bend 55 m further along the same road | 348.7, -466.9 | 0.78, -0.62 | 45.8 |
 | I | cross-slope west of spawn, road on fill 0.7-1.4 m above natural ground (the owner, on foot, master build) | -375.6, -280.9 | 0.42, -0.91 | 51.4 (natural 50.5) |
+| J | road end at the second Eikthyrnir altar, arriving from the south, last points 0.8-1.0 m above natural ground (the owner, on foot, master build) | -324.9, 226.2 | 0.03, 1.0 | 37.0 (natural 36.2) |
 | H | road across a west-facing hillside 95 m south of spawn (the owner, on foot, master build): master paints down the slope, the profile should level the section | 190.8, -354.3 | 0.51, 0.86 | 38.3 (west of road 37.5) |
 
 ## Ideas to make this cheaper (the owner, 7 Sep 2026)

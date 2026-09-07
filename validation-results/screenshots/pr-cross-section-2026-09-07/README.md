@@ -19,3 +19,5 @@ station repo, sites/RoadTestPC4.txt.
   not yet shot on the other builds.
 - site-I-owner-view.jpg: the owner's view (master, Mac) of site I, a cross-slope fill
   section west of spawn; not yet shot on the other builds.
+- site-J-owner-view.jpg: the owner's view (master, Mac) of site J, the road ending
+  above the second Eikthyrnir altar; the endpoint-ramp case.
