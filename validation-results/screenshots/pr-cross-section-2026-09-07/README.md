@@ -17,3 +17,5 @@ station repo, sites/RoadTestPC4.txt.
 - site-H-owner-view.jpg: the owner's own view (master build, Mac) of site H, a
   cross-slope road 95 m south of spawn where master paints down the hill;
   not yet shot on the other builds.
+- site-I-owner-view.jpg: the owner's view (master, Mac) of site I, a cross-slope fill
+  section west of spawn; not yet shot on the other builds.
