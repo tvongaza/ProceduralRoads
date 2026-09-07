@@ -21,3 +21,8 @@ station repo, sites/RoadTestPC4.txt.
   section west of spawn; not yet shot on the other builds.
 - site-J-owner-view.jpg: the owner's view (master, Mac) of site J, the road ending
   above the second Eikthyrnir altar; the endpoint-ramp case.
+- RoadTestPC4-road-ends.csv: every road end (nearest road point to each
+  placed location, 142 of them) with the road height, the natural height at
+  the end, and the mean/min/max natural height on an 8 m ring, from the
+  scratch `road_ends` command (master build). Sorted by |end - ring mean|;
+  the mountain caves top the list (up to +16.7 m).
