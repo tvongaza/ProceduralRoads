@@ -46,6 +46,23 @@ implement it.
    build's ground in every visited zone. Restore the fixture, then install
    the dll, then launch (a dll only loads at launch).
 
+7. **One Steam account = one running client.** A PC launch while the Mac
+   client is in-world stalls inside Steam at "KickingOtherSession" (visible
+   only in Steam/logs/console_log.txt); the scripted launch then looks like
+   a CLI timeout, and Steam keeps the stalled action so later launch
+   commands are swallowed until Steam is restarted. Rule: close the other
+   client first (`cli_logout_save`, then kill the process), or run a
+   second Steam account on the station (the owner, 7 Sep 2026: later). The
+   station's `pc-launch.sh` now names this state within two minutes, and
+   `SteamStart` / `ValheimApplaunch` scheduled tasks run wrapper .cmd files
+   (schtasks quoting breaks on the spaced account name). If Steam has
+   swallowed a launch: `steam.exe -shutdown`, `schtasks /run /tn SteamStart`,
+   wait for "Logged On" in Steam/logs/connection_log.txt, launch again.
+8. **Seeing the PC desktop from SSH:** `schtasks /run /tn StationShot`
+   (a hidden wscript wrapper around a DPI-aware PowerShell capture) writes
+   C:\Users\Public\station\desktop.png plus windows.log (every top-level
+   window title). Session 0 cannot see session 1 any other way.
+
 ## Procedure (measured on the gaming PC, 7 Sep 2026)
 
 Preconditions: PC awake (`pc.sh status`), Steam running in the desktop
