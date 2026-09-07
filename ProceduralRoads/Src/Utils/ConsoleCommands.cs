@@ -149,48 +149,10 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
-            "road_piece_health",
-            "List the mod's ruin pieces near the player with their stored health, the prefab's full health, and which vanilla damage visual is active (new / worn / broken): road_piece_health [radius=30]. " +
-            "Diagnoses whether planned health fractions reach the game.",
-            (args) => PieceHealth(args),
-            isCheat: true,
-            isNetwork: false,
-            onlyServer: false,
-            isSecret: false,
-            allowInDevBuild: true);
-
-        new Terminal.ConsoleCommand(
-            "road_piece_set_health",
-            "SCREENSHOT WORLDS ONLY (DebugValidation): set every nearby ruin piece's health to a percentage of full and refresh its damage visual, to see what vanilla shows at each level: road_piece_set_health <pct> [radius=30]. Mutates world ZDOs; road_ruins_reset restores the plans.",
-            (args) => PieceSetHealth(args),
-            isCheat: true,
-            isNetwork: false,
-            onlyServer: false,
-            isSecret: false,
-            allowInDevBuild: true);
-
-        new Terminal.ConsoleCommand(
             "road_debug_locations",
             "Draw each road location's approach circle as a ring of purple markers, within a distance of the player: road_debug_locations [within=400]. " +
             "Cleared by road_debug_markers_clear. Empty after a load from ZDO (the list is built during generation).",
             (args) => SpawnLocationRings(args),
-            isCheat: true,
-            isNetwork: false,
-            onlyServer: false,
-            isSecret: false,
-            allowInDevBuild: true);
-
-        new Terminal.ConsoleCommand(
-            "road_mist",
-            "Photography helper: switch every loaded Mistlands mist volume off (or back on): road_mist off|on. Volumes in zones loaded later need the command again.",
-            (args) =>
-            {
-                bool on = args.Length >= 2 && args[1].Equals("on", System.StringComparison.OrdinalIgnoreCase);
-                Mister[] misters = Object.FindObjectsOfType<Mister>(true);
-                foreach (Mister m in misters)
-                    m.gameObject.SetActive(on);
-                args.Context.AddString($"OK: {misters.Length} mist volume(s) {(on ? "on" : "off")}");
-            },
             isCheat: true,
             isNetwork: false,
             onlyServer: false,
@@ -246,16 +208,6 @@ public static class ConsoleCommands
                 int zones = RuinPlacement.RespawnAllZones();
                 args.Context.AddString($"OK: destroyed {destroyed} tagged pieces, respawned {zones} zones from current plans");
             },
-            isCheat: true,
-            isNetwork: false,
-            onlyServer: false,
-            isSecret: false,
-            allowInDevBuild: true);
-
-        new Terminal.ConsoleCommand(
-            "road_clear_view",
-            "SCREENSHOT WORLDS ONLY (DebugValidation): destroy vegetation and rock objects (trees, logs, bushes, rocks) around a point so built geometry can be photographed: road_clear_view <x> <z> [radius=40]. Never touches pr_ruin pieces, player builds, or location pieces; mutates world ZDOs, so never run it on a gate/baseline world.",
-            (args) => ClearView(args),
             isCheat: true,
             isNetwork: false,
             onlyServer: false,
@@ -761,53 +713,6 @@ public static class ConsoleCommands
         }
     }
 
-    private static void PieceHealth(Terminal.ConsoleEventArgs args)
-    {
-        float radius = 30f;
-        if (args.Length >= 2)
-            float.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out radius);
-        if (Player.m_localPlayer == null || ZNetScene.instance == null)
-        {
-            args.Context.AddString("ERROR: no local player / world");
-            return;
-        }
-
-        Vector3 origin = Player.m_localPlayer.transform.position;
-        int total = 0, newCount = 0, wornCount = 0, brokenCount = 0, noVisual = 0;
-        List<string> lines = new();
-        foreach (KeyValuePair<ZDO, ZNetView> kv in ZNetScene.instance.m_instances)
-        {
-            if (kv.Key == null || kv.Value == null || kv.Key.GetInt(RuinPlacement.RuinMarkerHash) != 1)
-                continue;
-            Vector3 p = kv.Value.transform.position;
-            if (Vector3.Distance(p, origin) > radius)
-                continue;
-            WearNTear wnt = kv.Value.GetComponent<WearNTear>();
-            if (wnt == null)
-                continue;
-            total++;
-            float stored = kv.Key.GetFloat("health", -1f);
-            string visual;
-            if (wnt.m_new == null && wnt.m_worn == null && wnt.m_broken == null) { visual = "none"; noVisual++; }
-            else if (wnt.m_broken != null && wnt.m_broken.activeSelf) { visual = "broken"; brokenCount++; }
-            else if (wnt.m_worn != null && wnt.m_worn.activeSelf) { visual = "worn"; wornCount++; }
-            else { visual = "new"; newCount++; }
-            if (lines.Count < 40)
-                lines.Add($"PIECE {kv.Value.name.Replace("(Clone)", "")} stored={stored:F1} full={wnt.m_health:F0} pct={(stored >= 0f ? stored / wnt.m_health * 100f : -1f):F0} visual={visual} pos={p.x:F1},{p.y:F1},{p.z:F1}");
-            // What the prefab actually has, once per prefab: the visual
-            // mapping is not documented, so the readout shows the children.
-            string prefabName = kv.Value.name.Replace("(Clone)", "");
-            if (!m_visualDumped.Contains(prefabName))
-            {
-                m_visualDumped.Add(prefabName);
-                lines.Add($"VISUALS {prefabName} new={Describe(wnt.m_new)} worn={Describe(wnt.m_worn)} broken={Describe(wnt.m_broken)}");
-            }
-        }
-        foreach (string line in lines)
-            args.Context.AddString(line);
-        args.Context.AddString($"PIECE_HEALTH total={total} new={newCount} worn={wornCount} broken={brokenCount} noVisual={noVisual} radius={radius:F0}");
-    }
-
     /// <summary>Purple rings on the approach circles roads stop at (Tys, 2 Sep
     /// 2026: "draw a purple dotted outline around the POI radii"), so a road
     /// that ends short of a door can be read against the circle it obeyed.</summary>
@@ -861,53 +766,6 @@ public static class ConsoleCommands
             }
         }
         args.Context.AddString($"OK: {rings} location ring(s), {markers} markers within {within:F0} m ({locations.Count} road locations in the network)");
-    }
-
-    private static readonly HashSet<string> m_visualDumped = new();
-
-    private static string Describe(GameObject? go) =>
-        go == null ? "null" : $"{go.name}({(go.activeSelf ? "on" : "off")})";
-
-    private static void PieceSetHealth(Terminal.ConsoleEventArgs args)
-    {
-        if (!ProceduralRoadsPlugin.DebugValidation.Value)
-        {
-            args.Context.AddString("ERROR: road_piece_set_health is debug-gated (DebugValidation = true)");
-            return;
-        }
-        if (args.Length < 2 || !float.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float pct))
-        {
-            args.Context.AddString("Usage: road_piece_set_health <pct> [radius=30]");
-            return;
-        }
-        float radius = 30f;
-        if (args.Length >= 3)
-            float.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out radius);
-        if (Player.m_localPlayer == null || ZNetScene.instance == null)
-        {
-            args.Context.AddString("ERROR: no local player / world");
-            return;
-        }
-
-        Vector3 origin = Player.m_localPlayer.transform.position;
-        int changed = 0;
-        foreach (KeyValuePair<ZDO, ZNetView> kv in ZNetScene.instance.m_instances)
-        {
-            if (kv.Key == null || kv.Value == null || kv.Key.GetInt(RuinPlacement.RuinMarkerHash) != 1)
-                continue;
-            if (Vector3.Distance(kv.Value.transform.position, origin) > radius)
-                continue;
-            WearNTear wnt = kv.Value.GetComponent<WearNTear>();
-            if (wnt == null)
-                continue;
-            float health = wnt.m_health * Mathf.Clamp(pct, 0.1f, 100f) / 100f;
-            kv.Key.Set("health", health);
-            // Vanilla refreshes the damage visual through this RPC on every
-            // client, the owner included.
-            kv.Value.InvokeRPC(ZNetView.Everybody, "RPC_HealthChanged", health);
-            changed++;
-        }
-        args.Context.AddString($"OK: set {changed} ruin piece(s) within {radius:F0} m to {pct:F0}% health");
     }
 
     /// <summary>
@@ -978,87 +836,6 @@ public static class ConsoleCommands
             $"ZONE_READY ready={(ready ? "true" : "false")} settled={(settled ? "true" : "false")} " +
             $"zones={zones} loaded={loaded} plannedZones={plannedZones} spawnedZones={spawnedZones} " +
             $"piecesPlanned={piecesPlanned} piecesLoaded={piecesLoaded}");
-    }
-
-    /// <summary>
-    /// Photography helper: remove vegetation and rock clutter around a point.
-    /// Debug-gated because it mutates world ZDOs. Anything with a Piece
-    /// component is left alone (player builds, ruins, location structures),
-    /// as is every pr_ruin-tagged piece the mod spawned.
-    /// </summary>
-    private static void ClearView(Terminal.ConsoleEventArgs args)
-    {
-        if (!ProceduralRoadsPlugin.DebugValidation.Value)
-        {
-            args.Context.AddString("ERROR: road_clear_view is debug-gated (DebugValidation = true) — screenshot worlds only, it mutates world ZDOs");
-            return;
-        }
-
-        if (args.Length < 3 ||
-            !float.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float x) ||
-            !float.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float z))
-        {
-            args.Context.AddString("Usage: road_clear_view <x> <z> [radius=40]");
-            return;
-        }
-
-        float radius = 40f;
-        if (args.Length >= 4)
-            float.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out radius);
-        radius = Mathf.Clamp(radius, 1f, 120f);
-
-        if (ZNetScene.instance == null)
-        {
-            args.Context.AddString("ERROR: world not loaded");
-            return;
-        }
-
-        List<ZNetView> victims = new();
-        Dictionary<string, int> byKind = new();
-        float radiusSq = radius * radius;
-        foreach (ZNetView view in ZNetScene.instance.m_instances.Values)
-        {
-            if (view == null || !view.IsValid())
-                continue;
-
-            Vector3 p = view.transform.position;
-            float dx = p.x - x;
-            float dz = p.z - z;
-            if (dx * dx + dz * dz > radiusSq)
-                continue;
-
-            ZDO zdo = view.GetZDO();
-            if (zdo == null || zdo.GetInt(RuinPlacement.RuinMarkerHash) == 1)
-                continue;
-
-            GameObject go = view.gameObject;
-            if (go.GetComponent<Piece>() != null || go.GetComponent<Character>() != null ||
-                go.GetComponent<ItemDrop>() != null || go.GetComponent<LocationProxy>() != null)
-                continue;
-
-            string? kind = null;
-            if (go.GetComponent<TreeBase>() != null) kind = "tree";
-            else if (go.GetComponent<TreeLog>() != null) kind = "log";
-            else if (go.GetComponent<MineRock5>() != null || go.GetComponent<MineRock>() != null) kind = "rock";
-            else if (go.GetComponent<Destructible>() != null) kind = "destructible"; // bushes, small rocks, stumps, roots
-            if (kind == null)
-                continue;
-
-            victims.Add(view);
-            byKind.TryGetValue(kind, out int count);
-            byKind[kind] = count + 1;
-        }
-
-        foreach (ZNetView view in victims)
-        {
-            if (view != null && view.IsValid())
-                ZNetScene.instance.Destroy(view.gameObject);
-        }
-
-        StringBuilder summary = new();
-        foreach (var kv in byKind)
-            summary.Append($" {kv.Key}={kv.Value}");
-        args.Context.AddString($"OK: cleared {victims.Count} objects within {radius:F0}m of ({x:F0},{z:F0}):{summary}");
     }
 
     private static void RunSelfTest(Terminal.ConsoleEventArgs args)

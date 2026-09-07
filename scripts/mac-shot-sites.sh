@@ -37,7 +37,7 @@ PY
         case "$out" in *"ready=true"*) echo "zone ready after ${i} s"; break;; esac
         sleep 1
     done
-    "$CLI" road_clear_view "$x" "$z" 60 | tail -1
+    "$CLI" cli_clear_view "$x" "$z" 60 | tail -1
     "$CLI" cli_set_tod 0.45 | tail -1
     "$CLI" env Clear | tail -1
     sleep 6

@@ -158,7 +158,7 @@ shoot() {  # shoot <name> <x> <z> <width> <dirx> <dirz> <bankY>
     name=$1; x=$2; z=$3; w=$4; dx=$5; dz=$6; by=$7
     "$CLI" cli_teleport "$x" 45 "$z" | tail -1
     wait_zone "$x" "$z"
-    "$CLI" road_clear_view "$x" "$z" 50 | tail -1
+    "$CLI" cli_clear_view "$x" "$z" 50 | tail -1
     "$CLI" cli_set_tod 0.45 | tail -1
     "$CLI" env Clear | tail -1
     sleep 6
