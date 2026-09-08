@@ -1,4 +1,4 @@
-# Validation cycle baseline (8 Sep 2026)
+# Validation cycle baseline and steps 2-3 (8 Sep 2026)
 
 Step 1 of docs/plan-validation-cycles.md: instrument the whole cycle, then
 measure before optimizing. Every number below comes from
@@ -133,3 +133,62 @@ Output in <private>/shots/<World>-<tag>/: stages.tsv, run.json
 png + -small.jpg. Stdout is one line per stage plus a summary; read
 log.txt only for a FAIL. In game: `road_timings` (summary), `road_timings
 reset [id]`, `road_timings run <id>`, `road_timings json`.
+
+## Steps 2-3: one call per wait, readiness instead of sleeps (8 Sep 2026, later)
+
+**Correction first.** `Heightmap.Poke(true)` only sets the late-update flag;
+the rebuild is `Regenerate()` in `CustomLateUpdate` (verified in the shipped
+assembly, `HaveQueuedRebuild()` exposes the pending state). The old
+`terrain.rebuild` measured scheduling. A `Heightmap.Regenerate` patch now
+times the rebuild of the heightmaps a road write poked: 30 rebuilds,
+73 ms total, 3.1 ms longest (t5). Terrain stays cheap, now measured.
+
+**What changed.**
+- valheimCLI (branch feature/command-completion, fork, 846a601): a
+  response carries the whole output of its own command (the server waits
+  for completion, `CMDT:<seconds>:<command>`, client `--timeout`); a timed
+  out request is abandoned and its late output dropped and noted, so a
+  command can never be re-run to fetch its output. Async helpers:
+  `cli_env` (debug time/weather, waits for the 2 s transition), `cli_arrive`
+  (teleport, landed, zones loaded; re-teleports at once when the game
+  bounces a landing because the terrain collider is a frame behind the
+  zone spawn), `cli_capture` (pose, wait until zones loaded + no heightmap
+  rebuild queued + no weather transition, two rendered frames, save, wait
+  for the file to exist with a stable size), `cli_until` (poll any command
+  until a line matches), and `cli_clear_view` recounts on the next frame
+  (passes/remaining). The 100 ms sleep per command on the game thread is
+  gone. Tests/RequestBroker.Tests covers the request/response pairing.
+- Mod (pr/validation-cycles d94e751): `road_zone_state [x z] [radius]`:
+  every zone loaded, every zone with road points stamped with the current
+  network in a live compiler, no rebuild queued, else `pending=(zone):reason`.
+- Station `pc-run.sh` v2: `cli_env` once per run, per site `cli_arrive` +
+  `cli_until 30 ready=true road_zone_state` + one `cli_clear_view` +
+  `road_debug`, per shot one `cli_capture`. No sleeps left; every stage has
+  a timeout that names what was pending. v1 kept as pc-run-v1.sh.
+
+**The same benchmarks, before and after** (5 sites / 20 shots, RoadTestPC4, PC):
+
+| cycle | v1 (fixed sleeps) | v2 (readiness) | remaining waits, all explained |
+|---|---|---|---|
+| warm capture | 192 s | **52 s** (t5 52.4, t6 52.0) | arrive 2-6 s per site = the game's 2 s teleport timer + creating 9 zones with their objects (far sites 5.7 s, near 2 s); capture 0.75 s per shot = 2 rendered frames + writing a 7.8 MB PNG; fetch 4 s (135 MB over SSH) |
+| cold, roads-baked fixture | 220 s | **82 s** (t5 83, t6 82) | world load 13.5 s, Steam launch 5.6 s, menu 5 s, quit/restore/install 4 s, plus the warm items |
+| cold, base fixture (routes regenerated) | 285 s | not rerun; expect ~140 s (82 + the 58 s generation) | the pathfinder (separate work item) |
+
+Coverage and quality: 20/20 files in every run, the images match the v1
+captures pose for pose (E-side compared side by side: same framing,
+lighting and HUD), every zone at every site reported stamped with the
+network version before capture (`ROAD_READY ready=true ... stamped=8`),
+no stale-terrain or capture timeouts, warnings unchanged (9 lines, none
+from the mod's terrain path).
+
+Budgets, revised: warm capture 52 s against the 100 s target; the next
+lever is the per-site arrive (about 24 s of the 52): a pre-load of the
+next site's zones while the current site is captured, or shooting sites
+in zone order so consecutive sites share zones. Cold on the baked
+fixture 82 s against 130 s. The station now prints about 60 lines per
+run.
+
+Follow-ups noted, not done: hide the HUD for captures (unchanged from v1,
+so not a regression); valheimCLI autoload of character/world/position from
+the command line (saves menu + select/start + first arrive); the
+pathfinder work for route-changing PRs.
