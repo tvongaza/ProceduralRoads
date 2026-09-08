@@ -198,3 +198,43 @@ Follow-ups noted, not done: hide the HUD for captures (unchanged from v1,
 so not a regression); valheimCLI autoload of character/world/position from
 the command line (saves menu + select/start + first arrive); the
 pathfinder work for route-changing PRs.
+
+## Review fixes on the valheimCLI branch (8 Sep 2026, later still)
+
+Four findings from the reviewing agent on 2d50d55, all fixed and re-measured
+(branch tip 80e9015):
+
+1. **Expired queued requests never run.** A request abandoned while still
+   queued behind a long command is expired by `TryDequeue` and skipped; the
+   timeout line says "had not started and will not run" (running commands
+   say "still runs"; async ones "issues no further actions ... settles
+   first"). The reviewer's regression test is in the suite.
+2. **Async cancellation lets in-flight effects settle under a gate.**
+   Arrive, env, capture and clear share one `OperationGate`; a second
+   command waits its turn (so two capture clients cannot move the camera
+   under each other). On timeout the coroutine issues no further actions,
+   waits for the teleport to land or bounce / the screenshot write to
+   finish, then releases the gate. Verified in-game: `cli_arrive` with a
+   1 s timeout then an immediate `cli_capture`: the capture waited for the
+   gate (teleport settled at 4.7 s), then captured; two parallel
+   `cli_capture` clients both succeeded with their own poses.
+3. **The client bounds its socket wait** (`--timeout` + 5 s) and never
+   resends; it reads a capability line after the greeting
+   (`VALHEIM_CLI_CAPS completion`) and falls back to `CMD:` with a warning
+   against an older server.
+4. **Captures write a request-specific `.part` file**, wait for a stable
+   size plus the PNG signature and IEND trailer, then replace the final
+   file; any delete/move/verify failure is an error, never a stale OK.
+
+Two fidelity findings from the timeout scenario, fixed the same way
+(readiness reasons `hud_fade`, `hud_damage_flash`, `player_teleporting`,
+plus a grass settle): a frame captured right after a teleport was dark
+(the HUD's loading-screen fade) and then red-tinted (fall damage from the
+y=60 arrive target). `cli_arrive` now sets the player down on the ground
+once it is there (`grounded=true`), and `cli_capture` waits for the fade
+and the flash to clear and for the clutter system's grass patches to stop
+appearing (one per frame after a move). The normal runner flow had masked
+both because a second of other steps sat between arrive and capture.
+
+Cost of the extra checks: cold on the baked fixture 82 -> 84 s (t8-t11,
+20/20 shots each; shots 15 -> 19 s for the grass settle). Broker/gate tests: 12.
