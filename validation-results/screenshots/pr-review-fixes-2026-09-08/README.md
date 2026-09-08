@@ -30,3 +30,11 @@ The first "after" build used a free plane fit and produced 1.5 m dips one
 metre off the centreline 3-4 m inside J's end (a ramped end on a bend);
 the line fit along the road (daa6874) removed them: all J differences
 within 0.2 m.
+
+## 2 m roads (round r10, RoadWidth = 2 in the cfg, restored to 4 afterwards)
+
+`2m-<site>-<pose>-before.jpg` (#20 before the paint fix, via the 1883d67
+build) vs `2m-<site>-<pose>-after.jpg` (77e3960). Before: a bare paint
+texel every 1.5 m along the whole road (the dedupe interval exceeded the
+0.85 m paint reach); after: continuous. Sites M (mid-road bend), H
+(hillside), E (altar end).
