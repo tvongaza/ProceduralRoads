@@ -81,48 +81,11 @@ public static class RoadSpatialGrid
         return m_debugInfo.TryGetValue(position, out debugInfo);
     }
 
-    /// <summary>
-    /// A road decided but not yet stored: every dense point and the height it
-    /// will carry, already ramped, already inside the grade cap.
-    ///
-    /// Planning and storing are apart because a road can be refused, and a
-    /// caller that lays one road in several pieces - the land either side of
-    /// a river crossing, say - has to know that every piece is buildable
-    /// before it stores the first. Half a road in the grid is worse than none:
-    /// it is a paved stretch that stops in open ground.
-    /// </summary>
-    public sealed class PlannedPath
-    {
-        public readonly List<Vector2> Points;
-        public readonly List<float> Heights;
-        public readonly List<RoadPointDebugInfo> DebugInfos;
-        public readonly float Width;
-        public readonly float TotalLength;
-        public readonly bool FollowTerrain;
-
-        internal PlannedPath(List<Vector2> points, List<float> heights,
-            List<RoadPointDebugInfo> debugInfos, float width, float totalLength, bool followTerrain)
-        {
-            Points = points; Heights = heights; DebugInfos = debugInfos;
-            Width = width; TotalLength = totalLength; FollowTerrain = followTerrain;
-        }
-    }
-
-    /// <summary>
-    /// Work out what a road would be, without storing any of it.
-    ///
-    /// startGround and endGround are the heights the road has to MEET at its
-    /// two ends - the ground a location stands on - where those are known.
-    /// Without them each end meets the natural terrain under it, as before.
-    ///
-    /// Returns null when the profile cannot be built inside the grade cap:
-    /// the two ends are further apart in height than the cap allows over the
-    /// length between them. That is a road too steep to walk, and the
-    /// caller's business is to drop it, not to lay it anyway.
-    /// </summary>
-    public static PlannedPath? PlanRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
-        float? startGround = null, float? endGround = null,
-        System.Func<Vector2, float>? terrainHeight = null)
+    /// <summary>followTerrain: paint only; every point keeps the raw terrain
+    /// height, so leveling toward it changes nothing (a WADED ford).
+    /// minHeight: no stored point below it (a RAISED ford's surface).</summary>
+    public static void AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
+        bool followTerrain = false, float minHeight = float.NegativeInfinity)
     {
         if (path == null || path.Count < 2 || worldGen == null)
             return null;
@@ -190,13 +153,11 @@ public static class RoadSpatialGrid
         List<float> finalHeights = new List<float>(densePoints.Count);
         for (int i = 0; i < densePoints.Count; i++)
         {
-            float fromStart = distanceFromStart[i];
-            float fromEnd = pathTotal - fromStart;
-            float distFromNearestEnd = Mathf.Min(fromStart, fromEnd);
-            float? target = fromStart <= fromEnd ? startGround : endGround;
-            float rampBase = RoadEndpointRamp.BaseHeight(denseHeights[i], target, distFromNearestEnd);
-            finalHeights.Add(Mathf.Lerp(rampBase, smoothedHeights[i], RoadEndpointRamp.Blend(distFromNearestEnd)));
-        }
+            float distFromNearestEnd = Mathf.Min(distanceFromStart[i], pathTotal - distanceFromStart[i]);
+            float rampBlend = RoadEndpointRamp.Blend(distFromNearestEnd);
+            float finalHeight = followTerrain
+                ? denseHeights[i]
+                : Mathf.Max(Mathf.Lerp(denseHeights[i], smoothedHeights[i], rampBlend), minHeight);
 
         // Smoothing and the ramp both move heights after the search priced the
         // ground, so a route the search accepted can still be built too steep.

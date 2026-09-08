@@ -29,21 +29,31 @@ public static class RoadConstants
     public const float DefaultTerrainVariancePenalty = 1000f;
     public const float DefaultTerrainVarianceThreshold = 5f;
 
-    // The steepest a road may climb, as rise over run, or 0 for no cap.
-    // Without a cap every steep step is a large but finite price and never a
-    // refusal, so when a destination sits on a cliff the cheapest expensive
-    // line is the direct climb: RoadPathfinder refuses a step over the cap,
-    // which leaves the search to traverse across the slope or fail, and
-    // RoadGrade holds the stored height profile to it as well, because
-    // smoothing and the endpoint ramp both move heights after the search.
-    //
-    // 0.35 is one metre up for every three along, about 19 degrees. It is the
-    // knee of a sweep over one real world (RoadSeedE, 296 destinations): the
-    // steepest road built falls from 962% to 35%, and one destination in 296
-    // is lost for it. Below the knee the losses arrive quickly - 25% loses
-    // thirteen, 20% loses twenty-one, 15% loses thirty-nine - while above it
-    // 50% saves nothing more and leaves roads at half again the grade.
-    public const float DefaultMaxRoadGrade = 0.35f;
+    // River fords (prototype, off by default: config Fords/Enabled). With
+    // fords on, the pathfinder may jump a river core in a straight line to
+    // dry ground within MaxRiverCrossingCells (measured in metres, so a
+    // diagonal scan does not stretch it) when the water under the jump is
+    // no deeper than FordWadeDepth, at RiverCrossingPenalty on top of the
+    // distance; banks may differ in height by MaxFordBankDelta, and a step
+    // pays BankDeltaPenalty * delta^2 on top, so near-level banks are
+    // preferred. The ford is WADED (painted at ground height, only where
+    // the water is at most FordWadeMaxDepth deep, always in a swamp) or
+    // RAISED (leveled up to the bank clearance), by the Fords/* weights.
+    // Banks, landings and a raised ford's surface stand BankClearance above
+    // the shallow-water line. Swamp roads wade their shallows down to
+    // DeepWaterHeight at SwampShallowWaterPenalty per cell. A jump whose
+    // both ends already carry road is an existing crossing and costs
+    // CrossingReuseDiscount of its price, so later roads share it.
+    public const int MaxRiverCrossingCells = 6; // 6 * 8 m = 48 m max ford
+    public const float RiverCrossingPenalty = 5000f;
+    public const float FordWadeDepth = 0.8f;
+    public const float FordWadeMaxDepth = 0.5f;
+    public const float MaxFordBankDelta = 4f;
+    public const float BankDeltaPenalty = 1250f;
+    public const float BankClearance = 0.75f;
+    public const float DefaultFordStyleWeight = 1f;
+    public const float DefaultSwampShallowWaterPenalty = 500f;
+    public const float CrossingReuseDiscount = 0.2f;
 
     // Road cross-section (see RoadProfile): flat core fully leveled and
     // solidly painted; paint fades out strictly inside the leveled footprint
