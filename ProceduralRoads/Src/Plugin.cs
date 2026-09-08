@@ -51,6 +51,9 @@ namespace ProceduralRoads
         public static ConfigEntry<bool> BridgesEnabled = null!;
         public static ConfigEntry<float> BridgeCostFixed = null!;
         public static ConfigEntry<float> BridgeCostPerMeter = null!;
+        public static ConfigEntry<float> FordWadeWeight = null!;
+        public static ConfigEntry<float> FordRaiseWeight = null!;
+        public static ConfigEntry<float> FordSpanWeight = null!;
 
         public void Awake()
         {
@@ -100,6 +103,21 @@ namespace ProceduralRoads
                 new ConfigDescription("Pathfinding cost of a bridge per metre of span, on top of CostFixed. " +
                     "Makes long bridges dearer than short ones.",
                     new AcceptableValueRange<float>(0f, 10000f)));
+
+            FordWadeWeight = Config.Bind("Fords", "WadeWeight", RoadConstants.DefaultFordStyleWeight,
+                new ConfigDescription("With Bridges/Enabled: relative odds that a knee-deep crossing is WADED, the road painted through the shallows at ground height " +
+                    "(offered only where the water is ankle deep, always in swamps). 0 disables the style; with equal weights each site picks evenly among the styles it allows.",
+                    new AcceptableValueRange<float>(0f, 100f)));
+
+            FordRaiseWeight = Config.Bind("Fords", "RaiseWeight", RoadConstants.DefaultFordStyleWeight,
+                new ConfigDescription("With Bridges/Enabled: relative odds that a knee-deep crossing is RAISED, the road leveled up through the shallows. " +
+                    "Always allowed, and used whenever no other style is.",
+                    new AcceptableValueRange<float>(0f, 100f)));
+
+            FordSpanWeight = Config.Bind("Fords", "SpanWeight", RoadConstants.DefaultFordStyleWeight,
+                new ConfigDescription("With Bridges/Enabled: relative odds that a knee-deep crossing is SPANNED by a short low footbridge with steps at each end " +
+                    "(offered only where the crossing is at least 6 m wide).",
+                    new AcceptableValueRange<float>(0f, 100f)));
 
             GenerateRoadsOnLoad = Config.Bind("Debug", "GenerateRoadsOnLoad", true,
                 "Generate the road network when a world without persisted roads loads. Off, the world stays " +
@@ -159,6 +177,7 @@ namespace ProceduralRoads
             RoadPathfinder.BridgesEnabled = BridgesEnabled.Value;
             RoadPathfinder.ConfiguredBridgeCostFixed = BridgeCostFixed.Value;
             RoadPathfinder.ConfiguredBridgeCostPerMeter = BridgeCostPerMeter.Value;
+            RoadCrossingDetector.SetFordStyleWeights(FordWadeWeight.Value, FordRaiseWeight.Value, FordSpanWeight.Value);
             // CustomLocations is parsed at generation time to preserve API registrations
         }
 

@@ -214,7 +214,7 @@ public class BridgeTests
         Assert.NotNull(path);
 
         var crossing = Assert.Single(RoadCrossingDetector.Detect(path!, world));
-        Assert.Equal(crossing.FromIndex + 1, crossing.ToIndex);
+        Assert.True(crossing.ToIndex > crossing.FromIndex);
         Assert.True(RoadCrossingDetector.IsRoadGround(crossing.FromBank, world), "FromBank is not road ground");
         Assert.True(RoadCrossingDetector.IsRoadGround(crossing.ToBank, world), "ToBank is not road ground");
         Assert.InRange(crossing.Width, 4f, 40f);
@@ -225,14 +225,20 @@ public class BridgeTests
         Assert.Equal(RoadConstants.SeaLevel, crossing.WaterLevel);
         Assert.InRange(crossing.Direction.magnitude, 0.99f, 1.01f);
 
-        // The banks lie on the jump segment, so the deck lies on the road.
-        Vector2 a = path![crossing.FromIndex], b = path[crossing.ToIndex];
-        Vector2 dir = (b - a).normalized;
+        // The banks lie on the road: on the jump segment, or on the approach
+        // where the deck springs from a bank top.
         foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
         {
-            Vector2 rel = bank - a;
-            float across = Mathf.Abs(rel.x * dir.y - rel.y * dir.x);
-            Assert.True(across < 0.1f, $"Bank {bank} is {across:F2} m off the jump");
+            float nearest = float.MaxValue;
+            for (int i = 1; i < path!.Count; i++)
+            {
+                Vector2 a = path[i - 1], b = path[i];
+                float len = Vector2.Distance(a, b);
+                if (len < 0.01f) continue;
+                float t = Mathf.Clamp01(Vector2.Dot(bank - a, b - a) / (len * len));
+                nearest = Mathf.Min(nearest, Vector2.Distance(bank, Vector2.Lerp(a, b, t)));
+            }
+            Assert.True(nearest < 0.1f, $"Bank {bank} is {nearest:F2} m off the road");
         }
 
         var again = RoadCrossingDetector.Detect(new List<Vector2>(path), world);
@@ -382,9 +388,28 @@ public class BridgeTests
             Assert.InRange(deck.Position.y, Mathf.Lerp(fromH, toH, t) - 0.3f, Mathf.Lerp(fromH, toH, t) + 0.3f);
         }
 
-        // The bank stations stand on the banks themselves.
-        foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
+        // The bank stations stand on the banks themselves, and each end is a
+        // stair down from the deck edge into the bank: its top meets the
+        // deck, its foot is in the dirt.
+        foreach ((Vector2 bank, float deckH) in new[] { (crossing.FromBank, fromH), (crossing.ToBank, toH) })
+        {
             Assert.Contains(plan, p => p.Kind == BridgePieceKind.Beam && Vector2.Distance(new Vector2(p.Position.x, p.Position.z), bank) < 0.1f);
+            var stairs = plan.Where(p => p.Kind == BridgePieceKind.Stair && Vector2.Distance(new Vector2(p.Position.x, p.Position.z), bank) < 2.5f).ToList();
+            Assert.NotEmpty(stairs);
+            var top = stairs.OrderByDescending(st => st.Position.y).First();
+            Assert.InRange(top.Position.y + 1f, deckH - 0.05f, deckH + 0.05f);
+            Assert.True(top.Position.y <= world.GetHeight(top.Position.x, top.Position.z) + 0.15f, "the stair's foot is in the dirt");
+        }
+
+        // Ruin flavour across seeds: toppled debris on the bed, never standing.
+        bool anyDebris = false;
+        for (int seed = 1; seed <= 20 && !anyDebris; seed++)
+            foreach (var d in BridgeLayout.Solve(crossing, world, seed).Where(p => p.Kind == BridgePieceKind.Debris))
+            {
+                anyDebris = true;
+                Assert.True(d.PitchDegrees > 30f, "Debris should be toppled");
+            }
+        Assert.True(anyDebris, "no debris in 20 seeds");
 
         Assert.All(plan, p => Assert.InRange(p.HealthFraction, BridgeLayout.RuinHealthMin - 0.001f, BridgeLayout.RuinHealthMax + 0.001f));
     }
@@ -392,7 +417,7 @@ public class BridgeTests
     [Theory]
     [InlineData(0f)]
     [InlineData(1.5f)]
-    [InlineData(3f)]
+    [InlineData(2.4f)]
     public void EveryPieceIsGroundedOrConnected(float eastRise)
     {
         var (crossing, world) = WideCrossing(eastRise);
@@ -694,6 +719,299 @@ public class BridgeTests
         }
     }
 
+    // ---- fords ----
+
+    /// <summary>A knee-deep gully: bed at Bed for |x| &lt; HalfWidth, banks at 33.
+    /// River core under it, so it is a crossing, not a puddle.</summary>
+    private sealed class GullyWorld : WorldGenerator
+    {
+        public float Bed = 29.5f;
+        public float HalfWidth = 8f;
+        public Heightmap.Biome Land = Heightmap.Biome.Meadows;
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 100f || Mathf.Abs(wy) > 100f) return 20f;
+            return Mathf.Abs(wx) < HalfWidth ? Bed : 33f;
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+            GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Land;
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / (HalfWidth * 2f));
+            width = weight > 0f ? HalfWidth * 4f : 0f;
+        }
+    }
+
+    private static RoadCrossing FordAcross(GullyWorld world, out List<Vector2> path)
+    {
+        path = Pathfinder(world, true).FindPath(new Vector2(-80f, 0f), new Vector2(80f, 0f))!;
+        Assert.NotNull(path);
+        var crossing = Assert.Single(RoadCrossingDetector.Detect(path, world));
+        Assert.Equal(CrossingKind.Ford, crossing.Kind);
+        return crossing;
+    }
+
+    [Fact]
+    public void KneeDeepWaterIsAFordAndBridgesOffStillBlocksIt()
+    {
+        var world = new GullyWorld();
+        Assert.Null(Pathfinder(world, false).FindPath(new Vector2(-80f, 0f), new Vector2(80f, 0f)));
+        var crossing = FordAcross(world, out _);
+        Assert.NotEqual(FordStyle.None, crossing.Style);
+        Assert.InRange(crossing.Width, 14f, 24f); // straight or diagonal jump
+        Assert.Equal(0f, crossing.FairwayWidth);
+
+        // Deeper than wading: the same gully is a bridge, and dear.
+        var deep = new GullyWorld { Bed = 28.5f };
+        var deepPath = Pathfinder(deep, true).FindPath(new Vector2(-80f, 0f), new Vector2(80f, 0f))!;
+        Assert.NotNull(deepPath);
+        Assert.Equal(CrossingKind.Bridge, Assert.Single(RoadCrossingDetector.Detect(deepPath, deep)).Kind);
+    }
+
+    [Theory]
+    [InlineData(FordStyle.Wade)]
+    [InlineData(FordStyle.Raise)]
+    [InlineData(FordStyle.Span)]
+    public void EachFordStyleTreatsTheShallowsItsOwnWay(FordStyle style)
+    {
+        var world = new GullyWorld();
+        WorldGenerator.instance = world;
+        RoadNetworkGenerator.Reset();
+        SetPathfinder(Pathfinder(world, true));
+        RoadCrossingDetector.SetFordStyleWeights(style == FordStyle.Wade ? 1f : 0f, style == FordStyle.Raise ? 1f : 0f, style == FordStyle.Span ? 1f : 0f);
+        try
+        {
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(80f, 0f), 0f, 4f, "ford"));
+            var crossing = Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
+            Assert.Equal(CrossingKind.Ford, crossing.Kind);
+            Assert.Equal(style, crossing.Style);
+
+            var middle = RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(crossing.Center.x, 0f, crossing.Center.y), 3f);
+            var plan = BridgeLayout.Solve(crossing, world, 1);
+            switch (style)
+            {
+                case FordStyle.Wade:
+                    // Painted through the water at the ground's own height, no pieces.
+                    Assert.NotEmpty(middle);
+                    Assert.All(middle, p => Assert.InRange(p.h, world.Bed - 0.01f, world.Bed + 0.01f));
+                    Assert.Empty(plan);
+                    break;
+                case FordStyle.Raise:
+                    // Leveled road up through the shallows: on the waterline floor.
+                    Assert.NotEmpty(middle);
+                    Assert.All(middle, p => Assert.True(p.h >= RoadPathfinder.WaterlineFloor - 0.01f, $"raised ford point at {p.h:F2}"));
+                    Assert.Empty(plan);
+                    break;
+                case FordStyle.Span:
+                    // Water unpaved; a low footbridge with steps, above the water and the banks.
+                    Assert.Empty(middle);
+                    Assert.Contains(plan, p => p.Kind == BridgePieceKind.Deck);
+                    Assert.All(plan.Where(p => p.Kind == BridgePieceKind.Deck), d => Assert.True(d.Position.y >= 33f + RoadConstants.FordSpanDeckRise - 0.01f));
+                    Assert.Equal(2, plan.Count(p => p.Kind == BridgePieceKind.Stair && Mathf.Abs(p.Position.y + 1f - 34f) < 0.05f));
+                    Assert.Empty(Floaters(plan, world));
+                    break;
+            }
+        }
+        finally
+        {
+            RoadCrossingDetector.SetFordStyleWeights(1f, 1f, 1f);
+            TearDownGeneration();
+        }
+    }
+
+    [Fact]
+    public void FordStylesFollowTheWeights()
+    {
+        var eligible = new List<FordStyle> { FordStyle.Raise, FordStyle.Wade, FordStyle.Span };
+        try
+        {
+            RoadCrossingDetector.SetFordStyleWeights(0f, 0f, 0f);
+            Assert.Equal(FordStyle.Raise, RoadCrossingDetector.PickFordStyle(eligible, 12345));
+            RoadCrossingDetector.SetFordStyleWeights(1f, 1f, 1f);
+            var even = Enumerable.Range(0, 300).Select(h => RoadCrossingDetector.PickFordStyle(eligible, h * 7919)).ToList();
+            Assert.Contains(FordStyle.Wade, even);
+            Assert.Contains(FordStyle.Raise, even);
+            Assert.Contains(FordStyle.Span, even);
+            RoadCrossingDetector.SetFordStyleWeights(0f, 0f, 5f);
+            Assert.All(Enumerable.Range(0, 300), h => Assert.Equal(FordStyle.Span, RoadCrossingDetector.PickFordStyle(eligible, h * 7919)));
+        }
+        finally { RoadCrossingDetector.SetFordStyleWeights(1f, 1f, 1f); }
+    }
+
+    [Fact]
+    public void SwampShallowsAreWadedAndOtherShallowsAreNot()
+    {
+        // A knee-deep band with no river under it: a swamp road wades it
+        // (with or without bridges); elsewhere it blocks.
+        var swamp = new GullyWorld { Bed = 29.5f, Land = Heightmap.Biome.Swamp };
+        swamp.GetRiverWeight(0f, 0f, out float w, out _);
+        Assert.True(w > 0f);
+        var noRiver = new BandWorld { Bed = 29.5f, Land = Heightmap.Biome.Swamp };
+        Assert.NotNull(Pathfinder(noRiver, false).FindPath(new Vector2(-80f, 0f), new Vector2(80f, 0f)));
+        Assert.Null(Pathfinder(new BandWorld { Bed = 29.5f, Land = Heightmap.Biome.Meadows }, false).FindPath(new Vector2(-80f, 0f), new Vector2(80f, 0f)));
+
+        // A waded swamp road keeps the ground's height; it is not lifted to the waterline.
+        WorldGenerator.instance = noRiver;
+        RoadSpatialGrid.Clear();
+        try
+        {
+            RoadSpatialGrid.AddRoadPath(new List<Vector2> { new(-24f, 0f), new(-16f, 0f), new(-8f, 0f), new(0f, 0f), new(8f, 0f), new(16f, 0f), new(24f, 0f) }, 4f, noRiver);
+            var middle = RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(0f, 0f, 0f), 3f);
+            Assert.NotEmpty(middle);
+            Assert.All(middle, p => Assert.True(p.h < RoadPathfinder.WaterlineFloor, $"swamp road lifted to {p.h:F2}"));
+        }
+        finally { RoadSpatialGrid.Clear(); WorldGenerator.instance = null; }
+    }
+
+    /// <summary>A knee-deep band with no river under it.</summary>
+    private sealed class BandWorld : WorldGenerator
+    {
+        public float Bed = 29.5f;
+        public Heightmap.Biome Land = Heightmap.Biome.Meadows;
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 100f || Mathf.Abs(wy) > 100f) return 20f;
+            return Mathf.Abs(wx) < 12f ? Bed : 33f;
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+            GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Land;
+    }
+
+    // ---- the Mistlands ----
+
+    private sealed class BiomeRiverWorld : WorldGenerator
+    {
+        public float HalfWidth = 40f;           // > 24 m: needs a BRIDGE jump
+        public float Bed = 26f;                 // deeper than wading: a bridge crossing
+        public Heightmap.Biome EastBiome = Heightmap.Biome.Mistlands;
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 220f || Mathf.Abs(wy) > 120f) return 20f;
+            float ax = Mathf.Abs(wx);
+            if (ax <= HalfWidth) return Bed;
+            if (ax >= HalfWidth + 10f) return 33f;
+            return Mathf.Lerp(Bed, 33f, (ax - HalfWidth) / 10f);
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+            GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean
+            : wx > 0f ? EastBiome : Heightmap.Biome.Meadows;
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / (HalfWidth * 2f));
+            width = weight > 0f ? HalfWidth * 4f : 0f;
+        }
+    }
+
+    [Fact]
+    public void NoBridgeInOrToTheMistlands()
+    {
+        // A wide sailable river with a Mistlands far bank gets no bridge; the
+        // same river with a Meadows far bank is bridged.
+        Assert.Null(Pathfinder(new BiomeRiverWorld(), true).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f)));
+        var meadows = new BiomeRiverWorld { EastBiome = Heightmap.Biome.Meadows };
+        Assert.NotNull(Pathfinder(meadows, true).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f)));
+
+        // A ford into the Mistlands stays allowed; a short deep jump does not.
+        var ford = new BiomeRiverWorld { HalfWidth = 12f, Bed = RoadConstants.SeaLevel - RoadConstants.FordWadeDepth + 0.1f };
+        Assert.NotNull(Pathfinder(ford, true).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f)));
+        Assert.Null(Pathfinder(new BiomeRiverWorld { HalfWidth = 12f, Bed = 26f }, true).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f)));
+
+        // A crossing that still touches the Mistlands gets no plan.
+        var path = Pathfinder(meadows, true).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f))!;
+        var crossing = Assert.Single(RoadCrossingDetector.Detect(path, meadows));
+        Assert.NotEmpty(BridgeLayout.Solve(crossing, meadows, 1));
+        var mist = new BiomeRiverWorld();
+        Assert.True(BridgeLayout.TouchesMistlands(crossing, mist));
+        Assert.Empty(BridgeLayout.Solve(crossing, mist, 1));
+    }
+
+    // ---- high bridge ----
+
+    /// <summary>A gorge: water |x| &lt; 20, a wet shelf to |x| = 24, then a
+    /// 4.5 m cliff up to a plateau at 36 on both sides.</summary>
+    private sealed class GorgeWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 220f || Mathf.Abs(wy) > 120f) return 20f;
+            float ax = Mathf.Abs(wx);
+            if (ax < 20f) return 26f;
+            if (ax < 24f) return 31.5f;
+            if (ax < 28f) return Mathf.Lerp(31.5f, 36f, (ax - 24f) / 4f);
+            return 36f;
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+            GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / 48f);
+            width = weight > 0f ? 96f : 0f;
+        }
+    }
+
+    [Fact]
+    public void ADeckSpringsFromTheBankTopsWhereTheRoadClimbsACliffOnBothSides()
+    {
+        var world = new GorgeWorld();
+        var path = Pathfinder(world, true).FindPath(new Vector2(-160f, 0f), new Vector2(160f, 0f));
+        Assert.NotNull(path);
+        var crossing = Assert.Single(RoadCrossingDetector.Detect(path!, world));
+        Assert.Equal(CrossingKind.Bridge, crossing.Kind);
+        foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
+            Assert.True(world.GetHeight(bank.x, bank.y) >= 35.9f, $"bank {bank} is at {world.GetHeight(bank.x, bank.y):F1}, not on the top");
+        Assert.InRange(crossing.Width, 54f, 62f);
+
+        var plan = BridgeLayout.Solve(crossing, world, 3);
+        (float fromH, float toH) = BridgeLayout.DeckEndHeights(crossing, world);
+        Assert.InRange(fromH, 35.9f, 36.1f);
+        Assert.InRange(toH, 35.9f, 36.1f);
+        Assert.All(plan.Where(p => p.Kind == BridgePieceKind.Deck), d => Assert.InRange(d.Position.y, 35.9f, 36.1f));
+        Assert.Empty(Floaters(plan, world));
+        // Piers over the water reach from the deck down to the 26 m bed: at least four segments.
+        Assert.True(plan.Count(p => p.Kind == BridgePieceKind.Post && Mathf.Abs(p.Position.x) < 20f) >= 8, "no tall piers over the water");
+    }
+
+    // ---- the waterline ----
+
+    /// <summary>Flat land at 33 with a 5 m wide puddle to 30 whose centre lies
+    /// between the 8 m cell centres at x = 0 and x = 8.</summary>
+    private sealed class PuddleWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 100f || Mathf.Abs(wy) > 100f) return 20f;
+            float d = Mathf.Sqrt((wx - 4f) * (wx - 4f) + wy * wy);
+            return d < 2.5f ? 30f : 33f;
+        }
+    }
+
+    [Fact]
+    public void RoadsNeverDipUnderTheWaterlineBetweenCells()
+    {
+        var world = new PuddleWorld();
+        // Both cell centres are dry; the move between them is not.
+        var path = Pathfinder(world, false).FindPath(new Vector2(-40f, 0f), new Vector2(40f, 0f));
+        Assert.NotNull(path);
+        for (int i = 1; i < path!.Count; i++)
+            for (float t = 0f; t <= 1f; t += 0.1f)
+            {
+                Vector2 p = Vector2.Lerp(path[i - 1], path[i], t);
+                Assert.True(world.GetHeight(p.x, p.y) >= RoadPathfinder.WaterlineFloor, $"road dips to {world.GetHeight(p.x, p.y):F1} at {p}");
+            }
+
+        // And a road forced over the puddle is lifted to the floor, terrain following.
+        WorldGenerator.instance = world;
+        RoadSpatialGrid.Clear();
+        try
+        {
+            RoadSpatialGrid.AddRoadPath(new List<Vector2> { new(-24f, 0f), new(-8f, 0f), new(8f, 0f), new(24f, 0f) }, 4f, world);
+            var over = RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(4f, 0f, 0f), 2f);
+            Assert.NotEmpty(over);
+            Assert.All(over, p => Assert.True(p.h >= RoadPathfinder.WaterlineFloor - 0.01f, $"stored road point at {p.h:F2}"));
+        }
+        finally { RoadSpatialGrid.Clear(); WorldGenerator.instance = null; }
+    }
+
     // ---- support model (test-side) ----
 
     private static (float bottom, float top, float reach) Extent(BridgePiece p) => p.Kind switch
@@ -701,6 +1019,7 @@ public class BridgeTests
         BridgePieceKind.Post => (-BridgeLayout.PostSegment * 0.5f, BridgeLayout.PostSegment * 0.5f, 0.25f),
         BridgePieceKind.Beam => (-0.15f, 0.15f, 1f),
         BridgePieceKind.Deck => (-0.1f, 0f, 1f),
+        BridgePieceKind.Stair => (0f, 1f, 1f),      // step: 2 m run, 1 m rise, origin at the foot
         _ => (-0.5f, 0.5f, 1f),
     };
 

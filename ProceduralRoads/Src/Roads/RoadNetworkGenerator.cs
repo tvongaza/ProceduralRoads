@@ -379,7 +379,10 @@ public static class RoadNetworkGenerator
     /// </summary>
     private static void AddRoadPathAroundCrossings(List<Vector2> path, List<RoadCrossing> crossings, float width)
     {
-        if (crossings.Count == 0)
+        bool anyExcluded = false;
+        foreach (RoadCrossing c in crossings)
+            anyExcluded |= !(c.Kind == CrossingKind.Ford && c.Style == FordStyle.Raise);
+        if (!anyExcluded)
         {
             RoadSpatialGrid.AddRoadPath(path, width, WorldGenerator.instance);
             return;
@@ -389,6 +392,21 @@ public static class RoadNetworkGenerator
         Vector2? resumeAt = null;
         foreach (RoadCrossing crossing in crossings)
         {
+            // A raised ford is ordinary leveled road (the waterline floor
+            // lifts it); a wading ford is painted separately at terrain
+            // height, bank to bank along the road; bridges and spans are
+            // left to their pieces.
+            if (crossing.Kind == CrossingKind.Ford && crossing.Style == FordStyle.Raise)
+                continue;
+            if (crossing.Kind == CrossingKind.Ford && crossing.Style == FordStyle.Wade)
+            {
+                List<Vector2> wade = new() { crossing.FromBank };
+                for (int k = crossing.FromIndex + 1; k < crossing.ToIndex; k++)
+                    wade.Add(path[k]);
+                wade.Add(crossing.ToBank);
+                RoadSpatialGrid.AddRoadPath(wade, width, WorldGenerator.instance, followTerrain: true);
+            }
+
             List<Vector2> land = path.GetRange(cursor, crossing.FromIndex - cursor + 1);
             if (resumeAt.HasValue && Vector2.Distance(resumeAt.Value, land[0]) > 0.5f)
                 land.Insert(0, resumeAt.Value);

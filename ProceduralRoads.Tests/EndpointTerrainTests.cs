@@ -18,7 +18,8 @@ public class EndpointTerrainTests
         public float AlongX = 0.5f;   // metres of rise per metre east
         public float AcrossZ = 0f;    // metres of rise per metre north
 
-        public override float GetHeight(float wx, float wy) => 60f + AlongX * wx + AcrossZ * wy;
+        // Well above the waterline everywhere, so only the leveling is under test.
+        public override float GetHeight(float wx, float wy) => 200f + AlongX * wx + AcrossZ * wy;
     }
 
     private const int Width = 64;

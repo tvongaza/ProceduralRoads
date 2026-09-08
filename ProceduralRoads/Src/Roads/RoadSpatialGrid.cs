@@ -81,7 +81,9 @@ public static class RoadSpatialGrid
         return m_debugInfo.TryGetValue(position, out debugInfo);
     }
 
-    public static void AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen)
+    /// <summary>followTerrain: paint only; every point keeps the raw terrain
+    /// height, so leveling toward it changes nothing (a WADE ford).</summary>
+    public static void AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen, bool followTerrain = false)
     {
         if (path == null || path.Count < 2 || worldGen == null)
             return;
@@ -124,7 +126,19 @@ public static class RoadSpatialGrid
         {
             float distFromNearestEnd = Mathf.Min(distanceFromStart[i], pathTotal - distanceFromStart[i]);
             float rampBlend = RoadEndpointRamp.Blend(distFromNearestEnd);
-            float finalHeight = Mathf.Lerp(denseHeights[i], smoothedHeights[i], rampBlend);
+            float finalHeight;
+            if (followTerrain)
+            {
+                finalHeight = denseHeights[i];
+            }
+            else
+            {
+                finalHeight = Mathf.Lerp(denseHeights[i], smoothedHeights[i], rampBlend);
+                // A road never sits under the waterline (swamps wade): a point
+                // over a dip or a raised ford is lifted to the floor and the
+                // terrain follows.
+                finalHeight = Mathf.Max(finalHeight, RoadPathfinder.FloorFor(worldGen.GetBiome(densePoints[i].x, densePoints[i].y)));
+            }
 
             AddRoadPoint(tempPoints, densePoints[i], width, finalHeight);
 

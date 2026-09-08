@@ -22,6 +22,7 @@ public class RoadPathfinder
     public float TerrainVariancePenalty = RoadConstants.DefaultTerrainVariancePenalty;
     public float TerrainVarianceThreshold = RoadConstants.DefaultTerrainVarianceThreshold;
     public float BaseCost = RoadConstants.DefaultBaseCost;
+    public float SwampShallowWaterPenalty = RoadConstants.DefaultSwampShallowWaterPenalty;
 
     /// <summary>
     /// Bridges (prototype; config "Bridges/Enabled", off by default): whether
@@ -193,8 +194,29 @@ public class RoadPathfinder
         float biomeHeight = m_worldGen.GetHeight(toWorld.x, toWorld.y);
         if (biomeHeight < RoadConstants.DeepWaterHeight)
             return WaterPenalty * 2f;
-        if (biomeHeight < RoadConstants.ShallowWaterHeight)
+        Heightmap.Biome biome = m_worldGen.GetBiome(toWorld.x, toWorld.y);
+        if (biomeHeight < FloorFor(biome))
             return WaterPenalty;
+        // Swamp shallows are waded, at a price.
+        float wadeCost = biome == Heightmap.Biome.Swamp && biomeHeight < WaterlineFloor ? SwampShallowWaterPenalty : 0f;
+
+        // Splined roads travel the ground BETWEEN cell centres: a narrow dip
+        // or river edge between two dry cells would put the road under water.
+        int interiorSamples = Mathf.Max(1, Mathf.RoundToInt(dist / RoadConstants.MoveInteriorSampleSpacing) - 1);
+        for (int s = 1; s <= interiorSamples; s++)
+        {
+            float t = (float)s / (interiorSamples + 1);
+            float ix = fromWorld.x + (toWorld.x - fromWorld.x) * t;
+            float iy = fromWorld.y + (toWorld.y - fromWorld.y) * t;
+            m_worldGen.GetRiverWeight(ix, iy, out float interiorRiver, out _);
+            if (interiorRiver > RoadConstants.RiverImpassableThreshold)
+                return RiverPenalty;
+            float ih = m_worldGen.GetHeight(ix, iy);
+            if (ih < FloorFor(m_worldGen.GetBiome(ix, iy)))
+                return WaterPenalty;
+            if (ih < WaterlineFloor)
+                wadeCost += SwampShallowWaterPenalty;
+        }
 
         if (slope > SteepSlopeThreshold)
             return SteepSlopePenalty;
@@ -202,20 +224,28 @@ public class RoadPathfinder
         if (GetTerrainVariance(toWorld) > TerrainVarianceThreshold)
             return TerrainVariancePenalty;
 
-        Heightmap.Biome biome = m_worldGen.GetBiome(toWorld.x, toWorld.y);
         if (biome == Heightmap.Biome.Mountain && slope > RoadConstants.MountainSlopeThreshold)
             return WaterPenalty;
 
         float riverCost = riverWeight > 0 ? WaterPenalty * riverWeight : 0f;
-        return BaseCost * dist + (slope * slope * SlopeMultiplier) + riverCost;
+        return BaseCost * dist + (slope * slope * SlopeMultiplier) + riverCost + wadeCost;
     }
+
+    /// <summary>Ground a road cell must reach: the shallow-water line plus the clearance.</summary>
+    public const float WaterlineFloor = RoadConstants.ShallowWaterHeight + RoadConstants.WaterlineClearance;
+
+    /// <summary>The floor for a biome: swamps wade down to DeepWaterHeight.</summary>
+    public static float FloorFor(Heightmap.Biome biome) =>
+        biome == Heightmap.Biome.Swamp ? RoadConstants.DeepWaterHeight : WaterlineFloor;
 
     /// <summary>
     /// Bridges (prototype): scans cell by cell from a dry cell across river
     /// water in one of the eight principal directions and lands on the first
-    /// dry ground outside the river band, if that lies within the bridge cap
-    /// and the two banks are near level. Water without a river core under it
-    /// (a lake, the sea) is not bridged; neither is a dry river valley.
+    /// dry ground outside the river band. A short jump over knee-deep water
+    /// is a ford at a small cost; anything longer or deeper is a bridge at
+    /// the bridge cost, held to near-level banks and refused in or to the
+    /// Mistlands. Water without a river core under it (a lake, the sea) is
+    /// not crossed; neither is a dry river valley.
     /// </summary>
     private bool TryGetBridgeCrossing(Vector2i from, Vector2Int direction, out Vector2i landing, out float crossingCost)
     {
@@ -230,6 +260,8 @@ public class RoadPathfinder
         Vector2 fromWorld = GridToWorld(from);
         float fromHeight = m_worldGen.GetHeight(fromWorld.x, fromWorld.y);
         bool sawRiverWater = false;
+        float deepest = float.MaxValue;
+        bool mistlands = m_worldGen.GetBiome(fromWorld.x, fromWorld.y) == Heightmap.Biome.Mistlands;
 
         for (int step = 1; step <= RoadConstants.MaxBridgeCrossingCells; step++)
         {
@@ -237,7 +269,7 @@ public class RoadPathfinder
             Vector2 world = GridToWorld(check);
             float height = m_worldGen.GetHeight(world.x, world.y);
             m_worldGen.GetRiverWeight(world.x, world.y, out float riverWeight, out _);
-            bool water = height < RoadConstants.ShallowWaterHeight;
+            bool water = height < WaterlineFloor;
             bool riverCore = riverWeight > RoadConstants.RiverImpassableThreshold;
 
             // Keep scanning over water and over the river band (its dry
@@ -245,6 +277,8 @@ public class RoadPathfinder
             if (water || riverCore)
             {
                 sawRiverWater |= water && riverCore;
+                deepest = Mathf.Min(deepest, height);
+                mistlands |= m_worldGen.GetBiome(world.x, world.y) == Heightmap.Biome.Mistlands;
                 continue;
             }
 
@@ -256,15 +290,22 @@ public class RoadPathfinder
             if (distance > RoadConstants.MaxBridgeCrossingCells * CellSize)
                 return false;
 
+            bool bridge = distance > RoadConstants.MaxRiverCrossingCells * CellSize
+                || deepest < RoadConstants.SeaLevel - RoadConstants.FordWadeDepth;
+            mistlands |= m_worldGen.GetBiome(world.x, world.y) == Heightmap.Biome.Mistlands;
+            if (bridge && mistlands)
+                return false;
+
             float bankDelta = Mathf.Abs(height - fromHeight);
-            if (bankDelta > RoadConstants.MaxBridgeBankDelta)
+            if (bankDelta > (bridge ? RoadConstants.MaxBridgeBankDelta : RoadConstants.MaxFordBankDelta))
                 return false;
 
             landing = check;
-            crossingCost = BridgeCostFixed + BridgeCostPerMeter * distance
-                + RoadConstants.BridgeBankDeltaPenalty * bankDelta * bankDelta;
+            crossingCost = (bridge ? BridgeCostFixed + BridgeCostPerMeter * distance : RoadConstants.RiverCrossingPenalty)
+                + BaseCost * distance
+                + RoadConstants.BankDeltaPenalty * bankDelta * bankDelta;
             // Both ends already on road (a finished road's banks): share that
-            // bridge rather than build another beside it.
+            // crossing rather than build another beside it.
             if (OnExistingRoad(fromWorld) && OnExistingRoad(world))
                 crossingCost *= RoadConstants.BridgeReuseDiscount;
             return true;

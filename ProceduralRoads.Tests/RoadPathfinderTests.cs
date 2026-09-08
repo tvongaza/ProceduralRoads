@@ -12,7 +12,8 @@ public class RoadPathfinderTests
         var world = new SyntheticWorld { HasRiver = false, HasMountain = false };
         var pathfinder = new RoadPathfinder(world);
 
-        var path = pathfinder.FindPath(new Vector2(-400f, -200f), new Vector2(300f, 250f));
+        // The start stands inland of the shore band: roads keep a clearance above the waterline.
+        var path = pathfinder.FindPath(new Vector2(-380f, -190f), new Vector2(300f, 250f));
 
         Assert.NotNull(path);
         Assert.True(path!.Count > 10, $"Expected a dense path, got {path.Count} points");

@@ -60,7 +60,8 @@ public class EndpointRampTests
 
     private sealed class PlaneSlope : WorldGenerator
     {
-        public override float GetHeight(float wx, float wy) => 60f + 0.5f * wx;
+        // Well above the waterline everywhere, so only the smoothing is under test.
+        public override float GetHeight(float wx, float wy) => 200f + 0.5f * wx;
     }
 
     [Fact]

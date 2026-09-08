@@ -3,6 +3,17 @@ using UnityEngine;
 
 namespace ProceduralRoads;
 
+/// <summary>Bridge: long, deep or sailable water, pieces span it. Ford:
+/// knee-deep, unsailable water the road goes through in one of the
+/// <see cref="FordStyle"/> ways.</summary>
+public enum CrossingKind { Bridge, Ford }
+
+/// <summary>How a ford treats the shallows: WADE paints the ground and
+/// leaves it at its height (the road goes through the water), RAISE levels
+/// the road up through the shallows, SPAN builds a short low footbridge with
+/// steps at each end. Chosen per site for variety.</summary>
+public enum FordStyle { None, Wade, Raise, Span }
+
 /// <summary>
 /// One river crossing on a generated road (bridges prototype): where the road
 /// leaves each bank, the river profile between the banks, and the fairway,
@@ -11,6 +22,9 @@ namespace ProceduralRoads;
 /// </summary>
 public sealed class RoadCrossing
 {
+    public CrossingKind Kind = CrossingKind.Bridge;
+    public FordStyle Style = FordStyle.None;
+
     /// <summary>Path vertices bracketing the water: the crossing is the path
     /// segment [FromIndex, ToIndex]. Not persisted; only the generation pass
     /// that paints the land on either side needs them.</summary>
@@ -45,12 +59,14 @@ public sealed class RoadCrossing
 
     /// <summary>A crossing between two banks with its derived fields filled in.</summary>
     public static RoadCrossing Between(Vector2 fromBank, Vector2 toBank, float riverbedHeight,
-        Vector2 fairwayCenter, float fairwayWidth)
+        Vector2 fairwayCenter, float fairwayWidth, CrossingKind kind = CrossingKind.Bridge, FordStyle style = FordStyle.None)
     {
         Vector2 direction = toBank - fromBank;
         direction.Normalize();
         return new RoadCrossing
         {
+            Kind = kind,
+            Style = style,
             FromBank = fromBank,
             ToBank = toBank,
             Center = (fromBank + toBank) * 0.5f,
@@ -69,9 +85,10 @@ public sealed class RoadCrossing
 /// <summary>
 /// Finds the river crossings on a finished path. With bridges on, the
 /// pathfinder jumps a river in one straight segment from dry cell to dry
-/// cell; this walks each such segment to the water's edge on both sides and
-/// profiles the river between them. Pure logic: the same code runs in the
-/// game and in the headless test harness.
+/// cell; this walks each such segment to the water's edge on both sides,
+/// profiles the river between them and decides whether it is a bridge or a
+/// ford, and in which style. Pure logic: the same code runs in the game and
+/// in the headless test harness.
 /// </summary>
 public static class RoadCrossingDetector
 {
@@ -80,6 +97,21 @@ public static class RoadCrossingDetector
 
     private const float SampleSpacing = 2f;
     private const float ShoreStep = 0.5f;
+
+    /// <summary>Player-facing levers (config "Fords/WadeWeight", "RaiseWeight",
+    /// "SpanWeight"): relative odds of each ford style among the styles a
+    /// site allows. 0 removes a style; when every allowed style is 0 the site
+    /// raises the road (always allowed). Set at config read.</summary>
+    public static float ConfiguredWadeWeight = RoadConstants.DefaultFordStyleWeight;
+    public static float ConfiguredRaiseWeight = RoadConstants.DefaultFordStyleWeight;
+    public static float ConfiguredSpanWeight = RoadConstants.DefaultFordStyleWeight;
+
+    public static void SetFordStyleWeights(float wade, float raise, float span)
+    {
+        ConfiguredWadeWeight = Mathf.Max(0f, wade);
+        ConfiguredRaiseWeight = Mathf.Max(0f, raise);
+        ConfiguredSpanWeight = Mathf.Max(0f, span);
+    }
 
     public static List<RoadCrossing> Detect(List<Vector2> path, WorldGenerator world)
     {
@@ -91,19 +123,22 @@ public static class RoadCrossingDetector
         {
             if (!SegmentCrossesRiver(path[i - 1], path[i], world))
                 continue;
-            RoadCrossing? crossing = Build(path[i - 1], path[i], world);
-            if (crossing == null)
-                continue;
-            crossing.FromIndex = i - 1;
-            crossing.ToIndex = i;
-            crossings.Add(crossing);
+            RoadCrossing? crossing = Build(path, i - 1, i, world);
+            if (crossing != null)
+                crossings.Add(crossing);
         }
         return crossings;
     }
 
-    /// <summary>Ground a road may stand on, so also where a deck may end.</summary>
+    /// <summary>
+    /// Ground a road may stand on, so also where a deck may end. Outside
+    /// swamps: the waterline plus clearance, the pathfinder's rule for a
+    /// cell. In swamps the road wades down to DeepWaterHeight, so everything
+    /// shallower is road (a wading ford), not deck: the deck spans only the
+    /// water the road could not wade.
+    /// </summary>
     public static bool IsRoadGround(Vector2 p, WorldGenerator world) =>
-        BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world) >= RoadConstants.ShallowWaterHeight;
+        BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world) >= RoadPathfinder.FloorFor(world.GetBiome(p.x, p.y));
 
     /// <summary>A segment with river water under it somewhere: the jump the
     /// pathfinder made. A splined road dipping into a puddle between two dry
@@ -125,18 +160,98 @@ public static class RoadCrossingDetector
         return false;
     }
 
-    private static RoadCrossing? Build(Vector2 a, Vector2 b, WorldGenerator world)
+    private static RoadCrossing? Build(List<Vector2> path, int fromIndex, int toIndex, WorldGenerator world)
     {
+        Vector2 a = path[fromIndex], b = path[toIndex];
         // The deck spans the water, not the dry approaches: each bank is the
         // last road ground along the jump before the water, so the painted
         // road runs down to the abutment and the deck lies on the road.
         Vector2 from = Shore(a, b, world);
         Vector2 to = Shore(b, a, world);
+
+        // High bridge: when the road climbs a cliff on both sides of the
+        // water, the deck springs from the bank tops instead of the water's
+        // edge. Both banks move together, and only when the tops are level
+        // enough for one deck.
+        {
+            float fromH = BiomeBlendedHeight.GetBlendedHeight(from.x, from.y, world);
+            float toH = BiomeBlendedHeight.GetBlendedHeight(to.x, to.y, world);
+            (Vector2 topFrom, int topFromIndex, float topFromH) = BankTop(path, from, fromIndex, -1, world);
+            (Vector2 topTo, int topToIndex, float topToH) = BankTop(path, to, toIndex, +1, world);
+            if (topFromH >= fromH + RoadConstants.HighBankRise && topToH >= toH + RoadConstants.HighBankRise
+                && Mathf.Abs(topFromH - topToH) <= RoadConstants.MaxBridgeBankDelta)
+            {
+                from = topFrom;
+                to = topTo;
+                fromIndex = topFromIndex;
+                toIndex = topToIndex;
+            }
+        }
+
         float width = Vector2.Distance(from, to);
         if (width < 1f)
             return null;
 
-        // Profile the river along the bank-to-bank line at about 1 m spacing.
+        Vector2 direction = to - from;
+        direction.Normalize();
+        (float riverbed, Vector2 fairwayCenter, float fairwayWidth) = Profile(from, to, world);
+
+        // A crossing needs water under it; a dry river valley is ordinary road.
+        if (riverbed >= RoadConstants.SeaLevel)
+            return null;
+
+        Vector2 center = (from + to) * 0.5f;
+        bool swamp = world.GetBiome(center.x, center.y) == Heightmap.Biome.Swamp;
+
+        // Knee-deep and unsailable: a FORD, in one of three styles chosen per
+        // site so roads vary. Wading only where the water is ankle deep; a
+        // span only where there is room for a deck. Swamps wade deeper: a
+        // swamp channel whose bed stays at wading depth (what the pathfinder
+        // already wades) is a ford in the same style mix, wading always
+        // allowed, unless a stretch of it is sailable for at least a boat's
+        // length, which keeps it a bridge.
+        bool ford = swamp
+            ? fairwayWidth < RoadConstants.SwampFordMaxFairway && riverbed >= RoadConstants.DeepWaterHeight
+            : fairwayWidth <= 0f && riverbed >= RoadConstants.SeaLevel - RoadConstants.FordWadeDepth;
+        FordStyle style = FordStyle.None;
+        if (ford)
+        {
+            float depth = RoadConstants.SeaLevel - riverbed;
+            List<FordStyle> eligible = new() { FordStyle.Raise };
+            if (swamp || depth <= RoadConstants.FordWadeMaxDepth) eligible.Add(FordStyle.Wade);
+            if (width >= RoadConstants.FordSpanMinWidth) eligible.Add(FordStyle.Span);
+            style = PickFordStyle(eligible, SiteHash(center));
+        }
+        else if (swamp)
+        {
+            // A BRIDGE starts and ends on land above the water: in a swamp the
+            // wade shelf is road-legal, so the banks found above can sit under
+            // the waterline; walk each one straight out along the crossing
+            // line until the ground clears the waterline, even if that makes
+            // the deck longer. The painted lead still reaches the abutment.
+            float dryFloor = RoadPathfinder.WaterlineFloor;
+            bool fromWet = BiomeBlendedHeight.GetBlendedHeight(from.x, from.y, world) < dryFloor;
+            bool toWet = BiomeBlendedHeight.GetBlendedHeight(to.x, to.y, world) < dryFloor;
+            if (fromWet)
+                from = FirstDryAlongLine(from, -direction, RoadConstants.SwampBridgeDryReach, world, dryFloor);
+            if (toWet)
+                to = FirstDryAlongLine(to, direction, RoadConstants.SwampBridgeDryReach, world, dryFloor);
+            // The profile keeps its riverbed and fairway: the added deck is
+            // over the shelf, which is shallower than both.
+        }
+
+        RoadCrossing crossing = RoadCrossing.Between(from, to, riverbed, fairwayCenter, fairwayWidth,
+            ford ? CrossingKind.Ford : CrossingKind.Bridge, style);
+        crossing.FromIndex = fromIndex;
+        crossing.ToIndex = toIndex;
+        return crossing;
+    }
+
+    /// <summary>The river along the bank-to-bank line at about 1 m spacing:
+    /// the lowest bed, and the longest sailable stretch.</summary>
+    private static (float riverbed, Vector2 fairwayCenter, float fairwayWidth) Profile(Vector2 from, Vector2 to, WorldGenerator world)
+    {
+        float width = Vector2.Distance(from, to);
         int samples = Mathf.Max(2, Mathf.CeilToInt(width));
         float riverbed = float.MaxValue;
         Vector2 deepestPoint = from;
@@ -168,10 +283,6 @@ public static class RoadCrossingDetector
             }
         }
 
-        // A crossing needs water under it; a dry river valley is ordinary road.
-        if (riverbed >= RoadConstants.SeaLevel)
-            return null;
-
         Vector2 fairwayCenter = deepestPoint;
         float fairwayWidth = 0f;
         if (bestRunLength > 0)
@@ -180,8 +291,57 @@ public static class RoadCrossingDetector
             fairwayCenter = new Vector2(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
             fairwayWidth = bestRunLength * (width / samples);
         }
+        return (riverbed, fairwayCenter, fairwayWidth);
+    }
 
-        return RoadCrossing.Between(from, to, riverbed, fairwayCenter, fairwayWidth);
+    private static float WeightOf(FordStyle style) => style switch
+    {
+        FordStyle.Wade => ConfiguredWadeWeight,
+        FordStyle.Raise => ConfiguredRaiseWeight,
+        FordStyle.Span => ConfiguredSpanWeight,
+        _ => 0f,
+    };
+
+    /// <summary>Weighted pick driven by the site hash, so a world regenerates
+    /// with the same fords. Equal weights reduce to a plain modulo pick.</summary>
+    internal static FordStyle PickFordStyle(List<FordStyle> eligible, int hash)
+    {
+        float total = 0f, first = -1f;
+        bool equal = true;
+        foreach (FordStyle s in eligible)
+        {
+            float w = Mathf.Max(0f, WeightOf(s));
+            total += w;
+            if (first < 0f) first = w;
+            else if (Mathf.Abs(w - first) > 1e-6f) equal = false;
+        }
+        if (total <= 0f)
+            return FordStyle.Raise;
+        if (equal)
+            return eligible[hash % eligible.Count];
+
+        float r = (hash & 0xFFFF) / 65536f * total;
+        foreach (FordStyle s in eligible)
+        {
+            float w = Mathf.Max(0f, WeightOf(s));
+            if (w <= 0f) continue;
+            if (r < w) return s;
+            r -= w;
+        }
+        return FordStyle.Raise; // float tail
+    }
+
+    /// <summary>Deterministic per-site hash so a ford keeps its style across
+    /// loads and worlds regenerate identically.</summary>
+    private static int SiteHash(Vector2 center)
+    {
+        unchecked
+        {
+            int x = Mathf.RoundToInt(center.x), y = Mathf.RoundToInt(center.y);
+            uint h = (uint)(x * 374761393 + y * 668265263);
+            h = (h ^ (h >> 13)) * 1274126177u;
+            return (int)((h ^ (h >> 16)) & 0x7FFFFFFF);
+        }
     }
 
     /// <summary>
@@ -214,5 +374,61 @@ public static class RoadCrossingDetector
                 return last;
         }
         return start;
+    }
+
+    /// <summary>Walks straight out from a bank along <paramref name="outward"/>
+    /// and returns the first point whose ground is at least <paramref name="floor"/>
+    /// high, or the bank itself when none lies within reach.</summary>
+    private static Vector2 FirstDryAlongLine(Vector2 bank, Vector2 outward, float reach, WorldGenerator world, float floor)
+    {
+        for (float d = 0.5f; d <= reach; d += 0.5f)
+        {
+            Vector2 p = bank + outward * d;
+            if (BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world) >= floor)
+                return p;
+        }
+        return bank;
+    }
+
+    /// <summary>
+    /// The highest ground within HighBankReach of a bank, walking outward
+    /// from it along the path (step -1 toward the path start from the from
+    /// bank, +1 toward the path end from the to bank). Returns the nearest
+    /// point where that height is reached, the path index that brackets it
+    /// on the water side (FromIndex / ToIndex semantics), and its height.
+    /// </summary>
+    private static (Vector2 top, int index, float height) BankTop(List<Vector2> path, Vector2 bank, int bankIndex, int step, WorldGenerator world)
+    {
+        List<(Vector2 p, int index)> samples = new() { (bank, bankIndex) };
+        Vector2 pos = bank;
+        int next = bankIndex;
+        float budget = RoadConstants.HighBankReach;
+        while (budget > 0f && next >= 0 && next < path.Count)
+        {
+            Vector2 target = path[next];
+            float length = Vector2.Distance(pos, target);
+            if (length > 0.01f)
+            {
+                Vector2 dir = (target - pos) * (1f / length);
+                for (float d = 0.5f; d < length && d <= budget; d += 0.5f)
+                    samples.Add((pos + dir * d, next));
+                if (length <= budget)
+                    samples.Add((target, next));
+                budget -= length;
+            }
+            pos = target;
+            next += step;
+        }
+
+        float best = float.MinValue;
+        foreach ((Vector2 p, int _) in samples)
+            best = Mathf.Max(best, BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world));
+        foreach ((Vector2 p, int index) in samples)
+        {
+            float h = BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
+            if (h >= best - 0.05f)
+                return (p, index, h);
+        }
+        return (bank, bankIndex, BiomeBlendedHeight.GetBlendedHeight(bank.x, bank.y, world));
     }
 }

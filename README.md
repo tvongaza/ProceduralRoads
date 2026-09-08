@@ -26,6 +26,7 @@ Edit `warpalicious.ProceduralRoads.cfg` in `BepInEx/config/`:
 | Bridges/Enabled | false | **Prototype.** Let roads cross rivers on ruined wooden bridges (see below) |
 | Bridges/CostFixed | 60000 | Pathfinding cost of a bridge, fixed part; lower = more bridges |
 | Bridges/CostPerMeter | 600 | Pathfinding cost of a bridge per metre of span |
+| Fords/WadeWeight, RaiseWeight, SpanWeight | 1 each | Relative odds of each ford style where a site allows it (0 disables a style) |
 
 ### Custom Locations via Config
 
@@ -35,26 +36,39 @@ Use the `CustomLocations` setting to add locations from other mods (e.g., Expand
 CustomLocations = Runestone_Boars,Runestone_Greydwarfs,MerchantCamp
 ```
 
-### Bridges (prototype, off by default)
+### Bridges and fords (prototype, off by default)
 
 With `Bridges/Enabled = true` a road may cross a river instead of stopping at
-it. The pathfinder can jump a river in a straight line, up to 128 m from dry
-ground to dry ground and only between near-level banks, at the configured
-cost; the cost is high, so a bridge appears where the way around is long or
-there is none. The water under the jump is never leveled or painted: the
-road runs down to the water's edge on each side and a ruined wooden bridge
-is spawned between the banks from vanilla pieces (`wood_pole2` post pairs
-stacked down to the riverbed, `wood_beam` crossbeams, a `wood_floor` plank
-deck) when the zone generates. The bridge is a ruin: piers survive more than
-the deck, and a navigation gap around the deepest water is always left open
-so boats still pass. Pieces are ordinary persistent objects with damage
-states, so unmodded clients see them too.
+it. The pathfinder can jump a river in a straight line from dry ground to
+dry ground. A jump of up to 48 m over water no deeper than 0.8 m is a
+**ford**: the road goes through, in a style chosen per site by the
+`Fords/*` weights. *Wade* paints the road through the shallows at the
+ground's own height, *raise* levels the road up through them, *span* builds
+a short low footbridge with a step at each end. Anything longer or deeper,
+up to 128 m and only between near-level banks, is a **bridge** at the
+configured cost; the cost is high, so a bridge appears where the way around
+is long or there is none. No bridge is built in or to the Mistlands. The
+water under a bridge is never leveled or painted: the road runs down to the
+water's edge on each side (or, where the road climbs a cliff on both sides,
+the deck springs from the bank tops) and a ruined wooden bridge is spawned
+between the banks from vanilla pieces (`wood_pole2` post pairs stacked down
+to the riverbed, `wood_beam` crossbeams, a `wood_floor` plank deck, a
+`wood_stair` at each end) when the zone generates. The bridge is a ruin:
+piers survive more than the deck, fallen stations leave stubs and toppled
+poles, and a navigation gap around the deepest water is always left open so
+boats still pass. Pieces are ordinary persistent objects with damage states,
+so unmodded clients see them too. Only the server creates them.
+
+Roads also keep 0.75 m of clearance above the shallow-water line, cell by
+cell and between cells, so a road no longer dips under water between two
+dry samples; swamp roads wade their shallows as before. This applies with
+bridges on or off.
 
 The setting decides how a network is generated; a world generated with
 bridges keeps them if it is turned off later. Bridges need the pathfinder to
 exhaust the land routes first, so on large islands raise
 `PathfindingMaxIterations` to let it find them. `road_bridges` in the console
-lists the bridge sites nearest to you; `road_bridges respawn` rebuilds the
+lists the crossings nearest to you; `road_bridges respawn` rebuilds the
 spawned pieces from the current plans.
 
 ## API for Mod Authors

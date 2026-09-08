@@ -408,7 +408,7 @@ public static class RoadNetworkPersistence
 
     /// <summary>
     /// Serialize river crossings to binary format.
-    /// Format: [version=1][count] then per crossing [fromX][fromY][toX][toY][riverbed][fairwayX][fairwayY][fairwayWidth].
+    /// Format: [version=2][count] then per crossing [fromX][fromY][toX][toY][riverbed][fairwayX][fairwayY][fairwayWidth][kind][style].
     /// The rest of a crossing is derived from its banks on load.
     /// </summary>
     private static byte[] SerializeRoadCrossings(IReadOnlyList<RoadCrossing> roadCrossings)
@@ -416,7 +416,7 @@ public static class RoadNetworkPersistence
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms);
 
-        writer.Write(1);
+        writer.Write(2);
         writer.Write(roadCrossings.Count);
         foreach (RoadCrossing crossing in roadCrossings)
         {
@@ -428,6 +428,8 @@ public static class RoadNetworkPersistence
             writer.Write(crossing.FairwayCenter.x);
             writer.Write(crossing.FairwayCenter.y);
             writer.Write(crossing.FairwayWidth);
+            writer.Write((int)crossing.Kind);
+            writer.Write((int)crossing.Style);
         }
 
         return ms.ToArray();
@@ -489,7 +491,7 @@ public static class RoadNetworkPersistence
             using var reader = new BinaryReader(ms);
 
             int version = reader.ReadInt32();
-            if (version != 1)
+            if (version != 2)
             {
                 Log.LogWarning($"Unknown river crossing data version: {version}");
                 return false;
@@ -510,7 +512,9 @@ public static class RoadNetworkPersistence
                 float riverbed = reader.ReadSingle();
                 Vector2 fairwayCenter = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                 float fairwayWidth = reader.ReadSingle();
-                roadCrossings.Add(RoadCrossing.Between(fromBank, toBank, riverbed, fairwayCenter, fairwayWidth));
+                CrossingKind kind = (CrossingKind)reader.ReadInt32();
+                FordStyle style = (FordStyle)reader.ReadInt32();
+                roadCrossings.Add(RoadCrossing.Between(fromBank, toBank, riverbed, fairwayCenter, fairwayWidth, kind, style));
             }
 
             return true;
