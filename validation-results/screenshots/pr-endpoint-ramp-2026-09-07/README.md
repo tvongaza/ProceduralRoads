@@ -25,7 +25,8 @@ build. Poses fixed per site (private station repo).
   Of the 142 road ends, 61 sit 1 m or more from the ground at the end;
   the median of those is 2.2 m. W4 = Crypt4 (8135,2678), Black Forest,
   road 2.12 m above the ground on the base branch, 0.00 m on the PR.
-  Generation scope GLOBAL at load, painting at zone spawn, world fixture
-  restored per build, poses generic (top-down + four compass views 18 m
-  out). Builds: tooling 05ba8fd vs ramp 9d62345 (road_ends now lives on
+  Generation scope GLOBAL at load, painting RE-APPLIED per site by
+  road_generate (the zone-spawn hook left these zones bare on two runs,
+  see the handoff), world fixture restored per build, poses generic
+  (top-down + four compass views 18 m out). Builds: tooling 05ba8fd vs ramp 9d62345 (road_ends now lives on
   the ramp branch as its own debug commit).
