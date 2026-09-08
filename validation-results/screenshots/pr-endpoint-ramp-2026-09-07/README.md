@@ -21,3 +21,11 @@ build. Poses fixed per site (private station repo).
     W1 (-1287,6413): base road 16.70 m ABOVE the ground, PR 0.00 m
     W2 (691,7417):   base road 13.25 m BELOW the ground, PR -0.01 m
     W3 (-1459,7111): base road  8.42 m BELOW the ground, PR 0.00 m
+- median-end/W4-<pose>.jpg: a road end of median severity, base | PR.
+  Of the 142 road ends, 61 sit 1 m or more from the ground at the end;
+  the median of those is 2.2 m. W4 = Crypt4 (8135,2678), Black Forest,
+  road 2.12 m above the ground on the base branch, 0.00 m on the PR.
+  Generation scope GLOBAL at load, painting at zone spawn, world fixture
+  restored per build, poses generic (top-down + four compass views 18 m
+  out). Builds: tooling 05ba8fd vs ramp 9d62345 (road_ends now lives on
+  the ramp branch as its own debug commit).
