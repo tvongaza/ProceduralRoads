@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using BepInEx.Logging;
 using UnityEngine;
 
@@ -133,7 +134,49 @@ public static class RoadNetworkGenerator
     private static bool m_roadsGenerated = false;
     private static bool m_locationsReady = false;
     private static bool m_roadsLoadedFromZDO = false;
-    private static RoadPathfinder? m_pathfinder;
+    /// <summary>
+    /// Pathfind every planned route on worker threads. Routes are independent
+    /// (they are planned from location geometry alone and the pathfinder reads
+    /// only the world generator), and roads are added to the network in
+    /// planning order afterwards, so the result is identical to sequential
+    /// generation; only the wall-clock time changes.
+    /// </summary>
+    public static bool ParallelGeneration = true;
+
+    /// <summary>Worker threads for parallel generation; 0 = all but one core.</summary>
+    public static int ParallelDegree = 0;
+
+    /// <summary>
+    /// One road to find: planned from location geometry alone (chain / MST use
+    /// straight-line distances), pathfound on any thread, committed in order.
+    /// </summary>
+    private sealed class PlannedRoute
+    {
+        public Vector2 StartCenter;
+        public float StartRadius;
+        public Vector2 EndCenter;
+        public float EndRadius;
+        public float Width;
+        public string? Label;
+        public List<Vector2>? Path;
+        public readonly List<(bool warning, string text)> Log = new();
+        public Exception? Error;
+    }
+
+    /// <summary>
+    /// One island's generation: its planned routes in planning order and its
+    /// log lines. Planning is cheap and sequential; pathfinding fans out over
+    /// every route of every island; commits happen in island and route order.
+    /// </summary>
+    private sealed class IslandJob
+    {
+        public Island Island = null!;
+        public List<(string name, Vector3 position, float radius)> Locations = new();
+        public Vector3? OverrideStart;
+        public float OverrideStartRadius;
+        public readonly List<PlannedRoute> Routes = new();
+        public readonly List<(bool warning, string text)> Log = new();
+    }
     private static int m_roadsGeneratedCount = 0;
     private static List<(Vector2 position, string label)> m_roadStartPoints = new();
 
@@ -234,7 +277,6 @@ public static class RoadNetworkGenerator
         }
 
         DateTime startTime = DateTime.Now;
-        m_pathfinder = new RoadPathfinder(WorldGenerator.instance);
         m_roadsGeneratedCount = 0;
 
         var locations = GatherLocationData();
@@ -250,6 +292,7 @@ public static class RoadNetworkGenerator
         
         Log.LogDebug($"Islands: {islands.Count} total, {islandCount} selected ({IslandRoadPercentage}%)");
 
+        var jobs = new List<IslandJob>();
         foreach (var island in selectedIslands)
         {
             var islandLocations = GetLocationsOnIsland(island, locations.Value.AllLocations);
@@ -261,18 +304,19 @@ public static class RoadNetworkGenerator
             Log.LogDebug(
                 $"Island {island.Id}: {islandLocations.Count} candidates -> {selected.Count} selected (max {maxLocs}, area {island.ApproxArea/1_000_000:F1}km²)");
             
-        bool isStarterIsland = island.ContainsPoint(locations.Value.SpawnPoint);
-            
-            if (isStarterIsland)
+            bool isStarterIsland = island.ContainsPoint(locations.Value.SpawnPoint);
+            jobs.Add(new IslandJob
             {
-                GenerateIslandRoads(island, selected, 
-                    locations.Value.SpawnPoint, locations.Value.SpawnRadius);
-            }
-            else
-            {
-                GenerateIslandRoads(island, selected);
-            }
+                Island = island,
+                Locations = selected,
+                OverrideStart = isStarterIsland ? locations.Value.SpawnPoint : null,
+                OverrideStartRadius = isStarterIsland ? locations.Value.SpawnRadius : 0f,
+            });
         }
+
+        RunIslandJobs(jobs);
+        foreach (var job in jobs)
+            CommitIslandJob(job);
 
         TimeSpan elapsed = DateTime.Now - startTime;
         LogGenerationStats(m_roadsGeneratedCount, elapsed);
@@ -280,7 +324,6 @@ public static class RoadNetworkGenerator
         RoadSpatialGrid.FinalizeRoadNetwork();
         
         m_roadsGenerated = true;
-        m_pathfinder = null;
         
         RoadNetworkPersistence.EnsureMetadataInstance();
     }
@@ -298,64 +341,116 @@ public static class RoadNetworkGenerator
     /// <param name="width">Width of the road</param>
     /// <param name="label">Optional label for logging</param>
     /// <returns>True if road was successfully generated</returns>
-    public static bool GenerateRoad(
-        Vector2 startCenter, float startRadius,
-        Vector2 endCenter, float endRadius,
-        float width, string? label = null)
-    {
-        if (m_pathfinder == null)
-        {
-            Log.LogWarning("GenerateRoad called without active pathfinder");
-            return false;
-        }
-
-        List<Vector2>? path = m_pathfinder.FindPath(startCenter, endCenter);
-
-        UnityEngine.Canvas.ForceUpdateCanvases();
-
-        if (path == null || path.Count < 2)
-        {
-            if (label != null)
-                Log.LogWarning($"Could not find path: {label}");
-            return false;
-        }
-
-        path = TrimPathToRadii(path, startCenter, startRadius, endCenter, endRadius);
-
-        if (path == null || path.Count < 2)
-        {
-            if (label != null)
-                Log.LogWarning($"Path too short after trimming: {label}");
-            return false;
-        }
-
-        RoadSpatialGrid.AddRoadPath(path, width, WorldGenerator.instance);
-        m_roadsGeneratedCount++;
-
-        if (path.Count > 0)
-        {
-            string pinLabel = label ?? $"Road {m_roadsGeneratedCount}";
-            m_roadStartPoints.Add((path[0], pinLabel));
-        }
-
-        if (label != null)
-            Log.LogDebug($"Generated road: {label} ({path.Count} waypoints)");
-
-        return true;
-    }
-
-    /// <summary>
-    /// Convenience overload using Vector3 positions (extracts X/Z as Vector2).
-    /// </summary>
-    public static bool GenerateRoad(
+    private static bool GenerateRoad(
+        IslandJob job,
         Vector3 startPos, float startRadius,
         Vector3 endPos, float endRadius,
         float width, string? label = null)
     {
-        return GenerateRoad(
-            new Vector2(startPos.x, startPos.z), startRadius,
-            new Vector2(endPos.x, endPos.z), endRadius,
-            width, label);
+        job.Routes.Add(new PlannedRoute
+        {
+            StartCenter = new Vector2(startPos.x, startPos.z), StartRadius = startRadius,
+            EndCenter = new Vector2(endPos.x, endPos.z), EndRadius = endRadius,
+            Width = width, Label = label,
+        });
+        return true;
+    }
+
+    /// <summary>Plan every job's routes (sequential, geometry only), then pathfind them all.</summary>
+    private static void RunIslandJobs(List<IslandJob> jobs)
+    {
+        foreach (var job in jobs)
+            GenerateIslandRoads(job);
+        PathfindJobs(jobs);
+    }
+
+    /// <summary>Find a path for every planned route: on worker threads when ParallelGeneration is on, else in order.</summary>
+    private static void PathfindJobs(List<IslandJob> jobs)
+    {
+        WorldGenerator? world = WorldGenerator.instance;
+        if (world == null) return;
+
+        var routes = new List<PlannedRoute>();
+        foreach (var job in jobs)
+            routes.AddRange(job.Routes);
+
+        void Find(PlannedRoute route)
+        {
+            try
+            {
+                var pathfinder = new RoadPathfinder(world) { WarningSink = text => route.Log.Add((true, text)) };
+                List<Vector2>? path = pathfinder.FindPath(route.StartCenter, route.EndCenter);
+                if (path == null || path.Count < 2)
+                {
+                    if (route.Label != null)
+                        route.Log.Add((true, $"Could not find path: {route.Label}"));
+                    return;
+                }
+
+                path = TrimPathToRadii(path, route.StartCenter, route.StartRadius, route.EndCenter, route.EndRadius);
+                if (path == null || path.Count < 2)
+                {
+                    if (route.Label != null)
+                        route.Log.Add((true, $"Path too short after trimming: {route.Label}"));
+                    return;
+                }
+
+                route.Path = path;
+            }
+            catch (Exception e)
+            {
+                route.Error = e;
+            }
+        }
+
+        if (ParallelGeneration && routes.Count > 1)
+        {
+            int degree = ParallelDegree > 0 ? ParallelDegree : Math.Max(1, Environment.ProcessorCount - 1);
+            Parallel.ForEach(routes, new ParallelOptions { MaxDegreeOfParallelism = degree }, Find);
+        }
+        else
+        {
+            foreach (var route in routes)
+                Find(route);
+        }
+    }
+
+    /// <summary>
+    /// Add a job's roads to the shared network in planning order and replay its
+    /// log. Main thread; jobs are committed in island order.
+    /// </summary>
+    private static void CommitIslandJob(IslandJob job)
+    {
+        foreach (var (warning, text) in job.Log)
+        {
+            if (warning) Log.LogWarning(text); else Log.LogDebug(text);
+        }
+
+        foreach (var route in job.Routes)
+        {
+            foreach (var (warning, text) in route.Log)
+            {
+                if (warning) Log.LogWarning(text); else Log.LogDebug(text);
+            }
+
+            if (route.Error != null)
+            {
+                Log.LogError($"Island {job.Island?.Id}: road {route.Label ?? "?"} failed: {route.Error}");
+                continue;
+            }
+
+            if (route.Path == null)
+                continue;
+
+            RoadSpatialGrid.AddRoadPath(route.Path, route.Width, WorldGenerator.instance);
+            m_roadsGeneratedCount++;
+
+            string pinLabel = route.Label ?? $"Road {m_roadsGeneratedCount}";
+            m_roadStartPoints.Add((route.Path[0], pinLabel));
+
+            if (route.Label != null)
+                Log.LogDebug($"Generated road: {pinLabel} ({route.Path.Count} waypoints)");
+        }
     }
 
     #endregion
@@ -473,7 +568,7 @@ public static class RoadNetworkGenerator
     #region Island Road Strategies
 
     private static void GenerateChainRoads(
-        Vector3 startPos, float startRadius,
+        IslandJob job, Vector3 startPos, float startRadius,
         List<(string name, Vector3 position, float radius)> locations)
     {
         if (locations.Count == 0) return;
@@ -500,7 +595,7 @@ public static class RoadNetworkGenerator
             var nearest = unvisited[nearestIdx];
             unvisited.RemoveAt(nearestIdx);
             
-            GenerateRoad(current, currentRadius, nearest.position, nearest.radius, RoadWidth,
+            GenerateRoad(job, current, currentRadius, nearest.position, nearest.radius, RoadWidth,
                 $"{currentName} -> {nearest.name}");
             
             current = nearest.position;
@@ -510,7 +605,7 @@ public static class RoadNetworkGenerator
     }
 
     private static void GenerateMSTRoads(
-        Vector3 startPos, float startRadius,
+        IslandJob job, Vector3 startPos, float startRadius,
         List<(string name, Vector3 position, float radius)> locations)
     {
         if (locations.Count == 0) return;
@@ -563,18 +658,18 @@ public static class RoadNetworkGenerator
             {
                 var from = nodes[parent[i]];
                 var to = nodes[i];
-                GenerateRoad(from.position, from.radius, to.position, to.radius, RoadWidth,
+                GenerateRoad(job, from.position, from.radius, to.position, to.radius, RoadWidth,
                     $"{from.name} -> {to.name}");
             }
         }
     }
 
-    private static void GenerateIslandRoads(
-        Island island,
-        List<(string name, Vector3 position, float radius)> islandLocations,
-        Vector3? overrideStart = null,
-        float overrideStartRadius = 0f)
+    private static void GenerateIslandRoads(IslandJob job)
     {
+        Island island = job.Island;
+        var islandLocations = job.Locations;
+        Vector3? overrideStart = job.OverrideStart;
+        float overrideStartRadius = job.OverrideStartRadius;
         if (islandLocations.Count == 0) return;
         
         Vector3 startPos;
@@ -593,13 +688,13 @@ public static class RoadNetworkGenerator
         
         bool useMST = (island.Id % 2) == 0;
         
-        Log.LogDebug(
-            $"Island {island.Id}: {islandLocations.Count} locations, strategy={(useMST ? "MST" : "Chain")}");
+        job.Log.Add((false,
+            $"Island {island.Id}: {islandLocations.Count} locations, strategy={(useMST ? "MST" : "Chain")}"));
         
         if (useMST)
-            GenerateMSTRoads(startPos, startRadius, islandLocations);
+            GenerateMSTRoads(job, startPos, startRadius, islandLocations);
         else
-            GenerateChainRoads(startPos, startRadius, islandLocations);
+            GenerateChainRoads(job, startPos, startRadius, islandLocations);
     }
 
     #endregion
@@ -648,17 +743,21 @@ public static class RoadNetworkGenerator
         bool locationsWereReady = m_locationsReady;
         Reset();
         m_locationsReady = locationsWereReady;
-        m_pathfinder = new RoadPathfinder(WorldGenerator.instance);
         m_roadsGeneratedCount = 0;
 
-        if (island.ContainsPoint(locations.Value.SpawnPoint))
-            GenerateIslandRoads(island, selected, locations.Value.SpawnPoint, locations.Value.SpawnRadius);
-        else
-            GenerateIslandRoads(island, selected);
+        bool starter = island.ContainsPoint(locations.Value.SpawnPoint);
+        var job = new IslandJob
+        {
+            Island = island,
+            Locations = selected,
+            OverrideStart = starter ? locations.Value.SpawnPoint : null,
+            OverrideStartRadius = starter ? locations.Value.SpawnRadius : 0f,
+        };
+        RunIslandJobs(new List<IslandJob> { job });
+        CommitIslandJob(job);
 
         RoadSpatialGrid.FinalizeRoadNetwork();
         m_roadsGenerated = true;
-        m_pathfinder = null;
 
         TimeSpan elapsed = DateTime.Now - startTime;
         summary =
@@ -673,7 +772,6 @@ public static class RoadNetworkGenerator
         m_roadsGenerated = false;
         m_locationsReady = false;
         m_roadsLoadedFromZDO = false;
-        m_pathfinder = null;
         m_roadsGeneratedCount = 0;
         m_roadStartPoints.Clear();
         RoadNetworkPersistence.Reset();

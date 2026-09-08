@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using BepInEx.Logging;
 using UnityEngine;
@@ -41,6 +42,9 @@ public class RoadPathfinder
     }
 
     private WorldGenerator m_worldGen;
+
+    /// <summary>Where failure warnings go; null logs them directly. Set by callers that run off the main thread.</summary>
+    public Action<string>? WarningSink;
 
     public RoadPathfinder(WorldGenerator worldGen)
     {
@@ -112,7 +116,8 @@ public class RoadPathfinder
         }
 
         string reason = openSet.Count == 0 ? "no reachable path" : "max iterations reached";
-        Log.LogWarning($"Pathfinding failed: {reason} after {iterations} iterations");
+        string message = $"Pathfinding failed: {reason} after {iterations} iterations";
+        if (WarningSink != null) WarningSink(message); else Log.LogWarning(message);
         return null;
     }
 

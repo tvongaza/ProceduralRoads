@@ -46,6 +46,7 @@ namespace ProceduralRoads
         public static ConfigEntry<string> CustomLocations = null!;
         public static ConfigEntry<int> IslandRoadPercentage = null!;
         public static ConfigEntry<bool> GenerateRoadsOnLoad = null!;
+        public static ConfigEntry<bool> ParallelGeneration = null!;
         public static ConfigEntry<int> PathfindingMaxIterations = null!;
         public static ConfigEntry<int> MaxLocationsPerIsland = null!;
 
@@ -77,6 +78,10 @@ namespace ProceduralRoads
                 new ConfigDescription("Maximum number of locations that can be connected by roads on a single island. " +
                     "Higher values allow more roads on large islands.",
                     new AcceptableValueRange<int>(2, 30)));
+
+            ParallelGeneration = Config.Bind("Roads", "ParallelGeneration", true,
+                "Plan and pathfind islands on worker threads. Roads are added to the network in island order " +
+                "afterwards, so the result is identical to sequential generation; only the load time changes.");
 
             GenerateRoadsOnLoad = Config.Bind("Debug", "GenerateRoadsOnLoad", true,
                 "Generate the road network when a world without persisted roads loads. Off, the world stays " +
@@ -131,6 +136,7 @@ namespace ProceduralRoads
             RoadNetworkGenerator.RoadWidth = RoadWidth.Value;
             RoadNetworkGenerator.IslandRoadPercentage = IslandRoadPercentage.Value;
             RoadNetworkGenerator.GenerateOnLoad = GenerateRoadsOnLoad.Value;
+            RoadNetworkGenerator.ParallelGeneration = ParallelGeneration.Value;
             RoadNetworkGenerator.MaxLocationsPerIsland = MaxLocationsPerIsland.Value;
             RoadPathfinder.MaxIterations = PathfindingMaxIterations.Value;
             // CustomLocations is parsed at generation time to preserve API registrations

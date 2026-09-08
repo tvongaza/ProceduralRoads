@@ -129,6 +129,26 @@ public static class RoadSpatialGrid
     /// Called after all roads are generated to compute the network version hash.
     /// This version is stored in TerrainComp ZDOs to detect already-processed zones.
     /// </summary>
+    /// <summary>
+    /// Every grid cell with its points, in the grid's own enumeration order.
+    /// For tests that compare two generations byte for byte.
+    /// </summary>
+    public static List<(Vector2i cell, RoadPoint[] points)> SnapshotCells()
+    {
+        var result = new List<(Vector2i, RoadPoint[])>();
+        m_roadCacheLock.EnterReadLock();
+        try
+        {
+            foreach (var kv in m_roadPoints)
+                result.Add((kv.Key, (RoadPoint[])kv.Value.Clone()));
+        }
+        finally
+        {
+            m_roadCacheLock.ExitReadLock();
+        }
+        return result;
+    }
+
     public static void FinalizeRoadNetwork()
     {
         int worldSeed = WorldGenerator.instance?.GetSeed() ?? 0;

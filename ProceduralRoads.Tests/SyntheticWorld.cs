@@ -21,6 +21,10 @@ public class SyntheticWorld : WorldGenerator
     public float MountainHeight = 42f;
 
     public float IslandRadius = 600f;
+
+    /// <summary>Extra island centres (same dome shape, ExtraIslandRadius) for multi-island tests.</summary>
+    public System.Collections.Generic.List<Vector2> ExtraIslandCenters = new();
+    public float ExtraIslandRadius = 350f;
     public float IslandPeakHeight = 18f; // above sea level at the island center
 
     public override float GetHeight(float wx, float wy)
@@ -29,6 +33,11 @@ public class SyntheticWorld : WorldGenerator
 
         // Island: smooth dome from sea floor (20) to a low inland plateau.
         float t = Mathf.Clamp01(1f - r / IslandRadius);
+        foreach (Vector2 c in ExtraIslandCenters)
+        {
+            float rc = Mathf.Sqrt((wx - c.x) * (wx - c.x) + (wy - c.y) * (wy - c.y));
+            t = Mathf.Max(t, Mathf.Clamp01(1f - rc / ExtraIslandRadius));
+        }
         float height = 20f + (10f + IslandPeakHeight) * Mathf.SmoothStep(0f, 1f, t * 1.6f);
 
         // Gentle deterministic roughness so the terrain is not perfectly flat.

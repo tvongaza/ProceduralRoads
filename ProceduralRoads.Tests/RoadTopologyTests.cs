@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -31,12 +32,31 @@ public class RoadTopologyTests
             WorldGenerator.instance = world;
             RoadSpatialGrid.Clear();
             Pathfinder = new RoadPathfinder(world);
-            PathfinderField.SetValue(null, Pathfinder);
+            // Generation runs as per-island jobs now (parallel generation): build one
+            // job, give it this pathfinder, and commit it to the grid after each run.
+            Job = Activator.CreateInstance(JobType, nonPublic: true)!;
             ManualLogSource.Captured = Logs;
         }
 
-        private static readonly FieldInfo PathfinderField =
-            typeof(RoadNetworkGenerator).GetField("m_pathfinder", BindingFlags.NonPublic | BindingFlags.Static)!;
+        private readonly object Job;
+
+        private static readonly Type JobType =
+            typeof(RoadNetworkGenerator).GetNestedType("IslandJob", BindingFlags.NonPublic)!;
+
+        private static readonly MethodInfo CommitMethod =
+            typeof(RoadNetworkGenerator).GetMethod("CommitIslandJob", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        private static readonly MethodInfo PathfindMethod =
+            typeof(RoadNetworkGenerator).GetMethod("PathfindJobs", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        private IList JobList => (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(JobType))!;
+
+        private void PathfindAndCommit()
+        {
+            IList jobs = JobList; jobs.Add(Job);
+            PathfindMethod.Invoke(null, new object[] { jobs });
+            CommitMethod.Invoke(null, new object[] { Job });
+        }
 
         private static readonly MethodInfo? ChainMethod =
             typeof(RoadNetworkGenerator).GetMethod("GenerateChainRoads", BindingFlags.NonPublic | BindingFlags.Static);
@@ -51,11 +71,17 @@ public class RoadTopologyTests
         /// </summary>
         public static bool LegacyStrategiesAvailable => ChainMethod != null && MstMethod != null;
 
-        public void RunChain(Vector3 start, List<(string name, Vector3 position, float radius)> locations) =>
-            ChainMethod!.Invoke(null, new object[] { start, 0f, locations });
+        public void RunChain(Vector3 start, List<(string name, Vector3 position, float radius)> locations)
+        {
+            ChainMethod!.Invoke(null, new object[] { Job, start, 0f, locations });
+            PathfindAndCommit();
+        }
 
-        public void RunMst(Vector3 start, List<(string name, Vector3 position, float radius)> locations) =>
-            MstMethod!.Invoke(null, new object[] { start, 0f, locations });
+        public void RunMst(Vector3 start, List<(string name, Vector3 position, float radius)> locations)
+        {
+            MstMethod!.Invoke(null, new object[] { Job, start, 0f, locations });
+            PathfindAndCommit();
+        }
 
         public List<(string from, string to)> SuccessEdges => Parse(SuccessRe);
         public List<(string from, string to)> FailedEdges => Parse(FailureRe);
@@ -69,7 +95,6 @@ public class RoadTopologyTests
         public void Dispose()
         {
             ManualLogSource.Captured = null;
-            PathfinderField.SetValue(null, null);
             RoadSpatialGrid.Clear();
             WorldGenerator.instance = null;
         }
