@@ -414,8 +414,16 @@ public static class RoadNetworkGenerator
 
         if (ParallelGeneration && routes.Count > 1)
         {
+            // Long routes dominate (a route that hits the iteration ceiling costs
+            // seconds), so hand them out first and one at a time: longest
+            // straight-line distance first, and a load-balancing partitioner
+            // instead of the default contiguous chunks, which would leave workers
+            // idle while one chunk's long route finishes.
+            var ordered = new List<PlannedRoute>(routes);
+            ordered.Sort((a, b) => Vector2.SqrMagnitude(b.EndCenter - b.StartCenter).CompareTo(Vector2.SqrMagnitude(a.EndCenter - a.StartCenter)));
             int degree = ParallelDegree > 0 ? ParallelDegree : Math.Max(1, Environment.ProcessorCount - 1);
-            Parallel.ForEach(routes, new ParallelOptions { MaxDegreeOfParallelism = degree }, Find);
+            Parallel.ForEach(System.Collections.Concurrent.Partitioner.Create(ordered, true),
+                new ParallelOptions { MaxDegreeOfParallelism = degree }, Find);
         }
         else
         {
