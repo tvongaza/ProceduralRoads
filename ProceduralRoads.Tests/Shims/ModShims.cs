@@ -13,7 +13,6 @@ namespace ProceduralRoads;
 /// </summary>
 public static class BridgePlacement
 {
-    public static void Reset() { }
     public static int SpawnInLoadedZones() => 0;
 }
 

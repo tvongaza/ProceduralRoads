@@ -46,6 +46,10 @@ public static class RoadConstants
     public const float BridgeBankDeltaPenalty = 1250f;
     public const float DefaultBridgeCostFixed = 60000f;
     public const float DefaultBridgeCostPerMeter = 600f;
+    // A jump whose both ends already carry road is an existing bridge:
+    // it costs this fraction, so later roads join the first bridge instead
+    // of building a parallel one a few cells away.
+    public const float BridgeReuseDiscount = 0.2f;
 
     // Road cross-section (see RoadProfile): flat core fully leveled and
     // solidly painted; paint fades out strictly inside the leveled footprint

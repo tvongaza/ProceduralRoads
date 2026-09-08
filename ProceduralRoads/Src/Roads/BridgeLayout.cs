@@ -66,10 +66,11 @@ public static class BridgeLayout
     public const float FairwayGapFraction = 0.3f;
     public const float FairwayClearance = 1f;
 
-    /// <summary>Two routes crossing the same water each record a crossing;
-    /// crossings whose centres lie within this radius of an earlier one share
-    /// its bridge.</summary>
-    public const float SharedSiteRadius = 6f;
+    /// <summary>Two routes over the same jump each record a crossing; a
+    /// crossing whose banks both lie within this distance of an earlier
+    /// one's (in either order) shares its bridge. Crossings that merely
+    /// pass near each other keep their own, so every road meets a deck.</summary>
+    public const float SharedBankRadius = 4f;
 
     public static List<RoadCrossing> DistinctSites(IEnumerable<RoadCrossing> crossings)
     {
@@ -79,7 +80,7 @@ public static class BridgeLayout
             bool shared = false;
             foreach (RoadCrossing s in sites)
             {
-                if ((s.Center - c.Center).sqrMagnitude <= SharedSiteRadius * SharedSiteRadius)
+                if (SameBanks(s, c))
                 {
                     shared = true;
                     break;
@@ -89,6 +90,13 @@ public static class BridgeLayout
                 sites.Add(c);
         }
         return sites;
+    }
+
+    public static bool SameBanks(RoadCrossing a, RoadCrossing b)
+    {
+        float r2 = SharedBankRadius * SharedBankRadius;
+        return ((a.FromBank - b.FromBank).sqrMagnitude <= r2 && (a.ToBank - b.ToBank).sqrMagnitude <= r2)
+            || ((a.FromBank - b.ToBank).sqrMagnitude <= r2 && (a.ToBank - b.FromBank).sqrMagnitude <= r2);
     }
 
     public static float FairwayGap(RoadCrossing crossing) =>

@@ -745,7 +745,7 @@ public static class RoadNetworkGenerator
         m_roadsGeneratedCount = 0;
         m_roadStartPoints.Clear();
         m_roadCrossings.Clear();
-        BridgePlacement.Reset();
+        BridgePlans.Reset();
         RoadNetworkPersistence.Reset();
         RoadSpatialGrid.Clear();
     }
@@ -857,7 +857,20 @@ public static class RoadNetworkGenerator
             return;
         }
 
-        RoadNetworkPersistence.SaveGlobalRoadData(m_roadStartPoints, m_roadCrossings);
+        RoadNetworkPersistence.SaveGlobalRoadData(m_roadStartPoints, m_roadCrossings, BridgePlans.SpawnedZones);
+    }
+
+    /// <summary>
+    /// Save only which zones have their bridge pieces (bridges prototype).
+    /// For a session whose network was loaded, not generated: the network
+    /// itself is unchanged, but zones spawned this session must be
+    /// remembered, or a bridge whose pieces were all destroyed comes back.
+    /// </summary>
+    public static void SaveBridgeZones()
+    {
+        if (!RoadsAvailable)
+            return;
+        RoadNetworkPersistence.SaveBridgeZones(BridgePlans.SpawnedZones);
     }
 
     /// <summary>
@@ -867,7 +880,11 @@ public static class RoadNetworkGenerator
     /// <returns>True if road data was found and loaded</returns>
     public static bool TryLoadGlobalRoadData()
     {
-        return RoadNetworkPersistence.TryLoadGlobalRoadData(m_roadStartPoints, m_roadCrossings);
+        var bridgeZones = new HashSet<Vector2i>();
+        bool loaded = RoadNetworkPersistence.TryLoadGlobalRoadData(m_roadStartPoints, m_roadCrossings, bridgeZones);
+        if (loaded)
+            BridgePlans.MarkSpawned(bridgeZones);
+        return loaded;
     }
 
     #endregion

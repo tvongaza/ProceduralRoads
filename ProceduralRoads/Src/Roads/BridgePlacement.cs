@@ -5,12 +5,13 @@ using UnityEngine;
 namespace ProceduralRoads;
 
 /// <summary>
-/// Spawns the bridge plans (bridges prototype) into the world as persistent
-/// ZDOs of vanilla prefabs, so unmodded clients see them too. Plans are
-/// recomputed deterministically from the recorded crossings and the world
-/// seed, never stored; a zone gets its pieces once, when it first comes
-/// alive with the network in place, and the pieces carry a ZDO marker so a
-/// zone that already has them is left alone and debug tooling can find them.
+/// Spawns the bridge plans (bridges prototype, see BridgePlans) into the
+/// world as persistent ZDOs of vanilla prefabs, so unmodded clients see
+/// them too. Only the server creates or destroys pieces: clients receive
+/// them like any other object. A zone gets its pieces once, when it first
+/// comes alive with the network in place; the zone is then recorded in the
+/// persisted spawned set, and every piece carries a ZDO marker so debug
+/// tooling can find it and a zone whose record was lost is still left alone.
 /// </summary>
 public static class BridgePlacement
 {
@@ -20,80 +21,16 @@ public static class BridgePlacement
     /// ignore unknown ZDO variables, so the marker is crossplay-safe.</summary>
     public static readonly int MarkerHash = "ProceduralRoads_Bridge".GetStableHashCode();
 
-    private static Dictionary<Vector2i, List<BridgePiece>>? s_plansByZone;
-    private static readonly HashSet<Vector2i> s_zonesWithPieces = new();
     private static readonly HashSet<string> s_warnedPrefabs = new();
 
-    /// <summary>Forget the plans and what has been spawned. Called with every network reset.</summary>
-    public static void Reset()
-    {
-        s_plansByZone = null;
-        s_zonesWithPieces.Clear();
-        s_warnedPrefabs.Clear();
-    }
-
-    /// <summary>Pieces planned for one zone (0 when the zone has no bridge).</summary>
-    public static int PlannedPieceCount(Vector2i zone)
-    {
-        EnsurePlans();
-        return s_plansByZone != null && s_plansByZone.TryGetValue(zone, out List<BridgePiece>? list) ? list.Count : 0;
-    }
-
-    public static int TotalPlannedPieces
-    {
-        get
-        {
-            EnsurePlans();
-            if (s_plansByZone == null)
-                return 0;
-            int total = 0;
-            foreach (var kv in s_plansByZone)
-                total += kv.Value.Count;
-            return total;
-        }
-    }
-
-    public static int PlannedZoneCount
-    {
-        get
-        {
-            EnsurePlans();
-            return s_plansByZone?.Count ?? 0;
-        }
-    }
-
-    private static void EnsurePlans()
-    {
-        if (s_plansByZone != null || WorldGenerator.instance == null)
-            return;
-
-        s_plansByZone = new Dictionary<Vector2i, List<BridgePiece>>();
-        int seed = WorldGenerator.instance.GetSeed();
-        foreach (RoadCrossing crossing in BridgeLayout.DistinctSites(RoadNetworkGenerator.GetRoadCrossings()))
-        {
-            foreach (BridgePiece piece in BridgeLayout.Solve(crossing, WorldGenerator.instance, seed))
-            {
-                Vector2i zone = ZoneSystem.GetZone(piece.Position);
-                if (!s_plansByZone.TryGetValue(zone, out List<BridgePiece>? list))
-                {
-                    list = new List<BridgePiece>();
-                    s_plansByZone[zone] = list;
-                }
-                list.Add(piece);
-            }
-        }
-
-        int total = 0;
-        foreach (var kv in s_plansByZone)
-            total += kv.Value.Count;
-        if (total > 0)
-            Log.LogInfo($"[BRIDGES] planned {total} pieces across {s_plansByZone.Count} zones");
-    }
+    /// <summary>Whether this peer may create or destroy world objects.</summary>
+    private static bool IsServer => ZNet.instance != null && ZNet.instance.IsServer();
 
     /// <summary>
-    /// Called from the SpawnZone postfix in every mode. A zone with a plan and
-    /// no pieces yet gets them now: as ZDOs only under ghost generation, the
-    /// way the game generates its own zones, otherwise as live objects.
+    /// Called from the SpawnZone postfix in every mode. On the server, a zone
+    /// with a plan and no pieces yet gets them now: as ZDOs only under ghost
+    /// generation, the way the game generates its own zones, otherwise as
+    /// live objects.
     /// </summary>
     public static int OnZoneSpawned(Vector2i zoneID, ZoneSystem.SpawnMode mode) =>
         SpawnInZone(zoneID, mode == ZoneSystem.SpawnMode.Ghost);
@@ -120,35 +57,45 @@ public static class BridgePlacement
         return zones;
     }
 
+    /// <summary>
+    /// The network was rebuilt in a running world: destroy the pieces of the
+    /// old one everywhere and spawn the new plans into the loaded zones
+    /// (other zones get theirs when they load). Returns (destroyed, zones).
+    /// </summary>
+    public static (int destroyed, int zones) RespawnFromPlans()
+    {
+        int destroyed = ClearSpawnedPieces();
+        return (destroyed, SpawnInLoadedZones());
+    }
+
     private static int SpawnInZone(Vector2i zoneID, bool ghost)
     {
-        if (ZNetScene.instance == null || ZDOMan.instance == null)
+        if (!IsServer || ZNetScene.instance == null || ZDOMan.instance == null)
             return 0;
-        EnsurePlans();
-        if (s_plansByZone == null || !s_plansByZone.TryGetValue(zoneID, out List<BridgePiece>? pieces))
+        List<BridgePiece>? pieces = BridgePlans.PlanFor(zoneID);
+        if (pieces == null)
             return 0;
-        if (HasPieces(zoneID))
+        if (BridgePlans.IsSpawned(zoneID) || HasMarkedPieces(zoneID))
             return 0;
 
-        s_zonesWithPieces.Add(zoneID);
+        BridgePlans.MarkSpawned(zoneID);
         int spawned = SpawnPieces(pieces, ghost);
         if (spawned > 0)
             Log.LogInfo($"[BRIDGES] zone {zoneID}: spawned {spawned} bridge pieces");
         return spawned;
     }
 
-    /// <summary>Whether the zone's saved objects already include our pieces.</summary>
-    private static bool HasPieces(Vector2i zoneID)
+    /// <summary>Whether the zone's saved objects already include our pieces
+    /// (a zone spawned by a build that did not keep the spawned set).</summary>
+    private static bool HasMarkedPieces(Vector2i zoneID)
     {
-        if (s_zonesWithPieces.Contains(zoneID))
-            return true;
         List<ZDO> zdos = new();
         ZDOMan.instance.FindObjects(zoneID, zdos);
         foreach (ZDO zdo in zdos)
         {
             if (zdo.GetInt(MarkerHash) == 1)
             {
-                s_zonesWithPieces.Add(zoneID);
+                BridgePlans.MarkSpawned(zoneID);
                 return true;
             }
         }
@@ -198,15 +145,14 @@ public static class BridgePlacement
 
     /// <summary>
     /// Destroy every piece this mod spawned, loaded or not, and forget which
-    /// zones had them, so the current plans can be spawned afresh. For the
-    /// console commands that rebuild the network in a running world.
+    /// zones had them, so the current plans can be spawned afresh. Server only.
     /// </summary>
     public static int ClearSpawnedPieces()
     {
-        s_plansByZone = null;
-        s_zonesWithPieces.Clear();
-        if (ZDOMan.instance == null || ZNetScene.instance == null)
+        if (!IsServer || ZDOMan.instance == null || ZNetScene.instance == null)
             return 0;
+        BridgePlans.InvalidatePlans();
+        BridgePlans.ForgetSpawned();
 
         List<ZDO> tagged = new();
         foreach (var kv in ZDOMan.instance.m_objectsByID)
@@ -242,8 +188,8 @@ public static class BridgePlacement
     public static List<ZoneSystem.ClearArea> GetClearAreas(Vector2i zoneID)
     {
         List<ZoneSystem.ClearArea> areas = new();
-        EnsurePlans();
-        if (s_plansByZone == null || !s_plansByZone.TryGetValue(zoneID, out List<BridgePiece>? pieces))
+        List<BridgePiece>? pieces = BridgePlans.PlanFor(zoneID);
+        if (pieces == null)
             return areas;
 
         Vector3? last = null;

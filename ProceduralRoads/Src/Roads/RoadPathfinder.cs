@@ -263,10 +263,23 @@ public class RoadPathfinder
             landing = check;
             crossingCost = BridgeCostFixed + BridgeCostPerMeter * distance
                 + RoadConstants.BridgeBankDeltaPenalty * bankDelta * bankDelta;
+            // Both ends already on road (a finished road's banks): share that
+            // bridge rather than build another beside it.
+            if (OnExistingRoad(fromWorld) && OnExistingRoad(world))
+                crossingCost *= RoadConstants.BridgeReuseDiscount;
             return true;
         }
 
         return false;
+    }
+
+    /// <summary>Whether a finished road already runs through this point.</summary>
+    private static bool OnExistingRoad(Vector2 world)
+    {
+        if (!RoadSpatialGrid.IsInitialized)
+            return false;
+        RoadSpatialGrid.GetRoadWeight(world.x, world.y, out float weight, out _);
+        return weight > 0f;
     }
 
     private List<Vector2> ReconstructPath(Dictionary<Vector2i, Vector2i> cameFrom, Vector2i current, Vector2 start, Vector2 end)

@@ -406,12 +406,167 @@ public class BridgeTests
     }
 
     [Fact]
-    public void TwoRoutesOverTheSameWaterShareOneBridge()
+    public void OnlyCrossingsWithTheSameBanksShareABridge()
     {
         var a = RoadCrossing.Between(new Vector2(-40f, 0f), new Vector2(40f, 0f), 26f, new Vector2(0f, 0f), 60f);
-        var b = RoadCrossing.Between(new Vector2(-40f, 3f), new Vector2(40f, 3f), 26f, new Vector2(0f, 3f), 60f);
-        var c = RoadCrossing.Between(new Vector2(-40f, 20f), new Vector2(40f, 20f), 26f, new Vector2(0f, 20f), 60f);
-        Assert.Equal(2, BridgeLayout.DistinctSites(new[] { a, b, c }).Count);
+        var reversed = RoadCrossing.Between(new Vector2(40f, 1f), new Vector2(-40f, -1f), 26f, new Vector2(0f, 0f), 60f);
+        var parallel = RoadCrossing.Between(new Vector2(-40f, 6f), new Vector2(40f, 6f), 26f, new Vector2(0f, 6f), 60f);
+        var angled = RoadCrossing.Between(new Vector2(-40f, 0f), new Vector2(30f, 25f), 26f, new Vector2(0f, 12f), 60f);
+        Assert.Single(BridgeLayout.DistinctSites(new[] { a, reversed }));
+        Assert.Equal(2, BridgeLayout.DistinctSites(new[] { a, parallel }).Count);
+        Assert.Equal(2, BridgeLayout.DistinctSites(new[] { a, angled }).Count);
+        Assert.Equal(3, BridgeLayout.DistinctSites(new[] { a, parallel, angled, reversed }).Count);
+    }
+
+    [Fact]
+    public void ALaterRoadJoinsTheFirstBridgeInsteadOfBuildingAParallelOne()
+    {
+        var world = new WideRiverWorld();
+        WorldGenerator.instance = world;
+        RoadNetworkGenerator.Reset();
+        try
+        {
+            // Alone, the second road would cross at its own latitude.
+            var alone = Pathfinder(world, true).FindPath(new Vector2(-160f, 40f), new Vector2(160f, 40f));
+            Assert.NotNull(alone);
+            var aloneJump = FindJump(alone!, world)!.Value;
+
+            SetPathfinder(Pathfinder(world, true));
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-160f, 0f), 0f, new Vector2(160f, 0f), 0f, 4f, "first"));
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-160f, 40f), 0f, new Vector2(160f, 40f), 0f, 4f, "second"));
+
+            var crossings = RoadNetworkGenerator.GetRoadCrossings();
+            Assert.Equal(2, crossings.Count);
+            Assert.True(Mathf.Abs(aloneJump.a.y - crossings[0].FromBank.y) > BridgeLayout.SharedBankRadius,
+                $"the lone second road already crossed where the first does (y={aloneJump.a.y:F0})");
+            Assert.True(BridgeLayout.SameBanks(crossings[0], crossings[1]),
+                $"second road crossed at {crossings[1].FromBank}-{crossings[1].ToBank}, the first at {crossings[0].FromBank}-{crossings[0].ToBank}");
+            Assert.Single(BridgeLayout.DistinctSites(crossings));
+            Assert.Equal(BridgeLayout.Solve(crossings[0], world, 0).Count, BridgePlans.TotalPlannedPieces);
+        }
+        finally { TearDownGeneration(); }
+    }
+
+    // ---- plans and spawned zones ----
+
+    [Fact]
+    public void PlansAreBucketedByZoneAndSpawnedZonesAreRemembered()
+    {
+        var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
+        WorldGenerator.instance = world;
+        RoadNetworkGenerator.Reset();
+        SetPathfinder(Pathfinder(world, true));
+        try
+        {
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-300f, 0f), 0f, new Vector2(400f, 0f), 0f, 4f, "Cross river"));
+            var crossing = Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
+            var plan = BridgeLayout.Solve(crossing, world, world.GetSeed());
+            Assert.NotEmpty(plan);
+            Assert.Equal(plan.Count, BridgePlans.TotalPlannedPieces);
+            Assert.True(BridgePlans.PlannedZoneCount >= 1);
+
+            Vector2i zone = ZoneSystem.GetZone(plan[0].Position);
+            Assert.True(BridgePlans.PlannedPieceCount(zone) > 0);
+            Assert.Equal(plan.Count(p => ZoneSystem.GetZone(p.Position) == zone), BridgePlans.PlannedPieceCount(zone));
+            Assert.Null(BridgePlans.PlanFor(new Vector2i(500, 500)));
+
+            Assert.False(BridgePlans.IsSpawned(zone));
+            BridgePlans.MarkSpawned(zone);
+            Assert.True(BridgePlans.IsSpawned(zone));
+            Assert.Contains(zone, BridgePlans.SpawnedZones);
+
+            BridgePlans.ForgetSpawned();
+            Assert.False(BridgePlans.IsSpawned(zone));
+            Assert.Equal(plan.Count, BridgePlans.TotalPlannedPieces);
+
+            BridgePlans.MarkSpawned(zone);
+            RoadNetworkGenerator.Reset();
+            Assert.Empty(BridgePlans.SpawnedZones);
+            Assert.Equal(0, BridgePlans.TotalPlannedPieces);
+        }
+        finally { TearDownGeneration(); }
+    }
+
+    [Fact]
+    public void SpawnedZonesSurviveASaveAndLoadEvenOnALoadedNetwork()
+    {
+        var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
+        WorldGenerator.instance = world;
+        ZDOMan.instance = new ZDOMan();
+        RoadNetworkGenerator.Reset();
+        SetPathfinder(Pathfinder(world, true));
+        try
+        {
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-300f, 0f), 0f, new Vector2(400f, 0f), 0f, 4f, "Cross river"));
+            RoadSpatialGrid.FinalizeRoadNetwork();
+            RoadNetworkPersistence.EnsureMetadataInstance();
+            var zoneA = new Vector2i(12, 0);
+            BridgePlans.MarkSpawned(zoneA);
+            typeof(RoadNetworkGenerator).GetField("m_roadsGenerated", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, true);
+            RoadNetworkGenerator.SaveGlobalRoadData();
+
+            // Next session: the network loads, another zone spawns its bridge,
+            // and only the zone record is saved (the network was not generated).
+            RoadNetworkGenerator.Reset();
+            Assert.True(RoadNetworkGenerator.TryLoadGlobalRoadData());
+            RoadNetworkGenerator.MarkRoadsLoadedFromZDO();
+            Assert.True(BridgePlans.IsSpawned(zoneA));
+            Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
+            var zoneB = new Vector2i(13, 0);
+            BridgePlans.MarkSpawned(zoneB);
+            RoadNetworkGenerator.SaveBridgeZones();
+
+            RoadNetworkGenerator.Reset();
+            Assert.True(RoadNetworkGenerator.TryLoadGlobalRoadData());
+            Assert.True(BridgePlans.IsSpawned(zoneA));
+            Assert.True(BridgePlans.IsSpawned(zoneB));
+            Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
+        }
+        finally
+        {
+            RoadNetworkPersistence.Reset();
+            ZDOMan.instance = null;
+            TearDownGeneration();
+        }
+    }
+
+    [Fact]
+    public void ARejectedIslandRegenerationKeepsTheBridges()
+    {
+        var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
+        WorldGenerator.instance = world;
+        var zones = new ZoneSystem();
+        zones.Locations.Add(new ZoneSystem.LocationInstance
+        {
+            m_location = new ZoneSystem.ZoneLocation { m_prefab = new ZoneSystem.ZoneLocation.PrefabEntry { Name = "StartTemple" }, m_exteriorRadius = 25f },
+            m_position = new Vector3(-200f, world.GetHeight(-200f, 0f), 0f),
+        });
+        ZoneSystem.instance = zones;
+        ZDOMan.instance = new ZDOMan();
+        RoadNetworkGenerator.Reset();
+        SetPathfinder(Pathfinder(world, true));
+        try
+        {
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-300f, 0f), 0f, new Vector2(400f, 0f), 0f, 4f, "Cross river"));
+            var zone = new Vector2i(12, 0);
+            BridgePlans.MarkSpawned(zone);
+
+            // Nothing to regenerate here: an ocean point, then an island with no locations.
+            Assert.False(RoadNetworkGenerator.RegenerateIslandAt(new Vector3(3000f, 0f, 3000f), out string ocean));
+            Assert.Contains("No island", ocean);
+            Assert.False(RoadNetworkGenerator.RegenerateIslandAt(Vector3.zero, out string empty));
+            Assert.Contains("no road-eligible", empty);
+
+            Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
+            Assert.True(BridgePlans.IsSpawned(zone));
+            Assert.True(BridgePlans.TotalPlannedPieces > 0);
+        }
+        finally
+        {
+            ZDOMan.instance = null;
+            ZoneSystem.instance = null;
+            TearDownGeneration();
+        }
     }
 
     [Fact]
@@ -458,12 +613,14 @@ public class BridgeTests
                 RoadCrossing.Between(new Vector2(-42.5f, 0f), new Vector2(42.5f, 0f), 26f, new Vector2(0.5f, 0f), 79f),
                 RoadCrossing.Between(new Vector2(100f, 50f), new Vector2(100f, 62f), 28.5f, new Vector2(100f, 56f), 0f),
             };
-            RoadNetworkPersistence.SaveGlobalRoadData(new List<(Vector2 position, string label)>(), saved);
+            RoadNetworkPersistence.SaveGlobalRoadData(new List<(Vector2 position, string label)>(), saved, new HashSet<Vector2i> { new(3, 4) });
 
             RoadSpatialGrid.Clear();
             var loaded = new List<RoadCrossing> { saved[0] }; // stale content is replaced
-            Assert.True(RoadNetworkPersistence.TryLoadGlobalRoadData(new List<(Vector2 position, string label)>(), loaded));
+            var zones = new HashSet<Vector2i>();
+            Assert.True(RoadNetworkPersistence.TryLoadGlobalRoadData(new List<(Vector2 position, string label)>(), loaded, zones));
             Assert.Equal(2, loaded.Count);
+            Assert.Equal(new HashSet<Vector2i> { new(3, 4) }, zones);
             for (int i = 0; i < 2; i++)
             {
                 Assert.Equal(saved[i].FromBank, loaded[i].FromBank);
@@ -478,9 +635,10 @@ public class BridgeTests
 
             // A network saved without crossings loads back with none.
             RoadSpatialGrid.AddRoadPath(new List<Vector2> { new(-40f, 0f), new(40f, 0f) }, 4f, world);
-            RoadNetworkPersistence.SaveGlobalRoadData(new List<(Vector2 position, string label)>(), new List<RoadCrossing>());
-            Assert.True(RoadNetworkPersistence.TryLoadGlobalRoadData(new List<(Vector2 position, string label)>(), loaded));
+            RoadNetworkPersistence.SaveGlobalRoadData(new List<(Vector2 position, string label)>(), new List<RoadCrossing>(), new HashSet<Vector2i>());
+            Assert.True(RoadNetworkPersistence.TryLoadGlobalRoadData(new List<(Vector2 position, string label)>(), loaded, zones));
             Assert.Empty(loaded);
+            Assert.Empty(zones);
         }
         finally
         {
