@@ -314,9 +314,18 @@ public static class RoadNetworkGenerator
             });
         }
 
-        RunIslandJobs(jobs);
+        DateTime planStart = DateTime.Now;
+        foreach (var job in jobs)
+            GenerateIslandRoads(job);
+        DateTime pathStart = DateTime.Now;
+        PathfindJobs(jobs);
+        DateTime commitStart = DateTime.Now;
         foreach (var job in jobs)
             CommitIslandJob(job);
+        int routes = 0;
+        foreach (var job in jobs) routes += job.Routes.Count;
+        Log.LogDebug($"  Phases: plan {(pathStart - planStart).TotalSeconds:F2}s, pathfind {(commitStart - pathStart).TotalSeconds:F2}s " +
+                     $"({routes} routes, {(ParallelGeneration ? "parallel" : "sequential")}), commit {(DateTime.Now - commitStart).TotalSeconds:F2}s");
 
         TimeSpan elapsed = DateTime.Now - startTime;
         LogGenerationStats(m_roadsGeneratedCount, elapsed);
