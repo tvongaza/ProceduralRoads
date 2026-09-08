@@ -238,3 +238,9 @@ both because a second of other steps sat between arrive and capture.
 
 Cost of the extra checks: cold on the baked fixture 82 -> 84 s (t8-t11,
 20/20 shots each; shots 15 -> 19 s for the grass settle). Broker/gate tests: 12.
+
+Timings switch (8 Sep, PR #22 marked optional): recording is off unless
+`[Debug] Timings = true` or `road_timings reset` / `run` switched it on;
+off, each probe is one branch. `pc-run.sh` pins the config value on cold
+runs so load-time generation is recorded (t12: 91 s, 20/20, timings
+present).
