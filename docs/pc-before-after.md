@@ -63,6 +63,16 @@ implement it.
    C:\Users\Public\station\desktop.png plus windows.log (every top-level
    window title). Session 0 cannot see session 1 any other way.
 
+9. **The player is in-world before the roads exist.** valheim-cli reports
+   `localplayer` as soon as the player object exists; the mod's load-time
+   generation (~60 s on the PC) starts afterwards. A teleport issued in
+   that window spawns the site's zones before `RoadsAvailable` is true, so
+   they never get road terrain (8 Sep 2026, site W4: base cycle painted by
+   luck, ramp cycle bare). `pc-cycle.sh` now polls the log for
+   "Generation time" / "Roads marked as loaded" / "GenerateRoadsOnLoad is
+   off" before handing over to `pc-shoot.sh`. Island-scope rounds never
+   had the race (they generate after the teleport).
+
 ## Say what a run is (the owner, 7 Sep 2026)
 
 Every round states three things, in the log, the exhibit README and the
