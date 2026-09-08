@@ -63,15 +63,18 @@ implement it.
    C:\Users\Public\station\desktop.png plus windows.log (every top-level
    window title). Session 0 cannot see session 1 any other way.
 
-9. **The player is in-world before the roads exist.** valheim-cli reports
-   `localplayer` as soon as the player object exists; the mod's load-time
-   generation (~60 s on the PC) starts afterwards. A teleport issued in
-   that window spawns the site's zones before `RoadsAvailable` is true, so
-   they never get road terrain (8 Sep 2026, site W4: base cycle painted by
-   luck, ramp cycle bare). `pc-cycle.sh` now polls the log for
-   "Generation time" / "Roads marked as loaded" / "GenerateRoadsOnLoad is
-   off" before handing over to `pc-shoot.sh`. Island-scope rounds never
-   had the race (they generate after the teleport).
+9. **The character file remembers where you logged out, per world.** On the
+   next load the player spawns THERE, and every zone around that point is
+   generated during the loading screen, before the mod's load-time
+   generation runs, so those zones get no road terrain (the start-temple
+   rule generalised). 8 Sep 2026: site W4 was bare on two of three runs
+   because the previous run had logged out standing on it. Diagnosed with
+   a per-zone spawn log: the zone spawned Full and successfully at log
+   line 702, generation started at 1171, the teleport was queued at 1712.
+   The zone-spawn hook itself never failed. Fixed in the tooling branch by
+   applying road terrain to every already-loaded zone right after
+   load-time generation; until a build carries that, end every round away
+   from the next round's sites (pc-shoot's last site is where you log out).
 
 ## Say what a run is (the owner, 7 Sep 2026)
 
