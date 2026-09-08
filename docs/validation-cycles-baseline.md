@@ -172,7 +172,7 @@ times the rebuild of the heightmaps a road write poked: 30 rebuilds,
 |---|---|---|---|
 | warm capture | 192 s | **52 s** (t5 52.4, t6 52.0) | arrive 2-6 s per site = the game's 2 s teleport timer + creating 9 zones with their objects (far sites 5.7 s, near 2 s); capture 0.75 s per shot = 2 rendered frames + writing a 7.8 MB PNG; fetch 4 s (135 MB over SSH) |
 | cold, roads-baked fixture | 220 s | **82 s** (t5 83, t6 82) | world load 13.5 s, Steam launch 5.6 s, menu 5 s, quit/restore/install 4 s, plus the warm items |
-| cold, base fixture (routes regenerated) | 285 s | not rerun; expect ~140 s (82 + the 58 s generation) | the pathfinder (separate work item) |
+| cold, base fixture (routes regenerated) | 285 s | **142 s** (t7, measured) | world load 73.5 s of which generation 58.0 s (146 pathfinding attempts, longest 5.5 s); the pathfinder is the separate work item |
 
 Coverage and quality: 20/20 files in every run, the images match the v1
 captures pose for pose (E-side compared side by side: same framing,
@@ -180,6 +180,12 @@ lighting and HUD), every zone at every site reported stamped with the
 network version before capture (`ROAD_READY ready=true ... stamped=8`),
 no stale-terrain or capture timeouts, warnings unchanged (9 lines, none
 from the mod's terrain path).
+
+Timeouts: a timed-out async command (capture, arrive, env, until) is
+cancelled at its next step, so it cannot land in the middle of the next
+request; a timed-out synchronous command (road_generate) keeps running on
+the game thread and later requests queue behind it, and the response says
+which. Late output of either is dropped and noted on the next response.
 
 Budgets, revised: warm capture 52 s against the 100 s target; the next
 lever is the per-site arrive (about 24 s of the 52): a pre-load of the
