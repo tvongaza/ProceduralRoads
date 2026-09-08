@@ -44,6 +44,17 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_bridges",
+            "Bridges prototype: list the river crossings of the road network nearest to you (road_bridges [count=10]), " +
+            "or road_bridges respawn to destroy every spawned bridge piece and spawn the current plans again into the loaded zones.",
+            (args) => BridgesCommand(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_ends",
             "For every location with a road end, compare the end's road height with the natural terrain at the end and the mean natural height on a ring: road_ends [ring=8] [top=20]. Writes ProceduralRoads.ends.csv to the config folder; the console shows the worst.",
             (args) => ReportRoadEnds(args),
@@ -493,6 +504,11 @@ public static class ConsoleCommands
 
         Log.LogInfo("Manual road generation triggered via console command");
 
+        // Bridge pieces of the old network would sit at the old crossings.
+        int oldBridgePieces = BridgePlacement.ClearSpawnedPieces();
+        if (oldBridgePieces > 0)
+            args.Context.AddString($"Removed {oldBridgePieces} bridge pieces of the previous network.");
+
         // Generate roads (force=true to regenerate if needed)
         RoadNetworkGenerator.GenerateRoads(force: true);
 
@@ -511,6 +527,9 @@ public static class ConsoleCommands
         args.Context.AddString("Applying to loaded zones...");
         int zonesWithRoads = RoadTerrainModifier.ApplyToLoadedZones();
         args.Context.AddString($"Applied roads to {zonesWithRoads} visible zones.");
+        int bridgeZones = BridgePlacement.SpawnInLoadedZones();
+        if (bridgeZones > 0)
+            args.Context.AddString($"Spawned bridges into {bridgeZones} loaded zone(s).");
     }
 
     private static void RegenerateIslandHere(Terminal.ConsoleEventArgs args)
@@ -531,6 +550,9 @@ public static class ConsoleCommands
         }
 
         args.Context.AddString($"Regenerating island at ({pos.x:F0},{pos.z:F0})...");
+        int oldBridgePieces = BridgePlacement.ClearSpawnedPieces();
+        if (oldBridgePieces > 0)
+            args.Context.AddString($"Removed {oldBridgePieces} bridge pieces of the previous network.");
         if (!RoadNetworkGenerator.RegenerateIslandAt(pos, out string summary))
         {
             args.Context.AddString($"Failed: {summary}");
@@ -540,6 +562,53 @@ public static class ConsoleCommands
         int zones = RoadTerrainModifier.ApplyToLoadedZones();
         args.Context.AddString(summary);
         args.Context.AddString($"Applied to {zones} loaded zone(s).");
+        int bridgeZones = BridgePlacement.SpawnInLoadedZones();
+        if (bridgeZones > 0)
+            args.Context.AddString($"Spawned bridges into {bridgeZones} loaded zone(s).");
+    }
+
+    /// <summary>
+    /// road_bridges [count] lists the bridge sites nearest the player;
+    /// road_bridges respawn destroys every spawned bridge piece and spawns
+    /// the current plans again into the loaded zones (fixture iteration).
+    /// </summary>
+    private static void BridgesCommand(Terminal.ConsoleEventArgs args)
+    {
+        if (!RoadNetworkGenerator.RoadsAvailable)
+        {
+            args.Context.AddString("Error: No roads available. Run 'road_generate' first.");
+            return;
+        }
+
+        if (args.Length > 1 && args[1] == "respawn")
+        {
+            int destroyed = BridgePlacement.ClearSpawnedPieces();
+            int zones = BridgePlacement.SpawnInLoadedZones();
+            args.Context.AddString($"Destroyed {destroyed} bridge pieces; spawned the current plans into {zones} loaded zone(s). Other zones get theirs when they load.");
+            return;
+        }
+
+        IReadOnlyList<RoadCrossing> crossings = RoadNetworkGenerator.GetRoadCrossings();
+        List<RoadCrossing> sites = BridgeLayout.DistinctSites(crossings);
+        args.Context.AddString(
+            $"Bridges {(RoadPathfinder.BridgesEnabled ? "on" : "off")} in config; {crossings.Count} river crossing(s) on the roads, " +
+            $"{sites.Count} bridge site(s), {BridgePlacement.TotalPlannedPieces} pieces planned across {BridgePlacement.PlannedZoneCount} zone(s).");
+        if (sites.Count == 0)
+            return;
+
+        int count = 10;
+        if (args.Length > 1 && int.TryParse(args[1], out int requested))
+            count = requested;
+        Vector3 here = Player.m_localPlayer != null ? Player.m_localPlayer.transform.position : Vector3.zero;
+        Vector2 here2 = new Vector2(here.x, here.z);
+        int seed = WorldGenerator.instance != null ? WorldGenerator.instance.GetSeed() : 0;
+        foreach (RoadCrossing site in sites.OrderBy(c => Vector2.Distance(c.Center, here2)).Take(count))
+        {
+            int pieces = WorldGenerator.instance != null ? BridgeLayout.Solve(site, WorldGenerator.instance, seed).Count : 0;
+            args.Context.AddString(
+                $"  ({site.Center.x:F0},{site.Center.y:F0}) {Vector2.Distance(site.Center, here2):F0} m away: {site.Width:F0} m wide, " +
+                $"bed {site.WaterLevel - site.RiverbedHeight:F1} m deep, fairway {site.FairwayWidth:F0} m, {pieces} pieces");
+        }
     }
 
 

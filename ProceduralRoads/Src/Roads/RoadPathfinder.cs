@@ -23,6 +23,20 @@ public class RoadPathfinder
     public float TerrainVarianceThreshold = RoadConstants.DefaultTerrainVarianceThreshold;
     public float BaseCost = RoadConstants.DefaultBaseCost;
 
+    /// <summary>
+    /// Bridges (prototype; config "Bridges/Enabled", off by default): whether
+    /// a road may jump a river on a bridge. The cost levers are
+    /// "Bridges/CostFixed" and "Bridges/CostPerMeter". Applied at config
+    /// read like MaxIterations; a pathfinder instance copies them when made.
+    /// </summary>
+    public static bool BridgesEnabled = false;
+    public static float ConfiguredBridgeCostFixed = RoadConstants.DefaultBridgeCostFixed;
+    public static float ConfiguredBridgeCostPerMeter = RoadConstants.DefaultBridgeCostPerMeter;
+
+    public bool Bridges = BridgesEnabled;
+    public float BridgeCostFixed = ConfiguredBridgeCostFixed;
+    public float BridgeCostPerMeter = ConfiguredBridgeCostPerMeter;
+
     private static readonly Vector2Int[] Directions = new Vector2Int[]
     {
         new Vector2Int(1, 0), new Vector2Int(-1, 0), new Vector2Int(0, 1), new Vector2Int(0, -1),
@@ -96,7 +110,17 @@ public class RoadPathfinder
 
                 float moveCost = GetMoveCost(currentPos, neighborPos, i);
                 if (moveCost >= RiverPenalty)
-                    continue;
+                {
+                    // A blocked neighbour may be the near edge of a river:
+                    // with bridges on, look for dry ground on the far side
+                    // and take the whole crossing as one move.
+                    if (!Bridges || !TryGetBridgeCrossing(currentPos, Directions[i], out Vector2i landing, out float bridgeCost))
+                        continue;
+                    if (closedSet.Contains(landing))
+                        continue;
+                    neighborPos = landing;
+                    moveCost = bridgeCost;
+                }
 
                 float tentativeG = gCosts[currentPos] + moveCost;
 
@@ -184,6 +208,65 @@ public class RoadPathfinder
 
         float riverCost = riverWeight > 0 ? WaterPenalty * riverWeight : 0f;
         return BaseCost * dist + (slope * slope * SlopeMultiplier) + riverCost;
+    }
+
+    /// <summary>
+    /// Bridges (prototype): scans cell by cell from a dry cell across river
+    /// water in one of the eight principal directions and lands on the first
+    /// dry ground outside the river band, if that lies within the bridge cap
+    /// and the two banks are near level. Water without a river core under it
+    /// (a lake, the sea) is not bridged; neither is a dry river valley.
+    /// </summary>
+    private bool TryGetBridgeCrossing(Vector2i from, Vector2Int direction, out Vector2i landing, out float crossingCost)
+    {
+        landing = from;
+        crossingCost = 0f;
+
+        // The scan walks whole cells, so a knight move would skip cells it
+        // never checked and could start the deck one cell short of the bank.
+        if (Mathf.Abs(direction.x) > 1 || Mathf.Abs(direction.y) > 1)
+            return false;
+
+        Vector2 fromWorld = GridToWorld(from);
+        float fromHeight = m_worldGen.GetHeight(fromWorld.x, fromWorld.y);
+        bool sawRiverWater = false;
+
+        for (int step = 1; step <= RoadConstants.MaxBridgeCrossingCells; step++)
+        {
+            Vector2i check = new Vector2i(from.x + direction.x * step, from.y + direction.y * step);
+            Vector2 world = GridToWorld(check);
+            float height = m_worldGen.GetHeight(world.x, world.y);
+            m_worldGen.GetRiverWeight(world.x, world.y, out float riverWeight, out _);
+            bool water = height < RoadConstants.ShallowWaterHeight;
+            bool riverCore = riverWeight > RoadConstants.RiverImpassableThreshold;
+
+            // Keep scanning over water and over the river band (its dry
+            // shores included: a road cannot stand there either).
+            if (water || riverCore)
+            {
+                sawRiverWater |= water && riverCore;
+                continue;
+            }
+
+            // Dry ground: the far bank, if a river lay between.
+            if (!sawRiverWater)
+                return false;
+
+            float distance = Vector2.Distance(fromWorld, world);
+            if (distance > RoadConstants.MaxBridgeCrossingCells * CellSize)
+                return false;
+
+            float bankDelta = Mathf.Abs(height - fromHeight);
+            if (bankDelta > RoadConstants.MaxBridgeBankDelta)
+                return false;
+
+            landing = check;
+            crossingCost = BridgeCostFixed + BridgeCostPerMeter * distance
+                + RoadConstants.BridgeBankDeltaPenalty * bankDelta * bankDelta;
+            return true;
+        }
+
+        return false;
     }
 
     private List<Vector2> ReconstructPath(Dictionary<Vector2i, Vector2i> cameFrom, Vector2i current, Vector2 start, Vector2 end)

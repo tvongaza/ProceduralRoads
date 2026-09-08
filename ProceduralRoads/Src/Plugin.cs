@@ -48,6 +48,9 @@ namespace ProceduralRoads
         public static ConfigEntry<bool> GenerateRoadsOnLoad = null!;
         public static ConfigEntry<int> PathfindingMaxIterations = null!;
         public static ConfigEntry<int> MaxLocationsPerIsland = null!;
+        public static ConfigEntry<bool> BridgesEnabled = null!;
+        public static ConfigEntry<float> BridgeCostFixed = null!;
+        public static ConfigEntry<float> BridgeCostPerMeter = null!;
 
         public void Awake()
         {
@@ -77,6 +80,26 @@ namespace ProceduralRoads
                 new ConfigDescription("Maximum number of locations that can be connected by roads on a single island. " +
                     "Higher values allow more roads on large islands.",
                     new AcceptableValueRange<int>(2, 30)));
+
+            BridgesEnabled = Config.Bind("Bridges", "Enabled", false,
+                "PROTOTYPE, off by default. Roads may cross rivers on wooden bridges: the pathfinder can jump a river " +
+                "(up to 128 m, between near-level banks) at the cost below, the water is left unpaved, and a ruined " +
+                "wooden bridge built from vanilla pieces (post pairs and crossbeams down to the riverbed, a plank deck, " +
+                "a gap left open over the deepest water so boats still pass) is spawned when the zone generates. " +
+                "Decides where roads go when a network is generated; a world generated with bridges keeps them. " +
+                "Bridges are dear, so they show up mostly where a river has no way around; raise " +
+                "PathfindingMaxIterations to let the pathfinder find them on large islands.");
+
+            BridgeCostFixed = Config.Bind("Bridges", "CostFixed", RoadConstants.DefaultBridgeCostFixed,
+                new ConfigDescription("Pathfinding cost of a bridge, fixed part (with Bridges/Enabled). " +
+                    "For scale: easy ground costs about 1 per metre of road, rough or steep ground 1000-2000 per 8 m cell. " +
+                    "Lower = more bridges, higher = roads go around instead.",
+                    new AcceptableValueRange<float>(0f, 1000000f)));
+
+            BridgeCostPerMeter = Config.Bind("Bridges", "CostPerMeter", RoadConstants.DefaultBridgeCostPerMeter,
+                new ConfigDescription("Pathfinding cost of a bridge per metre of span, on top of CostFixed. " +
+                    "Makes long bridges dearer than short ones.",
+                    new AcceptableValueRange<float>(0f, 10000f)));
 
             GenerateRoadsOnLoad = Config.Bind("Debug", "GenerateRoadsOnLoad", true,
                 "Generate the road network when a world without persisted roads loads. Off, the world stays " +
@@ -133,6 +156,9 @@ namespace ProceduralRoads
             RoadNetworkGenerator.GenerateOnLoad = GenerateRoadsOnLoad.Value;
             RoadNetworkGenerator.MaxLocationsPerIsland = MaxLocationsPerIsland.Value;
             RoadPathfinder.MaxIterations = PathfindingMaxIterations.Value;
+            RoadPathfinder.BridgesEnabled = BridgesEnabled.Value;
+            RoadPathfinder.ConfiguredBridgeCostFixed = BridgeCostFixed.Value;
+            RoadPathfinder.ConfiguredBridgeCostPerMeter = BridgeCostPerMeter.Value;
             // CustomLocations is parsed at generation time to preserve API registrations
         }
 

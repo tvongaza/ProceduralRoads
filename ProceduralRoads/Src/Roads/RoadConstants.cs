@@ -29,6 +29,24 @@ public static class RoadConstants
     public const float DefaultTerrainVariancePenalty = 1000f;
     public const float DefaultTerrainVarianceThreshold = 5f;
 
+    // Bridges (prototype, off by default: config Bridges/Enabled). With
+    // bridges on, the pathfinder may jump a river core in a straight line to
+    // dry ground within MaxBridgeCrossingCells (measured in metres, so a
+    // diagonal scan does not stretch it), between banks whose heights differ
+    // by at most MaxBridgeBankDelta; a step in bank height pays
+    // BridgeBankDeltaPenalty * delta^2 on top, so near-level banks are
+    // preferred. The jump costs BridgeCostFixed + BridgeCostPerMeter per
+    // metre (config Bridges/CostFixed and Bridges/CostPerMeter). For scale in
+    // this cost model: easy ground costs about 1 per metre of road, rough or
+    // steep ground 1000-2000 per cell, so the defaults make a 100 m bridge
+    // worth roughly 1 km of rough detour; a bridge appears where the way
+    // around is long or there is none.
+    public const int MaxBridgeCrossingCells = 16; // 16 * 8 m = 128 m, dry cell to dry cell
+    public const float MaxBridgeBankDelta = 4f;
+    public const float BridgeBankDeltaPenalty = 1250f;
+    public const float DefaultBridgeCostFixed = 60000f;
+    public const float DefaultBridgeCostPerMeter = 600f;
+
     // Road cross-section (see RoadProfile): flat core fully leveled and
     // solidly painted; paint fades out strictly inside the leveled footprint
     // so roads keep an unpainted, smoothed verge; leveling eases to natural
