@@ -8,13 +8,14 @@ stacked on #19). Machine: the gaming PC, world RoadTestPC4, build
 1b234c19 (e151a6c's parent), RoadWidth 4, IslandRoadPercentage 100,
 PathfindingMaxIterations 100000.
 
-## The three runs
+## The runs
 
 | run | what | total | where it went |
 |---|---|---|---|
 | t1-cold | game closed, fixture restored, new dll, global generation at load, 5 sites / 20 shots | **285 s** | world.load 74 (generation 58 inside it), sites 87, shots 94, launch+menu 13, capture 7, quit/restore/install 4 |
 | t1-warm | same 5 sites / 20 shots, game already in-world, nothing regenerated | **192 s** | sites 85, shots 94, capture 6; mod side: 35 zones re-entered, 0 written (all stamped) |
 | t1-slow-global | 1 site / 5 shots, `road_generate` in-world (SITE_APPLY=global) | 163 s | the generate 59.5 s, and a second 59 s because the station asked twice for the late CLI output (fixed, see below); shots 22 |
+| t4-warm-island | 1 site / 5 shots, `road_regen_island` in-world (SITE_APPLY=island-each) at W4 | 44 s | generation 0.5 s (W4's island: 4 locations, 4 attempts, 3 roads, 4624 iterations), apply 25 ms; the site's 13 s is the fixed env/clear sleeps; shots 24 |
 | t2-cold-roads | as t1-cold but on the roads-baked fixture (FIXTURE=roads, build dd3e5ae) | **220 s** | world.load 14 (roads loaded from the save, no generation), sites 83, shots 94, launch+menu 14; 30 zones written at the sites in 0.3 s; 9 warning lines, none from generation |
 
 ## Where the time goes
@@ -107,6 +108,7 @@ generation). Warm: 99 stalls, longest 144 ms (teleport zone loads).
 | cold start, routes regenerated (base fixture) | 285 s | 190 s | as above plus the pathfinding work (step 6) |
 | warm capture, 5 sites / 20 shots | 192 s | 100 s | readiness checks; sites 17 s -> ~8 s, shots 4.7 s -> ~2.5 s |
 | slow case: one in-world `road_generate` | 60 s | 30 s | pathfinding: skip hopeless searches, cheaper move cost |
+| one in-world `road_regen_island` (small island) | 0.5 s | | already the way to iterate on one site; the start island (7 Sep) was ~10 s |
 
 The plan's initial target (halve 285 s) is 143 s: the baked fixture alone
 took the representative cycle to 220 s; the rest is the station's fixed
