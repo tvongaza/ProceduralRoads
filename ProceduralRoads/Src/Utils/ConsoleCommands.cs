@@ -606,7 +606,8 @@ public static class ConsoleCommands
         {
             int pieces = WorldGenerator.instance != null ? BridgeLayout.Solve(site, WorldGenerator.instance, seed).Count : 0;
             args.Context.AddString(
-                $"  ({site.Center.x:F0},{site.Center.y:F0}) {Vector2.Distance(site.Center, here2):F0} m away: {site.Width:F0} m wide, " +
+                $"  ({site.Center.x:F0},{site.Center.y:F0}) {Vector2.Distance(site.Center, here2):F0} m away: {site.Width:F0} m wide " +
+                $"from ({site.FromBank.x:F1},{site.FromBank.y:F1}) to ({site.ToBank.x:F1},{site.ToBank.y:F1}), " +
                 $"bed {site.WaterLevel - site.RiverbedHeight:F1} m deep, fairway {site.FairwayWidth:F0} m, {pieces} pieces");
         }
     }
