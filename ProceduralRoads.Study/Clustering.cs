@@ -145,6 +145,20 @@ internal static class Clustering
                               $"({100f * group.Count(p => p.Connected) / group.Count():F1}%)");
         }
 
+        // The raw samples, so the distribution can be drawn rather than
+        // summarised: a median can hide clustering that a shape shows.
+        string? samplePath = Options.Value(args, "--samples");
+        if (samplePath != null)
+        {
+            using StreamWriter writer = new(samplePath);
+            writer.WriteLine("series,metres");
+            foreach (float d in roadShore) writer.WriteLine($"road_to_water,{d:F1}");
+            foreach (float d in landShore) writer.WriteLine($"land_to_water,{d:F1}");
+            foreach (float d in roadCentre) writer.WriteLine($"road_from_centre,{d:F1}");
+            foreach (float d in landCentre) writer.WriteLine($"land_from_centre,{d:F1}");
+            Console.WriteLine($"wrote samples: {samplePath}");
+        }
+
         string? outPath = Options.Value(args, "--out");
         if (outPath != null)
         {
