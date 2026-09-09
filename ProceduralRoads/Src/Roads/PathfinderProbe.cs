@@ -123,6 +123,15 @@ public sealed class PathfinderTrace : IPathfinderProbe
         Found = found;
         Outcome = outcome;
         Iterations = iterations;
+        if (found)
+        {
+            // The search returns on reaching the destination cell, before that
+            // cell is settled, so it is never popped: a successful attempt
+            // would otherwise report the last cell before it as its closest
+            // approach - up to a knight move away.
+            ClosestApproach = 0f;
+            ClosestCell = m_endGrid;
+        }
     }
 
     /// <summary>One line for a log or a table.</summary>

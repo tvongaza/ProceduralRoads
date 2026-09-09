@@ -27,6 +27,7 @@ public static class RoadStudyExport
 
     public static string RoutesPath(string dir) => Path.Combine(dir, "ProceduralRoads.routes.csv");
     public static string CrossingsPath(string dir) => Path.Combine(dir, "ProceduralRoads.crossings.csv");
+    public static string AttemptsPath(string dir) => Path.Combine(dir, "ProceduralRoads.attempts.csv");
     public static string ManifestPath(string dir) => Path.Combine(dir, "ProceduralRoads.manifest.json");
 
     /// <summary>Writes all three files. Returns the paths written, or null on failure.</summary>
@@ -37,8 +38,9 @@ public static class RoadStudyExport
             Directory.CreateDirectory(dir);
             File.WriteAllText(RoutesPath(dir), RoadRouteRecorder.ToCsv());
             File.WriteAllText(CrossingsPath(dir), CrossingsCsv(RoadNetworkGenerator.GetRoadCrossings()));
+            File.WriteAllText(AttemptsPath(dir), RoadAttemptLog.ToCsv());
             File.WriteAllText(ManifestPath(dir), Manifest(scope));
-            return new List<string> { RoutesPath(dir), CrossingsPath(dir), ManifestPath(dir) };
+            return new List<string> { RoutesPath(dir), CrossingsPath(dir), AttemptsPath(dir), ManifestPath(dir) };
         }
         catch (IOException e)
         {
@@ -132,11 +134,21 @@ public static class RoadStudyExport
         sb.Append($"    \"crossingCount\": {crossings.Count},\n");
         sb.Append($"    \"fordCount\": {fords},\n");
         sb.Append($"    \"bridgeCount\": {bridges},\n");
+        sb.Append($"    \"attemptCount\": {RoadAttemptLog.Attempts.Count},\n");
+        sb.Append($"    \"failedAttemptCount\": {FailedAttempts()},\n");
         sb.Append($"    \"roadNetworkVersion\": {RoadSpatialGrid.RoadNetworkVersion},\n");
         sb.Append($"    \"totalRoadPoints\": {RoadSpatialGrid.TotalRoadPoints}\n");
         sb.Append("  }\n");
         sb.Append("}\n");
         return sb.ToString();
+    }
+
+    private static int FailedAttempts()
+    {
+        int failed = 0;
+        foreach (RoadAttempt attempt in RoadAttemptLog.Attempts)
+            if (!attempt.Connected) failed++;
+        return failed;
     }
 
     private static string Bool(bool value) => value ? "true" : "false";

@@ -55,7 +55,7 @@ public static class ConsoleCommands
 
         new Terminal.ConsoleCommand(
             "road_routes",
-            "Study export: write the road centrelines, the river crossings and a run manifest (settings as the plugin holds them after clamping) to the config folder, or road_routes <dir>.",
+            "Study export: write the road centrelines, the river crossings, every connection attempt and a run manifest (settings as the plugin holds them after clamping) to the config folder, or road_routes <dir> [scope].",
             (args) => RoutesCommand(args),
             isCheat: true,
             isNetwork: false,
@@ -613,9 +613,14 @@ public static class ConsoleCommands
             points += route.Points.Count;
         }
 
+        int failed = 0;
+        foreach (RoadAttempt attempt in RoadAttemptLog.Attempts)
+            if (!attempt.Connected) failed++;
+
         args.Context.AddString(
             $"{routes.Count} route(s), {points} centreline points, {length:F0} m, " +
-            $"{RoadNetworkGenerator.GetRoadCrossings().Count} crossing(s).");
+            $"{RoadNetworkGenerator.GetRoadCrossings().Count} crossing(s), " +
+            $"{RoadAttemptLog.Attempts.Count} attempt(s) of which {failed} failed.");
         foreach (string path in written)
             args.Context.AddString($"  {path}");
     }

@@ -326,12 +326,19 @@ public static class RoadNetworkGenerator
             return false;
         }
 
+        // Study instrument: every attempt is recorded, connected or not, with
+        // the search's own account of what stopped it.
+        string attemptLabel = label ?? $"Road {m_roadsGeneratedCount + 1}";
+        PathfinderTrace? trace = RoadAttemptLog.Begin();
+
         List<Vector2>? path = m_pathfinder.FindPath(startCenter, endCenter);
 
         UnityEngine.Canvas.ForceUpdateCanvases();
 
         if (path == null || path.Count < 2)
         {
+            RoadAttemptLog.Finish(trace, attemptLabel, startCenter, endCenter,
+                connected: false, m_pathfinder.LastOutcome, 0f, 0);
             if (label != null)
                 Log.LogWarning($"Could not find path: {label}");
             return false;
@@ -341,6 +348,8 @@ public static class RoadNetworkGenerator
 
         if (path == null || path.Count < 2)
         {
+            RoadAttemptLog.Finish(trace, attemptLabel, startCenter, endCenter,
+                connected: false, "path too short after trimming", 0f, 0);
             if (label != null)
                 Log.LogWarning($"Path too short after trimming: {label}");
             return false;
@@ -368,16 +377,17 @@ public static class RoadNetworkGenerator
                 }
             }
         }
-        string routeLabel = label ?? $"Road {m_roadsGeneratedCount + 1}";
-        RoadRouteRecorder.Begin(routeLabel, width);
+        RoadRouteRecorder.Begin(attemptLabel, width);
         AddRoadPathWithCrossings(path, crossings, width);
-        RoadRouteRecorder.End();
+        RoadRoute? route = RoadRouteRecorder.End();
+        RoadAttemptLog.Finish(trace, attemptLabel, startCenter, endCenter,
+            connected: true, "found", route?.Length ?? 0f, crossings.Count);
         m_roadCrossings.AddRange(crossings);
         m_roadsGeneratedCount++;
 
         if (path.Count > 0)
         {
-            m_roadStartPoints.Add((path[0], routeLabel));
+            m_roadStartPoints.Add((path[0], attemptLabel));
         }
         if (crossings.Count > 0 && label != null)
             Log.LogDebug($"Road {label}: {crossings.Count} river crossing(s)");
@@ -795,6 +805,7 @@ public static class RoadNetworkGenerator
         m_roadsGeneratedCount = 0;
         m_roadStartPoints.Clear();
         RoadRouteRecorder.Clear();
+        RoadAttemptLog.Clear();
         m_roadCrossings.Clear();
         BridgePlans.Reset();
         RoadNetworkPersistence.Reset();
