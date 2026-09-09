@@ -615,9 +615,30 @@ rule. Island detection does not depend on any setting, so the difference is in
 the world itself — a worldgen change between the report and now is the likely
 cause, and it is stated here rather than papered over.
 
+## Every warning the game logged
+
+The last in-game run logged 169 warning or error lines. All of them are
+accounted for:
+
+| lines | what |
+|---|---|
+| 75 | `Pathfinding failed: no reachable path after N iterations` — the failed attempts, counted and reported above |
+| 85 | `Could not find path: X -> Y` — the paired message for the same failures |
+| 7 | `Failed to place all <location>, placed N out of M` — vanilla location placement fitting what it can |
+| 1 | a vanilla character-id message on load |
+| 1 | `CLI command timed out: road_generate` — the console client's own 120 s limit, while generation ran on |
+| 2 | both mods target BepInEx 5.4.23.5 where this install has 5.4.22 |
+
+Nothing unexplained, and nothing from the mod other than the failures the
+study is about.
+
 ## Still owed
 
-- In-game confirmation of anything about fords, which the offline terrain
-  cannot see.
-- The per-island table, and the study document itself.
-- In-game runs of the shortlisted plans, once there is a shortlist.
+- The gate's own selftest metrics (pointsHash, networkComponents) were not
+  ported: the study computes its own components and identifies a run by a
+  canonical route diff instead, which is stronger, but the two will not line
+  up number for number.
+- In-game runs of the shortlisted plans, once there is a shortlist, judged on
+  how they play rather than on what they measure.
+- The study document is written and not sent; posting waits on a decision
+  that is not the study's to make.
