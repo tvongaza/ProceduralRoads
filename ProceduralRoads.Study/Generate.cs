@@ -198,6 +198,14 @@ internal static class Generate
         if (neighbours != null)
             StudyFactors.RoutedPlanNeighbours = int.Parse(neighbours, CultureInfo.InvariantCulture);
 
+        string? sharing = Options.Value(args, "--road-sharing");
+        if (sharing != null)
+            StudyFactors.ExistingRoadCostFraction = float.Parse(sharing, CultureInfo.InvariantCulture);
+
+        string? reach = Options.Value(args, "--road-reach");
+        if (reach != null)
+            StudyFactors.ExistingRoadReach = float.Parse(reach, CultureInfo.InvariantCulture);
+
         string? filter = Options.Value(args, "--filter-endpoints");
         if (filter != null)
             StudyFactors.FilterUnreachableEndpoints = OnOff(filter, "--filter-endpoints");

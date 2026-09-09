@@ -698,6 +698,49 @@ public static class RoadSpatialGrid
         return count;
     }
 
+    /// <summary>
+    /// Whether any road point lies within a radius of a position, without
+    /// building a list. The pathfinder asks this per move when road sharing is
+    /// on, so it must not allocate: the paint weight is no use there, because
+    /// it only registers within about half a road's width of the centreline
+    /// and the pathfinder steps eight metres at a time.
+    /// </summary>
+    public static bool HasRoadWithin(Vector2 position, float radius)
+    {
+        if (!m_initialized)
+            return false;
+
+        float radiusSq = radius * radius;
+        int cellRange = Mathf.CeilToInt(radius / GridSize);
+        Vector2i centre = GetRoadGrid(position.x, position.y);
+
+        m_roadCacheLock.EnterReadLock();
+        try
+        {
+            for (int dx = -cellRange; dx <= cellRange; dx++)
+            {
+                for (int dy = -cellRange; dy <= cellRange; dy++)
+                {
+                    if (!m_roadPoints.TryGetValue(new Vector2i(centre.x + dx, centre.y + dy), out RoadPoint[] points))
+                        continue;
+
+                    foreach (RoadPoint point in points)
+                    {
+                        float ox = point.p.x - position.x, oy = point.p.y - position.y;
+                        if (ox * ox + oy * oy <= radiusSq)
+                            return true;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            m_roadCacheLock.ExitReadLock();
+        }
+
+        return false;
+    }
+
     public static List<RoadPoint> GetRoadPointsNearPosition(Vector3 worldPos, float radius)
     {
         List<RoadPoint> result = new List<RoadPoint>();

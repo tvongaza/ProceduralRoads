@@ -270,7 +270,17 @@ public class RoadPathfinder
             return WaterPenalty;
 
         float riverCost = riverWeight > 0 ? WaterPenalty * riverWeight : 0f;
-        return BaseCost * dist + (slope * slope * SlopeMultiplier) + riverCost + wadeCost;
+        float cost = BaseCost * dist + (slope * slope * SlopeMultiplier) + riverCost + wadeCost;
+
+        // Study lever: ground that already carries road can be made cheaper to
+        // travel, so a later road is drawn onto an earlier one instead of
+        // running beside it. One - the shipped value - means no discount and
+        // no merging, and then the grid is never consulted.
+        if (StudyFactors.ExistingRoadCostFraction < 1f
+            && RoadSpatialGrid.HasRoadWithin(toWorld, StudyFactors.ExistingRoadReach))
+            cost *= StudyFactors.ExistingRoadCostFraction;
+
+        return cost;
     }
 
     /// <summary>

@@ -113,6 +113,26 @@ public static class StudyFactors
     public static LocationQuota Quota = LocationQuota.PriorityTruncated;
     public static ConnectionPlan Plan = ConnectionPlan.ChainOrMstByParity;
 
+    /// <summary>
+    /// What a step onto ground that already carries road costs, as a fraction
+    /// of what it would otherwise cost. One is the shipped behaviour: a road
+    /// gets no discount for following an earlier one, so two roads to nearby
+    /// places run side by side and the network grows no junctions. Below one,
+    /// a later road is drawn onto an existing one and they merge.
+    ///
+    /// Only crossings are shared today, at half price; ordinary road is not
+    /// shared at all.
+    /// </summary>
+    public static float ExistingRoadCostFraction = 1f;
+
+    /// <summary>
+    /// How near an existing road a step must be to count as following it. The
+    /// pathfinder moves in eight-metre steps and a road is four metres wide,
+    /// so asking whether the step lands on the paint almost never says yes:
+    /// this has to be a proximity, not a hit.
+    /// </summary>
+    public static float ExistingRoadReach = 12f;
+
     /// <summary>PR #16: a place with no reachable ground near it is dropped
     /// before it is ever attempted.</summary>
     public static bool FilterUnreachableEndpoints;
@@ -136,7 +156,7 @@ public static class StudyFactors
 
     /// <summary>One line for a manifest or a caption.</summary>
     public static string Describe() =>
-        $"anchor={Anchor}, islands={Islands}, places={Quantity}" +
+        $"anchor={Anchor}, islands={Islands}, sharing={ExistingRoadCostFraction:0.##}, places={Quantity}" +
         (Quantity == IslandQuota.FixedCount ? $"({FixedPlaceCount})" : "") +
         $", quota={Quota}, plan={Plan}, " +
         $"filterEndpoints={FilterUnreachableEndpoints}, snapEndpoints={SnapEndpointsToPathableGround}";

@@ -24,6 +24,16 @@ internal static class NetworkMetrics
     /// <summary>Two road ends this close together are one junction.</summary>
     public const float JoinRadius = 24f;
 
+    /// <summary>
+    /// Two roads that end at the same place are one network even when their
+    /// ends sit far apart on its approach circle, which they usually do: a
+    /// road stops at the circle wherever it arrives, so two roads to one
+    /// village can finish eighty metres apart on opposite sides of it.
+    /// Counting those as separate networks made the study report an island as
+    /// split when a player would walk straight from one road to the other.
+    /// </summary>
+    public const float PlaceJoinMargin = 8f;
+
     public sealed class Result
     {
         public int PlacesServed;
@@ -51,7 +61,7 @@ internal static class NetworkMetrics
             }
         }
 
-        (result.Components, result.LargestComponentRoutes) = Components(routes);
+        (result.Components, result.LargestComponentRoutes) = Components(routes, places);
         return result;
     }
 
@@ -66,7 +76,8 @@ internal static class NetworkMetrics
     /// lies within the join radius of any point of the other, so a road meeting
     /// another halfway along counts as joined.
     /// </summary>
-    private static (int components, int largest) Components(IReadOnlyList<RoadRoute> routes)
+    private static (int components, int largest) Components(
+        IReadOnlyList<RoadRoute> routes, IReadOnlyList<Program.Location> places)
     {
         int n = routes.Count;
         if (n == 0)
@@ -81,14 +92,38 @@ internal static class NetworkMetrics
             return x;
         }
 
+        void Union(int a, int b)
+        {
+            int ra = Find(a), rb = Find(b);
+            if (ra != rb) parent[ra] = rb;
+        }
+
         for (int a = 0; a < n; a++)
         {
             for (int b = a + 1; b < n; b++)
             {
-                if (!Touch(routes[a], routes[b]))
+                if (Touch(routes[a], routes[b]))
+                    Union(a, b);
+            }
+        }
+
+        // Roads that end at the same place are one network, however far apart
+        // on its approach circle they finished.
+        foreach (Program.Location place in places)
+        {
+            float reach = Mathf.Max(ServedRadius, place.Radius) + PlaceJoinMargin;
+            Vector2 at = new(place.Position.x, place.Position.z);
+            int first = -1;
+            for (int i = 0; i < n; i++)
+            {
+                if (routes[i].Points.Count == 0)
                     continue;
-                int ra = Find(a), rb = Find(b);
-                if (ra != rb) parent[ra] = rb;
+                if (!Near(routes[i].Points[0], at, reach)
+                    && !Near(routes[i].Points[routes[i].Points.Count - 1], at, reach))
+                    continue;
+
+                if (first < 0) first = i;
+                else Union(first, i);
             }
         }
 

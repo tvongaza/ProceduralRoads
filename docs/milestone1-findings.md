@@ -234,14 +234,14 @@ odd places, not that it costs connections.
 
 Crossings on, every island, exact terrain.
 
-| world | policy | roads | length | served | networks | attempts | failed | crossings |
-|---|---|---|---|---|---|---|---|---|
-| issue #7 seed | shipped | 88 | 58.5 km | 123 | 54 | 158 | 70 | 15 |
-| issue #7 seed | all changes | 96 | 34.6 km | 138 | 65 | 119 | 23 | 4 |
-| world B | shipped | 93 | 71.0 km | 134 | 62 | 163 | 70 | 31 |
-| world B | all changes | 94 | 41.7 km | 140 | 61 | 111 | 17 | 16 |
-| world C | shipped | 96 | 55.5 km | 141 | 72 | 171 | 75 | 16 |
-| world C | all changes | 94 | 26.5 km | 144 | 71 | 137 | 43 | 11 |
+| world | policy | roads | length | served | networks | largest |
+|---|---|---|---|---|---|---|
+| issue #7 seed | shipped | 88 | 58.5 km | 123 | 49 | 5 |
+| issue #7 seed | all changes | 96 | 34.6 km | 138 | 47 | 6 |
+| world B | shipped | 93 | 71.0 km | 134 | 50 | 6 |
+| world B | all changes | 94 | 41.7 km | 140 | 48 | 12 |
+| world C | shipped | 96 | 55.5 km | 141 | 60 | 4 |
+| world C | all changes | 94 | 26.5 km | 144 | 54 | 6 |
 
 The same shape on all three: slightly more places served, far fewer wasted
 attempts, and roughly half the road length. The two policies do not differ
@@ -442,6 +442,26 @@ fails more often. That is a real trade rather than a free improvement.
 
 ### Fords and bridges, separately
 
+Measured in game as well, on one world state — the same 174 attempts in all
+three runs, so the rows are comparable:
+
+| in game | roads | length | crossings |
+|---|---|---|---|
+| neither | 49 | 21.7 km | 0 |
+| fords only | 90 | 41.5 km | 3, all fords |
+| both | 98 | 56.8 km | 15 (13 bridges, 2 fords) |
+
+**Three river fords in a whole world.** Turning fords on adds 41 roads, and
+almost none of that is river crossing: it is swamp wading, which the same flag
+enables. That is worth knowing before any effort goes into ford geometry — on
+this world the ford code fires three times, and the wading it comes with is
+worth forty-one roads.
+
+Bridges add eight roads on top, with thirteen bridges, so a bridge earns its
+place at a much higher rate than a ford does.
+
+Offline, for comparison:
+
 | | roads | length | served | crossings recorded |
 |---|---|---|---|---|
 | neither | 47 | 20.9 km | 72 | 0 |
@@ -499,6 +519,48 @@ what a road network wants — is the worst of the four: it buys long roads that
 fail more often, on worlds where the ground between two distant places is
 usually water.
 
+## Can roads share? No, and making them free does not help
+
+Nothing in the cost model rewards a road for following an existing one. The
+one place an existing road is consulted is a river crossing, which costs half
+when both banks already carry road; ordinary road carries no discount at all,
+so two roads to nearby places run side by side and junctions form only where
+one road happens to end near another.
+
+Adding the discount as a lever changes almost nothing:
+
+| a step on existing road costs | roads | length | served | networks |
+|---|---|---|---|---|
+| full price (today) | 88 | 58.5 km | 123 | 49 |
+| a quarter | 88 | 58.9 km | 123 | 49 |
+| nothing at all, within 40 m | 88 | 57.8 km | 123 | 49 |
+
+Even a free road moves nothing, and the reason is the scale of the cost model
+rather than the idea. An eight-metre step over ordinary ground costs about
+eight; the penalties that shape a route are a thousand for rough ground, two
+thousand for a steep slope, a hundred thousand for water. Discounting the part
+that is already almost free cannot pull a route sideways, because the sideways
+move costs more than the whole saving.
+
+So junctions cannot be bought with a discount here. They would need either a
+connection plan that deliberately attaches a new road to an existing one -
+which is what trunk and spurs does - or a cost model where travelling off-road
+is dear enough that following a road is worth a detour.
+
+## How often does one island hold more than one network?
+
+Three of the 45 islands that get roads, on the issue seed - and every one of
+them has failed attempts. The largest island attempts twelve connections, six
+fail, and the six roads that succeed form three separate pieces: the chain
+carries on from the next place after a failure, so what is left behind becomes
+its own network.
+
+An earlier version of this measurement said eight islands of 45. It counted
+two roads meeting at the same place as separate networks, because each road
+stops wherever it reaches the place's approach circle and two of them can
+finish eighty metres apart on opposite sides of it. They are now joined, which
+is what a player walking between them would find.
+
 ## Connection plans on identical inputs
 
 The same islands, the same selected places, the same anchor, the same routing
@@ -508,11 +570,11 @@ the roads form, and "largest" how many roads are in the biggest one.
 
 | world | plan | roads | length | served | networks | largest | planning probes |
 |---|---|---|---|---|---|---|---|
-| issue #7 seed | chain/MST by parity | 88 | 58.5 km | 123 | 54 | 5 | 0 |
-| | tree with retries | 90 | 61.9 km | 126 | 56 | 5 | 0 |
-| | MST on routed cost | 90 | 57.6 km | 126 | 56 | 5 | 261 |
-| | trunk and spurs | 85 | 62.1 km | 116 | 47 | 5 | 261 |
-| | hub and spoke | 88 | 58.2 km | 123 | 56 | 4 | 261 |
+| issue #7 seed | chain/MST by parity | 88 | 58.5 km | 123 | 49 | 5 | 0 |
+| | tree with retries | 90 | 61.9 km | 126 | 50 | 5 | 0 |
+| | MST on routed cost | 90 | 57.6 km | 126 | 50 | 5 | 261 |
+| | trunk and spurs | 85 | 62.1 km | 116 | 46 | 5 | 261 |
+| | hub and spoke | 88 | 58.2 km | 123 | 51 | 4 | 261 |
 | world B | chain/MST by parity | 93 | 71.0 km | 134 | 62 | 6 | 0 |
 | | tree with retries | 93 | 70.0 km | 136 | 64 | 5 | 0 |
 | | MST on routed cost | 93 | 64.9 km | 136 | 65 | 6 | 283 |
