@@ -164,7 +164,7 @@ of the real endpoint. The connected and quota rows are exact.)
 Shipped strategy, crossings on, every island, issue #7 seed, on exact 8 m
 terrain. Failures are split by the pathfinder's own two reasons.
 
-| iterations | roads | budget exhausted | frontier exhausted |
+| iterations | roads | budget spent | frontier exhausted |
 |---|---|---|---|
 | 5 000 | 62 | 48 | 48 |
 | 10 000 | 74 | 33 | 51 |
@@ -257,7 +257,7 @@ fixed, shipped plan, crossings on, issue #7 seed:
 
 | places per island | roads | length | served | networks | attempts | failed | metres per place served |
 |---|---|---|---|---|---|---|---|
-| `2 + area/2 km²` (today) | 88 | 58.5 km | 123 | 54 | 158 | 44 % | 476 |
+| `2 + area/2 km²` (the baseline below) | 88 | 58.5 km | 123 | 49 | 158 | 44 % | 476 |
 | 4 | 117 | 63.4 km | 155 | 67 | 190 | 38 % | 409 |
 | 8 | 258 | 99.4 km | 319 | 127 | 356 | 28 % | 312 |
 | 16 | 466 | 154.1 km | 557 | 200 | 620 | 25 % | 277 |
@@ -315,8 +315,11 @@ ground they are drawn on.
 | distance to open water, median | 97 m | 74 m |
 | distance from the world's centre, median | 5 146 m | 7 037 m |
 
-**Neither reading holds.** Roads sit further from open water than the land
-does, and nearer the world's centre than the land is. The same holds inside
+**Neither reading is supported by these aggregates.** Roads sit further from
+open water than the land does, and nearer the world's centre than the land is.
+These are medians over the whole world, and a median can hide clustering on
+one island; the per-island distributions are published beside this document
+and no island in them reverses the direction. The same holds inside
 every biome separately, and connected places are further inland than
 unconnected ones (median 111 m against 68 m).
 
@@ -344,8 +347,9 @@ A third of the network is in swamp, which is a fourteenth of the land. The
 pathfinder is doing what its cost model tells it: swamp is flat, and the mod
 wades it for a modest penalty, while the Mistlands and the mountains are steep
 and dear. It is also what makes roads look like they run through water on a
-map, and it is a gameplay question rather than a routing one — a third of the
-network runs through the biome players like least to travel.
+map. Whether a third of a network in one biome is desirable is a gameplay
+question this study cannot answer; it is raised because it is a design choice
+worth making deliberately rather than inheriting from a cost constant.
 
 Connected places by biome tell the same story from the other side: 18.8 % of
 eligible swamp places get a road, against 2.4 % in the Mistlands and 1.7 % in
@@ -488,7 +492,7 @@ unknown until it is run in game.
 | 25 % | 49 | 35.4 km | 68 | 24 | 34 of 83 |
 | 50 % | 73 | 52.6 km | 101 | 41 | 53 of 126 |
 | 75 % | 84 | 57.0 km | 117 | 51 | 63 of 147 |
-| 100 % | 88 | 58.5 km | 123 | 54 | 70 of 158 |
+| 100 % | 88 | 58.5 km | 123 | 49 | 70 of 158 |
 
 Near enough linear to three quarters, then flat: the largest islands are taken
 first, so the last quarter of them are small and add six served places between

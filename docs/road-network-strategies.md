@@ -1,6 +1,8 @@
 # Road networks: a routing study
 
-**Routing study; gameplay validation pending.** Everything below is measured
+**Preliminary; routing study; gameplay validation pending.** Two strategy
+implementations do not yet match their descriptions here (see "Where this is
+still wrong"), so the strategy ranking should not be read as settled. Everything below is measured
 on generated networks — road counts, lengths, what connects to what, and why a
 connection failed. None of it has been played. Where a number would change a
 design decision, it needs a session in game first, and the places that most
@@ -18,8 +20,14 @@ A whole world takes about four seconds that way, so a comparison that would
 have taken hours in game takes minutes, and every run can be repeated exactly.
 
 The dumps sample the positions the game itself samples: the 128 m grid island
-detection reads, and the 8 m cells the pathfinder walks. Move costs are
-therefore exact rather than interpolated.
+detection reads, and the 8 m cells the pathfinder walks. Heights, biomes and
+river weights at those positions are therefore exact rather than interpolated.
+
+Move costs are **not** exact, and an earlier draft of this said they were. A
+move's cost includes a terrain-variance term sampled on a ring 16 m out at
+eight angles, four of which fall between the dumped positions and are
+interpolated. So the ordinary cost of a step is close but not identical to the
+game's, which is one reason the calibration below matters.
 
 What it does not reproduce: the pathfinder's terrain-variance ring and every
 crossing-depth judgement sample between those positions, so they are
@@ -82,7 +90,7 @@ Of the places that are eligible, by what became of them:
 |---|---|---|---|
 | lost the island's quota | 2 312 | 2 253 | 2 279 |
 | connected | 128 | 131 | 141 |
-| attempted, no route exists | 29 | 32 | 29 |
+| attempted, search frontier exhausted | 29 | 32 | 29 |
 | attempted, iteration budget spent | 1 | 0 | 1 |
 
 **Ninety-three per cent of eligible places never get an attempt.** They lose
@@ -125,7 +133,7 @@ The issue reports diminishing returns around 30 000 iterations. That
 reproduces, and the reason is visible once failures are split by the
 pathfinder's own two reasons:
 
-| iterations | roads | budget spent | no route exists |
+| iterations | roads | budget spent | frontier exhausted |
 |---|---|---|---|
 | 5 000 | 62 | 48 | 48 |
 | 10 000 | 74 | 33 | 51 |
@@ -135,7 +143,8 @@ pathfinder's own two reasons:
 | 120 000 | 88 | 1 | 69 |
 
 As the budget grows, attempts that used to stop at the cap run to completion
-and report that the destination cannot be reached over land at all. Past about
+and instead exhaust their frontier: every cell they can reach, settled,
+without arriving. Past about
 30 000 there is almost nothing left for a larger budget to rescue. The setting
 has ranged 1 000 to 100 000 since it was added, so a reported 100 000 was
 never clamped.
@@ -152,8 +161,8 @@ nothing on their own.
 | distance to open water, median | 97 m | 74 m |
 | distance from the world's centre, median | 5 146 m | 7 037 m |
 
-Neither holds. Roads sit *further* from open water than the land does and
-*nearer* the world's centre, and connected places are further inland than
+Neither is supported by these aggregates. Roads sit *further* from open water
+than the land does and *nearer* the world's centre, and connected places are further inland than
 unconnected ones. The same is true inside every biome taken separately.
 
 What roads do favour is swamp:
@@ -169,9 +178,10 @@ A third of the network is in swamp, which is a fourteenth of the land, and
 18.8 % of eligible swamp places get a road against 2.4 % in the Mistlands. The
 pathfinder is following its cost model — swamp is flat and waded for a modest
 penalty, the Mistlands and the mountains are steep and dear — and the result
-is a network that runs through the biome players like least to travel. That is
-a gameplay question rather than a routing one, and it may be the strongest
-argument here for changing the cost model rather than the routing.
+is a network that spends a third of its length in swamp. Whether that is good
+or bad is a gameplay question this study cannot answer — it is raised here
+because a third of a network in one biome is a design choice worth making
+deliberately rather than inheriting from a cost constant.
 
 It is also why roads look like they run into the sea on a map: a swamp sits at
 and below the waterline, and a road wading one is doing what it was told to.
@@ -198,14 +208,32 @@ archipelago, and no connection plan changes that.
 
 ## The levers, and what each is worth
 
-Everything below is one change at a time from what ships today, on the issue's
-seed, with crossings on. "Served" counts places a road end reaches.
+### First, what the baseline is
+
+Everything in this document that says "the baseline" means **crossings on and
+every island selected**, on the issue's seed. That is not what the mod ships
+with, and an earlier draft of this document called it "today", which was
+wrong. The shipped defaults are 50 % of islands, fords off, bridges off and a
+10 000 iteration budget:
+
+| | roads | length | served | networks |
+|---|---|---|---|---|
+| shipped defaults | 30 | 12.4 km | 46 | 21 |
+| the baseline used below | 88 | 58.5 km | 123 | 49 |
+
+Three times the network, before any change proposed here. The baseline was
+chosen so that a lever's effect is not hidden by another setting suppressing
+it, but it means every number below is measured on a more generous
+configuration than a player gets out of the box.
+
+Everything below is one change at a time from that baseline. "Served" counts
+places a road end reaches.
 
 ### How many places each island may have
 
 | places per island | roads | length | served | attempts failing | metres per place served |
 |---|---|---|---|---|---|
-| `2 + area/2 km²` (today) | 88 | 58.5 km | 123 | 44 % | 476 |
+| `2 + area/2 km²` (the baseline) | 88 | 58.5 km | 123 | 44 % | 476 |
 | 8 | 258 | 99.4 km | 319 | 28 % | 312 |
 | 16 | 466 | 154.1 km | 557 | 25 % | 277 |
 | 32 | 838 | 224.0 km | 959 | 20 % | 234 |
@@ -227,7 +255,7 @@ numbers can answer.
 
 | arrangement | roads | length | served | metres per place |
 |---|---|---|---|---|
-| priority, truncated (today) | 88 | 58.5 km | 123 | 476 |
+| priority, truncated (the baseline) | 88 | 58.5 km | 123 | 476 |
 | priority, then nearest (PR #16) | 101 | 43.3 km | **142** | **305** |
 | priority, then farthest | 77 | 84.1 km | 115 | 731 |
 | a fixed draw, ignoring priority | 72 | 58.2 km | 109 | 534 |
@@ -277,21 +305,28 @@ Added as a lever and swept, it does nothing:
 
 | a step on existing road costs | roads | length | served | networks |
 |---|---|---|---|---|
-| full price (today) | 88 | 58.5 km | 123 | 49 |
+| full price (the baseline) | 88 | 58.5 km | 123 | 49 |
 | a quarter | 88 | 58.9 km | 123 | 49 |
 | nothing at all, within 40 m | 88 | 57.8 km | 123 | 49 |
 
-The reason is the scale of the cost model rather than the idea. An eight-metre
-step over ordinary ground costs about eight; the penalties that shape a route
-are a thousand for rough ground, two thousand for a steep slope, a hundred
-thousand for water. Discounting something already almost free cannot pull a
-route sideways, because the sideways move costs more than the whole saving.
+**That result does not yet support a conclusion, and this section is held
+open.** Two faults in the experiment were found in review, both real:
 
-If junctions are wanted — and the issue reads like they are — they need either
-a connection plan that deliberately attaches a new road to an existing one, as
-trunk and spurs does, or a cost model where being off-road is dear enough that
-following a road is worth a detour. It is not a knob that exists and is turned
-off; it is a thing the cost model cannot currently express.
+- The discount is applied at the end of the move cost, but a move over rough
+  ground, a steep slope, water or a river returns its penalty before reaching
+  it. So only the cheapest moves were ever discounted — exactly the ones where
+  a discount matters least.
+- The search's heuristic is straight-line distance in metres, which is
+  admissible only while a move costs at least its length. Making moves free
+  breaks that, so the search may prune the cheaper shared route it was meant
+  to find.
+
+What can be said without rerunning anything is the part that comes from
+reading the code rather than from the sweep: **the shipped cost model has no
+term for an existing road** outside a shared river crossing. Whether adding
+one would produce junctions is now an open question, to be answered by an
+experiment that discounts every move class and uses a heuristic scaled to the
+discount.
 
 ### How many islands get roads
 
@@ -300,7 +335,7 @@ off; it is a thing the cost model cannot currently express.
 | 10 % | 24 | 34 | 12 |
 | 25 % | 49 | 68 | 24 |
 | 50 % (default) | 73 | 101 | 41 |
-| 100 % | 88 | 123 | 54 |
+| 100 % | 88 | 123 | 49 |
 
 Near enough linear to three quarters and then flat, because the largest
 islands are taken first. The default gives up about a fifth of the network the
@@ -313,7 +348,7 @@ world seed:
 
 | preset | selected | roads | length | served | connect rate |
 |---|---|---|---|---|---|
-| the built-in table (today) | 158 | 88 | 58.5 km | 123 | 78 % |
+| the built-in table (the baseline) | 158 | 88 | 58.5 km | 123 | 78 % |
 | bosses only | 19 | 9 | 11.4 km | 12 | 63 % |
 | bosses and half the dungeons | 139 | 77 | 53.6 km | 108 | 78 % |
 | settlements raised to compete | 146 | 67 | 71.5 km | 100 | 68 % |
@@ -373,7 +408,7 @@ differs.
 
 | plan | roads | length | served | networks | builds | planning searches |
 |---|---|---|---|---|---|---|
-| chain/MST by island parity (today) | 88 | 58.5 km | 123 | 49 | 158 | 0 |
+| chain/MST by island parity (the baseline) | 88 | 58.5 km | 123 | 49 | 158 | 0 |
 | tree grown outward with retries (#16) | 90 | 61.9 km | 126 | 50 | 208 | 0 |
 | MST on routed cost | 90 | 57.6 km | 126 | 50 | 90 | 261 |
 | trunk and spurs | 85 | 62.1 km | 116 | 46 | 85 | 261 |
@@ -397,6 +432,28 @@ puts short branches around the start; trunk and spurs lays one road down the
 length of the chain. Which of those is a better road network is a judgement
 about playing the game, not a number, and it is the first thing worth trying
 in game.
+
+## Where this is still wrong
+
+Found in review and not yet fixed. They are listed because a reader deserves
+to know which numbers to distrust.
+
+- **"MST on routed cost" is on routed distance.** The plan sums the length of
+  the path the search returns, not the cost the search accumulated, so it does
+  not optimise the penalties this document says it does. Its rows are a
+  routed-distance result and should be read as that until it is rerun.
+- **"Trunk and spurs" does not attach to the trunk.** It joins each place to
+  the nearest *place* already on the network, not to the nearest point along an
+  existing road, so it does not test the junction behaviour that made it
+  interesting. Its rows describe a nearest-node plan.
+- **The road-sharing experiment is invalid** for the two reasons given above.
+- **"Connected" means several different things** in this document and they are
+  not yet separated: places whose planned connection succeeded, roads joined
+  geometrically within 24 m without regard for elevation or what lies between,
+  and places within reach of a road end. Route length is summed across routes,
+  so a strategy that shares road is penalised for the sharing.
+- **Attempts are matched to places by distance, not identity**, so a place
+  near a real endpoint can inherit its outcome.
 
 ## What this cannot tell you
 
