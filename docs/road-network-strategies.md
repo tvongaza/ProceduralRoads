@@ -311,30 +311,46 @@ junction only happens where one road ends near another.
 
 Added as a lever and swept, it does nothing:
 
-| a step on existing road costs | roads | length | served | networks |
+| a step on existing road costs | roads | distinct road | served | joined groups |
 |---|---|---|---|---|
-| full price (the baseline) | 88 | 58.5 km | 123 | 49 |
-| a quarter | 88 | 58.9 km | 123 | 49 |
-| nothing at all, within 40 m | 88 | 57.8 km | 123 | 49 |
+| full price (the baseline) | 88 | 54.0 km | 123 | 49 |
+| half | 88 | 54.0 km | 123 | 49 |
+| a quarter | 88 | 54.0 km | 122 | 49 |
+| a twentieth | 88 | 53.4 km | 122 | 49 |
 
-**That result does not yet support a conclusion, and this section is held
-open.** Two faults in the experiment were found in review, both real:
+The first version of that sweep was wrong in two ways, both found in review:
+the discount was applied after the early returns for slope, variance, water
+and river, so it never touched the moves whose cost shapes a route; and the
+search's heuristic is straight-line metres, which stops being admissible once
+moves are cheaper than their length, so the search could prune the very routes
+the discount was meant to open. Both are fixed — every move class is
+discounted, and the heuristic is scaled by the discount — and the table above
+is from the repaired experiment.
 
-- The discount is applied at the end of the move cost, but a move over rough
-  ground, a steep slope, water or a river returns its penalty before reaching
-  it. So only the cheapest moves were ever discounted — exactly the ones where
-  a discount matters least.
-- The search's heuristic is straight-line distance in metres, which is
-  admissible only while a move costs at least its length. Making moves free
-  breaks that, so the search may prune the cheaper shared route it was meant
-  to find.
+It still shows almost nothing, and now the reason is clear: **at this baseline
+there is nothing to share.** The quota gives an island two or three roads, and
+two roads that start from the same anchor and end in different directions have
+no common stretch to reuse.
 
-What can be said without rerunning anything is the part that comes from
-reading the code rather than from the sweep: **the shipped cost model has no
-term for an existing road** outside a shared river crossing. Whether adding
-one would produce junctions is now an open question, to be answered by an
-experiment that discounts every move class and uses a heuristic scaled to the
-discount.
+Where there is something to share, it works. With every eligible place
+selected — 2 080 roads instead of 88 — and the discount requiring a step
+within 4 m of a road rather than merely near one:
+
+| every place selected | roads | distinct road | summed over routes | served |
+|---|---|---|---|---|
+| no discount | 2 080 | 383.4 km | 410.7 km | 2 322 |
+| a quarter price within 4 m | 2 084 | 371.5 km | 458.4 km | 2 315 |
+| a twentieth within 4 m | 2 086 | 373.2 km | 489.2 km | 2 315 |
+
+Distinct road falls by 12 km while the summed route length rises by 48: the
+routes really are running along each other. Coverage does not move, and
+neither does the largest joined group.
+
+So a sharing discount is not a way to reach more places. It is a way to build
+the same network out of less road, and only where the network is dense enough
+to have roads worth following. Reaching *junctions* — roads meeting rather
+than running side by side — took a plan that attaches to a road, which is
+what trunk and spurs now does.
 
 ### How many islands get roads
 
