@@ -247,7 +247,7 @@ public static partial class RoadNetworkGenerator
         // it: the shipped policy takes the largest by percentage, PR #16's
         // balances the quota over three world rings.
         List<Island> selectedIslands;
-        if (UseReachable)
+        if (StudyFactors.Islands == IslandSelection.RingBalanced)
         {
             var candidates = BuildIslandCandidates(islands, locations.Value.AllLocations, locations.Value.SpawnPoint);
             var balanced = SelectBalancedIslands(candidates, IslandRoadPercentage);
@@ -346,8 +346,10 @@ public static partial class RoadNetworkGenerator
 
         // PR #16 snaps each end onto ground a road can stand on before
         // searching; the shipped policy searches from the centre as given.
-        Vector2 pathStart = UseReachable ? GetNearestPathablePoint(startCenter, startRadius) : startCenter;
-        Vector2 pathEnd = UseReachable ? GetNearestPathablePoint(endCenter, endRadius) : endCenter;
+        Vector2 pathStart = StudyFactors.SnapEndpointsToPathableGround
+            ? GetNearestPathablePoint(startCenter, startRadius) : startCenter;
+        Vector2 pathEnd = StudyFactors.SnapEndpointsToPathableGround
+            ? GetNearestPathablePoint(endCenter, endRadius) : endCenter;
 
         List<Vector2>? path = m_pathfinder.FindPath(pathStart, pathEnd);
 
@@ -572,7 +574,7 @@ public static partial class RoadNetworkGenerator
 
             // PR #16 drops a place no road could reach before it is ever
             // attempted; the shipped policy attempts it and fails.
-            if (UseReachable && !HasNearbyPathablePoint(new Vector2(loc.position.x, loc.position.z), loc.radius))
+            if (StudyFactors.FilterUnreachableEndpoints && !HasNearbyPathablePoint(new Vector2(loc.position.x, loc.position.z), loc.radius))
                 continue;
 
             result.Add(loc);
@@ -753,19 +755,69 @@ public static partial class RoadNetworkGenerator
     /// <summary>The selected strategy's location quota.</summary>
     private static List<(string name, Vector3 position, float radius)> SelectLocationsForStrategy(
         List<(string name, Vector3 position, float radius)> candidates, int maxCount) =>
-        UseReachable ? SelectLocationsPriorityThenNearest(candidates, maxCount) : SelectLocations(candidates, maxCount);
+        StudyFactors.Quota == LocationQuota.PriorityThenNearest
+            ? SelectLocationsPriorityThenNearest(candidates, maxCount)
+            : SelectLocations(candidates, maxCount);
 
-    /// <summary>The selected strategy's per-island entry.</summary>
+    /// <summary>
+    /// One island, under the factors this run selected: where the network is
+    /// rooted, and how the chosen places are connected, are separate choices,
+    /// so either can be changed on its own and measured.
+    /// </summary>
     private static void GenerateIslandRoadsForStrategy(
         Island island,
         List<(string name, Vector3 position, float radius)> islandLocations,
         Vector3? overrideStart = null,
         float overrideStartRadius = 0f)
     {
-        if (UseReachable)
-            GenerateReachableIslandRoads(island, islandLocations, overrideStart, overrideStartRadius);
+        if (islandLocations.Count == 0)
+            return;
+
+        Vector3 startPos;
+        float startRadius;
+        string startName = "Start";
+        List<(string name, Vector3 position, float radius)> roadLocations = islandLocations;
+
+        if (overrideStart.HasValue)
+        {
+            // The starter island is rooted at the spawn, under every policy.
+            startPos = overrideStart.Value;
+            startRadius = overrideStartRadius;
+        }
+        else if (StudyFactors.Anchor == AnchorMode.HighestPriorityLocation)
+        {
+            (string name, Vector3 position, float radius) anchor = SelectIslandAnchor(island, islandLocations);
+            startPos = anchor.position;
+            startRadius = anchor.radius;
+            startName = anchor.name;
+            roadLocations = islandLocations.Where(location => !SameLocation(location, anchor)).ToList();
+            if (roadLocations.Count == 0)
+            {
+                Log.LogDebug($"Island {island.Id}: skipped single-location island anchored at {anchor.name}");
+                return;
+            }
+        }
         else
-            GenerateIslandRoads(island, islandLocations, overrideStart, overrideStartRadius);
+        {
+            Vector2 edge = island.GetEdgePoint();
+            startPos = new Vector3(edge.x, 0, edge.y);
+            startRadius = 0f;
+        }
+
+        if (StudyFactors.Plan == ConnectionPlan.TreeWithRetries)
+        {
+            Log.LogDebug($"Island {island.Id}: {islandLocations.Count} locations, plan=TreeWithRetries, anchor={startName}");
+            GenerateReachableRoads(startPos, startRadius, roadLocations, startName);
+            return;
+        }
+
+        bool useMST = (island.Id % 2) == 0;
+        Log.LogDebug(
+            $"Island {island.Id}: {islandLocations.Count} locations, plan={(useMST ? "MST" : "Chain")}, anchor={startName}");
+        if (useMST)
+            GenerateMSTRoads(startPos, startRadius, roadLocations);
+        else
+            GenerateChainRoads(startPos, startRadius, roadLocations);
     }
 
     #endregion

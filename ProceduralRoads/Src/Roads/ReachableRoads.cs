@@ -46,13 +46,23 @@ public static partial class RoadNetworkGenerator
     /// <summary>PR #16: how many failed edges one island may spend.</summary>
     private const int MaxFailedEdgeAttemptsPerIsland = 24;
 
+    private static RoadNetworkStrategy m_strategy = RoadNetworkStrategy.Shipped;
+
     /// <summary>
     /// Which policy package this run uses. Shipped unless a study run says
-    /// otherwise; generation never changes it by itself.
+    /// otherwise; generation never changes it by itself. Setting it sets every
+    /// factor in <see cref="StudyFactors"/>, which a run may then override one
+    /// at a time.
     /// </summary>
-    public static RoadNetworkStrategy Strategy = RoadNetworkStrategy.Shipped;
-
-    private static bool UseReachable => Strategy == RoadNetworkStrategy.Reachable;
+    public static RoadNetworkStrategy Strategy
+    {
+        get => m_strategy;
+        set
+        {
+            m_strategy = value;
+            StudyFactors.Apply(value);
+        }
+    }
 
     private sealed class IslandCandidate
     {

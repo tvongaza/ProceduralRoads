@@ -168,11 +168,12 @@ public class CsvWorldTests : IDisposable
         File.WriteAllText(path, "x,z,height,biome,river\n0,0,30,Meadows,0\n8,0,30,Meadows,0\n20,0,30,Meadows,0\n" +
                                 "0,8,30,Meadows,0\n8,8,30,Meadows,0\n20,8,30,Meadows,0\n");
         InvalidDataException error = Assert.Throws<InvalidDataException>(() => new CsvWorld().Load(path));
-        Assert.Contains("not evenly spaced", error.Message);
+        Assert.Contains("is not on the grid", error.Message);
 
         string missing = Path.Combine(m_dir, "holey.csv");
         File.WriteAllText(missing, "x,z,height,biome,river\n0,0,30,Meadows,0\n8,0,30,Meadows,0\n0,8,30,Meadows,0\n");
-        Assert.Throws<InvalidDataException>(() => new CsvWorld().Load(missing));
+        InvalidDataException hole = Assert.Throws<InvalidDataException>(() => new CsvWorld().Load(missing));
+        Assert.Contains("not a full grid", hole.Message);
     }
 
     [Fact]

@@ -77,6 +77,7 @@ internal static class Generate
         // manifest: a run nobody can reproduce is not evidence.
         RoadNetworkGenerator.Reset();
         RoadNetworkGenerator.Strategy = strategy;
+        ApplyFactorOverrides(args);
         RoadNetworkGenerator.RoadWidth = width;
         RoadNetworkGenerator.IslandRoadPercentage = islandPercentage;
         RoadNetworkGenerator.MaxLocationsPerIsland = maxLocations;
@@ -88,6 +89,7 @@ internal static class Generate
         Console.WriteLine($"world:     {world.Describe()}");
         Console.WriteLine($"run:       strategy={strategy} crossings={(crossings ? "on" : "off")} " +
                           $"islands={islandPercentage}% iterations={iterations} maxLocations={maxLocations} width={width}");
+        Console.WriteLine($"factors:   {StudyFactors.Describe()}");
 
         DateTime started = DateTime.UtcNow;
         try
@@ -112,13 +114,73 @@ internal static class Generate
             Manifest(label, strategy, crossings, islandPercentage, iterations, maxLocations, width,
                 gridPath, terrainPaths, locationsPath, world, routes, attempts, sites, elapsed));
 
-        Report(routes, attempts, sites, elapsed, outDir, label);
+        Report(routes, attempts, sites, locations, elapsed, outDir, label);
         return 0;
     }
 
-    private static void Report(IReadOnlyList<RoadRoute> routes, IReadOnlyList<RoadAttempt> attempts,
-        IReadOnlyList<RoadCrossing> sites, TimeSpan elapsed, string outDir, string label)
+    /// <summary>
+    /// One factor at a time: a run may take a package and change exactly one of
+    /// its rules, which is the only way to say what that rule is worth.
+    /// </summary>
+    private static void ApplyFactorOverrides(string[] args)
     {
+        string? anchor = Options.Value(args, "--anchor");
+        if (anchor != null)
+            StudyFactors.Anchor = anchor switch
+            {
+                "edge" => AnchorMode.IslandEdgeCell,
+                "poi" => AnchorMode.HighestPriorityLocation,
+                _ => throw new ArgumentException($"--anchor must be edge or poi, not '{anchor}'"),
+            };
+
+        string? islands = Options.Value(args, "--island-selection");
+        if (islands != null)
+            StudyFactors.Islands = islands switch
+            {
+                "largest" => IslandSelection.LargestFirst,
+                "rings" => IslandSelection.RingBalanced,
+                _ => throw new ArgumentException($"--island-selection must be largest or rings, not '{islands}'"),
+            };
+
+        string? quota = Options.Value(args, "--quota");
+        if (quota != null)
+            StudyFactors.Quota = quota switch
+            {
+                "truncate" => LocationQuota.PriorityTruncated,
+                "nearest" => LocationQuota.PriorityThenNearest,
+                _ => throw new ArgumentException($"--quota must be truncate or nearest, not '{quota}'"),
+            };
+
+        string? plan = Options.Value(args, "--plan");
+        if (plan != null)
+            StudyFactors.Plan = plan switch
+            {
+                "parity" => ConnectionPlan.ChainOrMstByParity,
+                "tree" => ConnectionPlan.TreeWithRetries,
+                _ => throw new ArgumentException($"--plan must be parity or tree, not '{plan}'"),
+            };
+
+        string? filter = Options.Value(args, "--filter-endpoints");
+        if (filter != null)
+            StudyFactors.FilterUnreachableEndpoints = OnOff(filter, "--filter-endpoints");
+
+        string? snap = Options.Value(args, "--snap-endpoints");
+        if (snap != null)
+            StudyFactors.SnapEndpointsToPathableGround = OnOff(snap, "--snap-endpoints");
+    }
+
+    private static bool OnOff(string value, string name) => value switch
+    {
+        "on" => true,
+        "off" => false,
+        _ => throw new ArgumentException($"{name} must be on or off, not '{value}'"),
+    };
+
+    private static void Report(IReadOnlyList<RoadRoute> routes, IReadOnlyList<RoadAttempt> attempts,
+        IReadOnlyList<RoadCrossing> sites, List<Program.Location> places, TimeSpan elapsed,
+        string outDir, string label)
+    {
+        NetworkMetrics.Result metrics = NetworkMetrics.Measure(routes, places);
         int failed = attempts.Count(a => !a.Connected);
         Dictionary<string, int> outcomes = new();
         foreach (RoadAttempt attempt in attempts.Where(a => !a.Connected))
@@ -139,6 +201,8 @@ internal static class Generate
 
         Console.WriteLine();
         Console.WriteLine($"roads:     {routes.Count} built, {routes.Sum(r => r.Length) / 1000f:F1} km");
+        Console.WriteLine($"served:    {metrics.PlacesServed} places reached by a road end, " +
+                          $"in {metrics.Components} separate network(s), largest {metrics.LargestComponentRoutes} roads");
         Console.WriteLine($"attempts:  {attempts.Count}, {failed} failed" +
                           (outcomes.Count > 0
                               ? " (" + string.Join(", ", outcomes.OrderByDescending(o => o.Value).Select(o => $"{o.Key} {o.Value}")) + ")"
@@ -174,6 +238,7 @@ internal static class Generate
             "  ],",
             "  \"config\": {",
             $"    \"Strategy\": \"{strategy}\",",
+            $"    \"Factors\": \"{Json(StudyFactors.Describe())}\",",
             $"    \"RoadWidth\": {width.ToString(CultureInfo.InvariantCulture)},",
             $"    \"IslandRoadPercentage\": {islandPercentage},",
             $"    \"MaxLocationsPerIsland\": {maxLocations},",

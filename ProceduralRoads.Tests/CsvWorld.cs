@@ -136,6 +136,97 @@ public sealed class CsvWorld : WorldGenerator
     /// </summary>
     public CsvWorld Load(string path)
     {
+        // Two passes, on purpose: an 8 m dump of a whole world is over six
+        // million samples, and holding them in a dictionary before laying them
+        // out would cost several times what the finished grid costs. The first
+        // pass learns the grid's shape, the second fills it in place.
+        (int cx, int cz, int ch, int cb, int cr, int cbh, int crw) = Columns(path);
+
+        float minX = float.MaxValue, maxX = float.MinValue;
+        float minZ = float.MaxValue, maxZ = float.MinValue;
+        float secondX = float.MaxValue, secondZ = float.MaxValue;
+        long rows = 0;
+
+        foreach (string[] cells in Rows(path))
+        {
+            float x = Parse(cells[cx]), z = Parse(cells[cz]);
+            if (x < minX) { secondX = minX; minX = x; }
+            else if (x > minX && x < secondX) secondX = x;
+            if (z < minZ) { secondZ = minZ; minZ = z; }
+            else if (z > minZ && z < secondZ) secondZ = z;
+            if (x > maxX) maxX = x;
+            if (z > maxZ) maxZ = z;
+            rows++;
+        }
+
+        if (rows == 0 || secondX == float.MaxValue || secondZ == float.MaxValue)
+            throw new InvalidDataException($"{path}: a grid needs at least two rows and two columns");
+
+        float stepX = secondX - minX, stepZ = secondZ - minZ;
+        if (Mathf.Abs(stepX - stepZ) > stepX * 0.001f)
+            throw new InvalidDataException($"{path}: x and z steps differ ({stepX} and {stepZ})");
+
+        Layer layer = new()
+        {
+            Source = path,
+            Step = stepX,
+            X0 = minX,
+            Z0 = minZ,
+            Nx = Mathf.RoundToInt((maxX - minX) / stepX) + 1,
+            Nz = Mathf.RoundToInt((maxZ - minZ) / stepZ) + 1,
+            HasBaseHeight = cbh >= 0,
+            HasRiverWidth = crw >= 0,
+        };
+
+        if ((long)layer.Nx * layer.Nz != rows)
+            throw new InvalidDataException(
+                $"{path}: {rows} samples do not fill a {layer.Nx}x{layer.Nz} grid; the dump is not a full grid");
+
+        int n = layer.Nx * layer.Nz;
+        layer.Height = new float[n];
+        layer.River = new float[n];
+        layer.RiverWidth = new float[n];
+        layer.BaseHeight = new float[n];
+        layer.Biome = new Heightmap.Biome[n];
+        bool[] seen = new bool[n];
+
+        foreach (string[] cells in Rows(path))
+        {
+            float x = Parse(cells[cx]), z = Parse(cells[cz]);
+            int ix = Index(x, layer.X0, layer.Step, layer.Nx, path, "x");
+            int iz = Index(z, layer.Z0, layer.Step, layer.Nz, path, "z");
+            int i = layer.Index(ix, iz);
+            if (seen[i])
+                throw new InvalidDataException($"{path}: two samples at ({x},{z})");
+            seen[i] = true;
+            layer.Height[i] = Parse(cells[ch]);
+            layer.Biome[i] = ParseBiome(cells[cb], path);
+            layer.River[i] = Parse(cells[cr]);
+            if (crw >= 0) layer.RiverWidth[i] = Parse(cells[crw]);
+            if (cbh >= 0) layer.BaseHeight[i] = Parse(cells[cbh]);
+        }
+
+        m_layers.Add(layer);
+        // Finest first: a window over an island answers before the world map.
+        m_layers.Sort((a, b) => a.Step.CompareTo(b.Step));
+        return this;
+    }
+
+    /// <summary>The index of a coordinate on the grid, or an error naming it.</summary>
+    private static int Index(float value, float origin, float step, int count, string path, string axis)
+    {
+        float exact = (value - origin) / step;
+        int index = Mathf.RoundToInt(exact);
+        if (Mathf.Abs(exact - index) > 0.001f)
+            throw new InvalidDataException(
+                $"{path}: {axis} sample {value} is not on the grid (origin {origin}, step {step})");
+        if (index < 0 || index >= count)
+            throw new InvalidDataException($"{path}: {axis} sample {value} is outside the grid");
+        return index;
+    }
+
+    private static (int x, int z, int height, int biome, int river, int baseHeight, int riverWidth) Columns(string path)
+    {
         using StreamReader reader = new(path);
         string? header = reader.ReadLine()
             ?? throw new InvalidDataException($"{path}: empty dump");
@@ -150,77 +241,21 @@ public sealed class CsvWorld : WorldGenerator
 
         int cx = Column("x"), cz = Column("z"), ch = Column("height");
         int cb = Column("biome"), cr = Column("river");
-        int cbh = Column("base_height"), crw = Column("river_width");
         if (cx < 0 || cz < 0 || ch < 0 || cb < 0 || cr < 0)
             throw new InvalidDataException($"{path}: needs at least x,z,height,biome,river columns, has '{header}'");
+        return (cx, cz, ch, cb, cr, Column("base_height"), Column("river_width"));
+    }
 
-        SortedSet<float> xs = new(), zs = new();
-        Dictionary<(float, float), (float h, Heightmap.Biome b, float r, float rw, float bh)> samples = new();
-
+    private static IEnumerable<string[]> Rows(string path)
+    {
+        using StreamReader reader = new(path);
+        reader.ReadLine();
         string? line;
         while ((line = reader.ReadLine()) != null)
         {
             if (line.Length == 0) continue;
-            string[] cells = line.Split(',');
-            float x = Parse(cells[cx]), z = Parse(cells[cz]);
-            xs.Add(x);
-            zs.Add(z);
-            samples[(x, z)] = (
-                Parse(cells[ch]),
-                ParseBiome(cells[cb], path),
-                Parse(cells[cr]),
-                crw >= 0 ? Parse(cells[crw]) : 0f,
-                cbh >= 0 ? Parse(cells[cbh]) : 0f);
+            yield return line.Split(',');
         }
-
-        if (xs.Count < 2 || zs.Count < 2)
-            throw new InvalidDataException($"{path}: a grid needs at least two rows and two columns");
-
-        Layer layer = new()
-        {
-            Source = path,
-            Nx = xs.Count,
-            Nz = zs.Count,
-            HasBaseHeight = cbh >= 0,
-            HasRiverWidth = crw >= 0,
-        };
-
-        float[] xv = new float[xs.Count], zv = new float[zs.Count];
-        xs.CopyTo(xv);
-        zs.CopyTo(zv);
-        layer.X0 = xv[0];
-        layer.Z0 = zv[0];
-        layer.Step = xv[1] - xv[0];
-
-        EvenlySpaced(xv, layer.Step, path, "x");
-        EvenlySpaced(zv, layer.Step, path, "z");
-
-        int n = layer.Nx * layer.Nz;
-        layer.Height = new float[n];
-        layer.River = new float[n];
-        layer.RiverWidth = new float[n];
-        layer.BaseHeight = new float[n];
-        layer.Biome = new Heightmap.Biome[n];
-
-        for (int iz = 0; iz < layer.Nz; iz++)
-        {
-            for (int ix = 0; ix < layer.Nx; ix++)
-            {
-                if (!samples.TryGetValue((xv[ix], zv[iz]), out var sample))
-                    throw new InvalidDataException($"{path}: no sample at ({xv[ix]},{zv[iz]}); the dump is not a full grid");
-                int i = layer.Index(ix, iz);
-                layer.Height[i] = sample.h;
-                layer.Biome[i] = sample.b;
-                layer.River[i] = sample.r;
-                layer.RiverWidth[i] = sample.rw;
-                layer.BaseHeight[i] = sample.bh;
-            }
-        }
-
-        m_layers.Add(layer);
-        // Finest first: a window over an island answers before the world map.
-        m_layers.Sort((a, b) => a.Step.CompareTo(b.Step));
-        return this;
     }
 
     private static void EvenlySpaced(float[] values, float step, string path, string axis)
