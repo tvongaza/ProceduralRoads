@@ -803,9 +803,13 @@ public static partial class RoadNetworkGenerator
         List<(string name, Vector3 position, float radius)> candidates, int maxCount) =>
         maxCount <= 0
             ? new List<(string name, Vector3 position, float radius)>()
-            : StudyFactors.Quota == LocationQuota.PriorityThenNearest
-                ? SelectLocationsPriorityThenNearest(candidates, maxCount)
-                : SelectLocations(candidates, maxCount);
+            : StudyFactors.Quota switch
+            {
+                LocationQuota.PriorityThenNearest => SelectLocationsPriorityThenNearest(candidates, maxCount),
+                LocationQuota.PriorityThenFarthest => SelectLocationsPriorityThenFarthest(candidates, maxCount),
+                LocationQuota.SeededRandom => SelectLocationsAtRandom(candidates, maxCount),
+                _ => SelectLocations(candidates, maxCount),
+            };
 
     /// <summary>
     /// One island, under the factors this run selected: where the network is

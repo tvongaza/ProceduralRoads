@@ -457,6 +457,30 @@ first, so the last quarter of them are small and add six served places between
 them. The default of 50 % is giving up about a fifth of the network the same
 world would support.
 
+## Where the destinations sit, at the same count
+
+The same number of places per island, chosen four different ways. Only their
+arrangement differs.
+
+| arrangement | roads | length | served | failed attempts | metres per place served |
+|---|---|---|---|---|---|
+| priority, truncated (today) | 88 | 58.5 km | 123 | 70 | 476 |
+| priority, then nearest (#16) | 101 | 43.3 km | **142** | 57 | **305** |
+| priority, then farthest | 77 | 84.1 km | 115 | 81 | 731 |
+| a fixed draw, ignoring priority | 72 | 58.2 km | 109 | 86 | 534 |
+
+Arrangement alone moves coverage from 109 to 142 places and the road spent per
+place from 305 to 731 metres - a wider spread than any connection plan
+produces. Choosing destinations near one another is worth more than choosing
+cleverly between them.
+
+Two readings worth keeping. PR #16's quota is the best of the four on every
+measure here, which is a stronger result for it than the whole-package
+comparison gives. And deliberately spreading destinations - which sounds like
+what a road network wants - is the worst of the four: it buys long roads that
+fail more often, on worlds where the ground between two distant places is
+usually water.
+
 ## Connection plans on identical inputs
 
 The same islands, the same selected places, the same anchor, the same routing

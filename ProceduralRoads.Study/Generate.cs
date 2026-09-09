@@ -155,7 +155,10 @@ internal static class Generate
             {
                 "truncate" => LocationQuota.PriorityTruncated,
                 "nearest" => LocationQuota.PriorityThenNearest,
-                _ => throw new ArgumentException($"--quota must be truncate or nearest, not '{quota}'"),
+                "farthest" => LocationQuota.PriorityThenFarthest,
+                "random" => LocationQuota.SeededRandom,
+                _ => throw new ArgumentException(
+                    $"--quota must be truncate, nearest, farthest or random, not '{quota}'"),
             };
 
         string? plan = Options.Value(args, "--plan");

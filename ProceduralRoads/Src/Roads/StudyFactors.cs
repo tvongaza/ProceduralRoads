@@ -31,6 +31,14 @@ public enum LocationQuota
     /// <summary>PR #16's rule: priority, less a penalty that grows with
     /// distance from what is already chosen.</summary>
     PriorityThenNearest,
+
+    /// <summary>Study: priority, but each further place as far as possible
+    /// from those already chosen - the opposite arrangement, same count.</summary>
+    PriorityThenFarthest,
+
+    /// <summary>Study: a fixed draw from the island's places, ignoring
+    /// priority. The control for both of the above.</summary>
+    SeededRandom,
 }
 
 /// <summary>How many places on an island may have roads.</summary>

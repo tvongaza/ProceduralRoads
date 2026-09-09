@@ -206,6 +206,80 @@ public static partial class RoadNetworkGenerator
         return selected;
     }
 
+    /// <summary>
+    /// The same quota as PR #16's, with the distance term reversed: each
+    /// further place is taken as far as it can be from those already chosen.
+    /// It answers whether the arrangement of destinations matters at all,
+    /// holding their number fixed.
+    /// </summary>
+    private static List<(string name, Vector3 position, float radius)> SelectLocationsPriorityThenFarthest(
+        List<(string name, Vector3 position, float radius)> candidates, int maxCount)
+    {
+        if (candidates.Count <= maxCount)
+            return candidates;
+
+        List<(string name, Vector3 position, float radius)> remaining = candidates
+            .OrderByDescending(location => GetLocationPriority(location.name))
+            .ToList();
+        List<(string name, Vector3 position, float radius)> selected = new() { remaining[0] };
+        remaining.RemoveAt(0);
+
+        while (selected.Count < maxCount && remaining.Count > 0)
+        {
+            int bestIndex = 0;
+            float bestScore = float.MinValue;
+            for (int i = 0; i < remaining.Count; i++)
+            {
+                (string name, Vector3 position, float radius) candidate = remaining[i];
+                float nearest = selected.Min(location => Vector3.Distance(location.position, candidate.position));
+                float score = GetLocationPriority(candidate.name) * 100f
+                              + Mathf.Min(nearest, MaxRoadLinkDistance) * 0.05f;
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestIndex = i;
+                }
+            }
+
+            selected.Add(remaining[bestIndex]);
+            remaining.RemoveAt(bestIndex);
+        }
+
+        return selected;
+    }
+
+    /// <summary>
+    /// A draw from the island's places that ignores priority entirely: the
+    /// control the other two quotas are measured against.
+    /// </summary>
+    private static List<(string name, Vector3 position, float radius)> SelectLocationsAtRandom(
+        List<(string name, Vector3 position, float radius)> candidates, int maxCount)
+    {
+        if (candidates.Count <= maxCount)
+            return candidates;
+
+        int seed = WorldGenerator.instance?.GetSeed() ?? 0;
+        return candidates
+            .OrderBy(c => DrawOrder(seed, c))
+            .Take(maxCount)
+            .ToList();
+    }
+
+    /// <summary>A number fixed by the world and the place, so the draw is the
+    /// same every time that world is generated.</summary>
+    private static uint DrawOrder(int seed, (string name, Vector3 position, float radius) place)
+    {
+        unchecked
+        {
+            uint hash = 2166136261;
+            foreach (char c in place.name)
+                hash = (hash ^ c) * 16777619;
+            hash = (hash ^ (uint)Mathf.RoundToInt(place.position.x)) * 16777619;
+            hash = (hash ^ (uint)Mathf.RoundToInt(place.position.z)) * 16777619;
+            return (hash ^ (uint)seed) * 16777619;
+        }
+    }
+
     /// <summary>The island's highest-priority place, nearest its centre on a
     /// tie: a destination rather than a coast cell.</summary>
     private static (string name, Vector3 position, float radius) SelectIslandAnchor(
