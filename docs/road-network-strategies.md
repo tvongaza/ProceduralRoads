@@ -7,8 +7,8 @@ would change a design decision, it needs a session in game first, and the
 places that most need one are named in section 6. The strategy ranking in
 particular should not be read as settled: the plans differ by a few places
 served, which is inside the distance between this offline model and the game.
-What was raised in review and has since been corrected is listed under "Where
-this is still wrong", so the record of what changed is in the document.
+What was raised in review and has since been corrected is listed in Appendix D,
+so the record of what changed is in the document.
 
 This came out of issue #7 ("Roads seem to be limited to 2-3 per island").
 It reproduces what the issue describes, finds a different cause than the one
@@ -17,10 +17,11 @@ evidence that would settle the choice. Section 1 carries both.
 
 **How to read the authorship of this document.** The measurements, the runs and
 the code are the study's. The prose is written by an AI assistant working from
-those runs, for a human to check and edit. Headings marked with a dagger (†)
-are new or substantially rewritten in the 9 September restructure; everything
-else is earlier text, moved but not reworded. Any claim that would need a
-measurement nobody has taken is written as a block quote beginning
+those runs, for a human to check and edit. A heading marked with a dagger (†)
+contains prose written in the 9 September restructure; a heading without one is
+earlier text, moved but not reworded. The numbered top-level sections and the
+appendix lettering are themselves part of that restructure. Any claim that
+would need a measurement nobody has taken is written as a block quote beginning
 **MEASUREMENT NEEDED**, so the gaps can be found by searching for that phrase
 rather than inferred from silence.
 
@@ -28,9 +29,9 @@ rather than inferred from silence.
 
 **Preliminary. This section is a provisional recommendation, not a decision.**
 
-*Why are networks sparse?* Not the search. On the issue's seed 2 470 places are
-eligible for a road and the per-island quota — `2 + area / 2 km²` — selects 158
-of them. **About 93 % of eligible places never get an attempt at all**;
+*Why are networks sparse?* Not the search. On the issue's seed 2 470 places
+are eligible for a road, and the per-island quota — `2 + area / 2 km²` —
+selects 158 of them. **About 93 % of eligible places never get an attempt at all**;
 pathfinding failure accounts for roughly one per cent, and the iteration budget
 the issue discusses for one place in the world. Raising the search budget
 cannot recover destinations that were never selected.
@@ -76,8 +77,8 @@ The shortlist above is ordered on geometry. Four measurements would turn it
 into a recommendation, and none of them exists yet:
 
 1. **Destination overlap.** Routed MST and POI-to-network report 126 and 123
-   places served against the study baseline's 123. Equal or near-equal counts do not
-   establish that the *same* places were served, or that the same bosses were.
+   places served against the study baseline's 123. Equal or near-equal counts
+   do not establish that the *same* places were served, or the same bosses.
    See the MEASUREMENT NEEDED note in section 4.
 2. **Per-island generation time.** The POI-to-network search costs 84 seconds
    offline against 4 — a **21× increase** in offline runtime. Whether that is
@@ -220,7 +221,7 @@ section 6.
 
 ## 3. Why the current network is sparse
 
-### The quota, and what it excludes
+### The quota, and what it excludes †
 
 Every place in the world, and what became of it, on the **study baseline**
 defined in section 2 — crossings on and every island selected, which is *not*
@@ -234,11 +235,12 @@ what the mod ships with:
 | selected by the island's quota | 158 | 163 | 171 |
 | connected — its planned road was built | 128 | 131 | 141 |
 
-("Connected" here counts places, matched by the place's own identity. The
-tables of levers in section 5 also report *served*, which counts places with a road
-end within reach, and *planned and built*, which counts connections rather
-than places. On the issue's seed those are 128, 123 and 129 — three different
-questions about the same run.)
+("Connected" here counts selected places, matched by the place's own identity.
+The tables of levers in section 5 also report *served*, which counts places
+with a road end within reach, and *planned and built*, which counts every place
+sitting at the end of a road that was built — selected or not. On the issue's
+seed those are 128, 123 and 129: three different questions about the same run,
+reconciled in full in section 2.)
 
 Of the places that are eligible, by what became of them:
 
@@ -418,7 +420,7 @@ without arriving. Past about
 has ranged 1 000 to 100 000 since it was added, so a reported 100 000 was
 never clamped.
 
-### Do roads cluster at the edges?
+### Do roads cluster at the edges? †
 
 That can mean the shoreline of an island or the outer parts of the world, so
 both were measured for all 57 862 centreline points — against the land itself,
@@ -542,15 +544,7 @@ at another place. The second change is visible in the roads themselves — 83
 spurs attempted where there were none before, 30 built, with a median length
 of 161 m against 459 m for a place-to-place road.
 
-![one island under four connection plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/island-sheet.png)
-
-The same island under four plans, at identical bounds and scale. The shipped
-plan puts short branches around the start; trunk and spurs lays one road down
-the length of the chain. Which of those is a better road network is a judgement
-about playing the game, not a number, and it is the first thing worth trying
-in game.
-
-### What each plan does
+### What each plan does †
 
 - **MST on the search's own cost** plans on what the pathfinder charges rather
   than on straight-line distance, so a strait or a mountain counts for what it
@@ -612,14 +606,14 @@ than the study baseline's, not lower. What changes is that the work happens
 before a road is committed rather than after one fails. "No failed builds" is a
 tidier log, not a saving.
 
-### Can a plan see water?
+### Can a plan see water? †
 
 Yes, and it already does. The routed MST prices every candidate edge by
 *running the pathfinder on it* before choosing, so an edge across a strait
 either costs what the detour really costs or has no cost at all and is never
 chosen. The result is the cleanest line in the table: **no failed attempts at
-all** — 90 planned, 90 built — three more places served than the study baseline, and
-the road running alongside other road nearly halved.
+all** — 90 planned, 90 built — three more places served than the study
+baseline, and the road running alongside other road nearly halved.
 
 It is not free — see "Pricing, branches and committed roads" above: the 261
 planning searches are work moved earlier, not work saved.
@@ -659,7 +653,7 @@ Three plans here make junctions on purpose, and they are not equal:
 - **The place reaching for the network** — below — gets 28 tees *and* 0.1 km
   alongside, at the study baseline's coverage.
 
-### Can a place reach for the network, instead of the network reaching for it?
+### Can a place reach for the network, instead of the network reaching for it? †
 
 This is the one that works, and it is a different algorithm rather than a
 different plan.
@@ -720,7 +714,7 @@ places, and it does not say the reverse search served the same bosses.
 > it exists, a plan that serves the same count while swapping a boss for a
 > crypt would look identical in every table in this document.
 
-### Can a failed link fall back to something nearer?
+### Can a failed link fall back to something nearer? †
 
 Measured, and the answer is no — but the reason is worth more than the answer.
 
@@ -755,6 +749,42 @@ A fallback is worth having only if the thing it falls back to is somewhere the
 first search could not reach. The reverse search is that idea done properly:
 rather than trying a second guessed destination after the first guess fails, it
 never guesses.
+
+### The maps that go with the table †
+
+![one island under four connection plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/island-sheet.png)
+
+The same island under four plans, at identical bounds and scale. The shipped
+plan puts short branches around the start; trunk and spurs lays one road down
+the length of the chain. Which of those is a better road network is a judgement
+about playing the game, not a number, and it is the first thing worth trying
+in game.
+
+What this sheet does not show is the plan the table above recommends. Three
+figures are missing, and each of them is a figure a decision would turn on:
+
+> **MEASUREMENT NEEDED — one island, four planners, one legend.** Render the
+> *same* island under the study baseline, routed-cost MST, trunk-and-spurs and
+> POI-to-network search, at identical bounds, with the same selected places,
+> the same colours and one shared legend. Annotate each panel with places
+> served, joined groups, tee junctions, distinct road length and runtime. The
+> existing four-panel sheet has no POI-to-network panel at all, which is the
+> newest result and the one being advanced — its table has no picture beside
+> it. The renderer already produces single-plan island views
+> (`island-parity.png`, `island-trunk.png`, `island-routed-mst.png`); a reverse
+> panel and a shared legend are what is missing.
+
+> **MEASUREMENT NEEDED — three contrasting islands.** The six-island sheet in
+> section 3 is six islands under one configuration. What the planner comparison
+> needs is the opposite: three islands chosen for their terrain — one dense and
+> flat, one steep, one water-fragmented — each under all four planners. A
+> planner that wins on one island shape and loses on another is invisible in
+> every table in this document.
+
+> **MEASUREMENT NEEDED — a trade-off chart.** One compact chart plotting the
+> three quantities the choice actually turns on, per planner: places served,
+> distinct road length, and computation time. Every number it needs is already
+> in the consolidated table and the run manifests; nobody has drawn it.
 
 ## 5. Gameplay policy: selection, planning, routing
 
@@ -812,11 +842,11 @@ numbers can answer.
 | a fixed draw, ignoring priority | 72 | 58.2 km | 109 | 534 |
 
 Arrangement alone moves coverage from 109 to 142 places — a wider spread than
-any routing change in section 4 produces. Choosing destinations near one another is
-worth more than choosing cleverly between them. Deliberately spreading them,
+any routing change in section 4 produces. Choosing destinations near one
+another is worth more than choosing cleverly between them. Deliberately spreading them,
 which sounds like what a road network wants, is the worst of the four.
 
-### What the network is for
+### What the network is for †
 
 Three presets, the rest drawn per place from the world seed. **"Bosses
 required" means every boss altar is always selected — it does not mean every
@@ -987,8 +1017,8 @@ cannot separate a planner's behaviour from its terrain.
 | 4 | **Journey detours** | time a handful of journeys along the road against the same journey overland | a road is worth taking; a detour a player would refuse is a planner failure the coverage numbers cannot see |
 | 5 | **Per-island generation time** | regenerate one island at a time under each candidate planner | a number that decides whether the 21× offline cost of POI-to-network search is acceptable in game |
 
-> **MEASUREMENT NEEDED — per-island generation time.** The study reports whole-world
-> offline runtimes only (3.9 s for the study baseline, 83.8 s for the
+> **MEASUREMENT NEEDED — per-island generation time.** The study reports
+> whole-world offline runtimes only (3.9 s for the study baseline, 83.8 s for the
 > POI-to-network run; both in the published manifests). No per-island timing
 > exists, in game or offline. Until it does, no claim can be made about what
 > the reverse search costs the single-island regeneration path.
@@ -1064,7 +1094,7 @@ crawling north over open ocean. The offline harness answers points past the
 world's rim with the rim's own values, so the box's exact northern extent is
 an artefact of the dump — that the search goes out there at all is not.
 
-### Why every failure on one run failed
+### Why every failure on one run failed †
 
 Three examples are three examples. This is the whole set: the 27 failed
 attempts of the run anchored on places, which is the run with no stillborn
@@ -1225,6 +1255,42 @@ all. This one is in the base code rather than in the crossings work.
 
 ## Appendix D. Review history: where this is still wrong
 
+### Found in the 9 September restructure, and not yet resolved †
+
+These are discrepancies between this document and the data published beside it.
+None of them is fixed by the restructure; each needs a person to decide what the
+right number is.
+
+- **"261 to 299 searches" has no run behind it.** Every published manifest that
+  prices connections — `v2-routed-mst`, `v2-trunk`, `v2-hub`, and all seven
+  `q4-*` plan runs — reports exactly 261 routing probes. The 299 figure appears
+  only in the prose. Either a run is missing from the published set or the
+  number is wrong; the tables in section 4 report 261.
+- **Two different baselines are called "4 seconds".** The `check` run reports
+  3.9 s and is the study baseline everywhere in this document. The plan
+  comparison's own control, `q4-baseline`, is the same configuration and reports
+  20.7 s. The 21× runtime claim for the reverse search compares 83.8 s against
+  3.9 s; against its own control it is about 4×. Which comparison is the honest
+  one depends on what the extra 17 seconds in `q4-baseline` are — most likely
+  the junction and parallel-road metrics, which the earlier run did not compute
+  — and that has not been established.
+- **The reverse plan logs a successful connection twice.** Its 157 attempts are
+  116 connections; see "what an attempt is, per plan" in section 4. The `roads`
+  and `failed` columns are unaffected. No other plan in the study does this.
+- **The iteration sweep runs past the setting's own range.** The plateau table
+  reports a 120 000 row while the same section says the setting has ranged
+  1 000 to 100 000 since it was added. The 120 000 row also reproduces the study
+  baseline (which runs at 100 000) exactly: 88 roads, 1 budget-spent, 69
+  frontier-exhausted. It should either be relabelled 100 000 or shown alongside
+  the 100 000 row.
+- **The screenshot index disagrees with this document about one chart.**
+  `chart-centre.png` is captioned "how far roads sit from their island's centre"
+  in `validation-results/screenshots/study-2026-09-09/README.md` and "distance
+  from the world's centre" here. The text of section 3 is about the world's
+  centre.
+
+### Raised in the first review, fixed since
+
 Raised in review. Fixed since, and named here so the record is plain:
 
 - The MST compared route length, not the cost the search accumulated. It now
@@ -1246,7 +1312,7 @@ Raised in review. Fixed since, and named here so the record is plain:
   out by what they are — boss, dungeon, settlement, ruin — with every required
   destination the generator did not reach named.
 
-Still true of the numbers here, and not fixed:
+### Still true of the numbers here, and not fixed
 
 - **The offline search can walk off the edge of the world.** Nothing bounds
   the pathfinder to the world disc, and a dump answers a point past the rim
