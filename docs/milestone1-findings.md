@@ -231,6 +231,53 @@ mainly in how much they connect but in what they build — long cross-country
 roads against short local links — and that is a judgement about the game, not
 a number. It is the first thing to put in front of a player.
 
+## Connection plans on identical inputs
+
+The same islands, the same selected places, the same anchor, the same routing
+rules and the same per-attempt budget, crossings on: only the plan differs.
+"Served" counts places a road end reaches, "networks" how many separate pieces
+the roads form, and "largest" how many roads are in the biggest one.
+
+| world | plan | roads | length | served | networks | largest | planning probes |
+|---|---|---|---|---|---|---|---|
+| issue #7 seed | chain/MST by parity | 88 | 58.5 km | 123 | 54 | 5 | 0 |
+| | tree with retries | 90 | 61.9 km | 126 | 56 | 5 | 0 |
+| | MST on routed cost | 90 | 57.6 km | 126 | 56 | 5 | 261 |
+| | trunk and spurs | 85 | 62.1 km | 116 | 47 | 5 | 261 |
+| | hub and spoke | 88 | 58.2 km | 123 | 56 | 4 | 261 |
+| world B | chain/MST by parity | 93 | 71.0 km | 134 | 62 | 6 | 0 |
+| | tree with retries | 93 | 70.0 km | 136 | 64 | 5 | 0 |
+| | MST on routed cost | 93 | 64.9 km | 136 | 65 | 6 | 283 |
+| | trunk and spurs | 86 | 71.1 km | 129 | 50 | 6 | 283 |
+| | hub and spoke | 90 | 64.0 km | 134 | 57 | 5 | 283 |
+| world C | chain/MST by parity | 96 | 55.5 km | 141 | 72 | 4 | 0 |
+| | tree with retries | 95 | 56.6 km | 139 | 69 | 4 | 0 |
+| | MST on routed cost | 94 | 55.3 km | 136 | 70 | 4 | 299 |
+| | trunk and spurs | 81 | 56.4 km | 118 | 53 | 4 | 299 |
+| | hub and spoke | 94 | 63.2 km | 138 | 62 | 4 | 299 |
+
+The planning probes column is there so the comparison stays honest. The three
+plans that price a connection before building it have no failed builds, but
+that is not a saving: they run 261 to 299 searches to find out, on top of the
+builds. A plan that probes every pair is not cheaper than one that tries and
+fails, it just fails earlier and more quietly.
+
+What the numbers say:
+
+- **MST on routed cost** reaches as much as any other plan for the least
+  road - 58 km against 71 on world B - because it plans on what the
+  pathfinder charges rather than on straight-line distance, and never
+  commits to an edge it has not already priced.
+- **Trunk and spurs** produces the fewest separate networks on every world,
+  which is the "one long road with junctions" shape the issue asks for, but
+  it reaches about a tenth fewer places. It trades reach for cohesion.
+- **Hub and spoke** is close to the shipped plan everywhere.
+
+And the finding that dwarfs all of them: the largest connected network is
+**four to six roads** whatever the plan. These worlds are archipelagos, roads
+do not cross open sea, and no connection plan can change that. The differences
+between plans are small beside the shape of the world they are drawn on.
+
 ## Not reproduced
 
 The issue reports 80 islands on this seed; detection finds 67 with the same
