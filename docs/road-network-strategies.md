@@ -47,6 +47,22 @@ painting step assumed they never did.
 
 Fixed, with tests for both shapes, in the bridges branch.
 
+## And a second one
+
+Running the same world twice found another. The second run reported 78 roads
+and 40 787 metres, but the spatial grid held 115 202 points for a network of
+40 970, and the 24 river crossings it reported were the previous run's -
+nineteen of them bridges, in a run with bridges switched off.
+
+The reset before a forced regeneration asks whether roads were *generated*
+this session. A world loaded from a save has roads without having generated
+them, so the reset was skipped and the new network was laid on top of the old
+one. Anyone regenerating roads in an existing world gets both networks in the
+terrain, and the old network's bridges keep their sites.
+
+Fixed the same way: both guards now ask whether the world has a network at
+all. This one is in the base code rather than in the crossings work.
+
 ## What the issue is actually about
 
 Every place in the world, and what became of it, on the shipped settings with
@@ -83,6 +99,26 @@ arithmetic rather than a failure.
 100 moves the issue's seed from 88 roads to 91. The ceiling almost never
 binds; the area formula does.
 
+### And the quota is spent on dungeons
+
+Of the 2 470 eligible places, which ones win the 158 slots:
+
+| priority | offered | selected | share |
+|---|---|---|---|
+| 100 (bosses) | 19 | 19 | 100 % |
+| 80 (crypts, sunken crypts, mountain caves, anything registered through the API) | 517 | 106 | 20.5 % |
+| 75 (Mistlands town entrances, older crypts) | 421 | 24 | 5.7 % |
+| 70 and below | 1 513 | 9 | 0.6 % |
+
+The network connects bosses and dungeons and almost nothing else. Villages,
+farms, towers, ruins - the great majority of what is on a map - share nine
+road ends across a whole world, and no setting changes that, because they are
+never attempted.
+
+It is also why registering a location through the API matters more than it
+looks: a registered location gets priority 80, straight into the band that
+wins slots.
+
 ## The iteration plateau
 
 The issue reports diminishing returns around 30 000 iterations. That
@@ -104,6 +140,42 @@ and report that the destination cannot be reached over land at all. Past about
 has ranged 1 000 to 100 000 since it was added, so a reported 100 000 was
 never clamped.
 
+## Do roads cluster at the edges?
+
+That can mean the shoreline of an island or the outer parts of the world, so
+both were measured for all 57 862 centreline points - against the land itself,
+because most land in these worlds is near a shore and roads near shores prove
+nothing on their own.
+
+| | road points | the land itself |
+|---|---|---|
+| distance to open water, median | 97 m | 74 m |
+| distance from the world's centre, median | 5 146 m | 7 037 m |
+
+Neither holds. Roads sit *further* from open water than the land does and
+*nearer* the world's centre, and connected places are further inland than
+unconnected ones. The same is true inside every biome taken separately.
+
+What roads do favour is swamp:
+
+| biome | share of road | share of land |
+|---|---|---|
+| Swamp | 35.1 % | 7.3 % |
+| BlackForest | 24.1 % | 13.9 % |
+| Mistlands | 13.4 % | 29.2 % |
+| DeepNorth | 1.2 % | 11.0 % |
+
+A third of the network is in swamp, which is a fourteenth of the land, and
+18.8 % of eligible swamp places get a road against 2.4 % in the Mistlands. The
+pathfinder is following its cost model - swamp is flat and waded for a modest
+penalty, the Mistlands and the mountains are steep and dear - and the result
+is a network that runs through the biome players like least to travel. That is
+a gameplay question rather than a routing one, and it may be the strongest
+argument here for changing the cost model rather than the routing.
+
+It is also why roads look like they run into the sea on a map: a swamp sits at
+and below the waterline, and a road wading one is doing what it was told to.
+
 ## What a player actually gets
 
 The biggest island on the issue's seed: 26.7 km², 1 936 places on it, 426 of
@@ -118,6 +190,92 @@ tried below.
 That is the ceiling worth knowing about before tuning anything: these worlds
 are archipelagos, roads do not cross open sea, and no connection plan changes
 that.
+
+## The levers, and what each is worth
+
+Everything below is one change at a time from what ships today, on the issue's
+seed, with crossings on. "Served" counts places a road end reaches.
+
+### How many places each island may have
+
+| places per island | roads | length | served | attempts failing | metres per place served |
+|---|---|---|---|---|---|
+| `2 + area/2 km²` (today) | 88 | 58.5 km | 123 | 44 % | 476 |
+| 8 | 258 | 99.4 km | 319 | 28 % | 312 |
+| 16 | 466 | 154.1 km | 557 | 25 % | 277 |
+| 32 | 838 | 224.0 km | 959 | 20 % | 234 |
+| every eligible place | 2 080 | 410.7 km | 2 322 | 16 % | 177 |
+
+Two things run against intuition here. The quota is not protecting generation
+from failure - it sits where failure is *likeliest*, because the places added
+later are near ones already connected and short roads over known-good ground
+are the easiest to build. And it is the least efficient point on the curve for
+road spent per place reached: 476 metres today against 177 with everything
+selected.
+
+What it buys is a very different world - 411 km of road instead of 58 - and
+about twenty-five seconds of generation offline instead of three. Whether a
+land webbed with roads is the game anyone wants is not a question these
+numbers can answer.
+
+### Where those places sit, at the same count
+
+| arrangement | roads | length | served | metres per place |
+|---|---|---|---|---|
+| priority, truncated (today) | 88 | 58.5 km | 123 | 476 |
+| priority, then nearest (PR #16) | 101 | 43.3 km | **142** | **305** |
+| priority, then farthest | 77 | 84.1 km | 115 | 731 |
+| a fixed draw, ignoring priority | 72 | 58.2 km | 109 | 534 |
+
+Arrangement alone moves coverage from 109 to 142 places - a wider spread than
+any routing change below produces. Choosing destinations near one another is
+worth more than choosing cleverly between them. Deliberately spreading them,
+which sounds like what a road network wants, is the worst of the four.
+
+### Fords and bridges
+
+| | roads | length | served |
+|---|---|---|---|
+| neither | 47 | 20.9 km | 72 |
+| fords only | 78 | 42.8 km | 111 |
+| bridges only | 57 | 30.6 km | 86 |
+| both | 88 | 58.5 km | 123 |
+
+Crossings are worth more than any other single lever measured: 72 places
+served becomes 123. The split needs care, though - the fords flag both jumps
+rivers and wades swamps, and only the wading can be measured offline. How much
+of that 39 is river fords needs the game.
+
+### How many islands get roads
+
+| islands selected | roads | served | networks |
+|---|---|---|---|
+| 10 % | 24 | 34 | 12 |
+| 25 % | 49 | 68 | 24 |
+| 50 % (default) | 73 | 101 | 41 |
+| 100 % | 88 | 123 | 54 |
+
+Near enough linear to three quarters and then flat, because the largest
+islands are taken first. The default gives up about a fifth of the network the
+same world would support.
+
+### What the network is for
+
+Three presets, bosses required in each, the rest drawn per place from the
+world seed:
+
+| preset | selected | roads | length | served | connect rate |
+|---|---|---|---|---|---|
+| the built-in table (today) | 158 | 88 | 58.5 km | 123 | 78 % |
+| bosses only | 19 | 9 | 11.4 km | 12 | 63 % |
+| bosses and half the dungeons | 139 | 77 | 53.6 km | 108 | 78 % |
+| settlements raised to compete | 146 | 67 | 71.5 km | 100 | 68 % |
+
+Bosses alone are barely a network: nine roads in a world, because most bosses
+are alone on their island and a road needs two ends. The last row is the
+interesting one - aiming at where people live selects about as many places,
+connects ten points fewer of them, and spends more road doing it, because
+settlements sit in scattered awkward spots. Worth wanting, but not free.
 
 ## Options
 
