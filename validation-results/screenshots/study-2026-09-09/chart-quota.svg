@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="360" viewBox="0 0 720 360" font-family="sans-serif">
+<rect width="720" height="360" fill="#ffffff"/>
+<text x="8" y="20" font-size="14" fill="#1f2933">Places served against road built, by per-island quota</text>
+<line x1="70" y1="308" x2="696" y2="308" stroke="#1f2933" stroke-width="1"/>
+<line x1="70" y1="308" x2="70" y2="34" stroke="#1f2933" stroke-width="1"/>
+<text x="383.0" y="348" font-size="11" fill="#1f2933" text-anchor="middle">distinct road built (km)</text>
+<text x="14" y="171.0" font-size="11" fill="#1f2933" text-anchor="middle" transform="rotate(-90 14 171.0)">places served</text>
+<polyline points="151.1,295.4 157.9,292.1 207.7,275.3 283.5,250.8 380.4,209.6 487.5,160.9 639.1,69.7" fill="none" stroke="#d7dee5" stroke-width="1.5"/>
+<circle cx="151.1" cy="295.4" r="5" fill="#2f6f8f"/>
+<text x="151.1" y="285.4" font-size="10" fill="#1f2933" text-anchor="middle">formula</text>
+<circle cx="157.9" cy="292.1" r="5" fill="#2f6f8f"/>
+<text x="157.9" y="282.1" font-size="10" fill="#1f2933" text-anchor="middle">4</text>
+<circle cx="207.7" cy="275.3" r="5" fill="#2f6f8f"/>
+<text x="207.7" y="265.3" font-size="10" fill="#1f2933" text-anchor="middle">8</text>
+<circle cx="283.5" cy="250.8" r="5" fill="#2f6f8f"/>
+<text x="283.5" y="240.8" font-size="10" fill="#1f2933" text-anchor="middle">16</text>
+<circle cx="380.4" cy="209.6" r="5" fill="#2f6f8f"/>
+<text x="380.4" y="199.6" font-size="10" fill="#1f2933" text-anchor="middle">32</text>
+<circle cx="487.5" cy="160.9" r="5" fill="#2f6f8f"/>
+<text x="487.5" y="150.9" font-size="10" fill="#1f2933" text-anchor="middle">64</text>
+<circle cx="639.1" cy="69.7" r="5" fill="#2f6f8f"/>
+<text x="639.1" y="59.7" font-size="10" fill="#1f2933" text-anchor="middle">all</text>
+<line x1="70" y1="239.5" x2="696" y2="239.5" stroke="#d7dee5"/>
+<text x="64" y="243.5" font-size="10" fill="#1f2933" text-anchor="end">668</text>
+<text x="226.5" y="324" font-size="10" fill="#1f2933" text-anchor="middle">113</text>
+<line x1="70" y1="171.0" x2="696" y2="171.0" stroke="#d7dee5"/>
+<text x="64" y="175.0" font-size="10" fill="#1f2933" text-anchor="end">1,335</text>
+<text x="383.0" y="324" font-size="10" fill="#1f2933" text-anchor="middle">226</text>
+<line x1="70" y1="102.5" x2="696" y2="102.5" stroke="#d7dee5"/>
+<text x="64" y="106.5" font-size="10" fill="#1f2933" text-anchor="end">2,003</text>
+<text x="539.5" y="324" font-size="10" fill="#1f2933" text-anchor="middle">339</text>
+<line x1="70" y1="34.0" x2="696" y2="34.0" stroke="#d7dee5"/>
+<text x="64" y="38.0" font-size="10" fill="#1f2933" text-anchor="end">2,670</text>
+<text x="696.0" y="324" font-size="10" fill="#1f2933" text-anchor="middle">452</text>
+</svg>

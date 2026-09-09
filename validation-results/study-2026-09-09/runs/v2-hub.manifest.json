@@ -1,0 +1,44 @@
+{
+  "runId": "624a3ed6f1",
+  "label": "v2-hub",
+  "studyCommit": "b9d9a17",
+  "generatedUtc": "2026-09-09T06:07:11Z",
+  "terrain": "approx",
+  "islandGrid": "Issue7.base128.csv",
+  "islandGridSha": "23f34ab6f0dacad0",
+  "locationsSha": "80d9e56156b6b754",
+  "terrainSha": ["c1e0add2864b8518"],
+  "terrainDumps": ["Issue7.cells8.csv"],
+  "locations": "Issue7.locations.csv",
+  "approximations": [
+    "off-grid queries are bilinear between samples (terrain variance ring, crossing depth)",
+    "biome blending uses the dumped height for every biome"
+  ],
+  "config": {
+    "Strategy": "Shipped",
+    "Factors": "anchor=IslandEdgeCell, islands=LargestFirst, sharing=1, places=AreaFormula, quota=PriorityTruncated, plan=HubAndSpoke, filterEndpoints=False, snapEndpoints=False",
+    "Places": "shipped: the built-in priority table decides",
+    "RoadWidth": 4,
+    "IslandRoadPercentage": 100,
+    "MaxLocationsPerIsland": 12,
+    "PathfindingMaxIterations": 100000,
+    "FordsEnabled": true,
+    "BridgesEnabled": true
+  },
+  "result": {
+    "routeCount": 89,
+    "summedRouteLengthMeters": 58396,
+    "uniqueRoadLengthMeters": 54723,
+    "plannedConnections": 131,
+    "placesServed": 126,
+    "joinedGroups": 51,
+    "attemptCount": 89,
+    "failedAttemptCount": 0,
+    "routingProbes": 261,
+    "routingProbesWithoutRoute": 118,
+    "crossingCount": 13,
+    "bridgeCount": 12,
+    "roadNetworkVersion": 254309967,
+    "seconds": 7.9
+  }
+}

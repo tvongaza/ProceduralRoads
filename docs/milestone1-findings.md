@@ -164,7 +164,7 @@ of the real endpoint. The connected and quota rows are exact.)
 Shipped strategy, crossings on, every island, issue #7 seed, on exact 8 m
 terrain. Failures are split by the pathfinder's own two reasons.
 
-| iterations | roads | budget exhausted | frontier exhausted |
+| iterations | roads | budget spent | frontier exhausted |
 |---|---|---|---|
 | 5 000 | 62 | 48 | 48 |
 | 10 000 | 74 | 33 | 51 |
@@ -257,7 +257,7 @@ fixed, shipped plan, crossings on, issue #7 seed:
 
 | places per island | roads | length | served | networks | attempts | failed | metres per place served |
 |---|---|---|---|---|---|---|---|
-| `2 + area/2 km²` (today) | 88 | 58.5 km | 123 | 54 | 158 | 44 % | 476 |
+| `2 + area/2 km²` (the baseline below) | 88 | 58.5 km | 123 | 49 | 158 | 44 % | 476 |
 | 4 | 117 | 63.4 km | 155 | 67 | 190 | 38 % | 409 |
 | 8 | 258 | 99.4 km | 319 | 127 | 356 | 28 % | 312 |
 | 16 | 466 | 154.1 km | 557 | 200 | 620 | 25 % | 277 |
@@ -315,8 +315,11 @@ ground they are drawn on.
 | distance to open water, median | 97 m | 74 m |
 | distance from the world's centre, median | 5 146 m | 7 037 m |
 
-**Neither reading holds.** Roads sit further from open water than the land
-does, and nearer the world's centre than the land is. The same holds inside
+**Neither reading is supported by these aggregates.** Roads sit further from
+open water than the land does, and nearer the world's centre than the land is.
+These are medians over the whole world, and a median can hide clustering on
+one island; the per-island distributions are published beside this document
+and no island in them reverses the direction. The same holds inside
 every biome separately, and connected places are further inland than
 unconnected ones (median 111 m against 68 m).
 
@@ -344,8 +347,9 @@ A third of the network is in swamp, which is a fourteenth of the land. The
 pathfinder is doing what its cost model tells it: swamp is flat, and the mod
 wades it for a modest penalty, while the Mistlands and the mountains are steep
 and dear. It is also what makes roads look like they run through water on a
-map, and it is a gameplay question rather than a routing one — a third of the
-network runs through the biome players like least to travel.
+map. Whether a third of a network in one biome is desirable is a gameplay
+question this study cannot answer; it is raised because it is a design choice
+worth making deliberately rather than inheriting from a cost constant.
 
 Connected places by biome tell the same story from the other side: 18.8 % of
 eligible swamp places get a road, against 2.4 % in the Mistlands and 1.7 % in
@@ -488,7 +492,7 @@ unknown until it is run in game.
 | 25 % | 49 | 35.4 km | 68 | 24 | 34 of 83 |
 | 50 % | 73 | 52.6 km | 101 | 41 | 53 of 126 |
 | 75 % | 84 | 57.0 km | 117 | 51 | 63 of 147 |
-| 100 % | 88 | 58.5 km | 123 | 54 | 70 of 158 |
+| 100 % | 88 | 58.5 km | 123 | 49 | 70 of 158 |
 
 Near enough linear to three quarters, then flat: the largest islands are taken
 first, so the last quarter of them are small and add six served places between
@@ -529,23 +533,48 @@ one road happens to end near another.
 
 Adding the discount as a lever changes almost nothing:
 
-| a step on existing road costs | roads | length | served | networks |
+The first sweep of this was invalid, in two ways found in review: the discount
+was applied after the early returns for slope, variance, water and river, so
+it never reached the moves whose cost shapes a route; and the heuristic is
+straight-line metres, which stops being admissible once a move is cheaper than
+its length, so the search could prune the routes the discount was meant to
+open. Both are fixed. What follows is the repaired experiment.
+
+At the study baseline, still almost nothing:
+
+| a step on existing road costs | roads | distinct road | served | joined groups |
 |---|---|---|---|---|
-| full price (today) | 88 | 58.5 km | 123 | 49 |
-| a quarter | 88 | 58.9 km | 123 | 49 |
-| nothing at all, within 40 m | 88 | 57.8 km | 123 | 49 |
+| full price | 88 | 54.0 km | 123 | 49 |
+| half | 88 | 54.0 km | 123 | 49 |
+| a quarter | 88 | 54.0 km | 122 | 49 |
+| a twentieth | 88 | 53.4 km | 122 | 49 |
 
-Even a free road moves nothing, and the reason is the scale of the cost model
-rather than the idea. An eight-metre step over ordinary ground costs about
-eight; the penalties that shape a route are a thousand for rough ground, two
-thousand for a steep slope, a hundred thousand for water. Discounting the part
-that is already almost free cannot pull a route sideways, because the sideways
-move costs more than the whole saving.
+The reason is not the cost model this time — it is that an island with two or
+three roads has nothing to share. Two roads leaving the same anchor in
+different directions have no common stretch to reuse.
 
-So junctions cannot be bought with a discount here. They would need either a
-connection plan that deliberately attaches a new road to an existing one -
-which is what trunk and spurs does - or a cost model where travelling off-road
-is dear enough that following a road is worth a detour.
+Where there is something to share, it works. Every eligible place selected, so
+2 080 roads instead of 88, and the discount asking for a step within 4 m of a
+road rather than merely near one:
+
+| every place selected | roads | distinct road | summed over routes | served |
+|---|---|---|---|---|
+| no discount | 2 080 | 383.4 km | 410.7 km | 2 322 |
+| a quarter within 4 m | 2 084 | 371.5 km | 458.4 km | 2 315 |
+| a twentieth within 4 m | 2 086 | 373.2 km | 489.2 km | 2 315 |
+
+Distinct road falls 12 km while the summed route length rises 48: the routes
+are running along one another, which is what sharing looks like. Coverage does
+not move and neither does the largest joined group.
+
+A reach of 12 m instead of 4 made routes longer without sharing more — a
+proximity discount rewards running *beside* a road, not on it, which is worth
+knowing before anyone implements one.
+
+So a discount buys less road for the same network, not more places, and only
+where the network is dense. Junctions - roads meeting rather than running
+alongside - needed a plan that attaches to a road, which is what trunk and
+spurs now does.
 
 ## How often does one island hold more than one network?
 
@@ -570,11 +599,16 @@ the roads form, and "largest" how many roads are in the biggest one.
 
 | world | plan | roads | length | served | networks | largest | planning probes |
 |---|---|---|---|---|---|---|---|
-| issue #7 seed | chain/MST by parity | 88 | 58.5 km | 123 | 49 | 5 | 0 |
-| | tree with retries | 90 | 61.9 km | 126 | 50 | 5 | 0 |
-| | MST on routed cost | 90 | 57.6 km | 126 | 50 | 5 | 261 |
-| | trunk and spurs | 85 | 62.1 km | 116 | 46 | 5 | 261 |
-| | hub and spoke | 88 | 58.2 km | 123 | 51 | 4 | 261 |
+| issue #7 seed | chain/MST by parity | 88 | 54.0 km | 123 | 49 | 5 | 0 |
+| | tree with retries | 90 | 57.2 km | 126 | 50 | 5 | 0 |
+| | MST on the search's cost | 90 | 56.6 km | 126 | 50 | 5 | 261 |
+| | trunk, spurs onto the road | 82 | 52.9 km | 118 | 46 | 6 | 261 |
+| | hub and spoke | 89 | 54.7 km | 126 | 51 | 5 | 261 |
+
+(Lengths here are distinct road on the ground. The two corrected plans were
+rerun: the MST compares the search's accumulated cost, and a spur starts on a
+road rather than at another place — 83 spurs attempted, 30 built, median
+161 m against 459 m for a place-to-place road.)
 | world B | chain/MST by parity | 93 | 71.0 km | 134 | 62 | 6 | 0 |
 | | tree with retries | 93 | 70.0 km | 136 | 64 | 5 | 0 |
 | | MST on routed cost | 93 | 64.9 km | 136 | 65 | 6 | 283 |

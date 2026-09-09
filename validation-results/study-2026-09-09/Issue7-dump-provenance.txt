@@ -1,0 +1,12 @@
+world: Issue7
+dumped: 2026-09-09T02:24:10Z on Windows, in the world, with road generation off
+        (GenerateRoadsOnLoad=false), so the terrain carries no roads
+world file md5: ADA3E61E80DA77A23479401823986E42
+command: cli_world_dump 128 (base grid) and cli_world_dump 50 (map), valheimCLI feature/world-dump-columns
+columns: x,z,height,biome,river,river_width,base_height
+lattice: -10000 + i*step (the game's own island grid and pathfinding cells)
+plugins loaded:
+  Jotunn.dll 1D6EC365E7032FD3B40B19E3107B9CFE
+  ProceduralRoads.dll A11D71A74C5EC7987014458ED746A6F1
+  Valheim.DisplayBepInExInfo.dll 5BBC4D6E43AA10CB4A3BC94E6A23F83A
+  valheimCLI.dll A0A0E08659BA4EF0A37D36CE420A18AD

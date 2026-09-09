@@ -1,0 +1,5 @@
+what,count,p10,median,p90,mean
+road_points_shore,57862,22.6,96.6,232.6,115.2
+land_shore,19023,8.0,73.9,248.0,104.0
+road_points_centre,57862,2889.9,5146.1,9098.0,5547.6
+land_centre,19023,2765.0,7037.3,9526.9,6561.8
