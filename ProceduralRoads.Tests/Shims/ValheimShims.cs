@@ -132,6 +132,39 @@ public class ZoneSystem
 
     public System.Collections.Generic.List<LocationInstance> GetLocationList() => Locations;
 
+    private bool m_locationsGenerated;
+    private System.Action? m_generateLocationsCompleted;
+
+    /// <summary>
+    /// Mirrors the game: setting this raises GenerateLocationsCompleted, and
+    /// subscribing after it is already true fires the handler at once. The
+    /// ordering that matters is the game's own -- loading a world sets this
+    /// from the save, DURING the load and before the world's ZDOs are read.
+    /// </summary>
+    public bool LocationsGenerated
+    {
+        get => m_locationsGenerated;
+        set
+        {
+            m_locationsGenerated = value;
+            if (m_locationsGenerated)
+            {
+                m_generateLocationsCompleted?.Invoke();
+                m_generateLocationsCompleted = null;
+            }
+        }
+    }
+
+    public event System.Action GenerateLocationsCompleted
+    {
+        add
+        {
+            if (m_locationsGenerated) value?.Invoke();
+            else m_generateLocationsCompleted += value;
+        }
+        remove => m_generateLocationsCompleted -= value;
+    }
+
     public static Vector2i GetZone(UnityEngine.Vector3 point) =>
         new(UnityEngine.Mathf.FloorToInt((point.x + ZoneSize / 2f) / ZoneSize),
             UnityEngine.Mathf.FloorToInt((point.z + ZoneSize / 2f) / ZoneSize));
