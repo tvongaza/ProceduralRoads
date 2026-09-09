@@ -205,13 +205,19 @@ public static partial class RoadNetworkGenerator
     /// <param name="force">If true, regenerate roads even if already generated (for existing worlds)</param>
     public static void GenerateRoads(bool force = false)
     {
-        if (m_roadsGenerated && !force)
+        // A world can already have a network two ways: this session generated
+        // one, or one was loaded from the save. Both count. Asking only whether
+        // this session generated it meant a regeneration in a world that had
+        // roads skipped the reset and laid the new network on top of the old
+        // one - the spatial grid kept both sets of points, and the crossings
+        // and bridge sites of the old network survived into the new one.
+        if (RoadsAvailable && !force)
         {
-            Log.LogDebug("Roads already generated, skipping");
+            Log.LogDebug("Roads already present, skipping");
             return;
         }
-        
-        if (force && m_roadsGenerated)
+
+        if (force && RoadsAvailable)
         {
             Log.LogDebug("Force regenerating roads...");
             Reset();
