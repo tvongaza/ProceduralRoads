@@ -437,10 +437,20 @@ public static partial class RoadNetworkGenerator
         Vector2? resumeAt = null;
         foreach (RoadCrossing crossing in crossings)
         {
-            List<Vector2> land = path.GetRange(cursor, crossing.FromIndex - cursor + 1);
-            if (resumeAt.HasValue && Vector2.Distance(resumeAt.Value, land[0]) > 0.5f)
+            // Crossings can overlap on the path: a bridge's banks walk out to
+            // the bank tops and a swamp bridge's on to dry ground, so one
+            // crossing's span can reach past the start of the next. A crossing
+            // the previous one already spans has nothing left to paint, and one
+            // that starts inside it has no land in front of it.
+            if (crossing.ToIndex <= cursor)
+                continue;
+
+            List<Vector2> land = crossing.FromIndex > cursor
+                ? path.GetRange(cursor, crossing.FromIndex - cursor + 1)
+                : new List<Vector2>();
+            if (resumeAt.HasValue && (land.Count == 0 || Vector2.Distance(resumeAt.Value, land[0]) > 0.5f))
                 land.Insert(0, resumeAt.Value);
-            if (Vector2.Distance(crossing.FromBank, land[land.Count - 1]) > 0.5f)
+            if (land.Count > 0 && Vector2.Distance(crossing.FromBank, land[land.Count - 1]) > 0.5f)
                 land.Add(crossing.FromBank);
             if (land.Count >= 2)
                 RoadSpatialGrid.AddRoadPath(land, width, WorldGenerator.instance);
@@ -450,7 +460,7 @@ public static partial class RoadNetworkGenerator
             if (crossing.Kind == CrossingKind.Ford && crossing.Style != FordStyle.Span)
             {
                 List<Vector2> ford = new() { crossing.FromBank };
-                for (int k = crossing.FromIndex + 1; k < crossing.ToIndex; k++)
+                for (int k = Mathf.Max(crossing.FromIndex + 1, cursor + 1); k < crossing.ToIndex; k++)
                     ford.Add(path[k]);
                 ford.Add(crossing.ToBank);
                 if (crossing.Style == FordStyle.Wade)
@@ -473,7 +483,7 @@ public static partial class RoadNetworkGenerator
             cursor = crossing.ToIndex;
         }
 
-        List<Vector2> tail = path.GetRange(cursor, path.Count - cursor);
+        List<Vector2> tail = path.GetRange(Mathf.Min(cursor, path.Count - 1), path.Count - Mathf.Min(cursor, path.Count - 1));
         if (resumeAt.HasValue && Vector2.Distance(resumeAt.Value, tail[0]) > 0.5f)
             tail.Insert(0, resumeAt.Value);
         if (tail.Count >= 2)
