@@ -38,6 +38,8 @@ def main():
     ap.add_argument('--out', required=True)
     ap.add_argument('--columns', type=int, default=0, help='default: all in one row')
     ap.add_argument('--title', default='')
+    ap.add_argument('--no-pad', action='store_true',
+                    help='keep the sheet its natural shape instead of padding it to a square')
     ap.add_argument('--width', type=float, default=700, help='width of each view in the sheet')
     a = ap.parse_args()
 
@@ -66,6 +68,12 @@ def main():
 
     width = columns * a.width
     height = top + rows * cell_h
+    # Square canvas by default: the SVG-to-PNG step on this machine writes a
+    # square thumbnail and crops a wide sheet's last column off without saying
+    # so. The white band it adds instead is trimmed by scripts/png-crop.py.
+    if not a.no_pad:
+        side = max(width, height)
+        width = height = side
     title = (f'<text x="4" y="15" font-size="14" fill="#111">{escape(a.title)}</text>'
              if a.title else '')
     svg = ('<?xml version="1.0" encoding="UTF-8"?>\n'

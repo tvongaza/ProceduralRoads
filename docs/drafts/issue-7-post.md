@@ -112,9 +112,34 @@ serves 101 — and it also stops an island after 24 failed edges, which is
 generous for a dozen places and stops an island of four hundred long before it
 is connected.
 
-Off the starter island, 36 of 158 attempts begin on the coast-cell anchor and
-die on the first step, because the anchor is not ground a road can stand on.
-They don't cost connections, but they waste a quarter of all attempts.
+## The coast-cell anchor is in the water
+
+Off the starter island each network is rooted at the island cell nearest the
+island's bounding box. Islands are found on a 128 m grid and a cell counts as
+land on its base height, so `GetEdgePoint` can hand back the centre of a cell
+that straddles the shore — a point out at sea.
+
+32 of the 70 failed attempts on your seed settle a single cell and stop, and
+every one of them starts below the waterline. From a submerged cell there is
+nowhere to go: the eight straight moves are blocked water, and the eight
+knight moves are refused by the crossing scan, which walks whole cells and
+won't start a crossing from a jump. Sixteen refusals apiece, no exceptions.
+
+![a coast anchor sitting in open water](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-anchor.png)
+
+Walking that anchor inland to the first dry point is a three-line change:
+
+| anchor | roads | distinct road | served | failed attempts | of those stillborn |
+|---|---|---|---|---|---|
+| the island's edge cell (today) | 88 | 54.0 km | 123 | 70 | 32 |
+| the same cell, walked onto land | 104 | 64.6 km | 124 | 54 | 5 |
+| the island's highest-priority place (#16) | 82 | 54.9 km | 124 | 27 | 0 |
+
+It removes the failure class and builds 19 % more road — but it serves one
+more place, because the chain carries on from the place it was heading for
+whether or not the leg to it was built. All three anchor rules land within one
+place of each other on coverage. Worth doing so the failure count means
+something; not a coverage lever.
 
 ## What a player gets
 
@@ -126,6 +151,30 @@ tried (roads that meet at the same place count as joined): these worlds are arch
 bridge can span it — 128 m at most, where most channels here are wider.
 
 ![the world as it generates today](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/issue7-shipped.png)
+
+Six islands at identical bounds and scale, so they can be read against one
+another — filled dot a place a road reached, red ring one selected and never
+reached:
+
+![six islands at the same scale](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/six-islands.png)
+
+And the whole world under six configurations, same bounds and scale, locations
+left off so the roads carry the picture:
+
+![six configurations on one world](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/world-sheet.png)
+
+| panel | roads | distinct road | served | networks |
+|---|---|---|---|---|
+| the shipped defaults | 30 | 12.0 km | 46 | 21 |
+| my baseline (crossings on, every island) | 88 | 54.0 km | 123 | 49 |
+| all of PR #16 | 96 | 33.8 km | 138 | 47 |
+| quota by priority then nearest | 101 | 42.6 km | 142 | 47 |
+| the anchor walked onto land | 104 | 64.6 km | 124 | 51 |
+| eight places per island | 258 | 92.2 km | 319 | 67 |
+
+Between 30 roads and 258 the number of separate networks goes from 21 to 67
+and never falls below 47. More road on this world means more islands with
+roads on them, not bigger networks.
 
 ## Alternative connection plans
 
@@ -191,8 +240,10 @@ base code.
 
 ## What this can't tell you
 
-Terrain is read back from a dump, so move costs are exact but ford depth is
-interpolated — on your seed the game found 5 fords where the offline model
+Terrain is read back from a dump, so heights, biomes and river weights at the
+positions the game samples are exact — but a move's cost includes a
+terrain-variance ring sampled between those positions, and so does ford depth,
+so both are interpolated — on your seed the game found 5 fords where the offline model
 found none, so I would not conclude anything about fords from these numbers.
 Aggregates match a real run to about one per cent and 92 % of roads follow the
 same line, but individual roads can differ. And nothing here was played:

@@ -38,7 +38,7 @@ Checked against the game on the issue's own seed, same settings both sides:
 | | in game | offline |
 |---|---|---|
 | roads | 89 | 88 |
-| total length | 59.9 km | 58.5 km |
+| total length, summed over routes | 59.9 km | 58.5 km |
 | attempts | 158 | 158 |
 | failed | 69 | 70 |
 
@@ -82,7 +82,13 @@ crossings on and every island selected:
 | on a detected island | 10 051 | 10 027 | 10 091 |
 | eligible for a road | 2 470 | 2 416 | 2 450 |
 | selected by the island's quota | 158 | 163 | 171 |
-| connected | 128 | 131 | 141 |
+| connected — its planned road was built | 128 | 131 | 141 |
+
+("Connected" here counts places, matched by the place's own identity. The
+tables of levers below also report *served*, which counts places with a road
+end within reach, and *planned and built*, which counts connections rather
+than places. On the issue's seed those are 128, 123 and 129 — three different
+questions about the same run.)
 
 Of the places that are eligible, by what became of them:
 
@@ -128,6 +134,37 @@ never attempted.
 It is also why registering a location through the API matters more than it
 looks: a registered location gets priority 80, straight into the band that
 wins slots.
+
+The same run by what the place actually is, rather than by its number:
+
+| what it is | in the world | eligible | selected | a road reached it |
+|---|---|---|---|---|
+| boss altars | 19 | 19 | 19 | 14 |
+| dungeons (crypts, sunken crypts, caves) | 920 | 913 | 109 | 94 |
+| Mistlands structures | 890 | 828 | 28 | 20 |
+| settlements (villages, farms, swamp huts) | 50 | 49 | **0** | 0 |
+| ruins, towers and stone circles | 716 | 661 | 2 | 0 |
+
+Not one of the world's fifty settlements is ever selected, and of 661 eligible
+ruins and towers two are selected and neither is reached. A player walking
+this world finds roads between crypts.
+
+**Every place the generator required and did not get.** Bosses are selected on
+every island they sit on, so a boss without a road is a road the generator
+tried to build and failed:
+
+| boss | island | nearest road end |
+|---|---|---|
+| GoblinKing (3904, 3904) | 45 | 932 m |
+| GoblinKing (3520, −640) | 29 | 626 m |
+| Dragonqueen (−1983, −4420) | 22 | 1 692 m |
+| Dragonqueen (3069, −4396) | 29 | 1 341 m |
+| Dragonqueen (6727, 1534) | 60 | 630 m |
+
+Five of the world's nineteen boss altars, all "no reachable path" — none of
+them ran out of budget. Fifteen selected dungeons end the same way; the full
+list, with the distance to the nearest road end, is in
+`Issue7-outcomes.csv` beside this document.
 
 ## The iteration plateau
 
@@ -218,6 +255,17 @@ tried below.
 
 ![the whole world under the study baseline](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/issue7-shipped.png)
 
+Six islands under the study baseline, at identical bounds and scale — 6 km
+across each, so they can be read against one another:
+
+![six islands at the same scale](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/six-islands.png)
+
+The largest island in the world is the top left panel: 26.7 km², and its roads
+are six of them in three separate pieces, none of which meet. Read across the
+six panels and the island's size barely shows in how much road it gets — the
+quota decides that, not the land. Red rings are places that were selected and
+never reached.
+
 That is the ceiling worth knowing about before tuning anything. These worlds
 are archipelagos, and a road crosses water only where a bridge can span it —
 128 m at most, where most of the channels here are wider. Bridges do join
@@ -234,10 +282,16 @@ with, and an earlier draft of this document called it "today", which was
 wrong. The shipped defaults are 50 % of islands, fords off, bridges off and a
 10 000 iteration budget:
 
-| | roads | length | served | networks |
-|---|---|---|---|---|
-| shipped defaults | 30 | 12.4 km | 46 | 21 |
-| the baseline used below | 88 | 58.5 km | 123 | 49 |
+| | roads | road summed over routes | distinct road | served | networks |
+|---|---|---|---|---|---|
+| shipped defaults | 30 | 12.4 km | 12.0 km | 46 | 21 |
+| the baseline used below | 88 | 58.5 km | 54.0 km | 123 | 49 |
+
+Two lengths, because they answer different questions and an earlier draft
+reported only the first. **Summed over routes** adds up every road as built,
+so a stretch two roads share is counted twice; **distinct road** counts the
+ground once. Where only one figure appears below it is the summed one, and
+the tables that turn on sharing give both.
 
 Three times the network, before any change proposed here. The baseline was
 chosen so that a lever's effect is not hidden by another setting suppressing
@@ -249,7 +303,7 @@ places a road end reaches.
 
 ### How many places each island may have
 
-| places per island | roads | length | served | attempts failing | metres per place served |
+| places per island | roads | road summed over routes | served | attempts failing | metres per place served |
 |---|---|---|---|---|---|
 | `2 + area/2 km²` (the baseline) | 88 | 58.5 km | 123 | 44 % | 476 |
 | 8 | 258 | 99.4 km | 319 | 28 % | 312 |
@@ -273,7 +327,7 @@ numbers can answer.
 
 ### Where those places sit, at the same count
 
-| arrangement | roads | length | served | metres per place |
+| arrangement | roads | road summed over routes | served | metres per place |
 |---|---|---|---|---|
 | priority, truncated (the baseline) | 88 | 58.5 km | 123 | 476 |
 | priority, then nearest (PR #16) | 101 | 43.3 km | **142** | **305** |
@@ -287,7 +341,7 @@ which sounds like what a road network wants, is the worst of the four.
 
 ### Fords and bridges
 
-| offline | roads | length | served |
+| offline | roads | road summed over routes | served |
 |---|---|---|---|
 | neither | 47 | 20.9 km | 72 |
 | fords only | 78 | 42.8 km | 111 |
@@ -302,7 +356,7 @@ things — it lets a road jump a fordable river, and it lets a road wade a
 swamp — and only the second can be measured offline. Three runs in game on one
 world state, so the rows are comparable:
 
-| in game | roads | length | crossings |
+| in game | roads | road summed over routes | crossings |
 |---|---|---|---|
 | neither | 49 | 21.7 km | 0 |
 | fords only | 90 | 41.5 km | **3, all fords** |
@@ -382,7 +436,7 @@ same world would support.
 Three presets, bosses required in each, the rest drawn per place from the
 world seed:
 
-| preset | selected | roads | length | served | connect rate |
+| preset | selected | roads | road summed over routes | served | connect rate |
 |---|---|---|---|---|---|
 | the built-in table (the baseline) | 158 | 88 | 58.5 km | 123 | 78 % |
 | bosses only | 19 | 9 | 11.4 km | 12 | 63 % |
@@ -394,6 +448,29 @@ are alone on their island and a road needs two ends. The last row is the
 interesting one — aiming at where people live selects about as many places,
 connects ten points fewer of them, and spends more road doing it, because
 settlements sit in scattered awkward spots. Worth wanting, but not free.
+
+## The same world, six ways
+
+Six configurations on the issue's seed, drawn at identical bounds and scale,
+locations left off so the roads carry the picture:
+
+![six configurations on one world](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/world-sheet.png)
+
+| panel | roads | distinct road | served | networks |
+|---|---|---|---|---|
+| the shipped defaults | 30 | 12.0 km | 46 | 21 |
+| the study baseline (crossings on, every island) | 88 | 54.0 km | 123 | 49 |
+| all of PR #16 | 96 | 33.8 km | 138 | 47 |
+| quota by priority then nearest | 101 | 42.6 km | 142 | 47 |
+| the anchor walked onto land | 104 | 64.6 km | 124 | 51 |
+| eight places per island | 258 | 92.2 km | 319 | 67 |
+
+The shipped panel is the issue: most of the world has no road at all. Every
+other panel fills more of the world in, and none of them joins it up. Between
+30 roads and 258, the number of separate networks goes from 21 to 67 and never
+falls below 47 — more road on this world means more islands with roads on
+them, not bigger networks. Only PR #16 and the quota change reduce the network
+count at all, and then by two.
 
 ## PR #16, one change at a time
 
