@@ -10,6 +10,12 @@ public enum AnchorMode
     /// <summary>PR #16's rule: the island's highest-priority location,
     /// nearest its centre on a tie.</summary>
     HighestPriorityLocation,
+
+    /// <summary>Study: the shipped edge cell, walked inland until it stands
+    /// above the waterline. The island grid is 128 m, so the centre of an
+    /// edge cell is often in the sea, and a search that starts in the sea
+    /// never takes a step.</summary>
+    IslandEdgeCellOnLand,
 }
 
 /// <summary>Which islands get roads.</summary>

@@ -771,7 +771,8 @@ public static partial class RoadNetworkGenerator
         }
         else
         {
-            Vector2 edge = island.GetEdgePoint();
+            Vector2 edge = StudyFactors.Anchor == AnchorMode.IslandEdgeCellOnLand
+                ? EdgePointOnLand(island) : island.GetEdgePoint();
             startPos = new Vector3(edge.x, 0, edge.y);
             startRadius = 0f;
         }
@@ -785,6 +786,39 @@ public static partial class RoadNetworkGenerator
             GenerateMSTRoads(startPos, startRadius, islandLocations);
         else
             GenerateChainRoads(startPos, startRadius, islandLocations);
+    }
+
+    /// <summary>
+    /// The island's edge point, moved onto dry land if it is not already
+    /// there. Islands are found on a 128 m grid, so an edge cell counts as
+    /// land on its base height while its centre - the point the anchor
+    /// actually uses - can be well out to sea. A search rooted in the sea
+    /// settles one cell and stops: every straight move is blocked water and
+    /// every knight move is refused by the crossing scan, so the road is
+    /// never begun. Walking inland to the first point above the waterline
+    /// costs nothing and starts the road on the ground.
+    /// </summary>
+    internal static Vector2 EdgePointOnLand(Island island)
+    {
+        Vector2 edge = island.GetEdgePoint();
+        WorldGenerator world = WorldGenerator.instance;
+        if (world == null) return edge;
+        if (world.GetHeight(edge.x, edge.y) >= RoadConstants.SeaLevel) return edge;
+
+        Vector2 inward = island.Center - edge;
+        float span = inward.magnitude;
+        if (span < 1f) return edge;
+        inward = new Vector2(inward.x / span, inward.y / span);
+
+        for (float walked = RoadPathfinder.CellSize; walked <= span; walked += RoadPathfinder.CellSize)
+        {
+            Vector2 candidate = edge + inward * walked;
+            if (world.GetHeight(candidate.x, candidate.y) >= RoadConstants.SeaLevel)
+                return candidate;
+        }
+        // No dry ground between the edge and the centre: the centre is the
+        // island's own best guess and the caller is no worse off than before.
+        return island.Center;
     }
 
     /// <summary>The selected strategy's location quota.</summary>
@@ -857,7 +891,8 @@ public static partial class RoadNetworkGenerator
         }
         else
         {
-            Vector2 edge = island.GetEdgePoint();
+            Vector2 edge = StudyFactors.Anchor == AnchorMode.IslandEdgeCellOnLand
+                ? EdgePointOnLand(island) : island.GetEdgePoint();
             startPos = new Vector3(edge.x, 0, edge.y);
             startRadius = 0f;
         }

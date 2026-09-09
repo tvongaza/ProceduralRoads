@@ -30,6 +30,8 @@ from xml.sax.saxutils import escape
 from collections import defaultdict
 
 SEA = 30.0
+# The game's world is a disc of this radius; nothing outside it is real ground.
+WORLD_RADIUS = 10000.0
 # Swamp sits at and below the waterline: most of it is shallow water with trees
 # in it, not sea. Drawing it as ocean made every swamp road look like a road
 # into the sea, which is the one thing a reader must not be misled about.
@@ -290,8 +292,27 @@ class View:
         return self.x0 - pad <= x <= self.x1 + pad and self.z0 - pad <= z <= self.z1 + pad
 
 
+def wrap(text, width_px, font_px):
+    """Break a caption into lines that fit the image. A caption that runs off
+    the right edge is worse than no caption: the reader cannot tell it was
+    cut."""
+    per_char = font_px * 0.52
+    limit = max(20, int((width_px - 12) / per_char))
+    lines, line = [], ''
+    for word in text.split(' '):
+        candidate = f'{line} {word}'.strip()
+        if len(candidate) > limit and line:
+            lines.append(line)
+            line = word
+        else:
+            line = candidate
+    if line:
+        lines.append(line)
+    return lines
+
+
 def render(view, xs, zs, cells, grid, locations, routes, crossings, contour, title, min_radius,
-           outcomes=None, attempts=None):
+           outcomes=None, attempts=None, subtitle=None):
     out = []
     step = xs[1] - xs[0]
     out.append(f'<g>')
@@ -371,24 +392,56 @@ def render(view, xs, zs, cells, grid, locations, routes, crossings, contour, tit
     # The region a failed search actually settled, for the few worst failures:
     # a road that stopped at a coast is a different picture from one that
     # filled its island and found no way off it, and the box says which.
-    for attempt in sorted(attempts or [], key=lambda at: -at['cells'])[:6]:
+    # One attempt on its own is a case study: it is drawn heavily and its
+    # settled box is always drawn, because that box is the whole point of the
+    # picture. Many attempts at once are a survey, and only the six largest
+    # boxes are drawn, or the map turns into a stack of rectangles.
+    focus = len(attempts or []) == 1
+    boxes = attempts if focus else sorted(attempts or [], key=lambda at: -at['cells'])[:6]
+    for attempt in boxes:
         x0, z0, x1, z1 = attempt['settled']
-        if x1 <= x0 or z1 <= z0 or not view.inside((x0 + x1) / 2, (z0 + z1) / 2, (x1 - x0)):
+        if x1 <= x0 or z1 <= z0:
             continue
+        if not focus and not view.inside((x0 + x1) / 2, (z0 + z1) / 2, (x1 - x0)):
+            continue
+        wide = 1.6 if focus else 0.8
         out.append(f'<rect x="{f(view.X(x0))}" y="{f(view.Y(z1))}" '
                    f'width="{f((x1 - x0) * view.px)}" height="{f((z1 - z0) * view.px)}" '
-                   f'fill="#c02020" fill-opacity="0.05" stroke="#c02020" stroke-width="0.8" '
-                   f'stroke-opacity="0.35" stroke-dasharray="6,5"/>')
+                   f'fill="#c02020" fill-opacity="{0.10 if focus else 0.05}" stroke="#c02020" '
+                   f'stroke-width="{wide}" stroke-opacity="{0.9 if focus else 0.35}" '
+                   f'stroke-dasharray="6,5"/>')
 
     for attempt in (attempts or []):
         sx, sz = attempt['start']
         cx_, cz_ = attempt['closest']
-        if not (view.inside(sx, sz) or view.inside(cx_, cz_)):
+        if not focus and not (view.inside(sx, sz) or view.inside(cx_, cz_)):
             continue
         out.append(f'<line x1="{f(view.X(sx))}" y1="{f(view.Y(sz))}" x2="{f(view.X(cx_))}" y2="{f(view.Y(cz_))}" '
-                   f'stroke="#c02020" stroke-width="1.0" stroke-opacity="0.45" stroke-dasharray="3,4"/>')
+                   f'stroke="#c02020" stroke-width="{2.0 if focus else 1.0}" '
+                   f'stroke-opacity="{0.9 if focus else 0.45}" stroke-dasharray="{"7,4" if focus else "3,4"}"/>')
         ex, ez = attempt['end']
-        if view.inside(ex, ez):
+        if focus:
+            # start, the nearest the search ever came, and the destination it
+            # was aiming at: three marks, so the gap is the picture.
+            out.append(f'<circle cx="{f(view.X(sx))}" cy="{f(view.Y(sz))}" r="5" fill="#ffffff" '
+                       f'stroke="#c02020" stroke-width="2"/>')
+            out.append(f'<circle cx="{f(view.X(cx_))}" cy="{f(view.Y(cz_))}" r="4" fill="#c02020" '
+                       f'fill-opacity="0.8" stroke="#ffffff" stroke-width="1"/>')
+            out.append(f'<path d="M{f(view.X(ex) - 6)} {f(view.Y(ez) - 6)}L{f(view.X(ex) + 6)} {f(view.Y(ez) + 6)}'
+                       f'M{f(view.X(ex) + 6)} {f(view.Y(ez) - 6)}L{f(view.X(ex) - 6)} {f(view.Y(ez) + 6)}" '
+                       f'stroke="#c02020" stroke-width="2.4" fill="none"/>')
+            # A search that died where it started has both marks in one place;
+            # two labels on top of each other read as neither.
+            same = math.dist((sx, sz), (cx_, cz_)) < 20
+            labels = [(sx, sz, 'start = the furthest the search got' if same else 'start')]
+            if not same:
+                labels.append((cx_, cz_, 'closest the search came'))
+            labels.append((ex, ez, 'destination'))
+            for x_, z_, text in labels:
+                out.append(f'<text x="{f(view.X(x_) + 8)}" y="{f(view.Y(z_) - 8)}" font-size="11" '
+                           f'fill="#c02020" stroke="#ffffff" stroke-width="3" paint-order="stroke">'
+                           f'{escape(text)}</text>')
+        elif view.inside(ex, ez):
             out.append(f'<circle cx="{f(view.X(ex))}" cy="{f(view.Y(ez))}" r="2.2" fill="none" '
                        f'stroke="#c02020" stroke-width="1.0" stroke-opacity="0.6"/>')
 
@@ -420,7 +473,13 @@ def render(view, xs, zs, cells, grid, locations, routes, crossings, contour, tit
                        f'fill-opacity="0.35"/>')
         if any(k in name for k in LABEL_KEYS):
             out.append(f'<text x="{f(view.X(x) + 4)}" y="{f(view.Y(z) - 3)}" font-size="9" fill="#3b1050">{escape(name)}</text>')
-    out.append(f'<text x="6" y="14" font-size="12" fill="#111">{escape(title)}</text>')
+    y = 14
+    for line in wrap(title, view.w, 12):
+        out.append(f'<text x="6" y="{f(y)}" font-size="12" fill="#111">{escape(line)}</text>')
+        y += 13
+    for line in wrap(subtitle or '', view.w, 10):
+        out.append(f'<text x="6" y="{f(y)}" font-size="10" fill="#444">{escape(line)}</text>')
+        y += 11
     out.append('</g>')
     return '\n'.join(out)
 
@@ -472,6 +531,10 @@ def main():
                                        'instead of all alike')
     ap.add_argument('--attempts', help='attempts CSV: a failed attempt is drawn as a dashed line from its '
                                        'start to the nearest the search came to its destination')
+    ap.add_argument('--focus-attempt', help='draw one failed attempt as a case study: a label substring, '
+                                            'rank:N for the Nth largest search by cells settled, or index:N '
+                                            'for the attempt with that attempt_index. The view '
+                                            'frames that attempt unless --zoom says otherwise.')
     ap.add_argument('--crossings', help='road_routes crossings CSV: fords and bridges are marked on the map')
     ap.add_argument('--manifest', help='road_routes manifest JSON: its settings go in the caption')
     ap.add_argument('--out')
@@ -524,7 +587,58 @@ def main():
                                 float(row['settled_max_x']), float(row['settled_max_z'])),
                     'cells': int(row['settled_cells']),
                     'outcome': row['outcome'].strip('"'),
+                    'label': row.get('label', '').strip('"'),
+                    'index': row.get('attempt_index', ''),
                 })
+    focus_caption = None
+    if a.focus_attempt:
+        if not attempts:
+            sys.exit('--focus-attempt needs an --attempts CSV with at least one failure in it')
+        ranked = sorted(attempts, key=lambda at: -at['cells'])
+        if a.focus_attempt.startswith('index:'):
+            key = a.focus_attempt.split(':', 1)[1]
+            matches = [at for at in ranked if at['index'] == key]
+            if not matches:
+                sys.exit(f'--focus-attempt {a.focus_attempt!r} matched no failed attempt')
+            chosen = matches[0]
+        elif a.focus_attempt.startswith('rank:'):
+            n = int(a.focus_attempt.split(':', 1)[1])
+            if not 1 <= n <= len(ranked):
+                sys.exit(f'--focus-attempt rank:{n} but there are {len(ranked)} failures')
+            chosen = ranked[n - 1]
+        else:
+            matches = [at for at in ranked if a.focus_attempt.lower() in at['label'].lower()]
+            if not matches:
+                sys.exit(f'--focus-attempt {a.focus_attempt!r} matched no failed attempt')
+            chosen = matches[0]
+        attempts = [chosen]
+        # Frame the case: start, destination, the nearest the search came, and
+        # the ground it settled -- clipped to the world, because a dump answers
+        # points past the rim with the rim's own values and the box can run
+        # thousands of metres past the edge of the map.
+        bx0, bz0, bx1, bz1 = chosen['settled']
+        pts = [chosen['start'], chosen['end'], chosen['closest'],
+               (max(bx0, -WORLD_RADIUS), max(bz0, -WORLD_RADIUS)),
+               (min(bx1, WORLD_RADIUS), min(bz1, WORLD_RADIUS))]
+        cx = (min(p[0] for p in pts) + max(p[0] for p in pts)) / 2
+        cz = (min(p[1] for p in pts) + max(p[1] for p in pts)) / 2
+        half = max(max(p[0] for p in pts) - min(p[0] for p in pts),
+                   max(p[1] for p in pts) - min(p[1] for p in pts)) / 2 * 1.15 + 200
+        if not a.zoom:
+            a.zoom = f'{cx:.0f},{cz:.0f},{half:.0f}'
+            a.zoom_only = True
+        clipped = (bx0 < -WORLD_RADIUS or bz0 < -WORLD_RADIUS
+                   or bx1 > WORLD_RADIUS or bz1 > WORLD_RADIUS)
+        focus_caption = (
+            f"{chosen['label']}: {chosen['outcome']}, {chosen['cells']} cells settled, "
+            f"closest approach {math.dist(chosen['closest'], chosen['end']):.0f} m "
+            f"of {math.dist(chosen['start'], chosen['end']):.0f} m direct. "
+            f"White ring the start, filled dot the nearest the search came, cross the destination, "
+            f"dashed box the ground it settled"
+            + (' (the box runs past the edge of the world: the search spent budget in open ocean, '
+               'and a dump answers points past the rim with the rim itself)' if clipped else '')
+            + '.')
+
     routes = defaultdict(list)
     if a.routes:
         with open(a.routes) as fh:
@@ -581,11 +695,8 @@ def main():
                    + ('; green place connected, red ring selected but not reached, grey ring eligible, '
                       'dashed red line a failed attempt to where the search stopped, '
                       'dashed box the ground it settled' if outcomes or attempts else ''))
-        inner = render(zoom_view, xs, zs, cells, grid, locations, routes, crossings, a.contour,
-                       caption, a.min_radius, outcomes, attempts)
-        subtitle = manifest_caption(manifest)
-        body = inner + (f'\n<text x="6" y="27" font-size="10" fill="#444">{escape(subtitle)}</text>'
-                        if subtitle else '')
+        body = render(zoom_view, xs, zs, cells, grid, locations, routes, crossings, a.contour,
+                      focus_caption or caption, a.min_radius, outcomes, attempts, subtitle)
         svg = ('<?xml version="1.0" encoding="UTF-8"?>\n'
                f'<svg xmlns="http://www.w3.org/2000/svg" width="{f(zoom_view.w)}" height="{f(zoom_view.h)}" '
                f'viewBox="0 0 {f(zoom_view.w)} {f(zoom_view.h)}" font-family="sans-serif">\n'
@@ -597,9 +708,7 @@ def main():
         return
 
     parts = [render(world_view, xs, zs, cells, grid, locations, routes, crossings, a.contour, title, a.min_radius,
-                    outcomes, attempts)]
-    if subtitle:
-        parts.append(f'<text x="6" y="27" font-size="10" fill="#444">{escape(subtitle)}</text>')
+                    outcomes, attempts, subtitle)]
     total_w, total_h = world_view.w, world_view.h
     if a.zoom:
         cx, cz, half = (float(v) for v in a.zoom.split(','))

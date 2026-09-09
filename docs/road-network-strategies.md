@@ -429,13 +429,47 @@ one part of the package that costs coverage; the rest gains it.
 ## The coast-cell anchor
 
 Off the starter island, each island's network is rooted at the island cell
-nearest its bounding box, with radius 0 — a coast cell, not a place. On the
-issue's seed, 36 of 158 attempts start there and die on the first expansion:
-the anchor itself is not ground a road can stand on.
+nearest its bounding box, with radius 0 — a coast cell, not a place. Islands
+are found on a 128 m grid and a cell counts as land on its base height, so a
+cell that straddles the shore is land while the point the anchor actually
+uses, its centre, can be a long way out to sea. `GetEdgePoint` returns that
+centre unchanged.
 
-They do not cost connections — rooting on a location instead builds one fewer
-road, because the anchor is then spent as the root — but they waste a quarter
-of all attempts and, where such a road does succeed, it ends on a beach.
+On the issue's seed, 32 of the 70 failed attempts settle a single cell and
+stop. Every one of them starts in a cell below the waterline. From a
+submerged cell there is nowhere to go: of the sixteen directions the search
+may take, the eight straight ones are blocked water, and the eight knight
+moves are refused outright by the crossing scan, which walks whole cells and
+will not start a crossing from a jump. Across those 32 attempts the refusals
+are exactly 256 knight moves, 190 no-bank-found and 54 no-river — sixteen
+refusals apiece, no exceptions.
+
+Start cells and what became of them, over all 158 attempts:
+
+| the attempt's start cell | attempts | connected |
+|---|---|---|
+| above the waterline | 102 | 75 (74%) |
+| below it | 56 | 13 (23%) |
+
+Walking that anchor inland to the first point above the waterline is a
+three-line change, and the study runs it as its own anchor mode:
+
+| anchor | roads | distinct road | planned and built | served | joined groups | attempts | failed | of those stillborn |
+|---|---|---|---|---|---|---|---|---|
+| the island's edge cell (ships today) | 88 | 54.0 km | 129 | 123 | 49 | 158 | 70 | 32 |
+| the same cell, walked onto land | 104 | 64.6 km | 130 | 124 | 51 | 158 | 54 | 5 |
+| the island's highest-priority place (#16) | 82 | 54.9 km | 131 | 124 | 49 | 109 | 27 | 0 |
+
+The failure class all but disappears — 32 stillborn attempts become 5 — and
+19% more road gets built. What it does **not** buy is coverage: 123 places
+served becomes 124. The shipped chain carries on from the place it was
+heading for whether or not the leg to it was built, so a stillborn first leg
+costs the road, not the destination.
+
+All three anchors land within one place of each other on coverage. The anchor
+rule is not a coverage lever. It decides how much road exists and how many
+searches are spent finding out, and on the shipped rule a quarter of every
+search in the run is spent starting in the sea.
 
 ## Connection plans
 
@@ -492,6 +526,46 @@ the search came, and a dashed box the ground that search settled before giving
 up.
 
 ![an island with outcomes and failed attempts drawn](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/island-diagnostic.png)
+
+### Three failures, in full
+
+One attempt at a time, at the scale it happened. In each: a white ring is
+where the road was to start, a filled dot the nearest the search ever came to
+its destination, a cross the destination itself, and the dashed box the ground
+the search settled before it gave up.
+
+**The road that never started.** 32 of the 70 failures on this seed look like
+this one, and it is the cheapest to fix.
+
+![a coast anchor sitting in open water](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-anchor.png)
+
+The island's anchor sits about 150 m off its own coast, in open water, because
+the island grid is 128 m and the cell it came from straddles the shore. One
+cell settled, sixteen moves refused, no road. The destination is a crypt 222 m
+inland that no road was ever laid toward.
+
+**The search that filled its island and found no way off it.** 97 290 cells
+settled, and the destination is 3.4 km away on the far side of an archipelago.
+
+![a search that settled a whole archipelago](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-frontier.png)
+
+The box is the ground the search covered before its open set ran empty. It
+walked the islands it could reach, took the crossings it could take, and
+stopped 1 144 m short. Nothing here is a budget problem: the search ran out of
+places to go, not out of iterations. Only a longer crossing would join these.
+
+**The search that ran out of budget.** 100 000 cells — the whole allowance —
+for a destination 1.9 km away.
+
+![a search that spent its whole budget](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-budget.png)
+
+This is the one attempt in 158 that hit the iteration cap. It filled its
+island, reached the south shore, and stopped 1 207 m short of a place on the
+next island down. The dashed box runs past the top of the frame and past the
+edge of the world: once the land was exhausted the search spent what was left
+crawling north over open ocean. The offline harness answers points past the
+world's rim with the rim's own values, so the box's exact northern extent is
+an artefact of the dump — that the search goes out there at all is not.
 
 ## The runs behind these numbers
 

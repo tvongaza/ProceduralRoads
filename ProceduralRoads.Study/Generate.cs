@@ -138,7 +138,9 @@ internal static class Generate
             {
                 "edge" => AnchorMode.IslandEdgeCell,
                 "poi" => AnchorMode.HighestPriorityLocation,
-                _ => throw new ArgumentException($"--anchor must be edge or poi, not '{anchor}'"),
+                "edge-on-land" => AnchorMode.IslandEdgeCellOnLand,
+                _ => throw new ArgumentException(
+                    $"--anchor must be edge, edge-on-land or poi, not '{anchor}'"),
             };
 
         string? islands = Options.Value(args, "--island-selection");
