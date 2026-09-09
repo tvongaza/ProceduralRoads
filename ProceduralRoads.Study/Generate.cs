@@ -173,8 +173,22 @@ internal static class Generate
                 "routed-mst" => ConnectionPlan.RoutedMst,
                 "trunk" => ConnectionPlan.TrunkAndSpurs,
                 "hub" => ConnectionPlan.HubAndSpoke,
+                "grow" => ConnectionPlan.GrowFromNetwork,
+                "reverse" => ConnectionPlan.ReverseToNetwork,
                 _ => throw new ArgumentException(
-                    $"--plan must be parity, tree, routed-mst, trunk or hub, not '{plan}'"),
+                    $"--plan must be parity, tree, routed-mst, trunk, hub, grow or reverse, not '{plan}'"),
+            };
+
+        string? fallback = Options.Value(args, "--fallback");
+        if (fallback != null)
+            StudyFactors.Fallback = fallback switch
+            {
+                "none" => FailureFallback.None,
+                "road" => FailureFallback.NearestRoad,
+                "place" => FailureFallback.NearestConnectedPlace,
+                "road-then-place" => FailureFallback.RoadThenPlace,
+                _ => throw new ArgumentException(
+                    $"--fallback must be none, road, place or road-then-place, not '{fallback}'"),
             };
 
         string preset = Options.Value(args, "--preset") ?? "shipped";
@@ -252,6 +266,12 @@ internal static class Generate
         Console.WriteLine($"roads:     {routes.Count} built, {metrics.UniqueLengthMetres / 1000f:F1} km of distinct road " +
                           $"({metrics.SummedLengthMetres / 1000f:F1} km summed over routes)");
         Console.WriteLine($"connected: {metrics.PlannedConnections} places the generator planned a road to and built it");
+        Console.WriteLine($"joins:     {metrics.TeeJunctions} road(s) end on another road's length (a tee), " +
+                          $"{metrics.EndToEndJoins} end where another road ends; " +
+                          $"{metrics.ParallelMetres / 1000f:F1} km running alongside another road");
+        if (RoadNetworkGenerator.FallbacksToRoad + RoadNetworkGenerator.FallbacksToPlace > 0)
+            Console.WriteLine($"fallback:  {RoadNetworkGenerator.FallbacksToRoad} recovered onto a road, " +
+                              $"{RoadNetworkGenerator.FallbacksToPlace} onto a connected place");
         Console.WriteLine($"served:    {metrics.PlacesServed} places with a road end within reach, " +
                           $"in {metrics.Components} joined group(s), largest {metrics.LargestComponentRoutes} roads");
         Console.WriteLine($"attempts:  {attempts.Count}, {failed} failed" +
@@ -373,6 +393,11 @@ internal static class Generate
             $"    \"plannedConnections\": {metrics.PlannedConnections},",
             $"    \"placesServed\": {metrics.PlacesServed},",
             $"    \"joinedGroups\": {metrics.Components},",
+            $"    \"teeJunctions\": {metrics.TeeJunctions},",
+            $"    \"endToEndJoins\": {metrics.EndToEndJoins},",
+            $"    \"parallelRoadMeters\": {metrics.ParallelMetres:F0},",
+            $"    \"fallbacksToRoad\": {RoadNetworkGenerator.FallbacksToRoad},",
+            $"    \"fallbacksToPlace\": {RoadNetworkGenerator.FallbacksToPlace},",
             $"    \"attemptCount\": {attempts.Count},",
             $"    \"failedAttemptCount\": {attempts.Count(a => !a.Connected)},",
             $"    \"routingProbes\": {RoadNetworkGenerator.RoutingProbes},",

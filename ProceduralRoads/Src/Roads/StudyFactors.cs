@@ -18,6 +18,27 @@ public enum AnchorMode
     IslandEdgeCellOnLand,
 }
 
+/// <summary>What happens when a planned connection cannot be built.</summary>
+public enum FailureFallback
+{
+    /// <summary>The shipped behaviour: nothing. The plan carries on from the
+    /// place it was heading for, whether or not the leg to it was built.</summary>
+    None,
+
+    /// <summary>Try again to the nearest point on a road already built. A road
+    /// runs where the ground allowed it, so it is often reachable from
+    /// somewhere a place is not.</summary>
+    NearestRoad,
+
+    /// <summary>Try again to the nearest place already on the network, which
+    /// may be neither of the two the plan chose.</summary>
+    NearestConnectedPlace,
+
+    /// <summary>The road first, then the place: two more searches at
+    /// most.</summary>
+    RoadThenPlace,
+}
+
 /// <summary>Which islands get roads.</summary>
 public enum IslandSelection
 {
@@ -84,6 +105,16 @@ public enum ConnectionPlan
     /// <summary>Study proposal: the anchor serves what is near it; a cluster
     /// too far to serve gets a hub of its own.</summary>
     HubAndSpoke,
+
+    /// <summary>Study proposal: no tree at all. Each place in turn joins the
+    /// network at the nearest point on a road already built, so every
+    /// connection after the first is a junction by construction.</summary>
+    GrowFromNetwork,
+
+    /// <summary>Study proposal: the search runs from the place outward and
+    /// stops at the first road it reaches, so nothing has to guess which point
+    /// on the network to aim at.</summary>
+    ReverseToNetwork,
 }
 
 /// <summary>
@@ -100,6 +131,16 @@ public enum ConnectionPlan
 public static class StudyFactors
 {
     public static AnchorMode Anchor = AnchorMode.IslandEdgeCell;
+
+    /// <summary>What a plan does with a connection its pathfinder could not
+    /// build. The shipped plans do nothing: the place is left where it is and
+    /// the plan carries on.</summary>
+    public static FailureFallback Fallback = FailureFallback.None;
+
+    /// <summary>How near a road the reverse search must come to count as
+    /// having reached the network. One pathfinding cell: closer than this and
+    /// the junction is on the road; further and it is a road beside a road.</summary>
+    public static float ReverseSearchReach = 8f;
 
     /// <summary>How many places an island may have roads to.</summary>
     public static IslandQuota Quantity = IslandQuota.AreaFormula;
@@ -164,6 +205,6 @@ public static class StudyFactors
     public static string Describe() =>
         $"anchor={Anchor}, islands={Islands}, sharing={ExistingRoadCostFraction:0.##}, places={Quantity}" +
         (Quantity == IslandQuota.FixedCount ? $"({FixedPlaceCount})" : "") +
-        $", quota={Quota}, plan={Plan}, " +
+        $", quota={Quota}, plan={Plan}, fallback={Fallback}, " +
         $"filterEndpoints={FilterUnreachableEndpoints}, snapEndpoints={SnapEndpointsToPathableGround}";
 }

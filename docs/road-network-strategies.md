@@ -765,6 +765,137 @@ away, of 225 m — and could never enter the goal cell, because a move into
 water below 28 m is blocked. No budget and no bridge would change this one;
 the destination is not ground a road can end on.
 
+## Four ideas about the plan, measured
+
+The section above says what the shipped plan cannot do: it draws lines between
+places, on straight-line distance, with no second chance and no way to join a
+road it has already built. Each of those is a question with an answer, and all
+four were tried on the issue's seed against the same baseline.
+
+The two columns that matter for the last three are new here. **Tees** counts
+roads whose end lands on another road's *length* — a fork, the shape a walked
+path network has. **Alongside** counts metres of road running within 12 m of
+another road without joining it, which is the shape nobody wants.
+
+| plan | roads | distinct road | served | tees | ends | alongside | attempts | failed |
+|---|---|---|---|---|---|---|---|---|
+| chain/MST by parity (the baseline) | 88 | 54.0 km | 123 | **1** | 43 | **4.8 km** | 158 | 70 |
+| MST on the search's own cost | 90 | 56.6 km | **126** | 0 | 40 | 2.7 km | 90 | **0** |
+| trunk with spurs onto the road | 82 | 52.9 km | 118 | 29 | 12 | 5.1 km | 135 | 53 |
+| grow from the network | 82 | 46.6 km | 116 | 15 | 37 | 1.6 km | 103 | 21 |
+| **the place reaches for the network** | 86 | 55.7 km | **123** | **28** | 23 | **0.1 km** | 157 | 30 |
+
+### Can a plan see water?
+
+Yes, and it already does. The routed MST prices every candidate edge by
+*running the pathfinder on it* before choosing, so an edge across a strait
+either costs what the detour really costs or has no cost at all and is never
+chosen. The result is the cleanest line in the table: **no failed attempts at
+all** — 90 planned, 90 built — three more places served than the baseline, and
+the road running alongside other road nearly halved.
+
+It is not free. Pricing edges costs 261 planning searches on this world, so the
+total pathfinder work is higher than the baseline's, not lower; what changes is
+that the work happens before a road is committed rather than after one fails.
+"No failed builds" is a tidier log, not a saving.
+
+Its one real limit is the candidate set: each place offers only its nearest
+neighbours by straight-line distance, because pricing every pair is hopeless
+past a dozen places. Widening that set is the obvious worry, so it was swept:
+
+| candidates per place | roads | served | failed |
+|---|---|---|---|
+| 3 | 89 | 125 | 0 |
+| 6 (the default) | 90 | 126 | 0 |
+| 12 | 90 | 126 | 0 |
+| 24 | 90 | 126 | 0 |
+
+Flat from six onward, identically so. The candidate set is not what binds — the
+water is, exactly as the failure census says.
+
+### Can roads join by design instead of by accident?
+
+Yes, and this is where the shipped plan is weakest. **On the whole world it
+produces one tee junction.** Every other meeting of two roads is two ends at
+the same place, because every road it builds runs between two places and two
+roads to neighbouring places both leave the same anchor. That is where the
+4.8 km of road running alongside other road comes from.
+
+Three plans here make junctions on purpose, and they are not equal:
+
+- **Trunk with spurs** lays one road along the island's routed long axis and
+  joins everything else at the nearest point on a road. 29 tees, the most of
+  any plan — but it still runs 5.1 km alongside itself, because a spur aimed at
+  the straight-line nearest point on the trunk often parallels it to get there.
+- **Grow from the network** drops the trunk and simply attaches the nearest
+  waiting place to the nearest point on the road so far. It cuts road running
+  alongside to 1.6 km, but reaches seven fewer places, because a place with no
+  road near enough to join has to fall back to a place-to-place link.
+- **The place reaching for the network** — below — gets 28 tees *and* 0.1 km
+  alongside, at the baseline's coverage.
+
+### Can a place reach for the network, instead of the network reaching for it?
+
+This is the one that works, and it is a different algorithm rather than a
+different plan.
+
+Every plan above has to choose a destination before it can search: another
+place, or a point on a road. It chooses on straight-line distance, because that
+is the only thing available before a search runs — and straight-line distance
+is the thing a road cannot use. Aiming at the nearest point on a road across a
+channel fails exactly the way aiming at the nearest place across a channel
+fails.
+
+So the search is turned round. `FindPathToNetwork` starts at the place and
+expands outward with **no destination at all**, stopping at the first ground it
+settles that already carries road. Whatever it finds is, by construction, the
+cheapest way onto the network from that place, and it is a junction wherever it
+lands. The heuristic is the straight-line distance to the nearest known road
+point less the reach, floored at zero, which never overestimates because a move
+costs at least its length; with no roads to aim at it degrades to Dijkstra.
+
+On the issue's seed, against the shipped plan:
+
+- the same coverage: **123 places served**, exactly the baseline;
+- **28 tee junctions against 1**;
+- **0.1 km of road running alongside another road, against 4.8 km** — and the
+  summed route length equals the distinct road on the ground, 55.7 km both
+  ways, which means almost nothing is built twice;
+- failed attempts fall from 70 to 30.
+
+The cost is time: 84 seconds against 4, because a search with no destination
+settles far more ground than one aimed at a point. That is a real objection for
+a whole world at load, and no objection at all for the single-island
+regeneration the tooling already has.
+
+What it does not do is reach more places. Coverage is identical, for the reason
+the failure census gives: the places the baseline misses are across water, and
+a search from the other side meets the same water.
+
+### Can a failed link fall back to something nearer?
+
+Measured, and the answer is no — but the reason is worth more than the answer.
+
+| fallback after a failed link | roads | served | tees | alongside | recovered | searches |
+|---|---|---|---|---|---|---|
+| none (the baseline) | 88 | 123 | 1 | 4.8 km | — | 158 |
+| the nearest point on a road | 93 | 123 | 1 | 5.2 km | 5 | 208 |
+| the nearest place already connected | 97 | 123 | 1 | 7.4 km | 9 | 228 |
+| the road, then the place | 97 | 123 | 1 | 6.4 km | 9 | 273 |
+
+**Places served does not move at all.** Not by one, under any of them. A
+fallback recovers five to nine *links* and builds five to nine more roads to
+places that already had one — which is the same finding as before, from the
+other direction: the destination of a failed link is usually already on the
+network, so a second road to it adds road and no coverage. The nearest-place
+fallback makes the alongside-road problem measurably worse, 4.8 km to 7.4 km,
+which is the opposite of what anyone wants.
+
+A fallback is worth having only if the thing it falls back to is somewhere the
+first search could not reach. The reverse search is that idea done properly:
+rather than trying a second guessed destination after the first guess fails, it
+never guesses.
+
 ## The runs behind these numbers
 
 Every table above comes from a run whose manifest carries a run id, the study

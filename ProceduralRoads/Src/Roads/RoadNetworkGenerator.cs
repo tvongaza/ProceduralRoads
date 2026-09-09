@@ -667,6 +667,9 @@ public static partial class RoadNetworkGenerator
         Vector3 current = startPos;
         float currentRadius = startRadius;
         string currentName = "Start";
+        // Places the chain has already been to, for a fallback to aim at.
+        var reached = new List<(Vector3 position, float radius, string name)>
+            { (startPos, startRadius, "Start") };
         
         while (unvisited.Count > 0)
         {
@@ -685,8 +688,10 @@ public static partial class RoadNetworkGenerator
             var nearest = unvisited[nearestIdx];
             unvisited.RemoveAt(nearestIdx);
             
-            GenerateRoad(current, currentRadius, nearest.position, nearest.radius, RoadWidth,
-                $"{currentName} -> {nearest.name}");
+            if (!GenerateRoad(current, currentRadius, nearest.position, nearest.radius, RoadWidth,
+                    $"{currentName} -> {nearest.name}"))
+                TryFallbackConnection(nearest.position, nearest.radius, nearest.name, reached);
+            reached.Add((nearest.position, nearest.radius, nearest.name));
             
             current = nearest.position;
             currentRadius = nearest.radius;
@@ -742,14 +747,18 @@ public static partial class RoadNetworkGenerator
             }
         }
         
+        var built = new List<(Vector3 position, float radius, string name)>
+            { (nodes[0].position, nodes[0].radius, nodes[0].name) };
         for (int i = 1; i < nodes.Count; i++)
         {
             if (parent[i] >= 0)
             {
                 var from = nodes[parent[i]];
                 var to = nodes[i];
-                GenerateRoad(from.position, from.radius, to.position, to.radius, RoadWidth,
-                    $"{from.name} -> {to.name}");
+                if (!GenerateRoad(from.position, from.radius, to.position, to.radius, RoadWidth,
+                        $"{from.name} -> {to.name}"))
+                    TryFallbackConnection(to.position, to.radius, to.name, built);
+                built.Add((to.position, to.radius, to.name));
             }
         }
     }
@@ -915,6 +924,12 @@ public static partial class RoadNetworkGenerator
                 case ConnectionPlan.HubAndSpoke:
                     GenerateHubAndSpokeRoads(startPos, startRadius, roadLocations, startName);
                     break;
+                case ConnectionPlan.GrowFromNetwork:
+                    GenerateGrowFromNetworkRoads(startPos, startRadius, roadLocations, startName);
+                    break;
+                case ConnectionPlan.ReverseToNetwork:
+                    GenerateReverseToNetworkRoads(startPos, startRadius, roadLocations, startName);
+                    break;
             }
 
             return;
@@ -1012,6 +1027,7 @@ public static partial class RoadNetworkGenerator
         RoadAttemptLog.Clear();
         RoadSelectionLog.Clear();
         ResetProbeCounters();
+        ResetFallbackCounters();
         m_roadCrossings.Clear();
         BridgePlans.Reset();
         RoadNetworkPersistence.Reset();

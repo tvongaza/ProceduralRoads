@@ -100,6 +100,136 @@ public class RoadPathfinder
         m_worldGen = worldGen;
     }
 
+    /// <summary>
+    /// A search that runs from a place OUTWARD until it reaches the network,
+    /// instead of from a chosen point on the network to the place.
+    ///
+    /// The difference is the goal. An ordinary search is told one destination
+    /// and must be given it in advance, so a plan has to guess which point on
+    /// the network to aim at - and it guesses by straight-line distance, which
+    /// is how a plan ends up aiming across a strait at a road it cannot reach.
+    /// This search is told no destination at all: it stops at the first ground
+    /// it settles that already carries road. Whatever it finds is, by
+    /// construction, the cheapest way onto the network from this place.
+    ///
+    /// The heuristic is the straight-line distance to the nearest road point
+    /// the caller knows about, less the reach, floored at zero. Every move
+    /// costs at least its length, so that never overestimates and the search
+    /// stays admissible; with no hints it degrades to Dijkstra, which is
+    /// slower but still correct.
+    /// </summary>
+    public List<Vector2>? FindPathToNetwork(Vector2 start, float reach, IReadOnlyList<Vector2>? hints = null)
+    {
+        Vector2i startGrid = WorldToGrid(start);
+        Probe?.AttemptBegan(start, start, startGrid, startGrid);
+
+        float NetworkHeuristic(Vector2i cell)
+        {
+            if (hints == null || hints.Count == 0) return 0f;
+            Vector2 world = GridToWorld(cell);
+            float best = float.MaxValue;
+            for (int i = 0; i < hints.Count; i++)
+            {
+                float dx = hints[i].x - world.x, dy = hints[i].y - world.y;
+                float d = dx * dx + dy * dy;
+                if (d < best) best = d;
+            }
+            return Mathf.Max(0f, Mathf.Sqrt(best) - reach);
+        }
+
+        bool AtNetwork(Vector2i cell) => RoadSpatialGrid.HasRoadWithin(GridToWorld(cell), reach);
+
+        if (AtNetwork(startGrid))
+        {
+            LastIterations = 0;
+            LastOutcome = "already on the network";
+            LastPathCost = 0f;
+            Probe?.AttemptEnded(false, LastOutcome, 0);
+            return null;
+        }
+
+        SortedSet<(float priority, Vector2i pos)> openSet = new SortedSet<(float, Vector2i)>(
+            Comparer<(float priority, Vector2i pos)>.Create((a, b) =>
+            {
+                int cmp = a.priority.CompareTo(b.priority);
+                if (cmp != 0) return cmp;
+                cmp = a.pos.x.CompareTo(b.pos.x);
+                if (cmp != 0) return cmp;
+                return a.pos.y.CompareTo(b.pos.y);
+            }));
+        Dictionary<Vector2i, float> gCosts = new();
+        Dictionary<Vector2i, Vector2i> cameFrom = new();
+        HashSet<Vector2i> closedSet = new();
+
+        openSet.Add((NetworkHeuristic(startGrid), startGrid));
+        gCosts[startGrid] = 0f;
+        int iterations = 0;
+
+        while (openSet.Count > 0 && iterations < MaxIterations)
+        {
+            iterations++;
+            var current = openSet.Min;
+            openSet.Remove(current);
+            Vector2i currentPos = current.pos;
+
+            if (AtNetwork(currentPos))
+            {
+                LastIterations = iterations;
+                LastOutcome = "found";
+                LastPathCost = gCosts.TryGetValue(currentPos, out float cost) ? cost : 0f;
+                Probe?.AttemptEnded(true, LastOutcome, iterations);
+                return ReconstructPath(cameFrom, currentPos, start, GridToWorld(currentPos));
+            }
+
+            closedSet.Add(currentPos);
+            Probe?.Popped(currentPos, iterations);
+
+            for (int i = 0; i < Directions.Length; i++)
+            {
+                Vector2i neighborPos = new Vector2i(currentPos.x + Directions[i].x, currentPos.y + Directions[i].y);
+                if (closedSet.Contains(neighborPos))
+                    continue;
+
+                float moveCost = GetMoveCost(currentPos, neighborPos, i);
+                if (moveCost >= RiverPenalty)
+                {
+                    Probe?.MoveBlocked(currentPos, neighborPos);
+                    if (!(Fords || Bridges))
+                    {
+                        Probe?.CrossingRejected(currentPos, Directions[i], CrossingRejection.CrossingsDisabled);
+                        continue;
+                    }
+                    if (!TryGetRiverCrossing(currentPos, Directions[i], out Vector2i landing, out float crossingCost))
+                        continue;
+                    if (closedSet.Contains(landing))
+                    {
+                        Probe?.CrossingRejected(currentPos, Directions[i], CrossingRejection.LandingClosed);
+                        continue;
+                    }
+                    Probe?.CrossingAccepted(currentPos, landing, crossingCost);
+                    neighborPos = landing;
+                    moveCost = crossingCost;
+                }
+
+                float tentativeG = gCosts[currentPos] + moveCost;
+                if (!gCosts.TryGetValue(neighborPos, out float existingG) || tentativeG < existingG)
+                {
+                    cameFrom[neighborPos] = currentPos;
+                    gCosts[neighborPos] = tentativeG;
+                    float h = NetworkHeuristic(neighborPos);
+                    openSet.Remove((existingG + h, neighborPos));
+                    openSet.Add((tentativeG + h, neighborPos));
+                }
+            }
+        }
+
+        LastIterations = iterations;
+        LastOutcome = openSet.Count == 0 ? "no reachable path" : "max iterations reached";
+        LastPathCost = 0f;
+        Probe?.AttemptEnded(false, LastOutcome, iterations);
+        return null;
+    }
+
     public List<Vector2>? FindPath(Vector2 start, Vector2 end)
     {
         Vector2i startGrid = WorldToGrid(start);

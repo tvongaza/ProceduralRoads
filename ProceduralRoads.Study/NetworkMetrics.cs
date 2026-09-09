@@ -67,7 +67,32 @@ internal static class NetworkMetrics
         /// <summary>Length of distinct road on the ground, counting a stretch
         /// used by two routes once. This is what a player would pace out.</summary>
         public float UniqueLengthMetres;
+
+        /// <summary>Roads whose end meets another road along its length rather
+        /// than at its end: a T where a path joins a path. This is the shape a
+        /// walked network has, and the shipped plan cannot make one, because
+        /// every road it builds runs between two places.</summary>
+        public int TeeJunctions;
+
+        /// <summary>Roads whose end meets another road's end. A star at a
+        /// place, which is what happens when two roads leave the same
+        /// anchor.</summary>
+        public int EndToEndJoins;
+
+        /// <summary>Metres of road running within CorridorWidth of another road
+        /// without joining it: two paths side by side where one would do.</summary>
+        public float ParallelMetres;
     }
+
+    /// <summary>A road end this far from another road's interior joins it.</summary>
+    public const float JunctionRadius = 12f;
+
+    /// <summary>Roads closer than this to each other are running together.</summary>
+    public const float CorridorWidth = 12f;
+
+    /// <summary>A join within this of a road's own end is an end-to-end join,
+    /// not a tee.</summary>
+    public const float EndMargin = 24f;
 
     /// <summary>
     /// A place and an attempt endpoint are the same place when they are within
@@ -120,7 +145,81 @@ internal static class NetworkMetrics
         (result.Components, result.LargestComponentRoutes) = Components(routes, places);
         result.SummedLengthMetres = routes.Sum(r => r.Length);
         result.UniqueLengthMetres = UniqueLength(routes);
+        (result.TeeJunctions, result.EndToEndJoins) = Junctions(routes);
+        result.ParallelMetres = ParallelLength(routes);
         return result;
+    }
+
+    /// <summary>
+    /// How the roads meet: a tee where one road's end lands on another road's
+    /// length, an end-to-end join where two ends meet. The distinction is the
+    /// whole question of whether a network has junctions or is a bundle of
+    /// lines leaving the same point.
+    /// </summary>
+    private static (int tees, int ends) Junctions(IReadOnlyList<RoadRoute> routes)
+    {
+        int tees = 0, ends = 0;
+        for (int i = 0; i < routes.Count; i++)
+        {
+            if (routes[i].Points.Count < 2) continue;
+            Vector3[] myEnds = { routes[i].Points[0], routes[i].Points[routes[i].Points.Count - 1] };
+            bool tee = false, endJoin = false;
+            foreach (Vector3 end in myEnds)
+            {
+                Vector2 at = new(end.x, end.z);
+                for (int j = 0; j < routes.Count && !tee; j++)
+                {
+                    if (j == i || routes[j].Points.Count < 2) continue;
+                    List<Vector3> other = routes[j].Points;
+                    float running = 0f;
+                    for (int k = 0; k < other.Count; k++)
+                    {
+                        if (k > 0) running += Flat(other[k - 1], other[k]);
+                        if (!Near(other[k], at, JunctionRadius)) continue;
+                        float fromEnds = Mathf.Min(running, routes[j].Length - running);
+                        if (fromEnds > EndMargin) tee = true;
+                        else endJoin = true;
+                    }
+                }
+            }
+            if (tee) tees++;
+            else if (endJoin) ends++;
+        }
+        return (tees, ends);
+    }
+
+    private static float Flat(Vector3 a, Vector3 b)
+    {
+        float dx = b.x - a.x, dz = b.z - a.z;
+        return Mathf.Sqrt(dx * dx + dz * dz);
+    }
+
+    /// <summary>
+    /// Metres of one road running within a corridor's width of another without
+    /// joining it. Two roads to neighbouring places both leaving the same
+    /// anchor produce this, and it is what a player sees as two paths where a
+    /// fork would do.
+    /// </summary>
+    private static float ParallelLength(IReadOnlyList<RoadRoute> routes)
+    {
+        Dictionary<(int, int), int> owner = new();
+        float total = 0f;
+        for (int i = 0; i < routes.Count; i++)
+        {
+            List<Vector3> pts = routes[i].Points;
+            for (int k = 1; k < pts.Count; k++)
+            {
+                float mx = (pts[k - 1].x + pts[k].x) * 0.5f, mz = (pts[k - 1].z + pts[k].z) * 0.5f;
+                (int, int) cell = ((int)Mathf.Floor(mx / CorridorWidth), (int)Mathf.Floor(mz / CorridorWidth));
+                float length = Flat(pts[k - 1], pts[k]);
+                if (owner.TryGetValue(cell, out int first))
+                {
+                    if (first != i) total += length;
+                }
+                else owner[cell] = i;
+            }
+        }
+        return total;
     }
 
     /// <summary>
