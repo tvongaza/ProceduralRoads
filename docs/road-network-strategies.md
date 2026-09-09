@@ -277,9 +277,7 @@ interesting one - aiming at where people live selects about as many places,
 connects ten points fewer of them, and spends more road doing it, because
 settlements sit in scattered awkward spots. Worth wanting, but not free.
 
-## Options
-
-### The endpoint policy in PR #16
+## PR #16, one change at a time
 
 Measured one change at a time from the shipped policy, crossings on, issue
 seed. "Served" counts places a road end reaches.
@@ -310,7 +308,7 @@ Ring balancing takes one island per ring from the inside out, so the largest
 landmasses in the world can go without roads. On these three worlds it is the
 one part of the package that costs coverage; the rest gains it.
 
-### The coast-cell anchor
+## The coast-cell anchor
 
 Off the starter island, each island's network is rooted at the island cell
 nearest its bounding box, with radius 0 — a coast cell, not a place. On the
@@ -321,7 +319,7 @@ They do not cost connections — rooting on a location instead builds one fewer
 road, because the anchor is then spent as the root — but they waste a quarter
 of all attempts and, where such a road does succeed, it ends on a beach.
 
-### Connection plans
+## Connection plans
 
 Same islands, same selected places, same anchor, same budget; only the plan
 differs.
