@@ -53,6 +53,7 @@ namespace ProceduralRoads
         public static ConfigEntry<float> FordRaiseWeight = null!;
         public static ConfigEntry<float> FordSpanWeight = null!;
         public static ConfigEntry<bool> BridgesEnabled = null!;
+        public static ConfigEntry<RoadNetworkStrategy> NetworkStrategy = null!;
         public static ConfigEntry<float> BridgeCostFixed = null!;
         public static ConfigEntry<float> BridgeCostPerMeter = null!;
 
@@ -126,6 +127,14 @@ namespace ProceduralRoads
                     "Makes long bridges dearer than short ones.",
                     new AcceptableValueRange<float>(0f, 10000f)));
 
+            NetworkStrategy = Config.Bind("Study", "Strategy", RoadNetworkStrategy.Shipped,
+                "Which policy decides the road network. Shipped is the mod's own: largest islands by " +
+                "percentage, priority truncation, a coast-cell anchor off the starter island, Chain or MST " +
+                "by island parity. Reachable is PR #16's proposal ported for measurement: islands balanced " +
+                "over three world rings, endpoints filtered to ground a road can reach and snapped onto it, " +
+                "a highest-priority anchor, and one tree grown outward with retries and an attempt cap. " +
+                "Study branch only.");
+
             GenerateRoadsOnLoad = Config.Bind("Debug", "GenerateRoadsOnLoad", true,
                 "Generate the road network when a world without persisted roads loads. Off, the world stays " +
                 "road-free until the road_generate or road_regen_island console command asks; for validation " +
@@ -186,6 +195,7 @@ namespace ProceduralRoads
             RoadPathfinder.BridgesEnabled = BridgesEnabled.Value;
             RoadPathfinder.ConfiguredBridgeCostFixed = BridgeCostFixed.Value;
             RoadPathfinder.ConfiguredBridgeCostPerMeter = BridgeCostPerMeter.Value;
+            RoadNetworkGenerator.Strategy = NetworkStrategy.Value;
             // CustomLocations is parsed at generation time to preserve API registrations
         }
 

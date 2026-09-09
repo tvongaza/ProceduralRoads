@@ -9,7 +9,7 @@ namespace ProceduralRoads;
 /// <summary>
 /// Orchestrates road network generation after POI locations are known.
 /// </summary>
-public static class RoadNetworkGenerator
+public static partial class RoadNetworkGenerator
 {
     private static ManualLogSource Log => ProceduralRoadsPlugin.ProceduralRoadsLogger;
     
@@ -242,13 +242,26 @@ public static class RoadNetworkGenerator
             return;
 
         var islands = IslandDetector.DetectIslands();
-        
-        var sortedIslands = islands.OrderByDescending(i => i.ApproxArea).ToList();
-        
-        int islandCount = Mathf.Max(1, Mathf.RoundToInt(sortedIslands.Count * IslandRoadPercentage / 100f));
-        var selectedIslands = sortedIslands.Take(islandCount).ToList();
-        
-        Log.LogDebug($"Islands: {islands.Count} total, {islandCount} selected ({IslandRoadPercentage}%)");
+
+        // Which islands get roads is part of the strategy, not a step before
+        // it: the shipped policy takes the largest by percentage, PR #16's
+        // balances the quota over three world rings.
+        List<Island> selectedIslands;
+        if (UseReachable)
+        {
+            var candidates = BuildIslandCandidates(islands, locations.Value.AllLocations, locations.Value.SpawnPoint);
+            var balanced = SelectBalancedIslands(candidates, IslandRoadPercentage);
+            selectedIslands = balanced.Select(candidate => candidate.Island).ToList();
+            Log.LogDebug(
+                $"Islands: {islands.Count} total, {candidates.Count} eligible, {selectedIslands.Count} selected ({IslandRoadPercentage}%, ring-balanced)");
+        }
+        else
+        {
+            var sortedIslands = islands.OrderByDescending(i => i.ApproxArea).ToList();
+            int islandCount = Mathf.Max(1, Mathf.RoundToInt(sortedIslands.Count * IslandRoadPercentage / 100f));
+            selectedIslands = sortedIslands.Take(islandCount).ToList();
+            Log.LogDebug($"Islands: {islands.Count} total, {islandCount} selected ({IslandRoadPercentage}%)");
+        }
 
         foreach (var island in selectedIslands)
         {
@@ -256,7 +269,7 @@ public static class RoadNetworkGenerator
             if (islandLocations.Count == 0) continue;
             
             int maxLocs = GetMaxLocationsForIsland(island);
-            var selected = SelectLocations(islandLocations, maxLocs);
+            var selected = SelectLocationsForStrategy(islandLocations, maxLocs);
             
             Log.LogDebug(
                 $"Island {island.Id}: {islandLocations.Count} candidates -> {selected.Count} selected (max {maxLocs}, area {island.ApproxArea/1_000_000:F1}km²)");
@@ -265,12 +278,12 @@ public static class RoadNetworkGenerator
             
             if (isStarterIsland)
             {
-                GenerateIslandRoads(island, selected, 
+                GenerateIslandRoadsForStrategy(island, selected, 
                     locations.Value.SpawnPoint, locations.Value.SpawnRadius);
             }
             else
             {
-                GenerateIslandRoads(island, selected);
+                GenerateIslandRoadsForStrategy(island, selected);
             }
         }
 
@@ -331,7 +344,12 @@ public static class RoadNetworkGenerator
         string attemptLabel = label ?? $"Road {m_roadsGeneratedCount + 1}";
         PathfinderTrace? trace = RoadAttemptLog.Begin();
 
-        List<Vector2>? path = m_pathfinder.FindPath(startCenter, endCenter);
+        // PR #16 snaps each end onto ground a road can stand on before
+        // searching; the shipped policy searches from the centre as given.
+        Vector2 pathStart = UseReachable ? GetNearestPathablePoint(startCenter, startRadius) : startCenter;
+        Vector2 pathEnd = UseReachable ? GetNearestPathablePoint(endCenter, endRadius) : endCenter;
+
+        List<Vector2>? path = m_pathfinder.FindPath(pathStart, pathEnd);
 
         UnityEngine.Canvas.ForceUpdateCanvases();
 
@@ -549,8 +567,15 @@ public static class RoadNetworkGenerator
         var result = new List<(string name, Vector3 position, float radius)>();
         foreach (var loc in allLocations)
         {
-            if (island.ContainsPoint(loc.position) && IsRoadLocation(loc.name))
-                result.Add(loc);
+            if (!island.ContainsPoint(loc.position) || !IsRoadLocation(loc.name))
+                continue;
+
+            // PR #16 drops a place no road could reach before it is ever
+            // attempted; the shipped policy attempts it and fails.
+            if (UseReachable && !HasNearbyPathablePoint(new Vector2(loc.position.x, loc.position.z), loc.radius))
+                continue;
+
+            result.Add(loc);
         }
         return result;
     }
@@ -723,6 +748,24 @@ public static class RoadNetworkGenerator
             GenerateMSTRoads(startPos, startRadius, islandLocations);
         else
             GenerateChainRoads(startPos, startRadius, islandLocations);
+    }
+
+    /// <summary>The selected strategy's location quota.</summary>
+    private static List<(string name, Vector3 position, float radius)> SelectLocationsForStrategy(
+        List<(string name, Vector3 position, float radius)> candidates, int maxCount) =>
+        UseReachable ? SelectLocationsPriorityThenNearest(candidates, maxCount) : SelectLocations(candidates, maxCount);
+
+    /// <summary>The selected strategy's per-island entry.</summary>
+    private static void GenerateIslandRoadsForStrategy(
+        Island island,
+        List<(string name, Vector3 position, float radius)> islandLocations,
+        Vector3? overrideStart = null,
+        float overrideStartRadius = 0f)
+    {
+        if (UseReachable)
+            GenerateReachableIslandRoads(island, islandLocations, overrideStart, overrideStartRadius);
+        else
+            GenerateIslandRoads(island, islandLocations, overrideStart, overrideStartRadius);
     }
 
     #endregion

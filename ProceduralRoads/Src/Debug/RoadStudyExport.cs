@@ -119,6 +119,7 @@ public static class RoadStudyExport
         sb.Append($"    \"MaxLocationsPerIsland\": {ProceduralRoadsPlugin.MaxLocationsPerIsland.Value},\n");
         sb.Append($"    \"PathfindingMaxIterations\": {ProceduralRoadsPlugin.PathfindingMaxIterations.Value},\n");
         sb.Append($"    \"CustomLocations\": \"{Escape(ProceduralRoadsPlugin.CustomLocations.Value)}\",\n");
+        sb.Append($"    \"Strategy\": \"{RoadNetworkGenerator.Strategy}\",\n");
         sb.Append($"    \"FordsEnabled\": {Bool(ProceduralRoadsPlugin.FordsEnabled.Value)},\n");
         sb.Append($"    \"FordWadeWeight\": {ProceduralRoadsPlugin.FordWadeWeight.Value},\n");
         sb.Append($"    \"FordRaiseWeight\": {ProceduralRoadsPlugin.FordRaiseWeight.Value},\n");

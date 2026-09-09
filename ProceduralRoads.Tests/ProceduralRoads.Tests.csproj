@@ -27,6 +27,8 @@
                  Condition="Exists('../ProceduralRoads/Src/Roads/PathfinderProbe.cs')"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadAttemptLog.cs" Link="ModSrc/RoadAttemptLog.cs"
                  Condition="Exists('../ProceduralRoads/Src/Roads/RoadAttemptLog.cs')"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/ReachableRoads.cs" Link="ModSrc/ReachableRoads.cs"
+                 Condition="Exists('../ProceduralRoads/Src/Roads/ReachableRoads.cs')"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadNetworkGenerator.cs" Link="ModSrc/RoadNetworkGenerator.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadSpatialGrid.cs" Link="ModSrc/RoadSpatialGrid.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadTerrainModifier.cs" Link="ModSrc/RoadTerrainModifier.cs"/>
