@@ -668,6 +668,27 @@ accounted for:
 Nothing unexplained, and nothing from the mod other than the failures the
 study is about.
 
+## What review found, and what changed
+
+A review of this study and the code behind it found several claims that did
+not survive contact with the implementation. All of them held up when checked.
+Recorded here because a study that quietly fixes its errors is worth less than
+one that says what they were.
+
+| what was wrong | what it was | what changed |
+|---|---|---|
+| the baseline | "today" and "as it ships" meant crossings on and every island, which is not the shipped default | relabelled throughout; the real defaults measured beside it — 30 roads and 46 places against 88 and 123 |
+| "move costs are exact" | the variance ring samples off-grid and feeds the move cost | corrected: heights at sampled positions are exact, move costs are not |
+| "MST on routed cost" | summed the path's length, not the search's cost | the pathfinder exposes its cost; rerun |
+| "trunk and spurs" | joined places, not roads | spurs now start on a road; rerun |
+| the road-sharing sweep | discounted only moves that survived the early returns, with a heuristic that stopped being admissible | both fixed; question re-answered |
+| "connected" | four meanings at once | reported apart, and attempts matched to places by identity rather than proximity |
+| road length | summed over routes, which punishes sharing | distinct road reported beside the sum |
+| "no route exists" | the search cannot know that | "frontier exhausted" |
+| clustering | stated from medians alone | distributions drawn and published |
+| swamp | "the biome players like least" | a design choice, not a preference this study can assert |
+| network counts | four tables predated the metric fix | restated |
+
 ## Still owed
 
 - The gate's own selftest metrics (pointsHash, networkComponents) were not
