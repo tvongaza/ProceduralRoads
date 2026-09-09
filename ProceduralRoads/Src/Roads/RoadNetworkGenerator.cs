@@ -266,6 +266,11 @@ public static partial class RoadNetworkGenerator
         foreach (var island in selectedIslands)
         {
             var islandLocations = GetLocationsOnIsland(island, locations.Value.AllLocations);
+            // A study preset decides which places are candidates at all, before
+            // any quota: everything it requires, plus the optional places that
+            // won their draw for this world.
+            islandLocations = StudySelection.Candidates(
+                WorldGenerator.instance?.GetSeed() ?? 0, islandLocations);
             if (islandLocations.Count == 0) continue;
             
             int maxLocs = StudyFactors.Quantity switch
@@ -628,6 +633,11 @@ public static partial class RoadNetworkGenerator
 
     private static int GetLocationPriority(string locationName)
     {
+        // A study preset may replace the table's answer for a name; nothing
+        // else changes about how priority is used.
+        if (StudySelection.TryGetPriority(locationName, out int overridden))
+            return overridden;
+
         if (LocationPriorities.TryGetValue(locationName, out int priority))
             return priority;
 
@@ -773,10 +783,29 @@ public static partial class RoadNetworkGenerator
 
     /// <summary>The selected strategy's location quota.</summary>
     private static List<(string name, Vector3 position, float radius)> SelectLocationsForStrategy(
+        List<(string name, Vector3 position, float radius)> candidates, int maxCount)
+    {
+        // What a preset requires is selected however small the island's quota,
+        // and the quota then fills whatever room is left.
+        List<(string name, Vector3 position, float radius)> required =
+            candidates.Where(c => StudySelection.IsRequired(c.name)).ToList();
+        if (required.Count == 0)
+            return Quota(candidates, maxCount);
+
+        List<(string name, Vector3 position, float radius)> optional =
+            candidates.Where(c => !StudySelection.IsRequired(c.name)).ToList();
+        List<(string name, Vector3 position, float radius)> selected = new(required);
+        selected.AddRange(Quota(optional, Mathf.Max(0, maxCount - required.Count)));
+        return selected;
+    }
+
+    private static List<(string name, Vector3 position, float radius)> Quota(
         List<(string name, Vector3 position, float radius)> candidates, int maxCount) =>
-        StudyFactors.Quota == LocationQuota.PriorityThenNearest
-            ? SelectLocationsPriorityThenNearest(candidates, maxCount)
-            : SelectLocations(candidates, maxCount);
+        maxCount <= 0
+            ? new List<(string name, Vector3 position, float radius)>()
+            : StudyFactors.Quota == LocationQuota.PriorityThenNearest
+                ? SelectLocationsPriorityThenNearest(candidates, maxCount)
+                : SelectLocations(candidates, maxCount);
 
     /// <summary>
     /// One island, under the factors this run selected: where the network is

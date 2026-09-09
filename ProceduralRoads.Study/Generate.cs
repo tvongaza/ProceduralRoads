@@ -37,6 +37,11 @@ internal static class Generate
         string outDir = Options.Value(args, "--out") ?? Directory.GetCurrentDirectory();
         string strategyName = Options.Value(args, "--strategy") ?? "shipped";
         bool crossings = (Options.Value(args, "--crossings") ?? "on") == "on";
+        // Fords and bridges can be asked for separately: they answer different
+        // questions, a ford being a place a road wades and a bridge a place it
+        // does not touch the water at all.
+        bool fords = (Options.Value(args, "--fords") ?? (crossings ? "on" : "off")) == "on";
+        bool bridges = (Options.Value(args, "--bridges") ?? (crossings ? "on" : "off")) == "on";
         int islandPercentage = int.Parse(Options.Value(args, "--islands") ?? "100", CultureInfo.InvariantCulture);
         int iterations = int.Parse(Options.Value(args, "--iterations") ?? "100000", CultureInfo.InvariantCulture);
         int maxLocations = int.Parse(Options.Value(args, "--max-locations") ?? "12", CultureInfo.InvariantCulture);
@@ -82,14 +87,15 @@ internal static class Generate
         RoadNetworkGenerator.IslandRoadPercentage = islandPercentage;
         RoadNetworkGenerator.MaxLocationsPerIsland = maxLocations;
         RoadPathfinder.MaxIterations = iterations;
-        RoadPathfinder.FordsEnabled = crossings;
-        RoadPathfinder.BridgesEnabled = crossings;
+        RoadPathfinder.FordsEnabled = fords;
+        RoadPathfinder.BridgesEnabled = bridges;
         RoadAttemptLog.Enabled = true;
 
         Console.WriteLine($"world:     {world.Describe()}");
-        Console.WriteLine($"run:       strategy={strategy} crossings={(crossings ? "on" : "off")} " +
+        Console.WriteLine($"run:       strategy={strategy} fords={(fords ? "on" : "off")} bridges={(bridges ? "on" : "off")} " +
                           $"islands={islandPercentage}% iterations={iterations} maxLocations={maxLocations} width={width}");
         Console.WriteLine($"factors:   {StudyFactors.Describe()}");
+        Console.WriteLine($"places:    {Presets.Describe()}");
 
         DateTime started = DateTime.UtcNow;
         try
@@ -112,7 +118,7 @@ internal static class Generate
         File.WriteAllText(Path.Combine(outDir, $"{label}.selection.csv"), RoadSelectionLog.ToCsv());
         File.WriteAllText(Path.Combine(outDir, $"{label}.crossings.csv"), RoadCrossingCsv.ToCsv(sites));
         File.WriteAllText(Path.Combine(outDir, $"{label}.manifest.json"),
-            Manifest(label, strategy, crossings, islandPercentage, iterations, maxLocations, width,
+            Manifest(label, strategy, fords, bridges, islandPercentage, iterations, maxLocations, width,
                 gridPath, terrainPaths, locationsPath, world, routes, attempts, sites, elapsed));
 
         Report(routes, attempts, sites, locations, elapsed, outDir, label);
@@ -164,6 +170,10 @@ internal static class Generate
                 _ => throw new ArgumentException(
                     $"--plan must be parity, tree, routed-mst, trunk or hub, not '{plan}'"),
             };
+
+        string preset = Options.Value(args, "--preset") ?? "shipped";
+        if (!Presets.Apply(preset))
+            throw new ArgumentException($"unknown preset '{preset}'");
 
         string? places = Options.Value(args, "--places");
         if (places != null)
@@ -245,7 +255,7 @@ internal static class Generate
         Console.WriteLine($"wrote:     {Path.Combine(outDir, label)}.{{routes,attempts,crossings}}.csv + manifest.json");
     }
 
-    private static string Manifest(string label, RoadNetworkStrategy strategy, bool crossings,
+    private static string Manifest(string label, RoadNetworkStrategy strategy, bool fords, bool bridges,
         int islandPercentage, int iterations, int maxLocations, float width,
         string gridPath, string[] terrainPaths, string locationsPath, CsvWorld world,
         IReadOnlyList<RoadRoute> routes, IReadOnlyList<RoadAttempt> attempts,
@@ -267,12 +277,13 @@ internal static class Generate
             "  \"config\": {",
             $"    \"Strategy\": \"{strategy}\",",
             $"    \"Factors\": \"{Json(StudyFactors.Describe())}\",",
+            $"    \"Places\": \"{Json(Presets.Describe())}\",",
             $"    \"RoadWidth\": {width.ToString(CultureInfo.InvariantCulture)},",
             $"    \"IslandRoadPercentage\": {islandPercentage},",
             $"    \"MaxLocationsPerIsland\": {maxLocations},",
             $"    \"PathfindingMaxIterations\": {iterations},",
-            $"    \"FordsEnabled\": {(crossings ? "true" : "false")},",
-            $"    \"BridgesEnabled\": {(crossings ? "true" : "false")}",
+            $"    \"FordsEnabled\": {(fords ? "true" : "false")},",
+            $"    \"BridgesEnabled\": {(bridges ? "true" : "false")}",
             "  },",
             "  \"result\": {",
             $"    \"routeCount\": {routes.Count},",

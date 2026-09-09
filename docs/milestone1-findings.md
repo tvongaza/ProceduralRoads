@@ -397,6 +397,66 @@ This is also why registering locations through the API matters more than it
 looks: a registered location gets priority 80, which puts it straight into the
 band that actually wins quota slots.
 
+## Which places the network should serve
+
+Three presets, each a different answer to "what is a road network for". Bosses
+are required in all three; the rest is drawn per place from the world seed, so
+the same world always draws the same places.
+
+| preset | offered | selected | roads | length | served | connect rate |
+|---|---|---|---|---|---|---|
+| shipped (the built-in table) | 2 470 | 158 | 88 | 58.5 km | 123 | 78 % |
+| bosses only | 19 | 19 | 9 | 11.4 km | 12 | 63 % |
+| bosses and half the dungeons | 588 | 139 | 77 | 53.6 km | 108 | 78 % |
+| broad exploration | 778 | 146 | 67 | 71.5 km | 100 | 68 % |
+
+The bosses-only network is barely a network: nine roads in a whole world,
+because most bosses are alone on their island and a road needs two ends.
+
+The interesting one is the last. It selects about as many places as the
+shipped table does, and connects ten percentage points fewer of them, over
+more road: 71.5 km for 100 places against 58.5 km for 123. Settlements are
+harder to connect than dungeons - they sit in scattered, awkward places -
+so a network aimed at where people live costs more road per destination and
+fails more often. That is a real trade rather than a free improvement.
+
+## The other levers, on the same curve
+
+### Fords and bridges, separately
+
+| | roads | length | served | crossings recorded |
+|---|---|---|---|---|
+| neither | 47 | 20.9 km | 72 | 0 |
+| fords only | 78 | 42.8 km | 111 | 0 |
+| bridges only | 57 | 30.6 km | 86 | 15 |
+| both | 88 | 58.5 km | 123 | 15 |
+
+Crossings are worth more than any other single lever measured here: they take
+the network from 72 places served to 123, nearly doubling it.
+
+The split needs care. "Fords only" gains 39 served and records no crossings at
+all, because the `Fords` flag does two things - it lets a road jump a
+fordable river, and it lets a road wade a swamp - and only the second survives
+offline. Ford detection needs depths sampled between the dumped positions,
+which is the one thing this terrain model cannot do. So the honest reading is
+that most of that 39 is swamp wading, and the river-ford share of it is
+unknown until it is run in game.
+
+### How many islands get roads
+
+| islands selected | roads | length | served | networks | failed attempts |
+|---|---|---|---|---|---|
+| 10 % | 24 | 17.5 km | 34 | 12 | 21 of 45 |
+| 25 % | 49 | 35.4 km | 68 | 24 | 34 of 83 |
+| 50 % | 73 | 52.6 km | 101 | 41 | 53 of 126 |
+| 75 % | 84 | 57.0 km | 117 | 51 | 63 of 147 |
+| 100 % | 88 | 58.5 km | 123 | 54 | 70 of 158 |
+
+Near enough linear to three quarters, then flat: the largest islands are taken
+first, so the last quarter of them are small and add six served places between
+them. The default of 50 % is giving up about a fifth of the network the same
+world would support.
+
 ## Connection plans on identical inputs
 
 The same islands, the same selected places, the same anchor, the same routing
