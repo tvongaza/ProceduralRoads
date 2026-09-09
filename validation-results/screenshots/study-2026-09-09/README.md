@@ -28,6 +28,11 @@ for the unpainted span of a bridge.
 | failure-anchor.png | a coast anchor 150 m out to sea: one cell settled, sixteen moves refused, no road |
 | failure-frontier.png | a search that settled a whole archipelago and still found no way to its destination |
 | failure-budget.png | the one attempt that hit the iteration cap, including the part it spent over open ocean |
+| failure-wide-channel.png | Bonemass to GoblinKing: 29 466 cells settled, stopped 626 m short of a channel no bridge can span |
+| failure-no-bank.png | a search that reached the destination's island but found no bank a bridge could stand on |
+| failure-mistlands-ban.png | 40 m of water, easily bridged, except that the destination is in the Mistlands where bridges are refused |
+| failure-harbour.png | a destination whose own cell is under water: the road stops 6 m away and can never arrive |
+| failure-on-network-anyway.png | a failed destination that a road already reaches from the other side |
 | chart-quota.png | places served against the per-island quota |
 | chart-plateau.png | roads and road length against the iteration budget |
 | chart-funnel.png | eligible places, selected places, places served |
