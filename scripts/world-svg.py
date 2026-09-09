@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+"""Render a world as one SVG: coastline and land, rivers, contour lines,
+every placed location with its approach circle, and the road network, so
+road distribution can be judged on paper. Pure python, no PIL/matplotlib.
+
+    scripts/world-svg.py <World>.world.csv <World>.locations.csv [<World>.routes.csv]
+        [--crossings <World>.crossings.csv] [--manifest <World>.manifest.json]
+        [--out world.svg] [--zoom cx,cz,half] [--contour 10] [--px 0.1]
+
+The world and locations CSVs come from cli_world_dump; the routes,
+crossings and manifest from road_routes (this branch). A route is drawn in
+the colours of the stretches that made it, so how the road met the water is
+visible on the map: ordinary road, waded ford, raised ford, and the
+unpainted span of a bridge as a dashed line between its banks.
+
+--zoom renders an inset window centred on (cx,cz) with half-size `half`
+metres beside the world.
+"""
+import argparse
+import csv
+import json
+import math
+import os
+import sys
+from xml.sax.saxutils import escape
+from collections import defaultdict
+
+SEA = 30.0
+BIOME_FILL = {
+    # Light tints: the roads must carry the contrast, not the land.
+    'Meadows': '#E4EED3', 'BlackForest': '#C9DCC4', 'Swamp': '#DCD9C0', 'Mountain': '#F3F5F7',
+    'Plains': '#F0EACB', 'Mistlands': '#DCDBE6', 'AshLands': '#EACFC3', 'DeepNorth': '#EEF3F7',
+    'Ocean': '#B9D2E8',
+}
+# One colour per way a stretch of road met the ground. A reader should be
+# able to tell a bridge from a ford from the map alone.
+KIND_STYLE = {
+    'Road':  ('#1f1f1f', 2.0, None),
+    'Wade':  ('#0f8f88', 2.8, None),
+    'Raise': ('#c06010', 2.8, None),
+    'Span':  ('#7a2fb0', 3.0, '5,3'),
+}
+LABEL_KEYS = ('Eikthyr', 'GDKing', 'Bonemass', 'Dragonqueen', 'GoblinKing', 'Mistlands_DvergrBossEntrance',
+              'Crypt', 'SunkenCrypt', 'TrollCave', 'MountainCave', 'Mistlands_DvergrTownEntrance',
+              'StartTemple', 'Vendor', 'Hildir')
+
+
+def f(v):
+    return f'{v:.1f}'
+
+
+def read_world(path):
+    xs, zs = set(), set()
+    cells = {}
+    with open(path) as fh:
+        for row in csv.DictReader(fh):
+            x, z = int(float(row['x'])), int(float(row['z']))
+            xs.add(x); zs.add(z)
+            cells[(x, z)] = (float(row['height']), row['biome'], float(row['river']))
+    xs, zs = sorted(xs), sorted(zs)
+    return xs, zs, cells
+
+
+def marching_squares(xs, zs, cells, level):
+    """Contour segments of `height == level` as world-space line pairs."""
+    segs = []
+    step = xs[1] - xs[0]
+    h = lambda x, z: cells[(x, z)][0]
+
+    def interp(p, q, hp, hq):
+        t = 0.5 if hq == hp else (level - hp) / (hq - hp)
+        return (p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
+
+    for z in zs[:-1]:
+        for x in xs[:-1]:
+            a, b, c, d = (x, z), (x + step, z), (x + step, z + step), (x, z + step)
+            if not all(k in cells for k in (a, b, c, d)):
+                continue
+            ha, hb, hc, hd = h(*a), h(*b), h(*c), h(*d)
+            idx = (ha >= level) | ((hb >= level) << 1) | ((hc >= level) << 2) | ((hd >= level) << 3)
+            if idx in (0, 15):
+                continue
+            e = {
+                'ab': interp(a, b, ha, hb), 'bc': interp(b, c, hb, hc),
+                'cd': interp(c, d, hc, hd), 'da': interp(d, a, hd, ha),
+            }
+            table = {
+                1: [('da', 'ab')], 2: [('ab', 'bc')], 3: [('da', 'bc')], 4: [('bc', 'cd')],
+                5: [('da', 'ab'), ('bc', 'cd')], 6: [('ab', 'cd')], 7: [('da', 'cd')], 8: [('cd', 'da')],
+                9: [('ab', 'cd')], 10: [('ab', 'da'), ('bc', 'cd')], 11: [('bc', 'cd')], 12: [('bc', 'da')],
+                13: [('ab', 'bc')], 14: [('da', 'ab')],
+            }
+            for p, q in table[idx]:
+                segs.append((e[p], e[q]))
+    return segs
+
+
+class View:
+    def __init__(self, x0, z0, x1, z1, px):
+        self.x0, self.z0, self.x1, self.z1, self.px = x0, z0, x1, z1, px
+        self.w = (x1 - x0) * px
+        self.h = (z1 - z0) * px
+
+    def X(self, x):
+        return (x - self.x0) * self.px
+
+    def Y(self, z):
+        return (self.z1 - z) * self.px  # north up
+
+    def inside(self, x, z, pad=0.0):
+        return self.x0 - pad <= x <= self.x1 + pad and self.z0 - pad <= z <= self.z1 + pad
+
+
+def render(view, xs, zs, cells, locations, routes, crossings, contour, title, min_radius):
+    out = []
+    step = xs[1] - xs[0]
+    out.append(f'<g>')
+    out.append(f'<rect x="0" y="0" width="{f(view.w)}" height="{f(view.h)}" fill="{BIOME_FILL["Ocean"]}"/>')
+    # land and river cells as run-length rects per row
+    for z in zs:
+        if not (view.z0 - step <= z <= view.z1):
+            continue
+        run_fill, run_x0, run_x1 = None, None, None
+
+        def flush():
+            if run_fill is not None:
+                out.append(f'<rect x="{f(view.X(run_x0))}" y="{f(view.Y(z + step))}" '
+                           f'width="{f((run_x1 - run_x0) * view.px)}" height="{f(step * view.px)}" fill="{run_fill}"/>')
+        for x in xs:
+            if not (view.x0 - step <= x <= view.x1):
+                continue
+            cell = cells.get((x, z))
+            fill = None
+            if cell is not None:
+                h, biome, river = cell
+                if h >= SEA:
+                    fill = BIOME_FILL.get(biome, '#cccccc')
+                    if river > 0.5:
+                        fill = '#D3E4D4'  # dry river band: valley floor
+                elif river > 0.5:
+                    fill = '#7FA6D4'  # river water
+            if fill == run_fill and run_x1 == x:
+                run_x1 = x + step
+            else:
+                flush()
+                run_fill, run_x0, run_x1 = fill, x, x + step
+        flush()
+    # contours
+    top = max(c[0] for c in cells.values())
+    levels = [SEA] + [lv for lv in range(int(SEA) + contour, int(top) + 1, contour)]
+    for lv in levels:
+        heavy = abs(lv - SEA) < 1e-6
+        d = []
+        for (p, q) in marching_squares(xs, zs, cells, lv):
+            if view.inside(p[0], p[1], step) or view.inside(q[0], q[1], step):
+                d.append(f'M{f(view.X(p[0]))} {f(view.Y(p[1]))}L{f(view.X(q[0]))} {f(view.Y(q[1]))}')
+        if d:
+            out.append(f'<path d="{" ".join(d)}" fill="none" stroke="{"#1f3a5f" if heavy else "#5a4a30"}" '
+                       f'stroke-width="{"1.2" if heavy else "0.35"}" stroke-opacity="{"1" if heavy else "0.6"}"/>')
+    # routes, drawn stretch by stretch: how the road met the ground is the
+    # thing being judged, so the kind decides the colour. A short road is
+    # still called out in red - a stub that reaches nothing is a finding.
+    for label, pts in routes.items():
+        if not pts:
+            continue
+        length = sum(math.dist(pts[i][:2], pts[i + 1][:2]) for i in range(len(pts) - 1))
+        stub = length < 40
+        for i in range(len(pts) - 1):
+            (x0, z0, y0, k0, s0), (x1, z1, y1, k1, s1) = pts[i], pts[i + 1]
+            if s0 != s1:
+                continue  # a gap between two stretches is not a piece of road
+            if not (view.inside(x0, z0) or view.inside(x1, z1)):
+                continue
+            color, width, dash = KIND_STYLE.get(k0, KIND_STYLE['Road'])
+            if stub:
+                color, width = '#e03030', 3.2
+            elif k0 == 'Road' and min(y0, y1) < 28:
+                color, width = '#e07a10', 2.8  # painted road over deep water
+            dash_attr = f' stroke-dasharray="{dash}"' if dash else ''
+            out.append(f'<line x1="{f(view.X(x0))}" y1="{f(view.Y(z0))}" x2="{f(view.X(x1))}" y2="{f(view.Y(z1))}" '
+                       f'stroke="{color}" stroke-width="{width}" stroke-linecap="round"{dash_attr}/>')
+    # crossings: where the network met a river, and what it built there
+    for c in crossings:
+        if not view.inside(c['x'], c['z'], 40):
+            continue
+        cx, cy = view.X(c['x']), view.Y(c['z'])
+        if c['kind'] == 'Bridge':
+            r = 3.4
+            out.append(f'<path d="M{f(cx)} {f(cy - r)}L{f(cx + r)} {f(cy)}L{f(cx)} {f(cy + r)}L{f(cx - r)} {f(cy)}Z" '
+                       f'fill="#ffffff" stroke="#7a2fb0" stroke-width="1.2"/>')
+        else:
+            out.append(f'<circle cx="{f(cx)}" cy="{f(cy)}" r="2.6" fill="#ffffff" '
+                       f'stroke="{"#0f8f88" if c["style"] == "Wade" else "#c06010"}" stroke-width="1.2"/>')
+    # locations
+    for name, x, z, r in locations:
+        if r < min_radius or not view.inside(x, z, r):
+            continue
+        out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="{f(r * view.px)}" fill="none" '
+                   f'stroke="#8a4ab0" stroke-width="0.5" stroke-opacity="0.4"/>')
+        out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="1.8" fill="#8a4ab0" fill-opacity="0.8"/>')
+        if any(k in name for k in LABEL_KEYS):
+            out.append(f'<text x="{f(view.X(x) + 4)}" y="{f(view.Y(z) - 3)}" font-size="9" fill="#3b1050">{escape(name)}</text>')
+    out.append(f'<text x="6" y="14" font-size="12" fill="#111">{escape(title)}</text>')
+    out.append('</g>')
+    return '\n'.join(out)
+
+
+def manifest_caption(manifest):
+    """The run, in one line: what code, what world, and the settings that
+    decide a road network - as the plugin held them after clamping."""
+    if not manifest:
+        return ''
+    cfg = manifest.get('config', {})
+    res = manifest.get('result', {})
+    parts = [f"mod {manifest.get('modVersion', '?')}", f"game {manifest.get('gameVersion', '?')}"]
+    if manifest.get('worldName'):
+        parts.append(f"world {manifest['worldName']} (seed {manifest.get('worldSeed', '?')})")
+    parts.append(f"scope {manifest.get('scope', '?')}")
+    parts.append(f"islands {cfg.get('IslandRoadPercentage', '?')}%")
+    parts.append(f"max POI/island {cfg.get('MaxLocationsPerIsland', '?')}")
+    parts.append(f"iterations {cfg.get('PathfindingMaxIterations', '?')}")
+    parts.append(f"fords {'on' if cfg.get('FordsEnabled') else 'off'}")
+    parts.append(f"bridges {'on' if cfg.get('BridgesEnabled') else 'off'}")
+    if res:
+        parts.append(f"{res.get('totalLengthMeters', '?')} m of road")
+    return '; '.join(parts)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('world')
+    ap.add_argument('locations')
+    ap.add_argument('routes', nargs='?')
+    ap.add_argument('--crossings', help='road_routes crossings CSV: fords and bridges are marked on the map')
+    ap.add_argument('--manifest', help='road_routes manifest JSON: its settings go in the caption')
+    ap.add_argument('--out')
+    ap.add_argument('--zoom', help='cx,cz,half (metres): inset window rendered beside the world')
+    ap.add_argument('--contour', type=int, default=10)
+    ap.add_argument('--px', type=float, default=0.1, help='pixels per metre for the world view')
+    ap.add_argument('--min-radius', type=float, default=10.0,
+                    help='hide locations whose approach radius is smaller (runestones, spawners)')
+    a = ap.parse_args()
+
+    xs, zs, cells = read_world(a.world)
+    locations = []
+    with open(a.locations) as fh:
+        for row in csv.DictReader(fh):
+            locations.append((row['name'], float(row['x']), float(row['z']), float(row['radius'])))
+    routes = defaultdict(list)
+    if a.routes:
+        with open(a.routes) as fh:
+            for row in csv.DictReader(fh):
+                # segment_index and kind are this branch's columns; an older
+                # routes CSV without them is read as one ordinary road.
+                routes[(row['route_index'], row['label'])].append((
+                    float(row['x']), float(row['z']), float(row['y']),
+                    row.get('kind', 'Road'), row.get('segment_index', '0')))
+    crossings = []
+    if a.crossings:
+        with open(a.crossings) as fh:
+            for row in csv.DictReader(fh):
+                crossings.append({'x': float(row['center_x']), 'z': float(row['center_z']),
+                                  'kind': row['kind'], 'style': row['style'],
+                                  'width': float(row['width']), 'depth': float(row['depth'])})
+    manifest = {}
+    if a.manifest:
+        with open(a.manifest) as fh:
+            manifest = json.load(fh)
+
+    # trim the world view to the land extent (plus margin) so islands fill the page
+    land = [(x, z) for (x, z), (h, _, _) in cells.items() if h >= SEA]
+    if land:
+        lx = [p[0] for p in land]; lz = [p[1] for p in land]
+        margin = 300
+        x0, x1 = min(lx) - margin, max(lx) + margin
+        z0, z1 = min(lz) - margin, max(lz) + margin
+    else:
+        x0, x1, z0, z1 = xs[0], xs[-1], zs[0], zs[-1]
+    world_view = View(x0, z0, x1, z1, a.px)
+    n_routes = len(routes)
+    stubs = sum(1 for pts in routes.values()
+                if sum(math.dist(pts[i][:2], pts[i + 1][:2]) for i in range(len(pts) - 1)) < 40)
+    shown = sum(1 for l in locations if l[3] >= a.min_radius)
+    bridges = sum(1 for c in crossings if c['kind'] == 'Bridge')
+    title = (f'{os.path.basename(a.world)}: {len(locations)} locations ({shown} with radius >= {a.min_radius:.0f} m shown), '
+             f'{n_routes} routes ({stubs} stubs < 40 m), '
+             f'{len(crossings)} crossings ({bridges} bridges); contours every {a.contour} m, 30 m coast heavy; '
+             f'black road, teal wade, orange raise, dashed purple bridge span, red stub')
+    subtitle = manifest_caption(manifest)
+    parts = [render(world_view, xs, zs, cells, locations, routes, crossings, a.contour, title, a.min_radius)]
+    if subtitle:
+        parts.append(f'<text x="6" y="27" font-size="10" fill="#444">{escape(subtitle)}</text>')
+    total_w, total_h = world_view.w, world_view.h
+    if a.zoom:
+        cx, cz, half = (float(v) for v in a.zoom.split(','))
+        zpx = min(2.0, 700 / (2 * half))
+        zoom_view = View(cx - half, cz - half, cx + half, cz + half, zpx)
+        inner = render(zoom_view, xs, zs, cells, locations, routes, crossings, a.contour, f'zoom ({cx:.0f},{cz:.0f}) +-{half:.0f} m', a.min_radius)
+        parts.append(f'<g transform="translate({f(world_view.w + 20)},0)">{inner}</g>')
+        total_w += 20 + zoom_view.w
+        total_h = max(total_h, zoom_view.h)
+    svg = ('<?xml version="1.0" encoding="UTF-8"?>\n' + f'<svg xmlns="http://www.w3.org/2000/svg" width="{f(total_w)}" height="{f(total_h)}" '
+           f'viewBox="0 0 {f(total_w)} {f(total_h)}" font-family="sans-serif">\n' + '\n'.join(parts) + '\n</svg>\n')
+    out = a.out or a.world.replace('.world.csv', '.world.svg')
+    with open(out, 'w') as fh:
+        fh.write(svg)
+    print(f'{out}: {len(cells)} cells, {len(locations)} locations, {n_routes} routes, {len(svg) // 1024} KB')
+
+
+if __name__ == '__main__':
+    main()
