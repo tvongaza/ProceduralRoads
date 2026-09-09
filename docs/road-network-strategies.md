@@ -165,9 +165,21 @@ nothing on their own.
 | distance to open water, median | 97 m | 74 m |
 | distance from the world's centre, median | 5 146 m | 7 037 m |
 
-Neither is supported by these aggregates. Roads sit *further* from open water
-than the land does and *nearer* the world's centre, and connected places are further inland than
+**Neither holds.** Roads sit *further* from open water than the land does and
+*nearer* the world's centre, and connected places are further inland than
 unconnected ones. The same is true inside every biome taken separately.
+
+The distributions say it more plainly than the medians can: the land spikes
+hard against the shoreline where the roads do not, sitting instead in the band
+fifty to two hundred and fifty metres inland.
+
+![distance to open water, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/chart-shore.png)
+
+![distance from the world centre, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/chart-centre.png)
+
+These are whole-world distributions. They rule out a bias toward either edge
+at the scale of a world; they cannot rule out a single island where roads do
+hug its coast, and the per-place table is published so that can be checked.
 
 What roads do favour is swamp:
 
