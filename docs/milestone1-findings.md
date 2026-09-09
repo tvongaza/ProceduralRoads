@@ -89,7 +89,7 @@ PR. The numbers above are from the fixed build.
 
 Running the same world twice found it. The second run reported 78 roads and
 40 787 metres, but the spatial grid held 115 202 points for a network of
-40 970, and its 24 river crossings were the previous run's - nineteen of them
+40 970, and its 24 river crossings were the previous run's — nineteen of them
 bridges, in a run with bridges switched off.
 
 The reset before a forced regeneration was guarded on whether roads were
@@ -99,8 +99,8 @@ network was laid on top of the old one.
 
 Fixed: both guards now ask whether the world has a network at all. This is in
 the base code rather than in the crossings work, and it means any measurement
-taken by loading a world and regenerating - including some of this study's own
-early runs - was measuring a mixture. The runs reported here were taken either
+taken by loading a world and regenerating — including some of this study's own
+early runs — was measuring a mixture. The runs reported here were taken either
 on a world with no saved network or after the fix.
 
 ## Islands, and where the "two or three roads per island" comes from
@@ -147,7 +147,7 @@ Of the eligible places, by what became of them:
 This is the study's clearest result so far. Ninety-three per cent of the
 places that are eligible for a road never get an attempt at all: they lose
 their island's quota. Pathfinding failure accounts for about one per cent, and
-the iteration budget - the setting the issue is about - decides the fate of a
+the iteration budget — the setting the issue is about — decides the fate of a
 single place per world.
 
 The quota that does this is `2 + area / 2 km²`, not the configurable ceiling.
@@ -267,7 +267,7 @@ fixed, shipped plan, crossings on, issue #7 seed:
 
 Two things stand out.
 
-The quota is not protecting generation from failure - it is the point on the
+The quota is not protecting generation from failure — it is the point on the
 curve where failure is *most* likely. Nearly half of all attempts fail under
 today's quota and one in six with every place selected, because the places
 added later are close to places already connected, and a short road over
@@ -298,13 +298,13 @@ places are connected, and the island keeps only a fraction of its network.
 The cap is a fixed number where the thing it limits scales with the island.
 
 (The routed MST run took 199 seconds against 25, because it prices its edges
-first. Its candidate set is each place's eight nearest neighbours - all pairs
+first. Its candidate set is each place's eight nearest neighbours — all pairs
 would be four hundred squared searches on the biggest island.)
 
 ## Do roads cluster at the edges?
 
-The issue says roads cluster "at the edges". That can mean two things - the
-shoreline of an island, or the outer parts of the world - so both were
+The issue says roads cluster "at the edges". That can mean two things — the
+shoreline of an island, or the outer parts of the world — so both were
 measured, for every one of the 57 862 centreline points, against the land
 itself. Roads near shores prove nothing on their own: most land in these
 worlds is near a shore, so the question is whether roads are nearer than the
@@ -322,7 +322,7 @@ unconnected ones (median 111 m against 68 m).
 
 A first version of this measurement said the opposite, and the reason is worth
 recording. It called everything below the road floor "water", which puts all
-of a swamp in the sea - swamp sits below that line by nature. Every swamp road
+of a swamp in the sea — swamp sits below that line by nature. Every swamp road
 then came out eight metres from a shore, and the study was one step from
 reporting that roads hug coastlines. Water here is open water: below sea level
 and not swamp, or swamp too deep for a road to wade. A swamp a player can walk
@@ -344,7 +344,7 @@ A third of the network is in swamp, which is a fourteenth of the land. The
 pathfinder is doing what its cost model tells it: swamp is flat, and the mod
 wades it for a modest penalty, while the Mistlands and the mountains are steep
 and dear. It is also what makes roads look like they run through water on a
-map, and it is a gameplay question rather than a routing one - a third of the
+map, and it is a gameplay question rather than a routing one — a third of the
 network runs through the biome players like least to travel.
 
 Connected places by biome tell the same story from the other side: 18.8 % of
@@ -373,7 +373,7 @@ eligible places. The grid can be struck off the list.
 ### The places on no island are the Ashlands, and they are not road locations
 
 Of the 1 426 places that sit on no detected island, the most common are
-charred stone spawners, vulture nests and charred ruins - the Ashlands - and
+charred stone spawners, vulture nests and charred ruins — the Ashlands — and
 **none of them is an eligible road location**, so nothing is lost today.
 
 There is a real inconsistency underneath, though. Island detection asks
@@ -407,8 +407,8 @@ Of the 2 470 eligible places offered to island quotas, 158 were taken:
 | 70 and below | 1 513 | 9 | 0.6 % |
 
 The network connects bosses and dungeons, and almost nothing else. Everything
-at priority 70 or below - villages, farms, towers, ruins, the great majority
-of what is on a map - shares nine road ends across a whole world. No iteration
+at priority 70 or below — villages, farms, towers, ruins, the great majority
+of what is on a map — shares nine road ends across a whole world. No iteration
 setting changes that, because those places are never attempted.
 
 This is also why registering locations through the API matters more than it
@@ -434,7 +434,7 @@ because most bosses are alone on their island and a road needs two ends.
 The interesting one is the last. It selects about as many places as the
 shipped table does, and connects ten percentage points fewer of them, over
 more road: 71.5 km for 100 places against 58.5 km for 123. Settlements are
-harder to connect than dungeons - they sit in scattered, awkward places -
+harder to connect than dungeons — they sit in scattered, awkward places -
 so a network aimed at where people live costs more road per destination and
 fails more often. That is a real trade rather than a free improvement.
 
@@ -453,8 +453,8 @@ Crossings are worth more than any other single lever measured here: they take
 the network from 72 places served to 123, nearly doubling it.
 
 The split needs care. "Fords only" gains 39 served and records no crossings at
-all, because the `Fords` flag does two things - it lets a road jump a
-fordable river, and it lets a road wade a swamp - and only the second survives
+all, because the `Fords` flag does two things — it lets a road jump a
+fordable river, and it lets a road wade a swamp — and only the second survives
 offline. Ford detection needs depths sampled between the dumped positions,
 which is the one thing this terrain model cannot do. So the honest reading is
 that most of that 39 is swamp wading, and the river-ford share of it is
@@ -488,14 +488,14 @@ arrangement differs.
 | a fixed draw, ignoring priority | 72 | 58.2 km | 109 | 86 | 534 |
 
 Arrangement alone moves coverage from 109 to 142 places and the road spent per
-place from 305 to 731 metres - a wider spread than any connection plan
+place from 305 to 731 metres — a wider spread than any connection plan
 produces. Choosing destinations near one another is worth more than choosing
 cleverly between them.
 
 Two readings worth keeping. PR #16's quota is the best of the four on every
 measure here, which is a stronger result for it than the whole-package
-comparison gives. And deliberately spreading destinations - which sounds like
-what a road network wants - is the worst of the four: it buys long roads that
+comparison gives. And deliberately spreading destinations — which sounds like
+what a road network wants — is the worst of the four: it buys long roads that
 fail more often, on worlds where the ground between two distant places is
 usually water.
 
@@ -533,7 +533,7 @@ fails, it just fails earlier and more quietly.
 What the numbers say:
 
 - **MST on routed cost** reaches as much as any other plan for the least
-  road - 58 km against 71 on world B - because it plans on what the
+  road — 58 km against 71 on world B — because it plans on what the
   pathfinder charges rather than on straight-line distance, and never
   commits to an edge it has not already priced.
 - **Trunk and spurs** produces the fewest separate networks on every world,

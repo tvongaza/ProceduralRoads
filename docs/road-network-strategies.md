@@ -111,7 +111,7 @@ Of the 2 470 eligible places, which ones win the 158 slots:
 | 70 and below | 1 513 | 9 | 0.6 % |
 
 The network connects bosses and dungeons and almost nothing else. Villages,
-farms, towers, ruins - the great majority of what is on a map - share nine
+farms, towers, ruins — the great majority of what is on a map — share nine
 road ends across a whole world, and no setting changes that, because they are
 never attempted.
 
@@ -143,7 +143,7 @@ never clamped.
 ## Do roads cluster at the edges?
 
 That can mean the shoreline of an island or the outer parts of the world, so
-both were measured for all 57 862 centreline points - against the land itself,
+both were measured for all 57 862 centreline points — against the land itself,
 because most land in these worlds is near a shore and roads near shores prove
 nothing on their own.
 
@@ -167,8 +167,8 @@ What roads do favour is swamp:
 
 A third of the network is in swamp, which is a fourteenth of the land, and
 18.8 % of eligible swamp places get a road against 2.4 % in the Mistlands. The
-pathfinder is following its cost model - swamp is flat and waded for a modest
-penalty, the Mistlands and the mountains are steep and dear - and the result
+pathfinder is following its cost model — swamp is flat and waded for a modest
+penalty, the Mistlands and the mountains are steep and dear — and the result
 is a network that runs through the biome players like least to travel. That is
 a gameplay question rather than a routing one, and it may be the strongest
 argument here for changing the cost model rather than the routing.
@@ -207,13 +207,13 @@ seed, with crossings on. "Served" counts places a road end reaches.
 | every eligible place | 2 080 | 410.7 km | 2 322 | 16 % | 177 |
 
 Two things run against intuition here. The quota is not protecting generation
-from failure - it sits where failure is *likeliest*, because the places added
+from failure — it sits where failure is *likeliest*, because the places added
 later are near ones already connected and short roads over known-good ground
 are the easiest to build. And it is the least efficient point on the curve for
 road spent per place reached: 476 metres today against 177 with everything
 selected.
 
-What it buys is a very different world - 411 km of road instead of 58 - and
+What it buys is a very different world — 411 km of road instead of 58 — and
 about twenty-five seconds of generation offline instead of three. Whether a
 land webbed with roads is the game anyone wants is not a question these
 numbers can answer.
@@ -227,7 +227,7 @@ numbers can answer.
 | priority, then farthest | 77 | 84.1 km | 115 | 731 |
 | a fixed draw, ignoring priority | 72 | 58.2 km | 109 | 534 |
 
-Arrangement alone moves coverage from 109 to 142 places - a wider spread than
+Arrangement alone moves coverage from 109 to 142 places — a wider spread than
 any routing change below produces. Choosing destinations near one another is
 worth more than choosing cleverly between them. Deliberately spreading them,
 which sounds like what a road network wants, is the worst of the four.
@@ -242,7 +242,7 @@ which sounds like what a road network wants, is the worst of the four.
 | both | 88 | 58.5 km | 123 |
 
 Crossings are worth more than any other single lever measured: 72 places
-served becomes 123. The split needs care, though - the fords flag both jumps
+served becomes 123. The split needs care, though — the fords flag both jumps
 rivers and wades swamps, and only the wading can be measured offline. How much
 of that 39 is river fords needs the game.
 
@@ -273,7 +273,7 @@ world seed:
 
 Bosses alone are barely a network: nine roads in a world, because most bosses
 are alone on their island and a road needs two ends. The last row is the
-interesting one - aiming at where people live selects about as many places,
+interesting one — aiming at where people live selects about as many places,
 connects ten points fewer of them, and spends more road doing it, because
 settlements sit in scattered awkward spots. Worth wanting, but not free.
 
