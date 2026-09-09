@@ -22,7 +22,7 @@ public static class Program
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("usage: roads-study islands <base128.csv> <locations.csv> [--out DIR]");
+            Console.Error.WriteLine("usage: roads-study islands <base128.csv> <locations.csv> [--out DIR]\n       roads-study generate <island-grid.csv> <terrain.csv> <locations.csv> --out DIR [options]");
             return 2;
         }
 
@@ -30,6 +30,8 @@ public static class Program
         {
             case "islands":
                 return Islands(args);
+            case "generate":
+                return Generate.Run(args);
             default:
                 Console.Error.WriteLine($"unknown command '{args[0]}'");
                 return 2;
@@ -46,10 +48,10 @@ public static class Program
 
         string worldPath = args[1];
         string locationsPath = args[2];
-        string outDir = OptionValue(args, "--out") ?? Directory.GetCurrentDirectory();
+        string outDir = Options.Value(args, "--out") ?? Directory.GetCurrentDirectory();
         Directory.CreateDirectory(outDir);
 
-        CsvWorld world = new CsvWorld().Load(worldPath);
+        CsvWorld world = new CsvWorld().LoadIslandGrid(worldPath);
         WorldGenerator.instance = world;
         Console.WriteLine($"world:     {world.Describe()}");
 
@@ -120,14 +122,6 @@ public static class Program
 
     private static string F(float value) => value.ToString("F0", CultureInfo.InvariantCulture);
 
-    private static string? OptionValue(string[] args, string name)
-    {
-        for (int i = 0; i < args.Length - 1; i++)
-            if (args[i] == name)
-                return args[i + 1];
-        return null;
-    }
-
     public sealed class Location
     {
         public string Name = "";
@@ -135,7 +129,7 @@ public static class Program
         public float Radius;
     }
 
-    private static List<Location> ReadLocations(string path)
+    public static List<Location> ReadLocations(string path)
     {
         List<Location> locations = new();
         using StreamReader reader = new(path);

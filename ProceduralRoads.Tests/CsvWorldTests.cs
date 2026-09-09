@@ -80,6 +80,27 @@ public class CsvWorldTests : IDisposable
     }
 
     [Fact]
+    public void BeyondTheWorldsOwnEdgeTheRimAnswersAndIsCounted()
+    {
+        // A dump of the whole world. The pathfinder walks 8 m cells and can
+        // step one past the rim; out there the game has only ocean, so the rim
+        // sample is the answer - and the world counts how often it was asked,
+        // because a road being planned off the edge of the world is a finding.
+        var world = new CsvWorld().Load(WriteGrid("w.csv", -10000f, -10000f, 2000f, 11,
+            height: (x, z) => x * x + z * z > 9000f * 9000f ? -400f : 40f));
+
+        Assert.Equal(0, world.OutsideWorldQueries);
+        Assert.Equal(-400f, world.GetHeight(10008f, 480f), 1);
+        Assert.Equal(1, world.OutsideWorldQueries);
+
+        // Inside the world a gap in the dumps is still an error: that is a
+        // missing dump, not the edge of the map.
+        var partial = new CsvWorld().Load(WriteGrid("part.csv", -64f, -64f, 8f, 17));
+        Assert.Throws<InvalidOperationException>(() => partial.GetHeight(500f, 0f));
+        Assert.Equal(0, partial.OutsideWorldQueries);
+    }
+
+    [Fact]
     public void AFinerWindowAnswersInsideItsOwnBounds()
     {
         // A coarse map that says 40 m everywhere, and an 8 m window over the
@@ -152,6 +173,35 @@ public class CsvWorldTests : IDisposable
         string missing = Path.Combine(m_dir, "holey.csv");
         File.WriteAllText(missing, "x,z,height,biome,river\n0,0,30,Meadows,0\n8,0,30,Meadows,0\n0,8,30,Meadows,0\n");
         Assert.Throws<InvalidDataException>(() => new CsvWorld().Load(missing));
+    }
+
+    [Fact]
+    public void IslandDetectionReadsTheGridItWasGivenNotTheFinestOne()
+    {
+        // A 128 m island grid and a finer 8 m window over part of it, with
+        // different base heights on purpose. Island detection samples the
+        // 128 m lattice, so the window must not answer for it - interpolating
+        // a finer dump toward those positions would move coastlines.
+        string grid = WriteGrid("grid.csv", -1280f, -1280f, 128f, 21, baseHeight: true,
+            height: (x, z) => 40f);
+        string window = WriteGrid("window.csv", -64f, -64f, 8f, 17, baseHeight: true,
+            height: (x, z) => 100f);
+        var world = new CsvWorld().LoadIslandGrid(grid).Load(window);
+
+        Assert.Equal(0.05f + (40f - 30f) / 200f, world.GetBaseHeight(0f, 0f, false), 5);
+        // ...while ordinary terrain queries inside the window still take the
+        // finer dump.
+        Assert.Equal(100f, world.GetHeight(0f, 0f), 4);
+        Assert.Equal(40f, world.GetHeight(600f, 600f), 4);
+    }
+
+    [Fact]
+    public void ADumpWithoutBaseHeightCannotBeTheIslandGrid()
+    {
+        string grid = WriteGrid("plain.csv", -1280f, -1280f, 128f, 5);
+        InvalidDataException error = Assert.Throws<InvalidDataException>(
+            () => new CsvWorld().LoadIslandGrid(grid));
+        Assert.Contains("cannot serve as the island grid", error.Message);
     }
 
     [Fact]

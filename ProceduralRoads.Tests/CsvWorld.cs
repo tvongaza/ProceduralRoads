@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 
 namespace ProceduralRoads.Tests;
@@ -27,7 +28,10 @@ namespace ProceduralRoads.Tests;
 ///   data would turn a missing dump into a quiet wrong answer.
 ///
 /// Finer tiles win: load the 128 m map of a world and an 8 m window over one
-/// island, and queries inside the window are answered from it.
+/// island, and queries inside the window are answered from it. Base height is
+/// the exception - island detection reads it on its own 128 m lattice, where a
+/// finer dump would only interpolate - so the dump of that lattice is loaded
+/// with <see cref="LoadIslandGrid"/> and answers base height alone.
 /// </summary>
 public sealed class CsvWorld : WorldGenerator
 {
@@ -45,6 +49,8 @@ public sealed class CsvWorld : WorldGenerator
         public Heightmap.Biome[] Biome = Array.Empty<Heightmap.Biome>();
         public bool HasBaseHeight;
         public bool HasRiverWidth;
+        /// <summary>Loaded as the island grid: it answers base height.</summary>
+        public bool IsIslandGrid;
 
         public float X1 => X0 + (Nx - 1) * Step;
         public float Z1 => Z0 + (Nz - 1) * Step;
@@ -54,8 +60,23 @@ public sealed class CsvWorld : WorldGenerator
         public int Index(int ix, int iz) => iz * Nx + ix;
     }
 
+    /// <summary>
+    /// The world's own radius. Valheim generates land only inside it; beyond it
+    /// there is open ocean, and the island detector does not even sample there.
+    /// </summary>
+    public const float WorldRadius = 10000f;
+
     private readonly List<Layer> m_layers = new();
     private readonly int m_seed;
+
+    /// <summary>
+    /// Queries answered from the dump's rim because they fell outside the world
+    /// itself. The pathfinder walks 8 m cells and can step a cell past the rim;
+    /// there is only ocean there, so the rim sample is the answer rather than a
+    /// guess. Counted so a run can say how often it happened - a large number
+    /// would mean a road was being planned off the edge of the world.
+    /// </summary>
+    public int OutsideWorldQueries { get; private set; }
 
     public CsvWorld(int seed = 0) => m_seed = seed;
 
@@ -91,6 +112,22 @@ public sealed class CsvWorld : WorldGenerator
             parts.Add($"{Path.GetFileName(layer.Source)} step {layer.Step:F0} m, " +
                       $"{layer.Nx}x{layer.Nz} samples, [{layer.X0:F0},{layer.Z0:F0}..{layer.X1:F0},{layer.Z1:F0}]");
         return string.Join("; ", parts);
+    }
+
+    /// <summary>
+    /// Adds the dump of the 128 m lattice island detection reads. It answers
+    /// base height for the whole world; heights, biomes and rivers still come
+    /// from the finest layer covering the point.
+    /// </summary>
+    public CsvWorld LoadIslandGrid(string path)
+    {
+        Load(path);
+        Layer loaded = m_layers.First(layer => layer.Source == path);
+        if (!loaded.HasBaseHeight)
+            throw new InvalidDataException(
+                $"{Path.GetFileName(path)} has no base_height column, so it cannot serve as the island grid");
+        loaded.IsIslandGrid = true;
+        return this;
     }
 
     /// <summary>
@@ -213,9 +250,28 @@ public sealed class CsvWorld : WorldGenerator
         foreach (Layer layer in m_layers)
             if (layer.Contains(x, z))
                 return layer;
+
+        // Outside the world, the dump's rim is the honest answer: the game has
+        // only ocean out there. Inside the world a missing sample is a missing
+        // dump, and answering it would turn that into a quiet wrong result.
+        if (Mathf.Sqrt(x * x + z * z) > WorldRadius && m_layers.Count > 0)
+        {
+            OutsideWorldQueries++;
+            return m_layers[m_layers.Count - 1];
+        }
+
         throw new InvalidOperationException(
             $"({x:F1},{z:F1}) is outside every dump loaded ({Describe()}). " +
             "A world read from a dump does not guess beyond its data.");
+    }
+
+    /// <summary>The island grid covering a point, if one was loaded.</summary>
+    private Layer? IslandGridAt(float x, float z)
+    {
+        foreach (Layer layer in m_layers)
+            if (layer.IsIslandGrid && layer.Contains(x, z))
+                return layer;
+        return null;
     }
 
     /// <summary>Whether a point can be answered at all.</summary>
@@ -273,7 +329,7 @@ public sealed class CsvWorld : WorldGenerator
 
     public override float GetBaseHeight(float wx, float wy, bool menuTerrain)
     {
-        Layer layer = LayerAt(wx, wy);
+        Layer layer = IslandGridAt(wx, wy) ?? LayerAt(wx, wy);
         if (!layer.HasBaseHeight)
             throw new InvalidOperationException(
                 $"{Path.GetFileName(layer.Source)} has no base_height column, so island detection cannot run on it. " +
