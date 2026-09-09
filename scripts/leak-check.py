@@ -29,11 +29,16 @@ BASE64 = re.compile(r'base64,[A-Za-z0-9+/=\s]+')
 # which is how a check stops being read.
 TRAILER = re.compile(r'^Co-Authored-By: .*$', re.MULTILINE)
 
+# A GitHub URL names the account that owns the repository, which is public by
+# definition and is how images in a pull request or an issue are linked. The
+# account name outside such a URL is still a finding.
+GITHUB_URL = re.compile(r'https://(?:raw\.githubusercontent|github)\.com/[^\s)\]]+')
+
 
 def check(path):
     with open(path, errors='replace') as fh:
         text = fh.read()
-    stripped = TRAILER.sub('', BASE64.sub('base64,<image data>', text))
+    stripped = GITHUB_URL.sub('<github url>', TRAILER.sub('', BASE64.sub('base64,<image data>', text)))
 
     findings = []
     for pattern in PATTERNS:
