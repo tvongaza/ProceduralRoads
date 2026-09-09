@@ -119,6 +119,7 @@ internal static class Generate
         File.WriteAllText(Path.Combine(outDir, $"{label}.crossings.csv"), RoadCrossingCsv.ToCsv(sites));
         File.WriteAllText(Path.Combine(outDir, $"{label}.manifest.json"),
             Manifest(label, strategy, fords, bridges, islandPercentage, iterations, maxLocations, width,
+                NetworkMetrics.Measure(routes, locations, attempts),
                 gridPath, terrainPaths, locationsPath, world, routes, attempts, sites, elapsed));
 
         Report(routes, attempts, sites, locations, elapsed, outDir, label);
@@ -226,7 +227,7 @@ internal static class Generate
         IReadOnlyList<RoadCrossing> sites, List<Program.Location> places, TimeSpan elapsed,
         string outDir, string label)
     {
-        NetworkMetrics.Result metrics = NetworkMetrics.Measure(routes, places);
+        NetworkMetrics.Result metrics = NetworkMetrics.Measure(routes, places, attempts);
         int failed = attempts.Count(a => !a.Connected);
         Dictionary<string, int> outcomes = new();
         foreach (RoadAttempt attempt in attempts.Where(a => !a.Connected))
@@ -246,9 +247,11 @@ internal static class Generate
         }
 
         Console.WriteLine();
-        Console.WriteLine($"roads:     {routes.Count} built, {routes.Sum(r => r.Length) / 1000f:F1} km");
-        Console.WriteLine($"served:    {metrics.PlacesServed} places reached by a road end, " +
-                          $"in {metrics.Components} separate network(s), largest {metrics.LargestComponentRoutes} roads");
+        Console.WriteLine($"roads:     {routes.Count} built, {metrics.UniqueLengthMetres / 1000f:F1} km of distinct road " +
+                          $"({metrics.SummedLengthMetres / 1000f:F1} km summed over routes)");
+        Console.WriteLine($"connected: {metrics.PlannedConnections} places the generator planned a road to and built it");
+        Console.WriteLine($"served:    {metrics.PlacesServed} places with a road end within reach, " +
+                          $"in {metrics.Components} joined group(s), largest {metrics.LargestComponentRoutes} roads");
         Console.WriteLine($"attempts:  {attempts.Count}, {failed} failed" +
                           (outcomes.Count > 0
                               ? " (" + string.Join(", ", outcomes.OrderByDescending(o => o.Value).Select(o => $"{o.Key} {o.Value}")) + ")"
@@ -263,23 +266,88 @@ internal static class Generate
             Console.WriteLine($"probes:    {RoadNetworkGenerator.RoutingProbes} searches run to price a connection before building it, " +
                               $"{RoadNetworkGenerator.RoutingProbesWithoutRoute} of them found no route");
         Console.WriteLine($"time:      {elapsed.TotalSeconds:F1} s");
-        Console.WriteLine($"wrote:     {Path.Combine(outDir, label)}.{{routes,attempts,crossings}}.csv + manifest.json");
+        Console.WriteLine($"wrote:     {Path.Combine(outDir, label)}.{{routes,attempts,crossings,selection}}.csv + manifest.json");
+    }
+
+    /// <summary>
+    /// A short name for this exact configuration, stable across machines: the
+    /// same settings on the same inputs always produce the same id, so a table
+    /// can cite one and a reader can find the run that made it.
+    /// </summary>
+    private static string RunId(string label, RoadNetworkStrategy strategy, bool fords, bool bridges,
+        int islandPercentage, int iterations, int maxLocations, float width)
+    {
+        string spec = string.Join("|", label, strategy, StudyFactors.Describe(), Presets.Describe(),
+            fords, bridges, islandPercentage, iterations, maxLocations,
+            width.ToString(CultureInfo.InvariantCulture));
+        using System.Security.Cryptography.SHA256 sha = System.Security.Cryptography.SHA256.Create();
+        byte[] hash = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(spec));
+        return Convert.ToHexString(hash)[..10].ToLowerInvariant();
+    }
+
+    /// <summary>An input identified by its content, so a renamed or edited dump
+    /// cannot pass for the one a run actually used.</summary>
+    private static string FileDigest(string path)
+    {
+        try
+        {
+            using FileStream stream = File.OpenRead(path);
+            using System.Security.Cryptography.SHA256 sha = System.Security.Cryptography.SHA256.Create();
+            return Convert.ToHexString(sha.ComputeHash(stream))[..16].ToLowerInvariant();
+        }
+        catch (IOException)
+        {
+            return "unreadable";
+        }
+    }
+
+    /// <summary>The commit the study code was built from, if it can be read.</summary>
+    private static string GitDescribe()
+    {
+        try
+        {
+            System.Diagnostics.ProcessStartInfo info = new("git", "rev-parse --short HEAD")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            using System.Diagnostics.Process? process = System.Diagnostics.Process.Start(info);
+            if (process == null)
+                return "unknown";
+            string output = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit(3000);
+            return output.Length > 0 ? output : "unknown";
+        }
+        catch (Exception)
+        {
+            return "unknown";
+        }
     }
 
     private static string Manifest(string label, RoadNetworkStrategy strategy, bool fords, bool bridges,
-        int islandPercentage, int iterations, int maxLocations, float width,
+        int islandPercentage, int iterations, int maxLocations, float width, NetworkMetrics.Result metrics,
         string gridPath, string[] terrainPaths, string locationsPath, CsvWorld world,
         IReadOnlyList<RoadRoute> routes, IReadOnlyList<RoadAttempt> attempts,
         IReadOnlyList<RoadCrossing> sites, TimeSpan elapsed)
     {
         string Json(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        // A run nobody can reproduce is not evidence. The manifest carries what
+        // it takes to rebuild this exact run: the code it ran, the inputs by
+        // content rather than by name, and a run id every table can cite.
+        string runId = RunId(label, strategy, fords, bridges, islandPercentage, iterations, maxLocations, width);
         List<string> lines = new()
         {
             "{",
+            $"  \"runId\": \"{runId}\",",
             $"  \"label\": \"{Json(label)}\",",
+            $"  \"studyCommit\": \"{Json(GitDescribe())}\",",
             $"  \"generatedUtc\": \"{DateTime.UtcNow:yyyy-MM-ddTHH:mm:ssZ}\",",
             "  \"terrain\": \"approx\",",
             $"  \"islandGrid\": \"{Json(Path.GetFileName(gridPath))}\",",
+            $"  \"islandGridSha\": \"{FileDigest(gridPath)}\",",
+            $"  \"locationsSha\": \"{FileDigest(locationsPath)}\",",
+            $"  \"terrainSha\": [{string.Join(", ", terrainPaths.Select(t => $"\"{FileDigest(t)}\""))}],",
             $"  \"terrainDumps\": [{string.Join(", ", terrainPaths.Select(p => $"\"{Json(Path.GetFileName(p))}\""))}],",
             $"  \"locations\": \"{Json(Path.GetFileName(locationsPath))}\",",
             "  \"approximations\": [",
@@ -298,7 +366,11 @@ internal static class Generate
             "  },",
             "  \"result\": {",
             $"    \"routeCount\": {routes.Count},",
-            $"    \"totalLengthMeters\": {routes.Sum(r => r.Length):F0},",
+            $"    \"summedRouteLengthMeters\": {routes.Sum(r => r.Length):F0},",
+            $"    \"uniqueRoadLengthMeters\": {metrics.UniqueLengthMetres:F0},",
+            $"    \"plannedConnections\": {metrics.PlannedConnections},",
+            $"    \"placesServed\": {metrics.PlacesServed},",
+            $"    \"joinedGroups\": {metrics.Components},",
             $"    \"attemptCount\": {attempts.Count},",
             $"    \"failedAttemptCount\": {attempts.Count(a => !a.Connected)},",
             $"    \"routingProbes\": {RoadNetworkGenerator.RoutingProbes},",

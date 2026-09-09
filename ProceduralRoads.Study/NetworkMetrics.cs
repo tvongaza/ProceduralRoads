@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace ProceduralRoads.Study;
@@ -34,16 +35,71 @@ internal static class NetworkMetrics
     /// </summary>
     public const float PlaceJoinMargin = 8f;
 
+    /// <summary>
+    /// Four different things get called "connected", and they answer different
+    /// questions, so they are kept apart.
+    /// </summary>
     public sealed class Result
     {
+        /// <summary>Places with a road end within reach. Geometry only: it does
+        /// not say the road was built for that place, or that a player can walk
+        /// from one to the other.</summary>
         public int PlacesServed;
+
+        /// <summary>Places the generator planned a road to and built it. Taken
+        /// from the attempt log by the place's own identity, not by distance,
+        /// so a neighbour cannot inherit the outcome.</summary>
+        public int PlannedConnections;
+
+        /// <summary>Roads joined to each other geometrically. Two ends within
+        /// the join radius count as one network even if a river or a cliff lies
+        /// between them: this is a drawing-level measure, not a walkable
+        /// one.</summary>
         public int Components;
+
         public int LargestComponentRoutes;
+
+        /// <summary>Total centreline length of every route added up. A road
+        /// shared by two routes is counted twice, so this punishes a strategy
+        /// for sharing.</summary>
+        public float SummedLengthMetres;
+
+        /// <summary>Length of distinct road on the ground, counting a stretch
+        /// used by two routes once. This is what a player would pace out.</summary>
+        public float UniqueLengthMetres;
     }
 
-    public static Result Measure(IReadOnlyList<RoadRoute> routes, IReadOnlyList<Program.Location> places)
+    /// <summary>
+    /// A place and an attempt endpoint are the same place when they are within
+    /// this: the endpoint was passed to the generator from the place's own
+    /// record, so this is an identity check with room for rounding, not a
+    /// guess about which place a road end belongs to.
+    /// </summary>
+    public const float IdentityTolerance = 1.5f;
+
+    public static Result Measure(IReadOnlyList<RoadRoute> routes, IReadOnlyList<Program.Location> places,
+        IReadOnlyList<RoadAttempt>? attempts = null)
     {
         Result result = new();
+
+        if (attempts != null)
+        {
+            foreach (Program.Location place in places)
+            {
+                Vector2 at = new(place.Position.x, place.Position.z);
+                foreach (RoadAttempt attempt in attempts)
+                {
+                    if (!attempt.Connected)
+                        continue;
+                    if (Vector2.Distance(attempt.Start, at) <= IdentityTolerance
+                        || Vector2.Distance(attempt.End, at) <= IdentityTolerance)
+                    {
+                        result.PlannedConnections++;
+                        break;
+                    }
+                }
+            }
+        }
 
         foreach (Program.Location place in places)
         {
@@ -62,7 +118,53 @@ internal static class NetworkMetrics
         }
 
         (result.Components, result.LargestComponentRoutes) = Components(routes, places);
+        result.SummedLengthMetres = routes.Sum(r => r.Length);
+        result.UniqueLengthMetres = UniqueLength(routes);
         return result;
+    }
+
+    /// <summary>
+    /// Road on the ground, counting a stretch used by two routes once.
+    ///
+    /// Each segment is counted unless a road laid earlier already occupies the
+    /// ground under its midpoint. Counting occupied cells instead was tried
+    /// first and read HIGHER than the summed length, because a road crossing a
+    /// cell diagonally occupies more cells per metre than one crossing it
+    /// square: a unique length above the summed length is a contradiction, and
+    /// it was the estimator, not the roads.
+    /// </summary>
+    public const float SharedRoadCellSize = 4f;
+
+    private static float UniqueLength(IReadOnlyList<RoadRoute> routes)
+    {
+        HashSet<(int, int)> laid = new();
+        float unique = 0f;
+
+        foreach (RoadRoute route in routes)
+        {
+            List<(int, int)> mine = new();
+            for (int i = 1; i < route.Points.Count; i++)
+            {
+                Vector3 a = route.Points[i - 1], b = route.Points[i];
+                float dx = b.x - a.x, dz = b.z - a.z;
+                float length = Mathf.Sqrt(dx * dx + dz * dz);
+                if (length <= 0f)
+                    continue;
+
+                (int, int) cell = (
+                    Mathf.FloorToInt((a.x + b.x) * 0.5f / SharedRoadCellSize),
+                    Mathf.FloorToInt((a.z + b.z) * 0.5f / SharedRoadCellSize));
+
+                if (!laid.Contains(cell))
+                    unique += length;
+                mine.Add(cell);
+            }
+
+            foreach ((int, int) cell in mine)
+                laid.Add(cell);
+        }
+
+        return unique;
     }
 
     private static bool Near(Vector3 point, Vector2 at, float radius)

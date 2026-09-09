@@ -68,6 +68,14 @@ public class RoadPathfinder
     /// failure reason.</summary>
     public string LastOutcome { get; private set; } = "";
 
+    /// <summary>
+    /// What the last successful search actually charged for its route: the
+    /// accumulated cost of the cell it finished on, penalties and all. The
+    /// route's length is a different number and a much poorer one to plan
+    /// with, because it says nothing about the ground the route crossed.
+    /// </summary>
+    public float LastPathCost { get; private set; }
+
     private static readonly Vector2Int[] Directions = new Vector2Int[]
     {
         new Vector2Int(1, 0), new Vector2Int(-1, 0), new Vector2Int(0, 1), new Vector2Int(0, -1),
@@ -103,6 +111,7 @@ public class RoadPathfinder
         {
             LastIterations = 0;
             LastOutcome = "found";
+            LastPathCost = 0f;
             Probe?.AttemptEnded(true, LastOutcome, 0);
             return new List<Vector2> { start, end };
         }
@@ -138,6 +147,7 @@ public class RoadPathfinder
             {
                 LastIterations = iterations;
                 LastOutcome = "found";
+                LastPathCost = gCosts.TryGetValue(currentPos, out float finalCost) ? finalCost : 0f;
                 Probe?.AttemptEnded(true, LastOutcome, iterations);
                 return ReconstructPath(cameFrom, currentPos, start, end);
             }
@@ -192,6 +202,7 @@ public class RoadPathfinder
         string reason = openSet.Count == 0 ? "no reachable path" : "max iterations reached";
         LastIterations = iterations;
         LastOutcome = reason;
+        LastPathCost = 0f;
         Probe?.AttemptEnded(false, reason, iterations);
         Log.LogWarning($"Pathfinding failed: {reason} after {iterations} iterations");
         return null;
@@ -211,7 +222,16 @@ public class RoadPathfinder
     {
         float dx = (to.x - from.x) * CellSize;
         float dy = (to.y - from.y) * CellSize;
-        return Mathf.Sqrt(dx * dx + dy * dy);
+        float straight = Mathf.Sqrt(dx * dx + dy * dy);
+
+        // A* only finds the cheapest route while the estimate never exceeds the
+        // true remaining cost. Ordinary ground costs about its own length, so
+        // the straight line is a safe estimate - until the study discounts road
+        // below that, when the estimate has to come down with it or the search
+        // prunes the very routes the discount was meant to open.
+        return StudyFactors.ExistingRoadCostFraction < 1f
+            ? straight * StudyFactors.ExistingRoadCostFraction
+            : straight;
     }
 
     private float GetTerrainVariance(Vector2 pos)
@@ -233,7 +253,26 @@ public class RoadPathfinder
         return maxHeight - minHeight;
     }
 
+    /// <summary>
+    /// The cost of a move, with the study's road-sharing discount applied to
+    /// EVERY class of move rather than only the cheapest. An earlier version
+    /// applied it after the early returns for slope, variance, water and
+    /// river, so a discount could never touch the moves whose cost actually
+    /// shapes a route - and the experiment built on it concluded nothing.
+    /// </summary>
     private float GetMoveCost(Vector2i from, Vector2i to, int directionIndex)
+    {
+        float cost = GetUndiscountedMoveCost(from, to, directionIndex);
+        if (StudyFactors.ExistingRoadCostFraction >= 1f)
+            return cost;
+
+        Vector2 toWorld = GridToWorld(to);
+        return RoadSpatialGrid.HasRoadWithin(toWorld, StudyFactors.ExistingRoadReach)
+            ? cost * StudyFactors.ExistingRoadCostFraction
+            : cost;
+    }
+
+    private float GetUndiscountedMoveCost(Vector2i from, Vector2i to, int directionIndex)
     {
         Vector2 fromWorld = GridToWorld(from);
         Vector2 toWorld = GridToWorld(to);
@@ -270,17 +309,7 @@ public class RoadPathfinder
             return WaterPenalty;
 
         float riverCost = riverWeight > 0 ? WaterPenalty * riverWeight : 0f;
-        float cost = BaseCost * dist + (slope * slope * SlopeMultiplier) + riverCost + wadeCost;
-
-        // Study lever: ground that already carries road can be made cheaper to
-        // travel, so a later road is drawn onto an earlier one instead of
-        // running beside it. One - the shipped value - means no discount and
-        // no merging, and then the grid is never consulted.
-        if (StudyFactors.ExistingRoadCostFraction < 1f
-            && RoadSpatialGrid.HasRoadWithin(toWorld, StudyFactors.ExistingRoadReach))
-            cost *= StudyFactors.ExistingRoadCostFraction;
-
-        return cost;
+        return BaseCost * dist + (slope * slope * SlopeMultiplier) + riverCost + wadeCost;
     }
 
     /// <summary>

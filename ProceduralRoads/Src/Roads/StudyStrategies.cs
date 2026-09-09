@@ -67,10 +67,14 @@ public static partial class RoadNetworkGenerator
 
     /// <summary>
     /// What the pathfinder charges to get between two places, without building
-    /// anything: the length of the path it finds, or none when it finds no
-    /// path. Used for planning; the road itself is built afterwards by the
-    /// ordinary primitive, so a plan cannot smuggle in a route the generator
-    /// would not have made.
+    /// anything: the cost its search accumulated, or none when it finds no
+    /// path. That is the number a plan should compare, not the route's length:
+    /// a short route over a mountain is dear and a long one along a valley is
+    /// cheap, and only the cost knows the difference.
+    ///
+    /// Used for planning; the road itself is built afterwards by the ordinary
+    /// primitive, so a plan cannot smuggle in a route the generator would not
+    /// have made.
     /// </summary>
     private static float? RoutedCost(Node from, Node to)
     {
@@ -90,10 +94,7 @@ public static partial class RoadNetworkGenerator
             return null;
         }
 
-        float length = 0f;
-        for (int i = 1; i < path.Count; i++)
-            length += Vector2.Distance(path[i - 1], path[i]);
-        return length;
+        return m_pathfinder.LastPathCost;
     }
 
     /// <summary>
@@ -234,15 +235,31 @@ public static partial class RoadNetworkGenerator
             connected.Add(trunk.a);
         }
 
-        // Everything else joins the network where it is nearest to it, by
-        // routed cost to any place already on it. The road it attaches to is
-        // built by the ordinary primitive, which lands it on the existing
-        // road's line where the two meet.
+        // Everything else joins the ROAD, not the places on it: the spur starts
+        // at the nearest point along a road already built, so the network grows
+        // a junction there instead of another line back to a destination. That
+        // is the whole point of a trunk, and joining place to place - which an
+        // earlier version of this did - does not test it.
         List<int> waiting = Enumerable.Range(0, nodes.Count).Where(i => !connected.Contains(i)).ToList();
         waiting.Sort((x, y) => GetLocationPriority(nodes[y].Name).CompareTo(GetLocationPriority(nodes[x].Name)));
 
         foreach (int node in waiting)
         {
+            Vector3? junction = NearestPointOnBuiltRoad(nodes[node].Position);
+            if (junction.HasValue)
+            {
+                // A spur from a point on the road has no location at its start,
+                // so it is named for the road it leaves.
+                if (GenerateRoad(junction.Value, 0f, nodes[node].Position, nodes[node].Radius, RoadWidth,
+                        $"road -> {nodes[node].Name}"))
+                {
+                    connected.Add(node);
+                    continue;
+                }
+            }
+
+            // Nothing built yet to join, or the spur failed: fall back to the
+            // cheapest place already on the network.
             int bestAnchor = -1;
             float bestCost = float.MaxValue;
             foreach (int onNetwork in connected)
@@ -264,6 +281,42 @@ public static partial class RoadNetworkGenerator
             if (Build(nodes[bestAnchor], nodes[node]))
                 connected.Add(node);
         }
+    }
+
+    /// <summary>
+    /// The nearest point on a road already built to a place, or none when no
+    /// road is near enough to be worth joining. Straight-line nearest is the
+    /// right question here: the spur's own search decides what the join
+    /// actually costs, and a junction far off the road's line is not a junction.
+    /// </summary>
+    private static Vector3? NearestPointOnBuiltRoad(Vector3 place)
+    {
+        Vector3? best = null;
+        float bestDistance = float.MaxValue;
+        Vector2 at = new(place.x, place.z);
+
+        foreach (RoadRoute route in RoadRouteRecorder.Routes)
+        {
+            // Every fourth point is plenty: the centreline is dense, and a
+            // junction a metre either way is the same junction.
+            for (int i = 0; i < route.Points.Count; i += 4)
+            {
+                Vector3 point = route.Points[i];
+                float dx = point.x - at.x, dz = point.z - at.y;
+                float distance = dx * dx + dz * dz;
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = point;
+                }
+            }
+        }
+
+        if (best == null)
+            return null;
+
+        // A road further away than the link limit is not a network to join.
+        return Mathf.Sqrt(bestDistance) <= MaxRoadLinkDistance ? best : null;
     }
 
     /// <summary>
