@@ -19,6 +19,15 @@ Route geometry is not published: it is several megabytes per run and can be
 regenerated from the manifest, which names the code commit and the exact
 inputs by content hash.
 
+The `q4-*` runs answer four questions about the plan: whether a plan can see
+water (`q4-plan-routed-mst`, `q4-rmst-n*`), whether roads can join by design
+(`q4-plan-trunk`, `q4-plan-grow`), whether a place can reach for the network
+instead of the other way round (`q4-plan-reverse`), and whether a failed link
+can fall back to something nearer (`q4-fb-*`). `q4-baseline` is the control
+they share. Their manifests carry three metrics the others do not:
+`teeJunctions` (roads ending on another road's length), `endToEndJoins`, and
+`parallelRoadMeters` (road running within 12 m of other road without joining).
+
 Runs here: `check` is the study baseline (crossings on, every island),
 `v2-*` are the five connection plans on identical inputs, and `anchor-land`
 and `anchor-poi` are the two alternative anchor rules against that same
