@@ -289,5 +289,5 @@ cause, and it is stated here rather than papered over.
 
 - In-game confirmation of anything about fords, which the offline terrain
   cannot see.
-- The per-location outcome tables for all three seeds.
-- Pictures: world and island views per policy.
+- The per-island table, and the study document itself.
+- In-game runs of the shortlisted plans, once there is a shortlist.

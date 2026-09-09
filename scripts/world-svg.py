@@ -425,6 +425,8 @@ def main():
     ap.add_argument('--manifest', help='road_routes manifest JSON: its settings go in the caption')
     ap.add_argument('--out')
     ap.add_argument('--zoom', help='cx,cz,half (metres): inset window rendered beside the world')
+    ap.add_argument('--zoom-only', action='store_true',
+                    help='render only the inset, as its own square image (island views for a comparison sheet)')
     ap.add_argument('--contour', type=int, default=10)
     ap.add_argument('--px', type=float, default=0.1, help='pixels per metre for the world view')
     ap.add_argument('--labels', choices=sorted(LABEL_SETS), default='bosses',
@@ -485,6 +487,29 @@ def main():
              f'black road, green road wading a swamp, orange road in water elsewhere, '
              f'teal ford wade, dashed purple bridge span, red stub')
     subtitle = manifest_caption(manifest)
+    if a.zoom_only and a.zoom:
+        cx, cz, half = (float(v) for v in a.zoom.split(','))
+        px = min(2.0, 1400 / (2 * half))
+        zoom_view = View(cx - half, cz - half, cx + half, cz + half, px)
+        caption = (f'{os.path.basename(a.world)} at ({cx:.0f},{cz:.0f}) +-{half:.0f} m: '
+                   f'{n_routes} routes on the world, {len(crossings)} crossings; '
+                   f'black road, green road wading a swamp, orange road in water elsewhere, '
+                   f'teal ford wade, dashed purple bridge span')
+        inner = render(zoom_view, xs, zs, cells, grid, locations, routes, crossings, a.contour,
+                       caption, a.min_radius)
+        subtitle = manifest_caption(manifest)
+        body = inner + (f'\n<text x="6" y="27" font-size="10" fill="#444">{escape(subtitle)}</text>'
+                        if subtitle else '')
+        svg = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+               f'<svg xmlns="http://www.w3.org/2000/svg" width="{f(zoom_view.w)}" height="{f(zoom_view.h)}" '
+               f'viewBox="0 0 {f(zoom_view.w)} {f(zoom_view.h)}" font-family="sans-serif">\n'
+               + body + '\n</svg>\n')
+        out = a.out or a.world.replace('.world.csv', '.island.svg')
+        with open(out, 'w') as fh:
+            fh.write(svg)
+        print(f'{out}: island view at ({cx:.0f},{cz:.0f}), {len(svg) // 1024} KB')
+        return
+
     parts = [render(world_view, xs, zs, cells, grid, locations, routes, crossings, a.contour, title, a.min_radius)]
     if subtitle:
         parts.append(f'<text x="6" y="27" font-size="10" fill="#444">{escape(subtitle)}</text>')
