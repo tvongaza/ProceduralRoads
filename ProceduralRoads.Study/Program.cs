@@ -32,6 +32,8 @@ public static class Program
                 return Islands(args);
             case "generate":
                 return Generate.Run(args);
+            case "compare":
+                return Compare.Run(args);
             default:
                 Console.Error.WriteLine($"unknown command '{args[0]}'");
                 return 2;
