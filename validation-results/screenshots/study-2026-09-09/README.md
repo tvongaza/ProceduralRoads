@@ -22,6 +22,8 @@ for the unpainted span of a bridge.
 | island-routed-mst.png | the same island, MST on the search's own cost |
 | island-sheet.png | four connection plans on one island, at identical bounds and scale |
 | island-all-places.png | the same island with the quota lifted: every eligible place |
+| six-islands.png | six islands at identical bounds and scale, study baseline |
+| world-sheet.png | the whole world under six configurations, at identical bounds and scale |
 | island-diagnostic.png | places drawn by what became of them, and failed attempts drawn to where the search stopped |
 | failure-anchor.png | a coast anchor 150 m out to sea: one cell settled, sixteen moves refused, no road |
 | failure-frontier.png | a search that settled a whole archipelago and still found no way to its destination |
