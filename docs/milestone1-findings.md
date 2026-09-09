@@ -315,13 +315,15 @@ ground they are drawn on.
 | distance to open water, median | 97 m | 74 m |
 | distance from the world's centre, median | 5 146 m | 7 037 m |
 
-**Neither reading is supported by these aggregates.** Roads sit further from
-open water than the land does, and nearer the world's centre than the land is.
-These are medians over the whole world, and a median can hide clustering on
-one island; the per-island distributions are published beside this document
-and no island in them reverses the direction. The same holds inside
+**Neither reading holds.** Roads sit further from open water than the land
+does, and nearer the world's centre than the land is. The same is true inside
 every biome separately, and connected places are further inland than
 unconnected ones (median 111 m against 68 m).
+
+The distributions are published beside the document rather than only their
+medians, because a median can hide a shape: the land spikes hard against the
+shoreline and the roads do not. They are whole-world distributions, so they
+rule out a bias at that scale and not on any particular island.
 
 A first version of this measurement said the opposite, and the reason is worth
 recording. It called everything below the road floor "water", which puts all
