@@ -1,12 +1,14 @@
 # Road networks: a routing study
 
-**Preliminary; routing study; gameplay validation pending.** Two strategy
-implementations do not yet match their descriptions here (see "Where this is
-still wrong"), so the strategy ranking should not be read as settled. Everything below is measured
-on generated networks — road counts, lengths, what connects to what, and why a
-connection failed. None of it has been played. Where a number would change a
-design decision, it needs a session in game first, and the places that most
-need one are named at the end.
+**Preliminary; routing study; gameplay validation pending.** Everything below
+is measured on generated networks — road counts, lengths, what connects to
+what, and why a connection failed. None of it has been played. Where a number
+would change a design decision, it needs a session in game first, and the
+places that most need one are named at the end. The strategy ranking in
+particular should not be read as settled: the plans differ by a few places
+served, which is inside the distance between this offline model and the game.
+What was raised in review and has since been corrected is listed under "Where
+this is still wrong", so the record of what changed is in the document.
 
 This came out of issue #7 ("Roads seem to be limited to 2-3 per island").
 It reproduces what the issue describes, finds a different cause than the one
@@ -671,9 +673,21 @@ Raised in review. Fixed since, and named here so the record is plain:
   places whose planned road was built, matched by the place's own identity;
   places with a road end within reach; and roads joined to each other.
 - Length is now reported both as distinct road on the ground and as the sum
-  over routes, because summing punishes a strategy for sharing road.
+  over routes, because summing punishes a strategy for sharing road. Every
+  table now says which of the two it is reporting.
+- The document asserted things about the map that a reader could not look at.
+  The world is now drawn under six configurations at one scale, six islands at
+  one scale, and three failures one at a time; and the run's places are broken
+  out by what they are — boss, dungeon, settlement, ruin — with every required
+  destination the generator did not reach named.
 
 Still true of the numbers here, and not fixed:
+
+- **The offline search can walk off the edge of the world.** Nothing bounds
+  the pathfinder to the world disc, and a dump answers a point past the rim
+  with the rim's own values, so a search that exhausts the land can spend its
+  remaining budget over an ocean the harness invents. One attempt on this seed
+  did. In game the values out there would differ; the behaviour would not.
 
 - **Roads are joined geometrically**, by an endpoint within 24 m of another
   road, with no regard for elevation or what lies between. Two roads on
