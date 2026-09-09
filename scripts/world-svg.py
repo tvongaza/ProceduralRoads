@@ -290,7 +290,8 @@ class View:
         return self.x0 - pad <= x <= self.x1 + pad and self.z0 - pad <= z <= self.z1 + pad
 
 
-def render(view, xs, zs, cells, grid, locations, routes, crossings, contour, title, min_radius):
+def render(view, xs, zs, cells, grid, locations, routes, crossings, contour, title, min_radius,
+           outcomes=None, attempts=None):
     out = []
     step = xs[1] - xs[0]
     out.append(f'<g>')
@@ -364,13 +365,59 @@ def render(view, xs, zs, cells, grid, locations, routes, crossings, contour, tit
         else:
             out.append(f'<circle cx="{f(cx)}" cy="{f(cy)}" r="2.6" fill="#ffffff" '
                        f'stroke="{"#0f8f88" if c["style"] == "Wade" else "#c06010"}" stroke-width="1.2"/>')
-    # locations
-    for name, x, z, r in locations:
-        if r < min_radius or not view.inside(x, z, r):
+    # failed attempts: from where the road would have started to the nearest
+    # the search ever came. A dashed line stopping short of its destination
+    # says more about a missing road than its absence does.
+    # The region a failed search actually settled, for the few worst failures:
+    # a road that stopped at a coast is a different picture from one that
+    # filled its island and found no way off it, and the box says which.
+    for attempt in sorted(attempts or [], key=lambda at: -at['cells'])[:6]:
+        x0, z0, x1, z1 = attempt['settled']
+        if x1 <= x0 or z1 <= z0 or not view.inside((x0 + x1) / 2, (z0 + z1) / 2, (x1 - x0)):
             continue
-        out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="{f(r * view.px)}" fill="none" '
-                   f'stroke="#8a4ab0" stroke-width="0.5" stroke-opacity="0.4"/>')
-        out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="1.8" fill="#8a4ab0" fill-opacity="0.8"/>')
+        out.append(f'<rect x="{f(view.X(x0))}" y="{f(view.Y(z1))}" '
+                   f'width="{f((x1 - x0) * view.px)}" height="{f((z1 - z0) * view.px)}" '
+                   f'fill="#c02020" fill-opacity="0.05" stroke="#c02020" stroke-width="0.8" '
+                   f'stroke-opacity="0.35" stroke-dasharray="6,5"/>')
+
+    for attempt in (attempts or []):
+        sx, sz = attempt['start']
+        cx_, cz_ = attempt['closest']
+        if not (view.inside(sx, sz) or view.inside(cx_, cz_)):
+            continue
+        out.append(f'<line x1="{f(view.X(sx))}" y1="{f(view.Y(sz))}" x2="{f(view.X(cx_))}" y2="{f(view.Y(cz_))}" '
+                   f'stroke="#c02020" stroke-width="1.0" stroke-opacity="0.45" stroke-dasharray="3,4"/>')
+        ex, ez = attempt['end']
+        if view.inside(ex, ez):
+            out.append(f'<circle cx="{f(view.X(ex))}" cy="{f(view.Y(ez))}" r="2.2" fill="none" '
+                       f'stroke="#c02020" stroke-width="1.0" stroke-opacity="0.6"/>')
+
+    # locations, drawn by what became of them when that is known
+    for name, x, z, r in locations:
+        if not view.inside(x, z, r):
+            continue
+        state = (outcomes or {}).get((round(x), round(z)))
+        if state is None:
+            if r < min_radius:
+                continue
+            out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="{f(r * view.px)}" fill="none" '
+                       f'stroke="#8a4ab0" stroke-width="0.5" stroke-opacity="0.4"/>')
+            out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="1.8" fill="#8a4ab0" fill-opacity="0.8"/>')
+            continue
+
+        if state['connected']:
+            out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="3.0" fill="#137a3a" '
+                       f'stroke="#0b4a24" stroke-width="0.8"/>')
+        elif state['selected']:
+            out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="3.0" fill="none" '
+                       f'stroke="#c02020" stroke-width="1.4"/>')
+        elif state['eligible']:
+            if r >= min_radius:
+                out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="1.8" fill="none" '
+                           f'stroke="#6a6a6a" stroke-width="0.7" stroke-opacity="0.7"/>')
+        elif r >= min_radius:
+            out.append(f'<circle cx="{f(view.X(x))}" cy="{f(view.Y(z))}" r="1.0" fill="#9a9a9a" '
+                       f'fill-opacity="0.35"/>')
         if any(k in name for k in LABEL_KEYS):
             out.append(f'<text x="{f(view.X(x) + 4)}" y="{f(view.Y(z) - 3)}" font-size="9" fill="#3b1050">{escape(name)}</text>')
     out.append(f'<text x="6" y="14" font-size="12" fill="#111">{escape(title)}</text>')
@@ -421,6 +468,10 @@ def main():
     ap.add_argument('--background', help='a finer dump (8 m) used for the land picture and for judging '
                                          'which road points stand in a swamp; the coarse world file still '
                                          'draws the contours')
+    ap.add_argument('--outcomes', help='per-place outcomes CSV: places are drawn by what became of them '
+                                       'instead of all alike')
+    ap.add_argument('--attempts', help='attempts CSV: a failed attempt is drawn as a dashed line from its '
+                                       'start to the nearest the search came to its destination')
     ap.add_argument('--crossings', help='road_routes crossings CSV: fords and bridges are marked on the map')
     ap.add_argument('--manifest', help='road_routes manifest JSON: its settings go in the caption')
     ap.add_argument('--out')
@@ -444,6 +495,36 @@ def main():
     with open(a.locations) as fh:
         for row in csv.DictReader(fh):
             locations.append((row['name'], float(row['x']), float(row['z']), float(row['radius'])))
+
+    # What became of each place, so the map can show a destination the network
+    # missed as clearly as one it reached.
+    outcomes = {}
+    if a.outcomes:
+        with open(a.outcomes) as fh:
+            for row in csv.DictReader(fh):
+                key = (round(float(row['x'])), round(float(row['z'])))
+                outcomes[key] = {
+                    'eligible': row['eligible'] == 'true',
+                    'selected': row['selected'] == 'true',
+                    'connected': row['connected'] == 'true',
+                    'outcome': row['outcome'],
+                }
+
+    attempts = []
+    if a.attempts:
+        with open(a.attempts) as fh:
+            for row in csv.DictReader(fh):
+                if row['connected'] == 'true':
+                    continue
+                attempts.append({
+                    'start': (float(row['start_x']), float(row['start_z'])),
+                    'end': (float(row['end_x']), float(row['end_z'])),
+                    'closest': (float(row['closest_x']), float(row['closest_z'])),
+                    'settled': (float(row['settled_min_x']), float(row['settled_min_z']),
+                                float(row['settled_max_x']), float(row['settled_max_z'])),
+                    'cells': int(row['settled_cells']),
+                    'outcome': row['outcome'].strip('"'),
+                })
     routes = defaultdict(list)
     if a.routes:
         with open(a.routes) as fh:
@@ -485,7 +566,9 @@ def main():
              f'{len(crossings)} crossings ({bridges} bridges); land drawn at {grid.step:.0f} m, '
              f'contours every {a.contour} m, 30 m coast heavy; '
              f'black road, green road wading a swamp, orange road in water elsewhere, '
-             f'teal ford wade, dashed purple bridge span, red stub')
+             f'teal ford wade, dashed purple bridge span, red stub'
+             + ('; green place connected, red ring selected but not reached, grey ring eligible, '
+                'dashed red line a failed attempt to where the search stopped' if outcomes else ''))
     subtitle = manifest_caption(manifest)
     if a.zoom_only and a.zoom:
         cx, cz, half = (float(v) for v in a.zoom.split(','))
@@ -494,9 +577,12 @@ def main():
         caption = (f'{os.path.basename(a.world)} at ({cx:.0f},{cz:.0f}) +-{half:.0f} m: '
                    f'{n_routes} routes on the world, {len(crossings)} crossings; '
                    f'black road, green road wading a swamp, orange road in water elsewhere, '
-                   f'teal ford wade, dashed purple bridge span')
+                   f'teal ford wade, dashed purple bridge span'
+                   + ('; green place connected, red ring selected but not reached, grey ring eligible, '
+                      'dashed red line a failed attempt to where the search stopped, '
+                      'dashed box the ground it settled' if outcomes or attempts else ''))
         inner = render(zoom_view, xs, zs, cells, grid, locations, routes, crossings, a.contour,
-                       caption, a.min_radius)
+                       caption, a.min_radius, outcomes, attempts)
         subtitle = manifest_caption(manifest)
         body = inner + (f'\n<text x="6" y="27" font-size="10" fill="#444">{escape(subtitle)}</text>'
                         if subtitle else '')
@@ -510,7 +596,8 @@ def main():
         print(f'{out}: island view at ({cx:.0f},{cz:.0f}), {len(svg) // 1024} KB')
         return
 
-    parts = [render(world_view, xs, zs, cells, grid, locations, routes, crossings, a.contour, title, a.min_radius)]
+    parts = [render(world_view, xs, zs, cells, grid, locations, routes, crossings, a.contour, title, a.min_radius,
+                    outcomes, attempts)]
     if subtitle:
         parts.append(f'<text x="6" y="27" font-size="10" fill="#444">{escape(subtitle)}</text>')
     total_w, total_h = world_view.w, world_view.h
@@ -518,7 +605,7 @@ def main():
         cx, cz, half = (float(v) for v in a.zoom.split(','))
         zpx = min(2.0, 700 / (2 * half))
         zoom_view = View(cx - half, cz - half, cx + half, cz + half, zpx)
-        inner = render(zoom_view, xs, zs, cells, grid, locations, routes, crossings, a.contour, f'zoom ({cx:.0f},{cz:.0f}) +-{half:.0f} m', a.min_radius)
+        inner = render(zoom_view, xs, zs, cells, grid, locations, routes, crossings, a.contour, f'zoom ({cx:.0f},{cz:.0f}) +-{half:.0f} m', a.min_radius, outcomes, attempts)
         parts.append(f'<g transform="translate({f(world_view.w + 20)},0)">{inner}</g>')
         total_w += 20 + zoom_view.w
         total_h = max(total_h, zoom_view.h)
