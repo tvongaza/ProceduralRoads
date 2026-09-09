@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      The study runner: road generation on real terrain, offline. It borrows the
+      harness's shims, mod sources and CsvWorld rather than copying them, so a
+      study run and a test run are running the same code.
+    -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>10</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ProceduralRoads.Study</RootNamespace>
+    <AssemblyName>roads-study</AssemblyName>
+    <NoWarn>$(NoWarn);CS8602;CS8604</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../ProceduralRoads.Tests/ProceduralRoads.Tests.csproj"
+                      SetTargetFramework="TargetFramework=net10.0" />
+  </ItemGroup>
+
+</Project>
