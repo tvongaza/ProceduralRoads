@@ -36,6 +36,8 @@ public static class Program
                 return Compare.Run(args);
             case "outcomes":
                 return Outcomes.Run(args);
+            case "audit":
+                return Audit.Run(args);
             default:
                 Console.Error.WriteLine($"unknown command '{args[0]}'");
                 return 2;

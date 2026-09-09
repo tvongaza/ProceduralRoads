@@ -43,6 +43,13 @@ KIND_STYLE = {
     'Raise': ('#c06010', 2.8, None),
     'Span':  ('#7a2fb0', 3.0, '5,3'),
 }
+# A road standing in water is not always a fault: in a swamp the mod wades on
+# purpose, down to 28 m. Drawn apart from ordinary road so a reader is not left
+# thinking the network runs into the sea, and apart from water in any other
+# biome, which is a finding.
+SWAMP_WADE_STYLE = ('#4a8f5a', 2.6, None)
+IN_WATER_STYLE = ('#e07a10', 2.8, None)
+SEA_ROAD_FLOOR = 30.5
 # Labels are for orientation, not inventory: at world scale a label per dungeon
 # buries the roads the picture is about.
 LABEL_SETS = {
@@ -120,6 +127,13 @@ def png_data_uri(width, height, pixels):
            + chunk(b'IDAT', zlib.compress(raw, 9))
            + chunk(b'IEND', b''))
     return 'data:image/png;base64,' + base64.b64encode(png).decode('ascii')
+
+
+def nearest_cell(xs, zs, x, z):
+    """The dumped cell a world point falls in."""
+    step = xs[1] - xs[0]
+    return (int(round((x - xs[0]) / step)) * step + xs[0],
+            int(round((z - zs[0]) / step)) * step + zs[0])
 
 
 def rgb(colour):
@@ -214,8 +228,10 @@ def render(view, xs, zs, cells, locations, routes, crossings, contour, title, mi
             x, z, y, kind, _ = pts[i]
             if stub:
                 return ('#e03030', 3.2, None)
-            if kind == 'Road' and y < 28:
-                return ('#e07a10', 2.8, None)  # painted road over deep water
+            if kind == 'Road' and y < SEA_ROAD_FLOOR:
+                cell = cells.get(nearest_cell(xs, zs, x, z))
+                swamp = cell is not None and cell[1] == 'Swamp'
+                return SWAMP_WADE_STYLE if swamp else IN_WATER_STYLE
             return KIND_STYLE.get(kind, KIND_STYLE['Road'])
 
         # One polyline per run of points that share a stretch and a style: a
@@ -366,7 +382,8 @@ def main():
     title = (f'{os.path.basename(a.world)}: {len(locations)} locations ({shown} with radius >= {a.min_radius:.0f} m shown), '
              f'{n_routes} routes ({stubs} stubs < 40 m), '
              f'{len(crossings)} crossings ({bridges} bridges); contours every {a.contour} m, 30 m coast heavy; '
-             f'black road, teal wade, orange raise, dashed purple bridge span, red stub')
+             f'black road, green road wading a swamp, orange road in water elsewhere, '
+             f'teal ford wade, dashed purple bridge span, red stub')
     subtitle = manifest_caption(manifest)
     parts = [render(world_view, xs, zs, cells, locations, routes, crossings, a.contour, title, a.min_radius)]
     if subtitle:
