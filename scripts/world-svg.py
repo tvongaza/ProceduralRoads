@@ -17,11 +17,14 @@ unpainted span of a bridge as a dashed line between its banks.
 metres beside the world.
 """
 import argparse
+import base64
 import csv
 import json
 import math
 import os
+import struct
 import sys
+import zlib
 from xml.sax.saxutils import escape
 from collections import defaultdict
 
@@ -40,9 +43,17 @@ KIND_STYLE = {
     'Raise': ('#c06010', 2.8, None),
     'Span':  ('#7a2fb0', 3.0, '5,3'),
 }
-LABEL_KEYS = ('Eikthyr', 'GDKing', 'Bonemass', 'Dragonqueen', 'GoblinKing', 'Mistlands_DvergrBossEntrance',
-              'Crypt', 'SunkenCrypt', 'TrollCave', 'MountainCave', 'Mistlands_DvergrTownEntrance',
-              'StartTemple', 'Vendor', 'Hildir')
+# Labels are for orientation, not inventory: at world scale a label per dungeon
+# buries the roads the picture is about.
+LABEL_SETS = {
+    'none': (),
+    'bosses': ('Eikthyr', 'GDKing', 'Bonemass', 'Dragonqueen', 'GoblinKing',
+               'Mistlands_DvergrBossEntrance', 'StartTemple', 'Vendor', 'Hildir'),
+    'all': ('Eikthyr', 'GDKing', 'Bonemass', 'Dragonqueen', 'GoblinKing', 'Mistlands_DvergrBossEntrance',
+            'Crypt', 'SunkenCrypt', 'TrollCave', 'MountainCave', 'Mistlands_DvergrTownEntrance',
+            'StartTemple', 'Vendor', 'Hildir'),
+}
+LABEL_KEYS = LABEL_SETS['bosses']
 
 
 def f(v):
@@ -95,6 +106,65 @@ def marching_squares(xs, zs, cells, level):
     return segs
 
 
+def png_data_uri(width, height, pixels):
+    """A PNG as a data URI. The land is a picture, not tens of thousands of
+    rectangles: drawing it as vectors made a file too large to open."""
+    raw = b''.join(b'\x00' + bytes(row) for row in pixels)
+
+    def chunk(tag, data):
+        return (struct.pack('>I', len(data)) + tag + data
+                + struct.pack('>I', zlib.crc32(tag + data) & 0xffffffff))
+
+    png = (b'\x89PNG\r\n\x1a\n'
+           + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+           + chunk(b'IDAT', zlib.compress(raw, 9))
+           + chunk(b'IEND', b''))
+    return 'data:image/png;base64,' + base64.b64encode(png).decode('ascii')
+
+
+def rgb(colour):
+    return (int(colour[1:3], 16), int(colour[3:5], 16), int(colour[5:7], 16))
+
+
+def background_image(view, xs, zs, cells):
+    """One pixel per dumped cell over the view, as a PNG. Returns the SVG
+    element and the world rectangle it covers."""
+    step = xs[1] - xs[0]
+    vx = [x for x in xs if view.x0 - step <= x <= view.x1]
+    vz = [z for z in zs if view.z0 - step <= z <= view.z1]
+    if not vx or not vz:
+        return '', None
+
+    ocean = rgb(BIOME_FILL['Ocean'])
+    river = rgb('#7FA6D4')
+    dry_river = rgb('#D3E4D4')
+    fills = {name: rgb(colour) for name, colour in BIOME_FILL.items()}
+
+    pixels = []
+    for z in reversed(vz):  # north up
+        row = bytearray()
+        for x in vx:
+            cell = cells.get((x, z))
+            if cell is None:
+                row += bytes(ocean)
+                continue
+            h, biome, water = cell
+            if h >= SEA:
+                colour = dry_river if water > 0.5 else fills.get(biome, (204, 204, 204))
+            else:
+                colour = river if water > 0.5 else ocean
+            row += bytes(colour)
+        pixels.append(row)
+
+    uri = png_data_uri(len(vx), len(vz), pixels)
+    x0, x1 = vx[0], vx[-1] + step
+    z0, z1 = vz[0], vz[-1] + step
+    element = (f'<image x="{f(view.X(x0))}" y="{f(view.Y(z1))}" '
+               f'width="{f((x1 - x0) * view.px)}" height="{f((z1 - z0) * view.px)}" '
+               f'preserveAspectRatio="none" href="{uri}"/>')
+    return element, (x0, z0, x1, z1)
+
+
 class View:
     def __init__(self, x0, z0, x1, z1, px):
         self.x0, self.z0, self.x1, self.z1, self.px = x0, z0, x1, z1, px
@@ -116,35 +186,9 @@ def render(view, xs, zs, cells, locations, routes, crossings, contour, title, mi
     step = xs[1] - xs[0]
     out.append(f'<g>')
     out.append(f'<rect x="0" y="0" width="{f(view.w)}" height="{f(view.h)}" fill="{BIOME_FILL["Ocean"]}"/>')
-    # land and river cells as run-length rects per row
-    for z in zs:
-        if not (view.z0 - step <= z <= view.z1):
-            continue
-        run_fill, run_x0, run_x1 = None, None, None
-
-        def flush():
-            if run_fill is not None:
-                out.append(f'<rect x="{f(view.X(run_x0))}" y="{f(view.Y(z + step))}" '
-                           f'width="{f((run_x1 - run_x0) * view.px)}" height="{f(step * view.px)}" fill="{run_fill}"/>')
-        for x in xs:
-            if not (view.x0 - step <= x <= view.x1):
-                continue
-            cell = cells.get((x, z))
-            fill = None
-            if cell is not None:
-                h, biome, river = cell
-                if h >= SEA:
-                    fill = BIOME_FILL.get(biome, '#cccccc')
-                    if river > 0.5:
-                        fill = '#D3E4D4'  # dry river band: valley floor
-                elif river > 0.5:
-                    fill = '#7FA6D4'  # river water
-            if fill == run_fill and run_x1 == x:
-                run_x1 = x + step
-            else:
-                flush()
-                run_fill, run_x0, run_x1 = fill, x, x + step
-        flush()
+    image, _ = background_image(view, xs, zs, cells)
+    if image:
+        out.append(image)
     # contours
     top = max(c[0] for c in cells.values())
     levels = [SEA] + [lv for lv in range(int(SEA) + contour, int(top) + 1, contour)]
@@ -165,20 +209,38 @@ def render(view, xs, zs, cells, locations, routes, crossings, contour, title, mi
             continue
         length = sum(math.dist(pts[i][:2], pts[i + 1][:2]) for i in range(len(pts) - 1))
         stub = length < 40
-        for i in range(len(pts) - 1):
-            (x0, z0, y0, k0, s0), (x1, z1, y1, k1, s1) = pts[i], pts[i + 1]
-            if s0 != s1:
-                continue  # a gap between two stretches is not a piece of road
-            if not (view.inside(x0, z0) or view.inside(x1, z1)):
-                continue
-            color, width, dash = KIND_STYLE.get(k0, KIND_STYLE['Road'])
+
+        def style_of(i):
+            x, z, y, kind, _ = pts[i]
             if stub:
-                color, width = '#e03030', 3.2
-            elif k0 == 'Road' and min(y0, y1) < 28:
-                color, width = '#e07a10', 2.8  # painted road over deep water
+                return ('#e03030', 3.2, None)
+            if kind == 'Road' and y < 28:
+                return ('#e07a10', 2.8, None)  # painted road over deep water
+            return KIND_STYLE.get(kind, KIND_STYLE['Road'])
+
+        # One polyline per run of points that share a stretch and a style: a
+        # line element per point pair made a file an order of magnitude larger
+        # than the picture needs.
+        run, run_style, run_segment = [], None, None
+        def flush():
+            if len(run) < 2:
+                return
+            if not any(view.inside(x, z) for x, z in run):
+                return
+            color, width, dash = run_style
             dash_attr = f' stroke-dasharray="{dash}"' if dash else ''
-            out.append(f'<line x1="{f(view.X(x0))}" y1="{f(view.Y(z0))}" x2="{f(view.X(x1))}" y2="{f(view.Y(z1))}" '
-                       f'stroke="{color}" stroke-width="{width}" stroke-linecap="round"{dash_attr}/>')
+            points = ' '.join(f'{f(view.X(x))},{f(view.Y(z))}' for x, z in run)
+            out.append(f'<polyline points="{points}" fill="none" stroke="{color}" '
+                       f'stroke-width="{width}" stroke-linecap="round" stroke-linejoin="round"{dash_attr}/>')
+
+        for i in range(len(pts)):
+            x, z, y, kind, segment = pts[i]
+            style = style_of(i)
+            if segment != run_segment or style != run_style:
+                flush()
+                run, run_style, run_segment = [], style, segment
+            run.append((x, z))
+        flush()
     # crossings: where the network met a river, and what it built there
     for c in crossings:
         if not view.inside(c['x'], c['z'], 40):
@@ -212,10 +274,24 @@ def manifest_caption(manifest):
         return ''
     cfg = manifest.get('config', {})
     res = manifest.get('result', {})
-    parts = [f"mod {manifest.get('modVersion', '?')}", f"game {manifest.get('gameVersion', '?')}"]
+    parts = []
+    # A run in the game names the build it ran on; a run offline names the
+    # terrain it read and says that terrain is approximate.
+    if manifest.get('modVersion'):
+        parts.append(f"mod {manifest['modVersion']}")
+    if manifest.get('gameVersion'):
+        parts.append(f"game {manifest['gameVersion']}")
     if manifest.get('worldName'):
         parts.append(f"world {manifest['worldName']} (seed {manifest.get('worldSeed', '?')})")
-    parts.append(f"scope {manifest.get('scope', '?')}")
+    if manifest.get('label'):
+        parts.append(f"run {manifest['label']}")
+    if manifest.get('terrain'):
+        dumps = ', '.join(manifest.get('terrainDumps', []))
+        parts.append(f"terrain {manifest['terrain']}" + (f" from {dumps}" if dumps else ""))
+    if manifest.get('scope'):
+        parts.append(f"scope {manifest['scope']}")
+    if cfg.get('Strategy'):
+        parts.append(f"policy {cfg['Strategy']}")
     parts.append(f"islands {cfg.get('IslandRoadPercentage', '?')}%")
     parts.append(f"max POI/island {cfg.get('MaxLocationsPerIsland', '?')}")
     parts.append(f"iterations {cfg.get('PathfindingMaxIterations', '?')}")
@@ -237,9 +313,14 @@ def main():
     ap.add_argument('--zoom', help='cx,cz,half (metres): inset window rendered beside the world')
     ap.add_argument('--contour', type=int, default=10)
     ap.add_argument('--px', type=float, default=0.1, help='pixels per metre for the world view')
+    ap.add_argument('--labels', choices=sorted(LABEL_SETS), default='bosses',
+                    help='which locations are named on the map (default: bosses and the spawn)')
     ap.add_argument('--min-radius', type=float, default=10.0,
                     help='hide locations whose approach radius is smaller (runestones, spawners)')
     a = ap.parse_args()
+
+    global LABEL_KEYS
+    LABEL_KEYS = LABEL_SETS[a.labels]
 
     xs, zs, cells = read_world(a.world)
     locations = []
