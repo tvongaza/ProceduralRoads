@@ -68,8 +68,14 @@ public static class Program
         List<Location> locations = ReadLocations(locationsPath);
         Console.WriteLine($"locations: {locations.Count} placed");
 
-        List<Island> islands = IslandDetector.DetectIslands();
-        Console.WriteLine($"islands:   {islands.Count} detected (128 m grid, at least 10 cells)");
+        // The detector's grid and its minimum island size are arguments, so the
+        // study can ask what they cost. A dump on the 8 m lattice answers every
+        // coarser lattice exactly, because each of them is a subset of it.
+        float cellSize = float.Parse(Options.Value(args, "--cell-size") ?? "128", CultureInfo.InvariantCulture);
+        int minCells = int.Parse(Options.Value(args, "--min-cells") ?? "10", CultureInfo.InvariantCulture);
+
+        List<Island> islands = IslandDetector.DetectIslands(cellSize, minCells);
+        Console.WriteLine($"islands:   {islands.Count} detected ({cellSize:F0} m grid, at least {minCells} cells)");
 
         // Every island gets a row, including the ones with nothing on them:
         // an island without a single eligible place is an outcome, not a gap.

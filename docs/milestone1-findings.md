@@ -333,6 +333,70 @@ Connected places by biome tell the same story from the other side: 18.8 % of
 eligible swamp places get a road, against 2.4 % in the Mistlands and 1.7 % in
 the plains.
 
+## The other candidates for the clustering complaint
+
+### The island grid is not a contributor
+
+Island detection samples a 128 m grid and drops anything under 10 cells. Both
+were varied, on terrain dumped at 8 m so every coarser lattice is answered
+exactly rather than interpolated:
+
+| grid | minimum | islands | land found | eligible places | places on no island |
+|---|---|---|---|---|---|
+| 128 m | 10 cells | 67 | 182 km² | 2 470 | 1 426 |
+| 128 m | 4 cells | 75 | 183 km² | 2 472 | 1 411 |
+| 64 m | 10 cells | 76 | 183 km² | 2 514 | 1 132 |
+| 32 m | 160 cells | 65 | 182 km² | 2 509 | 1 104 |
+| 16 m | 640 cells | 65 | 182 km² | 2 508 | 1 072 |
+
+Sixteen times the resolution finds the same 182 km² of land and 38 more
+eligible places. The grid can be struck off the list.
+
+### The places on no island are the Ashlands, and they are not road locations
+
+Of the 1 426 places that sit on no detected island, the most common are
+charred stone spawners, vulture nests and charred ruins - the Ashlands - and
+**none of them is an eligible road location**, so nothing is lost today.
+
+There is a real inconsistency underneath, though. Island detection asks
+`GetBaseHeight >= 0.05`; the Ashlands terrain is produced elsewhere in the
+height pipeline, and the two disagree there and nowhere else:
+
+| biome | walkable land | island detection sees | share |
+|---|---|---|---|
+| Mistlands | 34.6 km² | 33.3 km² | 96 % |
+| Plains | 20.2 km² | 20.2 km² | 100 % |
+| BlackForest | 18.2 km² | 18.2 km² | 100 % |
+| DeepNorth | 13.0 km² | 12.7 km² | 98 % |
+| Mountain | 12.7 km² | 12.7 km² | 100 % |
+| **AshLands** | **7.0 km²** | **3.8 km²** | **54 %** |
+| Meadows | 5.6 km² | 5.6 km² | 100 % |
+| Swamp | 1.8 km² | 1.8 km² | 100 % |
+
+Half the walkable Ashlands is invisible to road generation. It costs nothing
+today because no Ashlands location is a road location; it would cost half a
+continent the day one is registered.
+
+### The priority table decides almost everything the quota does
+
+Of the 2 470 eligible places offered to island quotas, 158 were taken:
+
+| priority | offered | selected | share |
+|---|---|---|---|
+| 100 (bosses) | 19 | 19 | 100 % |
+| 80 (crypts, sunken crypts, mountain caves, anything registered) | 517 | 106 | 20.5 % |
+| 75 (Mistlands town entrances, older crypts) | 421 | 24 | 5.7 % |
+| 70 and below | 1 513 | 9 | 0.6 % |
+
+The network connects bosses and dungeons, and almost nothing else. Everything
+at priority 70 or below - villages, farms, towers, ruins, the great majority
+of what is on a map - shares nine road ends across a whole world. No iteration
+setting changes that, because those places are never attempted.
+
+This is also why registering locations through the API matters more than it
+looks: a registered location gets priority 80, which puts it straight into the
+band that actually wins quota slots.
+
 ## Connection plans on identical inputs
 
 The same islands, the same selected places, the same anchor, the same routing
