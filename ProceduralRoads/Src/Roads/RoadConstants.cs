@@ -91,6 +91,10 @@ public static class RoadConstants
     public const float FordSpanDeckRise = 1f;
     public const float SwampBridgeDryReach = 120f;
 
+    /// <summary>Study only: how far a hub may serve a place directly, in
+    /// routed metres. Beyond it the place belongs to another cluster.</summary>
+    public const float HubSpokeReachMetres = 900f;
+
     // High bridge: when the ground within HighBankReach of each bank along
     // the road stands at least HighBankRise above that bank, the deck
     // springs from the bank tops (abutments there, piers taller, the road

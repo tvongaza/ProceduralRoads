@@ -818,10 +818,26 @@ public static partial class RoadNetworkGenerator
             startRadius = 0f;
         }
 
-        if (StudyFactors.Plan == ConnectionPlan.TreeWithRetries)
+        if (StudyFactors.Plan != ConnectionPlan.ChainOrMstByParity)
         {
-            Log.LogDebug($"Island {island.Id}: {islandLocations.Count} locations, plan=TreeWithRetries, anchor={startName}");
-            GenerateReachableRoads(startPos, startRadius, roadLocations, startName);
+            Log.LogDebug($"Island {island.Id}: {islandLocations.Count} locations, " +
+                         $"plan={StudyFactors.Plan}, anchor={startName}");
+            switch (StudyFactors.Plan)
+            {
+                case ConnectionPlan.TreeWithRetries:
+                    GenerateReachableRoads(startPos, startRadius, roadLocations, startName);
+                    break;
+                case ConnectionPlan.RoutedMst:
+                    GenerateRoutedMstRoads(startPos, startRadius, roadLocations, startName);
+                    break;
+                case ConnectionPlan.TrunkAndSpurs:
+                    GenerateTrunkAndSpurRoads(startPos, startRadius, roadLocations, startName);
+                    break;
+                case ConnectionPlan.HubAndSpoke:
+                    GenerateHubAndSpokeRoads(startPos, startRadius, roadLocations, startName);
+                    break;
+            }
+
             return;
         }
 
@@ -916,6 +932,7 @@ public static partial class RoadNetworkGenerator
         RoadRouteRecorder.Clear();
         RoadAttemptLog.Clear();
         RoadSelectionLog.Clear();
+        ResetProbeCounters();
         m_roadCrossings.Clear();
         BridgePlans.Reset();
         RoadNetworkPersistence.Reset();

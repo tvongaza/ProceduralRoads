@@ -43,6 +43,18 @@ public enum ConnectionPlan
     /// <summary>PR #16's rule: one tree grown outward from the anchor, failed
     /// edges remembered, a link-distance limit and an attempt cap.</summary>
     TreeWithRetries,
+
+    /// <summary>Study proposal: a spanning tree on what the pathfinder charges
+    /// to get between places, not on straight-line distance.</summary>
+    RoutedMst,
+
+    /// <summary>Study proposal: one long road along the island's routed axis,
+    /// everything else joined to the network where it is nearest.</summary>
+    TrunkAndSpurs,
+
+    /// <summary>Study proposal: the anchor serves what is near it; a cluster
+    /// too far to serve gets a hub of its own.</summary>
+    HubAndSpoke,
 }
 
 /// <summary>

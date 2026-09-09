@@ -158,7 +158,11 @@ internal static class Generate
             {
                 "parity" => ConnectionPlan.ChainOrMstByParity,
                 "tree" => ConnectionPlan.TreeWithRetries,
-                _ => throw new ArgumentException($"--plan must be parity or tree, not '{plan}'"),
+                "routed-mst" => ConnectionPlan.RoutedMst,
+                "trunk" => ConnectionPlan.TrunkAndSpurs,
+                "hub" => ConnectionPlan.HubAndSpoke,
+                _ => throw new ArgumentException(
+                    $"--plan must be parity, tree, routed-mst, trunk or hub, not '{plan}'"),
             };
 
         string? filter = Options.Value(args, "--filter-endpoints");
@@ -214,6 +218,9 @@ internal static class Generate
         if (rejections.Count > 0)
             Console.WriteLine("refused:   " + string.Join(", ",
                 rejections.OrderByDescending(r => r.Value).Select(r => $"{r.Key} {r.Value}")));
+        if (RoadNetworkGenerator.RoutingProbes > 0)
+            Console.WriteLine($"probes:    {RoadNetworkGenerator.RoutingProbes} searches run to price a connection before building it, " +
+                              $"{RoadNetworkGenerator.RoutingProbesWithoutRoute} of them found no route");
         Console.WriteLine($"time:      {elapsed.TotalSeconds:F1} s");
         Console.WriteLine($"wrote:     {Path.Combine(outDir, label)}.{{routes,attempts,crossings}}.csv + manifest.json");
     }
@@ -252,6 +259,8 @@ internal static class Generate
             $"    \"totalLengthMeters\": {routes.Sum(r => r.Length):F0},",
             $"    \"attemptCount\": {attempts.Count},",
             $"    \"failedAttemptCount\": {attempts.Count(a => !a.Connected)},",
+            $"    \"routingProbes\": {RoadNetworkGenerator.RoutingProbes},",
+            $"    \"routingProbesWithoutRoute\": {RoadNetworkGenerator.RoutingProbesWithoutRoute},",
             $"    \"crossingCount\": {sites.Count},",
             $"    \"bridgeCount\": {sites.Count(c => c.Kind == CrossingKind.Bridge)},",
             $"    \"roadNetworkVersion\": {RoadSpatialGrid.RoadNetworkVersion},",

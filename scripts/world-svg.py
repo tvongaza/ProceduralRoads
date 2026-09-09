@@ -17,6 +17,7 @@ unpainted span of a bridge as a dashed line between its banks.
 metres beside the world.
 """
 import argparse
+import array
 import base64
 import csv
 import json
@@ -29,6 +30,13 @@ from xml.sax.saxutils import escape
 from collections import defaultdict
 
 SEA = 30.0
+# Swamp sits at and below the waterline: most of it is shallow water with trees
+# in it, not sea. Drawing it as ocean made every swamp road look like a road
+# into the sea, which is the one thing a reader must not be misled about.
+SWAMP_WATER = '#9FAF86'
+OCEAN_WATER = '#B9D2E8'
+RIVER_WATER = '#7FA6D4'
+DRY_RIVER = '#D3E4D4'
 BIOME_FILL = {
     # Light tints: the roads must carry the contrast, not the land.
     'Meadows': '#E4EED3', 'BlackForest': '#C9DCC4', 'Swamp': '#DCD9C0', 'Mountain': '#F3F5F7',
@@ -113,6 +121,100 @@ def marching_squares(xs, zs, cells, level):
     return segs
 
 
+class Grid:
+    """A dumped grid held compactly: an 8 m dump of a whole world is over six
+    million samples, so heights, biomes and river weights are kept in flat
+    arrays rather than a dictionary of tuples."""
+
+    def __init__(self, x0, z0, step, nx, nz, heights, biomes, rivers, names):
+        self.x0, self.z0, self.step, self.nx, self.nz = x0, z0, step, nx, nz
+        self.heights, self.biomes, self.rivers, self.names = heights, biomes, rivers, names
+
+    def index(self, x, z):
+        ix = int(round((x - self.x0) / self.step))
+        iz = int(round((z - self.z0) / self.step))
+        if ix < 0 or iz < 0 or ix >= self.nx or iz >= self.nz:
+            return None
+        return iz * self.nx + ix
+
+    def at(self, x, z):
+        """(height, biome name, river weight) at a world point, or None."""
+        i = self.index(x, z)
+        if i is None:
+            return None
+        return self.heights[i], self.names[self.biomes[i]], self.rivers[i] / 255.0
+
+
+def read_grid(path):
+    """Streams a dump into flat arrays. Two passes: the first learns the grid's
+    shape, the second fills it."""
+    with open(path) as fh:
+        header = fh.readline().strip().split(',')
+        cx, cz = header.index('x'), header.index('z')
+        ch, cb, cr = header.index('height'), header.index('biome'), header.index('river')
+        xs_min = zs_min = float('inf')
+        xs_max = zs_max = float('-inf')
+        second_x = second_z = float('inf')
+        rows = 0
+        for line in fh:
+            if not line.strip():
+                continue
+            cells = line.split(',')
+            x, z = float(cells[cx]), float(cells[cz])
+            if x < xs_min:
+                second_x, xs_min = xs_min, x
+            elif xs_min < x < second_x:
+                second_x = x
+            if z < zs_min:
+                second_z, zs_min = zs_min, z
+            elif zs_min < z < second_z:
+                second_z = z
+            xs_max, zs_max = max(xs_max, x), max(zs_max, z)
+            rows += 1
+
+    step = second_x - xs_min
+    nx = int(round((xs_max - xs_min) / step)) + 1
+    nz = int(round((zs_max - zs_min) / step)) + 1
+    if nx * nz != rows:
+        sys.exit(f'{path}: {rows} samples do not fill a {nx}x{nz} grid')
+
+    heights = array.array('f', bytes(4 * nx * nz))
+    biomes = bytearray(nx * nz)
+    rivers = bytearray(nx * nz)
+    names, ids = ['Ocean'], {'Ocean': 0}
+
+    with open(path) as fh:
+        fh.readline()
+        for line in fh:
+            if not line.strip():
+                continue
+            cells = line.split(',')
+            ix = int(round((float(cells[cx]) - xs_min) / step))
+            iz = int(round((float(cells[cz]) - zs_min) / step))
+            i = iz * nx + ix
+            heights[i] = float(cells[ch])
+            name = cells[cb].strip()
+            if name not in ids:
+                ids[name] = len(names)
+                names.append(name)
+            biomes[i] = ids[name]
+            rivers[i] = min(255, int(float(cells[cr]) * 255))
+
+    return Grid(xs_min, zs_min, step, nx, nz, heights, biomes, rivers, names)
+
+
+def ground_colour(height, biome, river):
+    """What one cell of ground looks like. Water is not one thing: a swamp's
+    shallows, a river and the sea are three."""
+    if height >= SEA:
+        return DRY_RIVER if river > 0.5 else BIOME_FILL.get(biome, '#cccccc')
+    if biome == 'Swamp':
+        return SWAMP_WATER
+    if river > 0.5:
+        return RIVER_WATER
+    return OCEAN_WATER
+
+
 def png_data_uri(width, height, pixels):
     """A PNG as a data URI. The land is a picture, not tens of thousands of
     rectangles: drawing it as vectors made a file too large to open."""
@@ -129,50 +231,43 @@ def png_data_uri(width, height, pixels):
     return 'data:image/png;base64,' + base64.b64encode(png).decode('ascii')
 
 
-def nearest_cell(xs, zs, x, z):
-    """The dumped cell a world point falls in."""
-    step = xs[1] - xs[0]
-    return (int(round((x - xs[0]) / step)) * step + xs[0],
-            int(round((z - zs[0]) / step)) * step + zs[0])
-
-
 def rgb(colour):
     return (int(colour[1:3], 16), int(colour[3:5], 16), int(colour[5:7], 16))
 
 
-def background_image(view, xs, zs, cells):
+def background_image(view, grid):
     """One pixel per dumped cell over the view, as a PNG. Returns the SVG
     element and the world rectangle it covers."""
-    step = xs[1] - xs[0]
-    vx = [x for x in xs if view.x0 - step <= x <= view.x1]
-    vz = [z for z in zs if view.z0 - step <= z <= view.z1]
-    if not vx or not vz:
+    step = grid.step
+    ix0 = max(0, int(math.floor((view.x0 - grid.x0) / step)))
+    ix1 = min(grid.nx - 1, int(math.ceil((view.x1 - grid.x0) / step)))
+    iz0 = max(0, int(math.floor((view.z0 - grid.z0) / step)))
+    iz1 = min(grid.nz - 1, int(math.ceil((view.z1 - grid.z0) / step)))
+    if ix1 < ix0 or iz1 < iz0:
         return '', None
 
-    ocean = rgb(BIOME_FILL['Ocean'])
-    river = rgb('#7FA6D4')
-    dry_river = rgb('#D3E4D4')
-    fills = {name: rgb(colour) for name, colour in BIOME_FILL.items()}
+    cache = {}
+
+    def colour_bytes(height, biome_id, river):
+        key = (round(height, 1) >= SEA, biome_id, river > 127)
+        hit = cache.get(key)
+        if hit is None:
+            hit = bytes(rgb(ground_colour(height, grid.names[biome_id], river / 255.0)))
+            cache[key] = hit
+        return hit
 
     pixels = []
-    for z in reversed(vz):  # north up
+    for iz in range(iz1, iz0 - 1, -1):   # north up
         row = bytearray()
-        for x in vx:
-            cell = cells.get((x, z))
-            if cell is None:
-                row += bytes(ocean)
-                continue
-            h, biome, water = cell
-            if h >= SEA:
-                colour = dry_river if water > 0.5 else fills.get(biome, (204, 204, 204))
-            else:
-                colour = river if water > 0.5 else ocean
-            row += bytes(colour)
+        base = iz * grid.nx
+        for ix in range(ix0, ix1 + 1):
+            i = base + ix
+            row += colour_bytes(grid.heights[i], grid.biomes[i], grid.rivers[i])
         pixels.append(row)
 
-    uri = png_data_uri(len(vx), len(vz), pixels)
-    x0, x1 = vx[0], vx[-1] + step
-    z0, z1 = vz[0], vz[-1] + step
+    uri = png_data_uri(ix1 - ix0 + 1, iz1 - iz0 + 1, pixels)
+    x0, x1 = grid.x0 + ix0 * step, grid.x0 + (ix1 + 1) * step
+    z0, z1 = grid.z0 + iz0 * step, grid.z0 + (iz1 + 1) * step
     element = (f'<image x="{f(view.X(x0))}" y="{f(view.Y(z1))}" '
                f'width="{f((x1 - x0) * view.px)}" height="{f((z1 - z0) * view.px)}" '
                f'preserveAspectRatio="none" href="{uri}"/>')
@@ -195,12 +290,12 @@ class View:
         return self.x0 - pad <= x <= self.x1 + pad and self.z0 - pad <= z <= self.z1 + pad
 
 
-def render(view, xs, zs, cells, locations, routes, crossings, contour, title, min_radius):
+def render(view, xs, zs, cells, grid, locations, routes, crossings, contour, title, min_radius):
     out = []
     step = xs[1] - xs[0]
     out.append(f'<g>')
     out.append(f'<rect x="0" y="0" width="{f(view.w)}" height="{f(view.h)}" fill="{BIOME_FILL["Ocean"]}"/>')
-    image, _ = background_image(view, xs, zs, cells)
+    image, _ = background_image(view, grid)
     if image:
         out.append(image)
     # contours
@@ -229,7 +324,7 @@ def render(view, xs, zs, cells, locations, routes, crossings, contour, title, mi
             if stub:
                 return ('#e03030', 3.2, None)
             if kind == 'Road' and y < SEA_ROAD_FLOOR:
-                cell = cells.get(nearest_cell(xs, zs, x, z))
+                cell = grid.at(x, z)
                 swamp = cell is not None and cell[1] == 'Swamp'
                 return SWAMP_WADE_STYLE if swamp else IN_WATER_STYLE
             return KIND_STYLE.get(kind, KIND_STYLE['Road'])
@@ -323,6 +418,9 @@ def main():
     ap.add_argument('world')
     ap.add_argument('locations')
     ap.add_argument('routes', nargs='?')
+    ap.add_argument('--background', help='a finer dump (8 m) used for the land picture and for judging '
+                                         'which road points stand in a swamp; the coarse world file still '
+                                         'draws the contours')
     ap.add_argument('--crossings', help='road_routes crossings CSV: fords and bridges are marked on the map')
     ap.add_argument('--manifest', help='road_routes manifest JSON: its settings go in the caption')
     ap.add_argument('--out')
@@ -339,6 +437,7 @@ def main():
     LABEL_KEYS = LABEL_SETS[a.labels]
 
     xs, zs, cells = read_world(a.world)
+    grid = read_grid(a.background) if a.background else read_grid(a.world)
     locations = []
     with open(a.locations) as fh:
         for row in csv.DictReader(fh):
@@ -381,11 +480,12 @@ def main():
     bridges = sum(1 for c in crossings if c['kind'] == 'Bridge')
     title = (f'{os.path.basename(a.world)}: {len(locations)} locations ({shown} with radius >= {a.min_radius:.0f} m shown), '
              f'{n_routes} routes ({stubs} stubs < 40 m), '
-             f'{len(crossings)} crossings ({bridges} bridges); contours every {a.contour} m, 30 m coast heavy; '
+             f'{len(crossings)} crossings ({bridges} bridges); land drawn at {grid.step:.0f} m, '
+             f'contours every {a.contour} m, 30 m coast heavy; '
              f'black road, green road wading a swamp, orange road in water elsewhere, '
              f'teal ford wade, dashed purple bridge span, red stub')
     subtitle = manifest_caption(manifest)
-    parts = [render(world_view, xs, zs, cells, locations, routes, crossings, a.contour, title, a.min_radius)]
+    parts = [render(world_view, xs, zs, cells, grid, locations, routes, crossings, a.contour, title, a.min_radius)]
     if subtitle:
         parts.append(f'<text x="6" y="27" font-size="10" fill="#444">{escape(subtitle)}</text>')
     total_w, total_h = world_view.w, world_view.h
@@ -393,7 +493,7 @@ def main():
         cx, cz, half = (float(v) for v in a.zoom.split(','))
         zpx = min(2.0, 700 / (2 * half))
         zoom_view = View(cx - half, cz - half, cx + half, cz + half, zpx)
-        inner = render(zoom_view, xs, zs, cells, locations, routes, crossings, a.contour, f'zoom ({cx:.0f},{cz:.0f}) +-{half:.0f} m', a.min_radius)
+        inner = render(zoom_view, xs, zs, cells, grid, locations, routes, crossings, a.contour, f'zoom ({cx:.0f},{cz:.0f}) +-{half:.0f} m', a.min_radius)
         parts.append(f'<g transform="translate({f(world_view.w + 20)},0)">{inner}</g>')
         total_w += 20 + zoom_view.w
         total_h = max(total_h, zoom_view.h)
