@@ -268,7 +268,12 @@ public static partial class RoadNetworkGenerator
             var islandLocations = GetLocationsOnIsland(island, locations.Value.AllLocations);
             if (islandLocations.Count == 0) continue;
             
-            int maxLocs = GetMaxLocationsForIsland(island);
+            int maxLocs = StudyFactors.Quantity switch
+            {
+                IslandQuota.EveryEligiblePlace => islandLocations.Count,
+                IslandQuota.FixedCount => StudyFactors.FixedPlaceCount,
+                _ => GetMaxLocationsForIsland(island),
+            };
             var selected = SelectLocationsForStrategy(islandLocations, maxLocs);
             RoadSelectionLog.Record(island, islandLocations, selected);
             

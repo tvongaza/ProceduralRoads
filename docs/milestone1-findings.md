@@ -231,6 +231,58 @@ mainly in how much they connect but in what they build — long cross-country
 roads against short local links — and that is a judgement about the game, not
 a number. It is the first thing to put in front of a player.
 
+## What the quota costs
+
+The quota is the one thing that decides most of the outcome, so it was worth
+asking what happens without it. Places per island varied, everything else
+fixed, shipped plan, crossings on, issue #7 seed:
+
+| places per island | roads | length | served | networks | attempts | failed | metres per place served |
+|---|---|---|---|---|---|---|---|
+| `2 + area/2 km²` (today) | 88 | 58.5 km | 123 | 54 | 158 | 44 % | 476 |
+| 4 | 117 | 63.4 km | 155 | 67 | 190 | 38 % | 409 |
+| 8 | 258 | 99.4 km | 319 | 127 | 356 | 28 % | 312 |
+| 16 | 466 | 154.1 km | 557 | 200 | 620 | 25 % | 277 |
+| 32 | 838 | 224.0 km | 959 | 370 | 1 052 | 20 % | 234 |
+| 64 | 1 266 | 301.3 km | 1 434 | 555 | 1 563 | 19 % | 210 |
+| every eligible place | 2 080 | 410.7 km | 2 322 | 825 | 2 470 | 16 % | 177 |
+
+Two things stand out.
+
+The quota is not protecting generation from failure - it is the point on the
+curve where failure is *most* likely. Nearly half of all attempts fail under
+today's quota and one in six with every place selected, because the places
+added later are close to places already connected, and a short road over
+known-good ground is the easiest kind to build.
+
+The same holds for the road itself: today's quota spends 476 metres of road
+per place it reaches, and every-place spends 177. The current setting is the
+least efficient point on the curve by that measure.
+
+What it costs is generation time and a very different world: 411 km of road
+instead of 58, and about twenty-five seconds of generation offline instead of
+three. Whether a world webbed with roads is the game anyone wants is exactly
+the sort of question this study cannot answer.
+
+### A scaling limit in PR #16
+
+The same experiment run with PR #16's connection plan does not scale:
+
+| plan, every eligible place | roads | served | attempts | failed |
+|---|---|---|---|---|
+| chain/MST by parity | 2 080 | 2 322 | 2 470 | 390 |
+| tree grown outward with retries | 271 | 296 | 1 008 | 737 |
+| MST on routed cost | 2 112 | 2 234 | 2 240 | 128 |
+
+PR #16 stops an island after 24 failed edge attempts. With a dozen places
+that cap is generous; with four hundred it stops the island long before the
+places are connected, and the island keeps only a fraction of its network.
+The cap is a fixed number where the thing it limits scales with the island.
+
+(The routed MST run took 199 seconds against 25, because it prices its edges
+first. Its candidate set is each place's eight nearest neighbours - all pairs
+would be four hundred squared searches on the biggest island.)
+
 ## Connection plans on identical inputs
 
 The same islands, the same selected places, the same anchor, the same routing

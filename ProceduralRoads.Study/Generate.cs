@@ -165,6 +165,26 @@ internal static class Generate
                     $"--plan must be parity, tree, routed-mst, trunk or hub, not '{plan}'"),
             };
 
+        string? places = Options.Value(args, "--places");
+        if (places != null)
+        {
+            if (places == "all")
+                StudyFactors.Quantity = IslandQuota.EveryEligiblePlace;
+            else if (places == "formula")
+                StudyFactors.Quantity = IslandQuota.AreaFormula;
+            else if (int.TryParse(places, out int count) && count > 0)
+            {
+                StudyFactors.Quantity = IslandQuota.FixedCount;
+                StudyFactors.FixedPlaceCount = count;
+            }
+            else
+                throw new ArgumentException($"--places must be all, formula or a number, not '{places}'");
+        }
+
+        string? neighbours = Options.Value(args, "--neighbours");
+        if (neighbours != null)
+            StudyFactors.RoutedPlanNeighbours = int.Parse(neighbours, CultureInfo.InvariantCulture);
+
         string? filter = Options.Value(args, "--filter-endpoints");
         if (filter != null)
             StudyFactors.FilterUnreachableEndpoints = OnOff(filter, "--filter-endpoints");

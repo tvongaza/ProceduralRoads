@@ -96,18 +96,37 @@ public static partial class RoadNetworkGenerator
         return length;
     }
 
-    /// <summary>Routed cost between every pair worth trying, once.</summary>
+    /// <summary>
+    /// Routed cost between every pair worth trying, once.
+    ///
+    /// Every pair means one pathfinding search per pair, which is fine for a
+    /// dozen places and hopeless for four hundred. Each place therefore offers
+    /// only its nearest neighbours as candidates - by straight-line distance,
+    /// which is free - and the choice between those candidates is still made
+    /// on what the pathfinder charges. A plan can only be as good as its
+    /// candidate set, and this one says so.
+    /// </summary>
     private static Dictionary<(int, int), float> RoutedCosts(List<Node> nodes)
     {
         Dictionary<(int, int), float> costs = new();
+        int neighbours = Mathf.Max(1, StudyFactors.RoutedPlanNeighbours);
+
+        HashSet<(int, int)> pairs = new();
         for (int a = 0; a < nodes.Count; a++)
         {
-            for (int b = a + 1; b < nodes.Count; b++)
-            {
-                float? cost = RoutedCost(nodes[a], nodes[b]);
-                if (cost.HasValue)
-                    costs[(a, b)] = cost.Value;
-            }
+            IEnumerable<int> candidates = Enumerable.Range(0, nodes.Count)
+                .Where(b => b != a)
+                .OrderBy(b => Vector3.SqrMagnitude(nodes[a].Position - nodes[b].Position))
+                .Take(neighbours);
+            foreach (int b in candidates)
+                pairs.Add(a < b ? (a, b) : (b, a));
+        }
+
+        foreach ((int a, int b) in pairs)
+        {
+            float? cost = RoutedCost(nodes[a], nodes[b]);
+            if (cost.HasValue)
+                costs[(a, b)] = cost.Value;
         }
 
         return costs;

@@ -33,6 +33,21 @@ public enum LocationQuota
     PriorityThenNearest,
 }
 
+/// <summary>How many places on an island may have roads.</summary>
+public enum IslandQuota
+{
+    /// <summary>The shipped rule: 2 + area / 2 km², clamped to the configured
+    /// ceiling.</summary>
+    AreaFormula,
+
+    /// <summary>Every eligible place on the island. Answers what the quota
+    /// costs, which no other run can.</summary>
+    EveryEligiblePlace,
+
+    /// <summary>A fixed number per island, whatever its size.</summary>
+    FixedCount,
+}
+
 /// <summary>How the chosen places are connected.</summary>
 public enum ConnectionPlan
 {
@@ -71,6 +86,21 @@ public enum ConnectionPlan
 public static class StudyFactors
 {
     public static AnchorMode Anchor = AnchorMode.IslandEdgeCell;
+
+    /// <summary>How many places an island may have roads to.</summary>
+    public static IslandQuota Quantity = IslandQuota.AreaFormula;
+
+    /// <summary>Places per island when <see cref="Quantity"/> is a fixed count.</summary>
+    public static int FixedPlaceCount = 8;
+
+    /// <summary>
+    /// How many neighbours a plan that prices its edges may consider per place.
+    /// All pairs is fine for a dozen places and hopeless for four hundred: the
+    /// cost is one pathfinding search per pair. Nearest neighbours by
+    /// straight-line distance are the candidates; the choice between them is
+    /// still made on routed cost.
+    /// </summary>
+    public static int RoutedPlanNeighbours = 8;
     public static IslandSelection Islands = IslandSelection.LargestFirst;
     public static LocationQuota Quota = LocationQuota.PriorityTruncated;
     public static ConnectionPlan Plan = ConnectionPlan.ChainOrMstByParity;
@@ -88,6 +118,7 @@ public static class StudyFactors
     {
         bool reachable = strategy == RoadNetworkStrategy.Reachable;
         Anchor = reachable ? AnchorMode.HighestPriorityLocation : AnchorMode.IslandEdgeCell;
+        Quantity = IslandQuota.AreaFormula;
         Islands = reachable ? IslandSelection.RingBalanced : IslandSelection.LargestFirst;
         Quota = reachable ? LocationQuota.PriorityThenNearest : LocationQuota.PriorityTruncated;
         Plan = reachable ? ConnectionPlan.TreeWithRetries : ConnectionPlan.ChainOrMstByParity;
@@ -97,6 +128,8 @@ public static class StudyFactors
 
     /// <summary>One line for a manifest or a caption.</summary>
     public static string Describe() =>
-        $"anchor={Anchor}, islands={Islands}, quota={Quota}, plan={Plan}, " +
+        $"anchor={Anchor}, islands={Islands}, places={Quantity}" +
+        (Quantity == IslandQuota.FixedCount ? $"({FixedPlaceCount})" : "") +
+        $", quota={Quota}, plan={Plan}, " +
         $"filterEndpoints={FilterUnreachableEndpoints}, snapEndpoints={SnapEndpointsToPathableGround}";
 }
