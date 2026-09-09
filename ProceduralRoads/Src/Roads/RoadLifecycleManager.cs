@@ -112,9 +112,12 @@ public static class RoadLifecycleManager
         if (RoadNetworkGenerator.RoadsAvailable)
             return;
 
-        // A player cannot spawn into a world whose data has not been read, so
-        // by here the saved network is in memory if there is one. This is the
-        // backstop for any path that did not go through ZNet's world load.
+        // A last resort, for a host path that did not go through ZNet's world
+        // load. It does NOT establish that a saved network has arrived: on a
+        // client the player spawns without any guarantee that the road
+        // metadata has replicated, and nothing here waits for it. Road
+        // generation is host-side, so a client reaching this is already
+        // outside what this hook can promise.
         m_worldDataLoaded = true;
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug($"Player spawning at {spawnPoint}");
         DecideOnce("player spawn");
