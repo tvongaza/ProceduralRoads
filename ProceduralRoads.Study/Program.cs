@@ -38,6 +38,8 @@ public static class Program
                 return Outcomes.Run(args);
             case "audit":
                 return Audit.Run(args);
+            case "per-island":
+                return PerIsland.Run(args);
             default:
                 Console.Error.WriteLine($"unknown command '{args[0]}'");
                 return 2;
