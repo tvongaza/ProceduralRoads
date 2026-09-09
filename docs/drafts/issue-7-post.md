@@ -111,7 +111,7 @@ The largest island on that seed — 26.7 km², 426 eligible places — gets 12
 selected, 6 roads, 5.2 km, in three separate networks. Across the world 22 of
 67 islands get no road and 22 get exactly one. The longest connected run of
 road anywhere is 4-6 roads, on every world and under every routing plan I
-tried: these worlds are archipelagos, and a road crosses water only where a
+tried (roads that meet at the same place count as joined): these worlds are archipelagos, and a road crosses water only where a
 bridge can span it — 128 m at most, where most channels here are wider.
 
 ![the world as it generates today](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/issue7-shipped.png)
@@ -122,10 +122,10 @@ Same islands, same places, same anchor, same budget:
 
 | plan | roads | length | served | separate networks |
 |---|---|---|---|---|
-| chain/MST by island parity (today) | 88 | 58.5 km | 123 | 54 |
-| tree grown outward with retries (#16) | 90 | 61.9 km | 126 | 56 |
-| MST on routed cost | 90 | 57.6 km | 126 | 56 |
-| trunk and spurs | 85 | 62.1 km | 116 | 47 |
+| chain/MST by island parity (today) | 88 | 58.5 km | 123 | 49 |
+| tree grown outward with retries (#16) | 90 | 61.9 km | 126 | 50 |
+| MST on routed cost | 90 | 57.6 km | 126 | 50 |
+| trunk and spurs | 85 | 62.1 km | 116 | 46 |
 
 Planning on routed cost reaches as much for the least road. Trunk and spurs
 makes the fewest separate networks — one road along the island with things
@@ -134,6 +134,31 @@ better than the table:
 
 ![short branches, today](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/island-parity.png)
 ![one road along the island](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/island-trunk.png)
+
+## Two things about crossings and junctions
+
+Three runs in game on one world state:
+
+| | roads | length | crossings |
+|---|---|---|---|
+| neither | 49 | 21.7 km | 0 |
+| fords only | 90 | 41.5 km | **3, all fords** |
+| both | 98 | 56.8 km | 15 (13 bridges, 2 fords) |
+
+Fords add 41 roads, and only three of them are river crossings — the rest is
+the swamp wading the same flag enables. Bridges then add eight more with
+thirteen bridges. If ford geometry is due for work, that ratio is worth
+knowing first.
+
+Separately: nothing in the cost model lets a road follow an existing one. The
+only place an existing road is consulted is a shared river crossing at half
+price; ordinary road has no discount, so two roads to nearby places run side
+by side and junctions only happen by accident. I tried adding the discount and
+it does nothing, even making existing road free within 40 m — an 8 m step over
+ordinary ground costs about 8 while the penalties shaping a route are 1 000 to
+100 000, so discounting the cheap part cannot pull a route sideways. Junctions
+would need a plan that attaches to a road, or a cost model where being
+off-road is dear.
 
 ## Two bugs
 

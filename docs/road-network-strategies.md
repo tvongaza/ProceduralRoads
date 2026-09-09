@@ -183,7 +183,10 @@ them eligible for roads. It gets 12 selected, 6 roads, 5.2 km of road, serving
 8 places — in **three separate networks**.
 
 Across that world: 22 of 67 islands get no road, 22 get exactly one, and the
-most any island gets is six. The largest connected run of road anywhere in the
+most any island gets is six. Three of the 45 islands that do get roads end up
+with the island's roads in more than one disconnected piece, and each of those
+three had failed attempts — the chain carries on from the next place after a
+failure, and what it left behind becomes its own network. The largest connected run of road anywhere in the
 world is 4 to 6 roads, and that holds on all three worlds and under every plan
 tried below.
 
@@ -236,7 +239,7 @@ which sounds like what a road network wants, is the worst of the four.
 
 ### Fords and bridges
 
-| | roads | length | served |
+| offline | roads | length | served |
 |---|---|---|---|
 | neither | 47 | 20.9 km | 72 |
 | fords only | 78 | 42.8 km | 111 |
@@ -244,9 +247,51 @@ which sounds like what a road network wants, is the worst of the four.
 | both | 88 | 58.5 km | 123 |
 
 Crossings are worth more than any other single lever measured: 72 places
-served becomes 123. The split needs care, though — the fords flag both jumps
-rivers and wades swamps, and only the wading can be measured offline. How much
-of that 39 is river fords needs the game.
+served becomes 123.
+
+The fords row needed the game to read properly, because the flag does two
+things — it lets a road jump a fordable river, and it lets a road wade a
+swamp — and only the second can be measured offline. Three runs in game on one
+world state, so the rows are comparable:
+
+| in game | roads | length | crossings |
+|---|---|---|---|
+| neither | 49 | 21.7 km | 0 |
+| fords only | 90 | 41.5 km | **3, all fords** |
+| both | 98 | 56.8 km | 15 (13 bridges, 2 fords) |
+
+Three river fords in a whole world. Turning fords on adds 41 roads and almost
+none of it is river crossing: it is the swamp wading that comes with the same
+flag. Bridges then add eight more roads with thirteen bridges, so a bridge
+earns its place at a far higher rate than a ford does. Worth knowing before
+more effort goes into ford geometry.
+
+### Can a road follow another one?
+
+Not today. The only place an existing road enters the cost of a move is a
+river crossing, which costs half when both banks already carry road. Ordinary
+road carries no discount, so two roads to nearby places run side by side and a
+junction only happens where one road ends near another.
+
+Added as a lever and swept, it does nothing:
+
+| a step on existing road costs | roads | length | served | networks |
+|---|---|---|---|---|
+| full price (today) | 88 | 58.5 km | 123 | 49 |
+| a quarter | 88 | 58.9 km | 123 | 49 |
+| nothing at all, within 40 m | 88 | 57.8 km | 123 | 49 |
+
+The reason is the scale of the cost model rather than the idea. An eight-metre
+step over ordinary ground costs about eight; the penalties that shape a route
+are a thousand for rough ground, two thousand for a steep slope, a hundred
+thousand for water. Discounting something already almost free cannot pull a
+route sideways, because the sideways move costs more than the whole saving.
+
+If junctions are wanted — and the issue reads like they are — they need either
+a connection plan that deliberately attaches a new road to an existing one, as
+trunk and spurs does, or a cost model where being off-road is dear enough that
+following a road is worth a detour. It is not a knob that exists and is turned
+off; it is a thing the cost model cannot currently express.
 
 ### How many islands get roads
 
@@ -328,11 +373,11 @@ differs.
 
 | plan | roads | length | served | networks | builds | planning searches |
 |---|---|---|---|---|---|---|
-| chain/MST by island parity (today) | 88 | 58.5 km | 123 | 54 | 158 | 0 |
-| tree grown outward with retries (#16) | 90 | 61.9 km | 126 | 56 | 208 | 0 |
-| MST on routed cost | 90 | 57.6 km | 126 | 56 | 90 | 261 |
-| trunk and spurs | 85 | 62.1 km | 116 | 47 | 85 | 261 |
-| hub and spoke | 88 | 58.2 km | 123 | 56 | 88 | 261 |
+| chain/MST by island parity (today) | 88 | 58.5 km | 123 | 49 | 158 | 0 |
+| tree grown outward with retries (#16) | 90 | 61.9 km | 126 | 50 | 208 | 0 |
+| MST on routed cost | 90 | 57.6 km | 126 | 50 | 90 | 261 |
+| trunk and spurs | 85 | 62.1 km | 116 | 46 | 85 | 261 |
+| hub and spoke | 88 | 58.2 km | 123 | 51 | 88 | 261 |
 
 - **MST on routed cost** plans on what the pathfinder charges rather than on
   straight-line distance, so a strait or a mountain counts as the distance it
