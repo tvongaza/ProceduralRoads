@@ -12,6 +12,15 @@ end.
 **The short version: the per-island quota and the priority table decide almost
 everything, and the iteration budget decides almost nothing.**
 
+One thing to set straight before the numbers. Except where it says otherwise,
+I ran with crossings on and every island selected, which is *not* the shipped
+default — the defaults (50 % of islands, fords and bridges off, 10 000
+iterations) build 30 roads serving 46 places on this seed, where my baseline
+builds 88 serving 123. So the baseline is already three times the network a
+player gets out of the box, and every comparison below sits on top of that.
+
+![the funnel from placed to connected](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/chart-funnel.png)
+
 ## Where the places go
 
 Taking every place in the world and following what becomes of it. Of the 2 470
@@ -50,12 +59,14 @@ Villages, farms, towers and ruins share nine road ends across a whole world.
 It reproduces, and splitting failures by the pathfinder's own two reasons says
 why:
 
-| iterations | roads | budget spent | no route exists |
+| iterations | roads | budget spent | frontier exhausted |
 |---|---|---|---|
 | 5 000 | 62 | 48 | 48 |
 | 20 000 | 78 | 19 | 61 |
 | 30 000 | 84 | 8 | 66 |
 | 120 000 | 88 | 1 | 69 |
+
+![roads and the two failure kinds against the iteration budget](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/chart-plateau.png)
 
 As the budget grows, attempts that used to stop at the cap instead run to
 completion and report the destination unreachable over land. Past ~30 000
@@ -120,12 +131,14 @@ bridge can span it — 128 m at most, where most channels here are wider.
 
 Same islands, same places, same anchor, same budget:
 
-| plan | roads | length | served | separate networks |
+| plan | roads | distinct road | served | joined groups |
 |---|---|---|---|---|
-| chain/MST by island parity (today) | 88 | 58.5 km | 123 | 49 |
-| tree grown outward with retries (#16) | 90 | 61.9 km | 126 | 50 |
-| MST on routed cost | 90 | 57.6 km | 126 | 50 |
-| trunk and spurs | 85 | 62.1 km | 116 | 46 |
+| chain/MST by island parity (the baseline) | 88 | 54.0 km | 123 | 49 |
+| tree grown outward with retries (#16) | 90 | 57.2 km | 126 | 50 |
+| MST on the search's own cost | 90 | 56.6 km | 126 | 50 |
+| trunk, spurs onto the road | 82 | 52.9 km | 118 | 46 |
+
+![one island under four connection plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/island-sheet.png)
 
 Planning on routed cost reaches as much for the least road. Trunk and spurs
 makes the fewest separate networks — one road along the island with things
@@ -152,13 +165,14 @@ knowing first.
 
 Separately: nothing in the cost model lets a road follow an existing one. The
 only place an existing road is consulted is a shared river crossing at half
-price; ordinary road has no discount, so two roads to nearby places run side
-by side and junctions only happen by accident. I tried adding the discount and
-it does nothing, even making existing road free within 40 m — an 8 m step over
-ordinary ground costs about 8 while the penalties shaping a route are 1 000 to
-100 000, so discounting the cheap part cannot pull a route sideways. Junctions
-would need a plan that attaches to a road, or a cost model where being
-off-road is dear.
+price. I added a discount for stepping on road and swept it: at the default
+sort of density it changes nothing, because an island with two or three roads
+has no common stretch to reuse. With every place selected — 2 080 roads — and
+the discount asking for a step within 4 m of a road, distinct road falls from
+383 km to 371 while the summed route length rises from 411 to 458: the routes
+really do run along each other. So a discount buys the same network out of
+less road, not more places. Junctions — roads meeting rather than running
+alongside — needed a plan that attaches to a road.
 
 ## Two bugs
 
@@ -185,4 +199,9 @@ same line, but individual roads can differ. And nothing here was played:
 whether any of these networks is better to travel is a question for a session
 in game.
 
-Happy to run any configuration you want to see, or hand over the numbers.
+All the tables behind this — per-place outcomes, per-island rows, selection,
+attempts, crossings, and a manifest per run with the code commit and a hash of
+every input — are published here:
+https://github.com/tvongaza/ProceduralRoads/tree/docs/validation-gap/validation-results/study-2026-09-09
+
+Happy to run any configuration you want to see.
