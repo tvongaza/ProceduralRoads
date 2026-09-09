@@ -40,6 +40,8 @@ public static class Program
                 return Audit.Run(args);
             case "per-island":
                 return PerIsland.Run(args);
+            case "clustering":
+                return Clustering.Run(args);
             default:
                 Console.Error.WriteLine($"unknown command '{args[0]}'");
                 return 2;

@@ -283,6 +283,56 @@ The cap is a fixed number where the thing it limits scales with the island.
 first. Its candidate set is each place's eight nearest neighbours - all pairs
 would be four hundred squared searches on the biggest island.)
 
+## Do roads cluster at the edges?
+
+The issue says roads cluster "at the edges". That can mean two things - the
+shoreline of an island, or the outer parts of the world - so both were
+measured, for every one of the 57 862 centreline points, against the land
+itself. Roads near shores prove nothing on their own: most land in these
+worlds is near a shore, so the question is whether roads are nearer than the
+ground they are drawn on.
+
+| | road points | the land itself |
+|---|---|---|
+| distance to open water, median | 97 m | 74 m |
+| distance from the world's centre, median | 5 146 m | 7 037 m |
+
+**Neither reading holds.** Roads sit further from open water than the land
+does, and nearer the world's centre than the land is. The same holds inside
+every biome separately, and connected places are further inland than
+unconnected ones (median 111 m against 68 m).
+
+A first version of this measurement said the opposite, and the reason is worth
+recording. It called everything below the road floor "water", which puts all
+of a swamp in the sea - swamp sits below that line by nature. Every swamp road
+then came out eight metres from a shore, and the study was one step from
+reporting that roads hug coastlines. Water here is open water: below sea level
+and not swamp, or swamp too deep for a road to wade. A swamp a player can walk
+is land.
+
+### What roads really favour
+
+| biome | share of road | share of land | ratio |
+|---|---|---|---|
+| Swamp | 35.1 % | 7.3 % | **4.8x** |
+| BlackForest | 24.1 % | 13.9 % | 1.7x |
+| Meadows | 6.9 % | 5.5 % | 1.3x |
+| Mountain | 8.5 % | 11.4 % | 0.7x |
+| Plains | 10.7 % | 16.0 % | 0.7x |
+| Mistlands | 13.4 % | 29.2 % | 0.5x |
+| DeepNorth | 1.2 % | 11.0 % | 0.1x |
+
+A third of the network is in swamp, which is a fourteenth of the land. The
+pathfinder is doing what its cost model tells it: swamp is flat, and the mod
+wades it for a modest penalty, while the Mistlands and the mountains are steep
+and dear. It is also what makes roads look like they run through water on a
+map, and it is a gameplay question rather than a routing one - a third of the
+network runs through the biome players like least to travel.
+
+Connected places by biome tell the same story from the other side: 18.8 % of
+eligible swamp places get a road, against 2.4 % in the Mistlands and 1.7 % in
+the plains.
+
 ## Connection plans on identical inputs
 
 The same islands, the same selected places, the same anchor, the same routing
