@@ -4,7 +4,7 @@
 is measured on generated networks — road counts, lengths, what connects to
 what, and why a connection failed. None of it has been played. Where a number
 would change a design decision, it needs a session in game first, and the
-places that most need one are named at the end. The strategy ranking in
+places that most need one are named in section 6. The strategy ranking in
 particular should not be read as settled: the plans differ by a few places
 served, which is inside the distance between this offline model and the game.
 What was raised in review and has since been corrected is listed under "Where
@@ -12,11 +12,81 @@ this is still wrong", so the record of what changed is in the document.
 
 This came out of issue #7 ("Roads seem to be limited to 2-3 per island").
 It reproduces what the issue describes, finds a different cause than the one
-being tuned there, and lays out some options. The choice among them is yours.
+being tuned there, and lays out a shortlist of what to build next and the
+evidence that would settle the choice. Section 1 carries both.
 
-## 1. Executive summary and recommended next experiments
+**How to read the authorship of this document.** The measurements, the runs and
+the code are the study's. The prose is written by an AI assistant working from
+those runs, for a human to check and edit. Headings marked with a dagger (†)
+are new or substantially rewritten in the 9 September restructure; everything
+else is earlier text, moved but not reworded. Any claim that would need a
+measurement nobody has taken is written as a block quote beginning
+**MEASUREMENT NEEDED**, so the gaps can be found by searching for that phrase
+rather than inferred from silence.
 
-<!-- PASS 2 fills this in -->
+## 1. Executive summary and recommended next experiments †
+
+**Preliminary. This section is a provisional recommendation, not a decision.**
+
+*Why are networks sparse?* Not the search. On the issue's seed 2 470 places are
+eligible for a road and the per-island quota — `2 + area / 2 km²` — selects 158
+of them. **About 93 % of eligible places never get an attempt at all**;
+pathfinding failure accounts for roughly one per cent, and the iteration budget
+the issue discusses for one place in the world. Raising the search budget
+cannot recover destinations that were never selected.
+
+*Which controls matter most?* Three, in this order. **The quota**: lifting it
+to every eligible place takes the network from 88 roads and 123 places served
+to 2 080 roads and 2 322 served. **The selection policy** at a fixed count:
+choosing the nearest places after priority serves 142 where a fixed draw serves
+109 — a wider spread than any planner change measured here. **Water
+traversal**: fords and bridges together take 72 places served to 123.
+
+*Which planners deserve further work?* **Routed-cost MST**, as a backbone
+candidate, because it prices every edge by running the pathfinder on it before
+committing. **POI-to-network search**, as the junction candidate, because it
+produces 28 tee junctions against the shipped plan's 1 and 0.1 km of road
+running alongside other road against 4.8 km.
+
+*What remains unproven?* Walkable connectivity — roads are joined here
+geometrically, by an endpoint within 24 m, with no regard for elevation or what
+lies between. Gameplay quality — nothing in this document has been played.
+And whether the finer strategy results generalise: the broad results hold on
+three worlds, the plan comparison was measured on the issue seed alone.
+
+### The shortlist †
+
+| approach | recommendation | reason |
+|---|---|---|
+| routed-cost MST | advance as a backbone candidate | plans around actual routing costs; modest coverage gain (126 served against 123); the extra planning work must stay visible — 261 planning searches on this world |
+| POI-to-network search | advance as the junction candidate | same reported served count (123), 28 tees against 1, and 0.1 km alongside road against 4.8 km |
+| trunk plus spurs | retain as a contrasting gameplay candidate | strong main-road shape (29 tees, the most of any plan), but lower coverage (118) and 5.1 km of parallel running |
+| nearest-point growth / hub-and-spoke | lower priority for now | current results show less compelling advantages |
+| road-sharing discount | conditional optimisation | helps dense networks: 12 km of distinct road saved with every place selected, nothing at all at the study baseline |
+| larger iteration budget / simple fallback | lower priority | limited coverage benefit under the tested conditions; the fallbacks move served count by zero |
+
+**A routed-cost backbone followed by POI-to-network branches is a promising
+next hypothesis — not a demonstrated winner.** Nothing here has tested the
+combination. It has to be run against both standalone approaches on the same
+inputs before it can be preferred to either.
+
+### The evidence needed to choose †
+
+The shortlist above is ordered on geometry. Four measurements would turn it
+into a recommendation, and none of them exists yet:
+
+1. **Destination overlap.** Routed MST and POI-to-network report 126 and 123
+   places served against the baseline's 123. Equal or near-equal counts do not
+   establish that the *same* places were served, or that the same bosses were.
+   See the MEASUREMENT NEEDED note in section 4.
+2. **Per-island generation time.** The POI-to-network search costs 84 seconds
+   offline against 4 — a **21× increase** in offline runtime. Whether that is
+   acceptable for the single-island regeneration the tooling already has
+   depends on a per-island timing measurement nobody has taken.
+3. **The combination.** Routed-cost backbone plus POI-to-network branches, on
+   the same seed and the same selected places as both standalone runs.
+4. **The in-game checklist in section 6**, on at least one island from each of
+   the three contrasting island types named there.
 
 ## 2. Experiment setup
 
@@ -712,9 +782,37 @@ falls below 47 — more road on this world means more islands with roads on
 them, not bigger networks. Only PR #16 and the quota change reduce the network
 count at all, and then by two.
 
-## 6. Recommended validation sequence and acceptance criteria
+## 6. Recommended validation sequence and acceptance criteria †
 
-<!-- PASS 2 fills this in -->
+Everything above is geometry. None of it has been walked, driven or carted, and
+several of the metrics it turns on are drawing-level measures that a player
+would not recognise. This is the shortest sequence that would turn the
+geometric results into a defensible gameplay recommendation, in the order it
+should be run.
+
+**Run it on three contrasting islands, not one.** A dense flat island, a steep
+one, and a water-fragmented one. The study's own island views show how
+differently the same rules land on different terrain, and a single island
+cannot separate a planner's behaviour from its terrain.
+
+| # | what to check | how | acceptance criterion |
+|---|---|---|---|
+| 1 | **Cart-traversable junctions** | drive a cart through every junction the run reports — the tee count is the whole claim for POI-to-network search | a junction a cart can take without dismounting or dropping the cart, at every reported tee |
+| 2 | **Sensible POI entrances** | walk each served place's road end | the road ends on ground a player would walk in on, not on a beach, a cliff face or the far side of the location's own wall |
+| 3 | **Elevation-correct connectivity** | walk between every pair of roads the run counts as one network | two roads counted as joined are actually walkable one to the other; the study's 24 m geometric join has no elevation test at all |
+| 4 | **Journey detours** | time a handful of journeys along the road against the same journey overland | a road is worth taking; a detour a player would refuse is a planner failure the coverage numbers cannot see |
+| 5 | **Per-island generation time** | regenerate one island at a time under each candidate planner | a number that decides whether the 21× offline cost of POI-to-network search is acceptable in game |
+
+> **MEASUREMENT NEEDED — per-island generation time.** The study reports whole-world
+> offline runtimes only (3.9 s for the study baseline, 83.8 s for the
+> POI-to-network run; both in the published manifests). No per-island timing
+> exists, in game or offline. Until it does, no claim can be made about what
+> the reverse search costs the single-island regeneration path.
+
+**What would make the checklist fail.** Any of: a tee a cart cannot take; a
+road end a player cannot enter the location from; two roads reported as one
+network that a player cannot walk between. Each of those would invalidate a
+metric this study leans on, not merely lower a score.
 
 ### What this cannot tell you
 
