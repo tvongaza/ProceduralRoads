@@ -19,7 +19,9 @@ Route geometry is not published: it is several megabytes per run and can be
 regenerated from the manifest, which names the code commit and the exact
 inputs by content hash.
 
-Runs here: `check` is the study baseline (crossings on, every island), and
-`v2-*` are the five connection plans on identical inputs. The plan runs use
+Runs here: `check` is the study baseline (crossings on, every island),
+`v2-*` are the five connection plans on identical inputs, and `anchor-land`
+and `anchor-poi` are the two alternative anchor rules against that same
+baseline. The plan runs use
 the corrected implementations — an MST on the search's accumulated cost, and
 spurs that attach to a point on a road rather than to another place.
