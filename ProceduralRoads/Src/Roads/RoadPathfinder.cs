@@ -54,6 +54,20 @@ public class RoadPathfinder
     public static float FloorFor(Heightmap.Biome biome) =>
         biome == Heightmap.Biome.Swamp ? RoadConstants.DeepWaterHeight : LandingFloor;
 
+    /// <summary>
+    /// Study instrument: a watcher for the decision points inside the search.
+    /// Null in every ordinary run, and then the search makes no call at all.
+    /// An implementation may only observe (see IPathfinderProbe).
+    /// </summary>
+    public static IPathfinderProbe? Probe = null;
+
+    /// <summary>Iterations the last attempt on this pathfinder used.</summary>
+    public int LastIterations { get; private set; }
+
+    /// <summary>How the last attempt ended: "found", or the pathfinder's own
+    /// failure reason.</summary>
+    public string LastOutcome { get; private set; } = "";
+
     private static readonly Vector2Int[] Directions = new Vector2Int[]
     {
         new Vector2Int(1, 0), new Vector2Int(-1, 0), new Vector2Int(0, 1), new Vector2Int(0, -1),
@@ -83,8 +97,15 @@ public class RoadPathfinder
         Vector2i startGrid = WorldToGrid(start);
         Vector2i endGrid = WorldToGrid(end);
 
+        Probe?.AttemptBegan(start, end, startGrid, endGrid);
+
         if (startGrid == endGrid)
+        {
+            LastIterations = 0;
+            LastOutcome = "found";
+            Probe?.AttemptEnded(true, LastOutcome, 0);
             return new List<Vector2> { start, end };
+        }
 
         SortedSet<(float priority, Vector2i pos)> openSet = new SortedSet<(float, Vector2i)>(
             Comparer<(float priority, Vector2i pos)>.Create((a, b) =>
@@ -114,9 +135,15 @@ public class RoadPathfinder
             Vector2i currentPos = current.pos;
 
             if (currentPos == endGrid)
+            {
+                LastIterations = iterations;
+                LastOutcome = "found";
+                Probe?.AttemptEnded(true, LastOutcome, iterations);
                 return ReconstructPath(cameFrom, currentPos, start, end);
+            }
 
             closedSet.Add(currentPos);
+            Probe?.Popped(currentPos, iterations);
 
             for (int i = 0; i < Directions.Length; i++)
             {
@@ -128,13 +155,23 @@ public class RoadPathfinder
                 float moveCost = GetMoveCost(currentPos, neighborPos, i);
                 if (moveCost >= RiverPenalty)
                 {
+                    Probe?.MoveBlocked(currentPos, neighborPos);
                     // A blocked neighbour may be the near edge of a river:
                     // with fords on, look for dry ground on the far side
                     // and take the whole crossing as one move.
-                    if (!(Fords || Bridges) || !TryGetRiverCrossing(currentPos, Directions[i], out Vector2i landing, out float crossingCost))
+                    if (!(Fords || Bridges))
+                    {
+                        Probe?.CrossingRejected(currentPos, Directions[i], CrossingRejection.CrossingsDisabled);
+                        continue;
+                    }
+                    if (!TryGetRiverCrossing(currentPos, Directions[i], out Vector2i landing, out float crossingCost))
                         continue;
                     if (closedSet.Contains(landing))
+                    {
+                        Probe?.CrossingRejected(currentPos, Directions[i], CrossingRejection.LandingClosed);
                         continue;
+                    }
+                    Probe?.CrossingAccepted(currentPos, landing, crossingCost);
                     neighborPos = landing;
                     moveCost = crossingCost;
                 }
@@ -153,6 +190,9 @@ public class RoadPathfinder
         }
 
         string reason = openSet.Count == 0 ? "no reachable path" : "max iterations reached";
+        LastIterations = iterations;
+        LastOutcome = reason;
+        Probe?.AttemptEnded(false, reason, iterations);
         Log.LogWarning($"Pathfinding failed: {reason} after {iterations} iterations");
         return null;
     }
@@ -251,7 +291,10 @@ public class RoadPathfinder
         // The scan walks whole cells, so a knight move would skip cells it
         // never checked and could start the crossing one cell short of the bank.
         if (Mathf.Abs(direction.x) > 1 || Mathf.Abs(direction.y) > 1)
+        {
+            Probe?.CrossingRejected(from, direction, CrossingRejection.KnightMove);
             return false;
+        }
 
         Vector2 fromWorld = GridToWorld(from);
         float fromHeight = m_worldGen.GetHeight(fromWorld.x, fromWorld.y);
@@ -281,7 +324,10 @@ public class RoadPathfinder
 
             // Dry ground: the far bank, if a river lay between.
             if (!sawRiverWater)
+            {
+                Probe?.CrossingRejected(from, direction, CrossingRejection.NoRiver);
                 return false;
+            }
 
             float distance = Vector2.Distance(fromWorld, world);
             // The cells are 8 m apart and a channel can hide between them:
@@ -290,17 +336,29 @@ public class RoadPathfinder
             bool bridge = distance > RoadConstants.MaxRiverCrossingCells * CellSize
                 || deepest < RoadConstants.SeaLevel - RoadConstants.FordWadeDepth;
             if (bridge ? !Bridges : !Fords)
+            {
+                Probe?.CrossingRejected(from, direction, CrossingRejection.KindDisabled);
                 return false;
+            }
             if (distance > maxCells * CellSize)
+            {
+                Probe?.CrossingRejected(from, direction, CrossingRejection.TooLong);
                 return false;
+            }
 
             mistlands |= m_worldGen.GetBiome(world.x, world.y) == Heightmap.Biome.Mistlands;
             if (bridge && mistlands)
+            {
+                Probe?.CrossingRejected(from, direction, CrossingRejection.MistlandsBridge);
                 return false;
+            }
 
             float bankDelta = Mathf.Abs(height - fromHeight);
             if (bankDelta > (bridge ? RoadConstants.MaxBridgeBankDelta : RoadConstants.MaxFordBankDelta))
+            {
+                Probe?.CrossingRejected(from, direction, CrossingRejection.BankDelta);
                 return false;
+            }
 
             landing = check;
             // Both ends already on road (a finished road's banks): the
@@ -316,6 +374,7 @@ public class RoadPathfinder
             return true;
         }
 
+        Probe?.CrossingRejected(from, direction, CrossingRejection.NoBankFound);
         return false;
     }
 
