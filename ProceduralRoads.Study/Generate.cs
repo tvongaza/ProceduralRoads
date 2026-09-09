@@ -109,6 +109,7 @@ internal static class Generate
 
         File.WriteAllText(Path.Combine(outDir, $"{label}.routes.csv"), RoadRouteRecorder.ToCsv());
         File.WriteAllText(Path.Combine(outDir, $"{label}.attempts.csv"), RoadAttemptLog.ToCsv());
+        File.WriteAllText(Path.Combine(outDir, $"{label}.selection.csv"), RoadSelectionLog.ToCsv());
         File.WriteAllText(Path.Combine(outDir, $"{label}.crossings.csv"), RoadCrossingCsv.ToCsv(sites));
         File.WriteAllText(Path.Combine(outDir, $"{label}.manifest.json"),
             Manifest(label, strategy, crossings, islandPercentage, iterations, maxLocations, width,

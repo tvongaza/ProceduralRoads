@@ -34,6 +34,8 @@ public static class Program
                 return Generate.Run(args);
             case "compare":
                 return Compare.Run(args);
+            case "outcomes":
+                return Outcomes.Run(args);
             default:
                 Console.Error.WriteLine($"unknown command '{args[0]}'");
                 return 2;

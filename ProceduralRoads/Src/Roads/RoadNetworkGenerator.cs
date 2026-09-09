@@ -270,6 +270,7 @@ public static partial class RoadNetworkGenerator
             
             int maxLocs = GetMaxLocationsForIsland(island);
             var selected = SelectLocationsForStrategy(islandLocations, maxLocs);
+            RoadSelectionLog.Record(island, islandLocations, selected);
             
             Log.LogDebug(
                 $"Island {island.Id}: {islandLocations.Count} candidates -> {selected.Count} selected (max {maxLocs}, area {island.ApproxArea/1_000_000:F1}km²)");
@@ -617,6 +618,9 @@ public static partial class RoadNetworkGenerator
             .ToList();
     }
 
+    /// <summary>The generator's own priority for a place, for study tables.</summary>
+    public static int PriorityOf(string locationName) => GetLocationPriority(locationName);
+
     private static int GetLocationPriority(string locationName)
     {
         if (LocationPriorities.TryGetValue(locationName, out int priority))
@@ -911,6 +915,7 @@ public static partial class RoadNetworkGenerator
         m_roadStartPoints.Clear();
         RoadRouteRecorder.Clear();
         RoadAttemptLog.Clear();
+        RoadSelectionLog.Clear();
         m_roadCrossings.Clear();
         BridgePlans.Reset();
         RoadNetworkPersistence.Reset();

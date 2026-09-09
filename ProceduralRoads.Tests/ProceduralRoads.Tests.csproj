@@ -33,6 +33,8 @@
                  Condition="Exists('../ProceduralRoads/Src/Roads/ReachableRoads.cs')"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StudyFactors.cs" Link="ModSrc/StudyFactors.cs"
                  Condition="Exists('../ProceduralRoads/Src/Roads/StudyFactors.cs')"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadSelectionLog.cs" Link="ModSrc/RoadSelectionLog.cs"
+                 Condition="Exists('../ProceduralRoads/Src/Roads/RoadSelectionLog.cs')"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadNetworkGenerator.cs" Link="ModSrc/RoadNetworkGenerator.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadSpatialGrid.cs" Link="ModSrc/RoadSpatialGrid.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadTerrainModifier.cs" Link="ModSrc/RoadTerrainModifier.cs"/>

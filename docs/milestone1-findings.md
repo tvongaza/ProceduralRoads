@@ -104,6 +104,43 @@ It is **not** where a low road count for a whole world comes from: the cap
 still allows around 110 roads per world on these seeds. The reported 24 roads
 are not explained by the cap.
 
+## Where the places go: the funnel
+
+One row per place in the world, with the trail kept in separate columns, on
+the shipped policy with crossings on and every island selected.
+
+| | issue #7 seed | world B | world C |
+|---|---|---|---|
+| placed in the world | 11 477 | 11 407 | 11 413 |
+| on a detected island | 10 051 | 10 027 | 10 091 |
+| an eligible road location | 2 470 | 2 416 | 2 450 |
+| selected by its island's quota | 158 | 163 | 171 |
+| connected | 128 | 131 | 141 |
+
+Of the eligible places, by what became of them:
+
+| outcome | issue #7 seed | world B | world C |
+|---|---|---|---|
+| lost the island's quota | 2 312 | 2 253 | 2 279 |
+| connected | 128 | 131 | 141 |
+| attempted, no reachable path | 29 | 32 | 29 |
+| attempted, iteration budget spent | 1 | 0 | 1 |
+
+This is the study's clearest result so far. Ninety-three per cent of the
+places that are eligible for a road never get an attempt at all: they lose
+their island's quota. Pathfinding failure accounts for about one per cent, and
+the iteration budget - the setting the issue is about - decides the fate of a
+single place per world.
+
+The quota that does this is `2 + area / 2 km²`, not the configurable ceiling.
+Raising `MaxLocationsPerIsland` from 12 to 100 moves the issue #7 seed from 88
+roads to 91, and from 123 places served to 127. The config knob that looks
+like it should open the network up is not the one holding it shut.
+
+(The "attempted" count is a fuzzy join: a place is counted as attempted when
+an attempt endpoint lands within 32 m of it, which can also catch a neighbour
+of the real endpoint. The connected and quota rows are exact.)
+
 ## The iteration plateau
 
 Shipped strategy, crossings on, every island, issue #7 seed, on exact 8 m
