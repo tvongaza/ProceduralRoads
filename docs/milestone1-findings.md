@@ -85,6 +85,24 @@ crossing's span can reach past the start of the next.
 Fixed, with both shapes covered by tests, and the fix carried to the bridges
 PR. The numbers above are from the fixed build.
 
+## A second bug: regenerating in a world that has roads
+
+Running the same world twice found it. The second run reported 78 roads and
+40 787 metres, but the spatial grid held 115 202 points for a network of
+40 970, and its 24 river crossings were the previous run's - nineteen of them
+bridges, in a run with bridges switched off.
+
+The reset before a forced regeneration was guarded on whether roads were
+GENERATED this session. A world loaded from a save has roads without having
+generated them, so the guard was false, the reset was skipped, and the new
+network was laid on top of the old one.
+
+Fixed: both guards now ask whether the world has a network at all. This is in
+the base code rather than in the crossings work, and it means any measurement
+taken by loading a world and regenerating - including some of this study's own
+early runs - was measuring a mixture. The runs reported here were taken either
+on a world with no saved network or after the fix.
+
 ## Islands, and where the "two or three roads per island" comes from
 
 | | issue #7 seed | world B | world C |
