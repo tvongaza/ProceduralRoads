@@ -111,7 +111,8 @@ The largest island on that seed — 26.7 km², 426 eligible places — gets 12
 selected, 6 roads, 5.2 km, in three separate networks. Across the world 22 of
 67 islands get no road and 22 get exactly one. The longest connected run of
 road anywhere is 4-6 roads, on every world and under every routing plan I
-tried: these worlds are archipelagos and roads don't cross open sea.
+tried: these worlds are archipelagos, and a road crosses water only where a
+bridge can span it — 128 m at most, where most channels here are wider.
 
 ![the world as it generates today](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/issue7-shipped.png)
 

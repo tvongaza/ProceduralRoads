@@ -187,9 +187,11 @@ most any island gets is six. The largest connected run of road anywhere in the
 world is 4 to 6 roads, and that holds on all three worlds and under every plan
 tried below.
 
-That is the ceiling worth knowing about before tuning anything: these worlds
-are archipelagos, roads do not cross open sea, and no connection plan changes
-that.
+That is the ceiling worth knowing about before tuning anything. These worlds
+are archipelagos, and a road crosses water only where a bridge can span it —
+128 m at most, where most of the channels here are wider. Bridges do join
+neighbouring islands in places, but not enough to make one network out of an
+archipelago, and no connection plan changes that.
 
 ## The levers, and what each is worth
 
