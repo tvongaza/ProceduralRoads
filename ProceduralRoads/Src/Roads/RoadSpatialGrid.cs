@@ -89,7 +89,8 @@ public static class RoadSpatialGrid
     /// height and the terrain is not leveled toward it at all (a WADED ford).
     /// minHeight: no stored point below it (a RAISED ford's surface).</summary>
     public static void AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
-        bool followTerrain = false, float minHeight = float.NegativeInfinity)
+        bool followTerrain = false, float minHeight = float.NegativeInfinity,
+        RoadSegmentKind kind = RoadSegmentKind.Road)
     {
         if (path == null || path.Count < 2 || worldGen == null)
             return;
@@ -128,6 +129,10 @@ public static class RoadSpatialGrid
         float pathTotal = densePoints.Count > 0 ? distanceFromStart[densePoints.Count - 1] : 0f;
 
         Dictionary<Vector2i, List<RoadPoint>> tempPoints = new Dictionary<Vector2i, List<RoadPoint>>();
+        // Study instrument: the heights this loop writes are the road's real
+        // profile, so the route recorder is handed them here rather than
+        // recomputing an approximation of them elsewhere.
+        List<float> finalHeights = new List<float>(densePoints.Count);
         for (int i = 0; i < densePoints.Count; i++)
         {
             float distFromNearestEnd = Mathf.Min(distanceFromStart[i], pathTotal - distanceFromStart[i]);
@@ -135,6 +140,7 @@ public static class RoadSpatialGrid
             float finalHeight = followTerrain
                 ? denseHeights[i]
                 : Mathf.Max(Mathf.Lerp(denseHeights[i], smoothedHeights[i], rampBlend), minHeight);
+            finalHeights.Add(finalHeight);
 
             AddRoadPoint(tempPoints, densePoints[i], width, finalHeight, followTerrain);
 
@@ -144,7 +150,9 @@ public static class RoadSpatialGrid
         }
 
         MergePoints(tempPoints);
-        
+
+        RoadRouteRecorder.Record(densePoints, finalHeights, kind);
+
         TotalRoadPoints += densePoints.Count;
         TotalRoadLength += totalLength;
         m_initialized = true;

@@ -368,14 +368,16 @@ public static class RoadNetworkGenerator
                 }
             }
         }
+        string routeLabel = label ?? $"Road {m_roadsGeneratedCount + 1}";
+        RoadRouteRecorder.Begin(routeLabel, width);
         AddRoadPathWithCrossings(path, crossings, width);
+        RoadRouteRecorder.End();
         m_roadCrossings.AddRange(crossings);
         m_roadsGeneratedCount++;
 
         if (path.Count > 0)
         {
-            string pinLabel = label ?? $"Road {m_roadsGeneratedCount}";
-            m_roadStartPoints.Add((path[0], pinLabel));
+            m_roadStartPoints.Add((path[0], routeLabel));
         }
         if (crossings.Count > 0 && label != null)
             Log.LogDebug($"Road {label}: {crossings.Count} river crossing(s)");
@@ -422,9 +424,19 @@ public static class RoadNetworkGenerator
                     ford.Add(path[k]);
                 ford.Add(crossing.ToBank);
                 if (crossing.Style == FordStyle.Wade)
-                    RoadSpatialGrid.AddRoadPath(ford, width, WorldGenerator.instance, followTerrain: true);
+                    RoadSpatialGrid.AddRoadPath(ford, width, WorldGenerator.instance, followTerrain: true,
+                        kind: RoadSegmentKind.Wade);
                 else
-                    RoadSpatialGrid.AddRoadPath(ford, width, WorldGenerator.instance, minHeight: RoadPathfinder.LandingFloor);
+                    RoadSpatialGrid.AddRoadPath(ford, width, WorldGenerator.instance, minHeight: RoadPathfinder.LandingFloor,
+                        kind: RoadSegmentKind.Raise);
+            }
+            else
+            {
+                // Bridge, or a ford left to its pieces: nothing is painted over
+                // the water, so the route records the gap and its two banks.
+                RoadRouteRecorder.RecordSpan(
+                    BankPoint(crossing.FromBank),
+                    BankPoint(crossing.ToBank));
             }
 
             resumeAt = crossing.ToBank;
@@ -436,6 +448,13 @@ public static class RoadNetworkGenerator
             tail.Insert(0, resumeAt.Value);
         if (tail.Count >= 2)
             RoadSpatialGrid.AddRoadPath(tail, width, WorldGenerator.instance);
+    }
+
+    /// <summary>A crossing bank at the ground's own height, for the route record.</summary>
+    private static Vector3 BankPoint(Vector2 bank)
+    {
+        float height = BiomeBlendedHeight.GetBlendedHeight(bank.x, bank.y, WorldGenerator.instance);
+        return new Vector3(bank.x, height, bank.y);
     }
 
     /// <summary>
@@ -775,6 +794,7 @@ public static class RoadNetworkGenerator
         m_pathfinder = null;
         m_roadsGeneratedCount = 0;
         m_roadStartPoints.Clear();
+        RoadRouteRecorder.Clear();
         m_roadCrossings.Clear();
         BridgePlans.Reset();
         RoadNetworkPersistence.Reset();

@@ -54,6 +54,16 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_routes",
+            "Study export: write the road centrelines, the river crossings and a run manifest (settings as the plugin holds them after clamping) to the config folder, or road_routes <dir>.",
+            (args) => RoutesCommand(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
             "road_bridges",
             "Bridges prototype: how many bridge pieces are planned and spawned, or road_bridges respawn to destroy every spawned bridge piece and spawn the current plans again into the loaded zones.",
             (args) => BridgesCommand(args),
@@ -570,6 +580,44 @@ public static class ConsoleCommands
                 $"from ({site.FromBank.x:F1},{site.FromBank.y:F1}) to ({site.ToBank.x:F1},{site.ToBank.y:F1}), " +
                 $"bed {site.WaterLevel - site.RiverbedHeight:F1} m deep, fairway {site.FairwayWidth:F0} m, {BridgePlans.PiecesAt(site)} pieces");
         }
+    }
+
+    /// <summary>road_routes [dir] writes the run's centrelines, crossings and
+    /// manifest for offline measurement and mapping.</summary>
+    private static void RoutesCommand(Terminal.ConsoleEventArgs args)
+    {
+        IReadOnlyList<RoadRoute> routes = RoadRouteRecorder.Routes;
+        if (routes.Count == 0)
+        {
+            args.Context.AddString(
+                RoadNetworkGenerator.RoadsAvailable
+                    ? "No routes recorded: this network was loaded from the save, not generated in this session. Run 'road_generate' to record one."
+                    : "Error: No roads available. Run 'road_generate' first.");
+            return;
+        }
+
+        string dir = args.Length > 1 ? args[1] : RoadStudyExport.DefaultDirectory;
+        string scope = args.Length > 2 ? args[2] : "global";
+        List<string>? written = RoadStudyExport.WriteAll(dir, scope);
+        if (written == null)
+        {
+            args.Context.AddString("Error: could not write the export files (see the log).");
+            return;
+        }
+
+        float length = 0f;
+        int points = 0;
+        foreach (RoadRoute route in routes)
+        {
+            length += route.Length;
+            points += route.Points.Count;
+        }
+
+        args.Context.AddString(
+            $"{routes.Count} route(s), {points} centreline points, {length:F0} m, " +
+            $"{RoadNetworkGenerator.GetRoadCrossings().Count} crossing(s).");
+        foreach (string path in written)
+            args.Context.AddString($"  {path}");
     }
 
     /// <summary>road_bridges reports the plans; road_bridges respawn destroys every
