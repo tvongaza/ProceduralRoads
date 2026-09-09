@@ -646,6 +646,125 @@ crawling north over open ocean. The offline harness answers points past the
 world's rim with the rim's own values, so the box's exact northern extent is
 an artefact of the dump — that the search goes out there at all is not.
 
+### Why every failure on one run failed
+
+Three examples are three examples. This is the whole set: the 27 failed
+attempts of the run anchored on places, which is the run with no stillborn
+anchors in it, so every failure in it is a search that really ran.
+
+**All 27 report "no reachable path".** Not one hit the iteration cap. In every
+case the open set emptied: the search exhausted everything it could walk or
+bridge to, and the destination was not in it. They were not cheap failures
+either — they settled up to 97 290 cells and took up to 2 406 crossings on the
+way.
+
+Measuring the ground between where each search stopped and where it was going,
+on the 8 m dump, using the pathfinder's own rule for what a road may enter:
+
+| what stopped it | attempts |
+|---|---|
+| open water wider than a bridge may span | 21 |
+| a bridgeable channel, but the destination is in the Mistlands, where bridges are refused outright | 3 |
+| a bridgeable channel, but no usable bank — every candidate refused for want of one, or for banks more than 2.5 m apart in height | 2 |
+| the destination's own cell is under water | 1 |
+
+Twenty-six of twenty-seven are water. The median channel is 256 m and the
+widest is 1.6 km. Two of them are rules rather than geography, and both are
+ours to change: the ban on bridges in the Mistlands, and the 128 m span cap.
+Raising the cap has sharply diminishing returns on this world:
+
+| longest bridge allowed | destinations still cut off |
+|---|---|
+| 128 m (today) | 21 of 27 |
+| 192 m | 17 |
+| 256 m | 13 |
+| 512 m | 7 |
+
+Even a fourfold span buys back fourteen of twenty-seven, and buys them with
+half-kilometre bridges.
+
+One caveat on the method: the channel is measured along the straight line from
+where the search stopped to the destination, not over every crossing point
+that exists, so a narrower crossing could lie off that line. What corroborates
+the number is the searches themselves, which took thousands of crossings and
+still could not get there.
+
+### What a failed attempt actually costs
+
+Less than the count suggests. **Twelve of the 27 destinations have a built
+road ending within 40 m of them anyway**, because the plan carries on from the
+place it was heading for whether or not the leg to it was built: the place
+that could not be reached from A becomes the start of the leg to B, and that
+leg succeeds. The failure costs the link, not the destination.
+
+![a destination a road already reaches from the other side](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-on-network-anyway.png)
+
+The other fifteen are places genuinely left off. This is the same effect that
+made the anchor fix worth 19% more road and one more place served, and it is
+why a failed-attempt count is a poor proxy for coverage.
+
+### How a connection is planned, and what that costs
+
+Every road runs **from one place to another place**. Nothing in the shipped
+code ever starts a road from the network it has already built.
+
+- On odd island ids the plan is a nearest-neighbour chain: the anchor to the
+  nearest place, that place to the nearest of the rest, and so on.
+- On even ids it is a minimum spanning tree over the anchor and the selected
+  places, and the tree is built on **straight-line distance** — `Vector3.
+  Distance` between two places — before any of it is routed.
+- Either way each edge is handed to the pathfinder as two points, and
+  `GenerateRoad` searches from the first place's centre to the second's.
+
+Three consequences worth naming:
+
+1. **A plan cannot see water.** The tree is chosen on straight-line distance,
+   so the cheapest-looking neighbour is often the one across a channel. Most
+   of the 27 failures above are edges no planner with a map would have drawn.
+2. **Roads do not join except by accident.** Two roads to nearby places both
+   leave the same anchor and run alongside each other; a junction exists only
+   where one road's endpoint happens to land within 24 m of another, which is
+   what the joined-group count measures.
+3. **A place that fails is not retried from anywhere else.** There is no
+   fallback to the nearest road, or to the nearest connected place.
+
+The one plan tried here that does otherwise is trunk-and-spurs, which attaches
+a spur to the nearest point on a road already built — the only code path in
+this study that starts a road from the network rather than from a place. It
+attempted 83 such spurs and built 30, at a median 161 m against 459 m for a
+place-to-place road.
+
+### Four failures on the map
+
+![a channel wider than any bridge](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-wide-channel.png)
+
+**Bonemass to GoblinKing, 1 648 m apart.** The search settled 29 466 cells
+across the whole group of islands it could reach, came within 626 m on a north
+shore, and stopped. The plan drew this edge because the two places are near
+each other in a straight line.
+
+![a bridgeable channel with no bank a bridge could stand on](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-no-bank.png)
+
+**A road that reaches the destination's island but not the destination.** The
+search crossed to within 209 m; the water left on the line is only 72 m, well
+inside a bridge's reach, but every crossing candidate was refused for want of
+a usable bank. Note the green road already on the destination's island: that
+one was built from the other side.
+
+![bridges are refused in the Mistlands](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-mistlands-ban.png)
+
+**182 m, and 40 m of water.** Easily bridgeable, except that the destination
+is in the Mistlands and `TryGetRiverCrossing` refuses a bridge there outright.
+The search filled its island and stopped 111 m short.
+
+![a destination whose own cell is under water](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-harbour.png)
+
+**A harbour, which is the point.** `Mistlands_Harbour1` sits below the
+waterline, as a harbour does. The search reached the cell beside it — 6 m
+away, of 225 m — and could never enter the goal cell, because a move into
+water below 28 m is blocked. No budget and no bridge would change this one;
+the destination is not ground a road can end on.
+
 ## The runs behind these numbers
 
 Every table above comes from a run whose manifest carries a run id, the study
