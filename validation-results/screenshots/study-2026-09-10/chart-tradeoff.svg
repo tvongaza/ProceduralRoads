@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- drawing 1044x546 in a 1044x1044 canvas -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1044" height="1044" viewBox="0 0 1044 1044" font-family="sans-serif">
+<rect width="1044" height="1044" fill="#ffffff"/>
+<text x="10" y="21" font-size="15" fill="#1f2933">Four planners: what each reaches, what it costs in road, and what it costs in time</text>
+<rect x="56" y="46" width="300" height="250" fill="none" stroke="#d7dee5"/>
+<text x="206.0" y="38" font-size="12" fill="#1f2933" text-anchor="middle">Issue7</text>
+<line x1="56" y1="246.0" x2="356" y2="246.0" stroke="#d7dee5" stroke-dasharray="2 3"/>
+<text x="50" y="250.0" font-size="10" fill="#1f2933" text-anchor="end">124</text>
+<line x1="56" y1="196.0" x2="356" y2="196.0" stroke="#d7dee5" stroke-dasharray="2 3"/>
+<text x="50" y="200.0" font-size="10" fill="#1f2933" text-anchor="end">131</text>
+<line x1="56" y1="146.0" x2="356" y2="146.0" stroke="#d7dee5" stroke-dasharray="2 3"/>
+<text x="50" y="150.0" font-size="10" fill="#1f2933" text-anchor="end">138</text>
+<line x1="56" y1="96.0" x2="356" y2="96.0" stroke="#d7dee5" stroke-dasharray="2 3"/>
+<text x="50" y="100.0" font-size="10" fill="#1f2933" text-anchor="end">145</text>
+<text x="116.0" y="311" font-size="10" fill="#1f2933" text-anchor="middle">48</text>
+<text x="176.0" y="311" font-size="10" fill="#1f2933" text-anchor="middle">54</text>
+<text x="236.0" y="311" font-size="10" fill="#1f2933" text-anchor="middle">60</text>
+<text x="296.0" y="311" font-size="10" fill="#1f2933" text-anchor="middle">66</text>
+<circle cx="180.1" cy="196.0" r="6" fill="#1f2933" fill-opacity="0.85"/>
+<line x1="180.1" y1="196.0" x2="180.1" y2="188.0" stroke="#1f2933" stroke-width="0.8" stroke-opacity="0.5"/>
+<text x="180.1" y="184.0" font-size="9.5" fill="#1f2933" text-anchor="middle">shipped plan</text>
+<circle cx="206.3" cy="174.6" r="6" fill="#2f6f8f" fill-opacity="0.85"/>
+<line x1="206.3" y1="174.6" x2="206.3" y2="153.6" stroke="#2f6f8f" stroke-width="0.8" stroke-opacity="0.5"/>
+<text x="206.3" y="149.6" font-size="9.5" fill="#2f6f8f" text-anchor="middle">routed-cost MST</text>
+<circle cx="168.8" cy="217.4" r="6" fill="#c0621a" fill-opacity="0.85"/>
+<line x1="168.8" y1="217.4" x2="168.8" y2="225.4" stroke="#c0621a" stroke-width="0.8" stroke-opacity="0.5"/>
+<text x="168.8" y="234.4" font-size="9.5" fill="#c0621a" text-anchor="middle">trunk + spurs</text>
+<circle cx="197.1" cy="188.9" r="6" fill="#3f7a4d" fill-opacity="0.85"/>
+<line x1="197.1" y1="188.9" x2="197.1" y2="209.9" stroke="#3f7a4d" stroke-width="0.8" stroke-opacity="0.5"/>
+<text x="197.1" y="218.9" font-size="9.5" fill="#3f7a4d" text-anchor="middle">POI-to-network</text>
+<rect x="382" y="46" width="300" height="250" fill="none" stroke="#d7dee5"/>
+<text x="532.0" y="38" font-size="12" fill="#1f2933" text-anchor="middle">RoadTestAuto1</text>
+<line x1="382" y1="246.0" x2="682" y2="246.0" stroke="#d7dee5" stroke-dasharray="2 3"/>
+<line x1="382" y1="196.0" x2="682" y2="196.0" stroke="#d7dee5" stroke-dasharray="2 3"/>
+<line x1="382" y1="146.0" x2="682" y2="146.0" stroke="#d7dee5" stroke-dasharray="2 3"/>
+<line x1="382" y1="96.0" x2="682" y2="96.0" stroke="#d7dee5" stroke-dasharray="2 3"/>
+<text x="442.0" y="311" font-size="10" fill="#1f2933" text-anchor="middle">48</text>
+<text x="502.0" y="311" font-size="10" fill="#1f2933" text-anchor="middle">54</text>
+<text x="562.0" y="311" font-size="10" fill="#1f2933" text-anchor="middle">60</text>
+<text x="622.0" y="311" font-size="10" fill="#1f2933" text-anchor="middle">66</text>
+<circle cx="511.1" cy="88.9" r="6" fill="#1f2933" fill-opacity="0.85"/>
+<line x1="511.1" y1="88.9" x2="511.1" y2="80.9" stroke="#1f2933" stroke-width="0.8" stroke-opacity="0.5"/>
+<text x="511.1" y="76.9" font-size="9.5" fill="#1f2933" text-anchor="middle">shipped plan</text>
+<circle cx="521.8" cy="117.4" r="6" fill="#2f6f8f" fill-opacity="0.85"/>
+<line x1="521.8" y1="117.4" x2="521.8" y2="96.4" stroke="#2f6f8f" stroke-width="0.8" stroke-opacity="0.5"/>
+<text x="521.8" y="92.4" font-size="9.5" fill="#2f6f8f" text-anchor="middle">routed-cost MST</text>
+<circle cx="447.3" cy="217.4" r="6" fill="#c0621a" fill-opacity="0.85"/>
+<line x1="447.3" y1="217.4" x2="447.3" y2="225.4" stroke="#c0621a" stroke-width="0.8" stroke-opacity="0.5"/>
+<text x="447.3" y="234.4" font-size="9.5" fill="#c0621a" text-anchor="middle">trunk + spurs</text>
+<circle cx="422.2" cy="253.1" r="6" fill="#3f7a4d" fill-opacity="0.85"/>
+<line x1="422.2" y1="253.1" x2="422.2" y2="274.1" stroke="#3f7a4d" stroke-width="0.8" stroke-opacity="0.5"/>
+<text x="385.0" y="283.1" font-size="9.5" fill="#3f7a4d" text-anchor="start">POI-to-network</text>
+<rect x="708" y="46" width="300" height="250" fill="none" stroke="#d7dee5"/>
+<text x="858.0" y="38" font-size="12" fill="#1f2933" text-anchor="middle">RoadTestMac2</text>
+<line x1="708" y1="246.0" x2="1008" y2="246.0" stroke="#d7dee5" stroke-dasharray="2 3"/>
+<line x1="708" y1="196.0" x2="1008" y2="196.0" stroke="#d7dee5" stroke-dasharray="2 3"/>
+<line x1="708" y1="146.0" x2="1008" y2="146.0" stroke="#d7dee5" stroke-dasharray="2 3"/>
+<line x1="708" y1="96.0" x2="1008" y2="96.0" stroke="#d7dee5" stroke-dasharray="2 3"/>
+<text x="768.0" y="311" font-size="10" fill="#1f2933" text-anchor="middle">48</text>
+<text x="828.0" y="311" font-size="10" fill="#1f2933" text-anchor="middle">54</text>
+<text x="888.0" y="311" font-size="10" fill="#1f2933" text-anchor="middle">60</text>
+<text x="948.0" y="311" font-size="10" fill="#1f2933" text-anchor="middle">66</text>
+<circle cx="967.8" cy="138.9" r="6" fill="#1f2933" fill-opacity="0.85"/>
+<line x1="967.8" y1="138.9" x2="967.8" y2="130.9" stroke="#1f2933" stroke-width="0.8" stroke-opacity="0.5"/>
+<text x="1005.0" y="126.9" font-size="9.5" fill="#1f2933" text-anchor="end">shipped plan</text>
+<circle cx="940.7" cy="124.6" r="6" fill="#2f6f8f" fill-opacity="0.85"/>
+<line x1="940.7" y1="124.6" x2="940.7" y2="103.6" stroke="#2f6f8f" stroke-width="0.8" stroke-opacity="0.5"/>
+<text x="940.7" y="99.6" font-size="9.5" fill="#2f6f8f" text-anchor="middle">routed-cost MST</text>
+<circle cx="892.9" cy="138.9" r="6" fill="#c0621a" fill-opacity="0.85"/>
+<line x1="892.9" y1="138.9" x2="892.9" y2="146.9" stroke="#c0621a" stroke-width="0.8" stroke-opacity="0.5"/>
+<text x="892.9" y="155.9" font-size="9.5" fill="#c0621a" text-anchor="middle">trunk + spurs</text>
+<circle cx="883.8" cy="160.3" r="6" fill="#3f7a4d" fill-opacity="0.85"/>
+<line x1="883.8" y1="160.3" x2="883.8" y2="181.3" stroke="#3f7a4d" stroke-width="0.8" stroke-opacity="0.5"/>
+<text x="883.8" y="190.3" font-size="9.5" fill="#3f7a4d" text-anchor="middle">POI-to-network</text>
+<text x="545.0" y="330" font-size="11" fill="#1f2933" text-anchor="middle">distinct road on the ground (km)</text>
+<text x="16" y="171.0" font-size="11" fill="#1f2933" text-anchor="middle" transform="rotate(-90 16 171.0)">places served</text>
+<text x="10" y="370" font-size="12" fill="#1f2933">generation time, median of three measured runs (Release build, terrain already loaded)</text>
+<rect x="56.0" y="466.8" width="51.6" height="21.2" fill="#1f2933" fill-opacity="0.85"/>
+<line x1="81.8" y1="466.9" x2="81.8" y2="465.6" stroke="#1f2933" stroke-width="1"/>
+<text x="81.8" y="461.8" font-size="9.5" fill="#1f2933" text-anchor="middle">3.2s</text>
+<rect x="120.5" y="438.5" width="51.6" height="49.5" fill="#2f6f8f" fill-opacity="0.85"/>
+<line x1="146.3" y1="438.7" x2="146.3" y2="437.4" stroke="#1f2933" stroke-width="1"/>
+<text x="146.3" y="433.5" font-size="9.5" fill="#1f2933" text-anchor="middle">7.5s</text>
+<rect x="185.1" y="425.9" width="51.6" height="62.1" fill="#c0621a" fill-opacity="0.85"/>
+<line x1="210.9" y1="427.2" x2="210.9" y2="423.7" stroke="#1f2933" stroke-width="1"/>
+<text x="210.9" y="420.9" font-size="9.5" fill="#1f2933" text-anchor="middle">9.4s</text>
+<rect x="249.6" y="393.5" width="51.6" height="94.5" fill="#3f7a4d" fill-opacity="0.85"/>
+<line x1="275.4" y1="393.7" x2="275.4" y2="393.5" stroke="#1f2933" stroke-width="1"/>
+<text x="275.4" y="388.5" font-size="9.5" fill="#1f2933" text-anchor="middle">14.2s</text>
+<text x="185.1" y="503" font-size="10.5" fill="#1f2933" text-anchor="middle">Issue7</text>
+<rect x="378.7" y="467.2" width="51.6" height="20.8" fill="#1f2933" fill-opacity="0.85"/>
+<line x1="404.5" y1="467.4" x2="404.5" y2="466.8" stroke="#1f2933" stroke-width="1"/>
+<text x="404.5" y="462.2" font-size="9.5" fill="#1f2933" text-anchor="middle">3.1s</text>
+<rect x="443.2" y="438.7" width="51.6" height="49.3" fill="#2f6f8f" fill-opacity="0.85"/>
+<line x1="469.0" y1="438.7" x2="469.0" y2="438.5" stroke="#1f2933" stroke-width="1"/>
+<text x="469.0" y="433.7" font-size="9.5" fill="#1f2933" text-anchor="middle">7.4s</text>
+<rect x="507.7" y="419.9" width="51.6" height="68.1" fill="#c0621a" fill-opacity="0.85"/>
+<line x1="533.5" y1="420.1" x2="533.5" y2="415.2" stroke="#1f2933" stroke-width="1"/>
+<text x="533.5" y="414.9" font-size="9.5" fill="#1f2933" text-anchor="middle">10.3s</text>
+<rect x="572.3" y="407.9" width="51.6" height="80.1" fill="#3f7a4d" fill-opacity="0.85"/>
+<line x1="598.1" y1="408.3" x2="598.1" y2="407.1" stroke="#1f2933" stroke-width="1"/>
+<text x="598.1" y="402.9" font-size="9.5" fill="#1f2933" text-anchor="middle">12.1s</text>
+<text x="507.7" y="503" font-size="10.5" fill="#1f2933" text-anchor="middle">RoadTestAuto1</text>
+<rect x="701.3" y="466.2" width="51.6" height="21.8" fill="#1f2933" fill-opacity="0.85"/>
+<line x1="727.1" y1="467.0" x2="727.1" y2="466.0" stroke="#1f2933" stroke-width="1"/>
+<text x="727.1" y="461.2" font-size="9.5" fill="#1f2933" text-anchor="middle">3.3s</text>
+<rect x="765.9" y="438.1" width="51.6" height="49.9" fill="#2f6f8f" fill-opacity="0.85"/>
+<line x1="791.7" y1="438.3" x2="791.7" y2="438.0" stroke="#1f2933" stroke-width="1"/>
+<text x="791.7" y="433.1" font-size="9.5" fill="#1f2933" text-anchor="middle">7.5s</text>
+<rect x="830.4" y="425.1" width="51.6" height="62.9" fill="#c0621a" fill-opacity="0.85"/>
+<line x1="856.2" y1="425.3" x2="856.2" y2="423.9" stroke="#1f2933" stroke-width="1"/>
+<text x="856.2" y="420.1" font-size="9.5" fill="#1f2933" text-anchor="middle">9.5s</text>
+<rect x="894.9" y="398.6" width="51.6" height="89.4" fill="#3f7a4d" fill-opacity="0.85"/>
+<line x1="920.7" y1="401.3" x2="920.7" y2="398.3" stroke="#1f2933" stroke-width="1"/>
+<text x="920.7" y="393.6" font-size="9.5" fill="#1f2933" text-anchor="middle">13.5s</text>
+<text x="830.4" y="503" font-size="10.5" fill="#1f2933" text-anchor="middle">RoadTestMac2</text>
+<line x1="56" y1="488" x2="1030" y2="488" stroke="#1f2933"/>
+<rect x="56" y="526" width="11" height="11" fill="#1f2933"/>
+<text x="72" y="536" font-size="11" fill="#1f2933">shipped plan</text>
+<rect x="246" y="526" width="11" height="11" fill="#2f6f8f"/>
+<text x="262" y="536" font-size="11" fill="#1f2933">routed-cost MST</text>
+<rect x="436" y="526" width="11" height="11" fill="#c0621a"/>
+<text x="452" y="536" font-size="11" fill="#1f2933">trunk + spurs</text>
+<rect x="626" y="526" width="11" height="11" fill="#3f7a4d"/>
+<text x="642" y="536" font-size="11" fill="#1f2933">POI-to-network</text>
+</svg>

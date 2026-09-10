@@ -37,7 +37,7 @@ for the unpainted span of a bridge.
 | chart-plateau.png | roads and road length against the iteration budget |
 | chart-funnel.png | eligible places, selected places, places served |
 | chart-shore.png | how far roads sit from open water |
-| chart-centre.png | how far roads sit from their island's centre |
+| chart-centre.png | how far roads sit from the world's centre |
 
 The charts and the failure views carry the SVG they were rendered from
 beside them; the world and island views do not, because those SVGs run to
