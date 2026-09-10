@@ -245,8 +245,8 @@ def coverage(a):
     if not counts:
         sys.exit(f'{a.runs}: no places tables for {world}')
 
-    width, height = 760, 400
-    left, right, bottom, topgap = 60, 20, 96, 56
+    width, height = 900, 410
+    left, right, bottom, topgap = 60, 20, 96, 70
     plot_h = height - bottom - topgap
     out = []
     top = max(max(c.values()) for c in counts.values()) * 1.15
@@ -290,11 +290,15 @@ def coverage(a):
         out.append(f'<rect x="{x}" y="{y - 9}" width="11" height="11" fill="{CAT_COLOUR[cat]}"/>')
         out.append(f'<text x="{x + 16}" y="{y}" font-size="11" fill="{INK}">'
                    f'{escape(CAT_LABEL[cat])}</text>')
-    out.append(f'<text x="10" y="40" font-size="11" fill="{INK}">'
-               f'{escape(WORLD_LABEL.get(world, world))} ({escape(world)} in the run files; '
-               f'NOT issue #7\'s seed). Every boss altar on a selected island is required; '
-               f'the rest are what the priority table happened to select. '
-               f'Counts use the +0.5 m serving test.</text>')
+    # Two short lines rather than one long one: a subtitle wider than the
+    # canvas is a subtitle with its end cut off.
+    for n, line in enumerate([
+            f'{WORLD_LABEL.get(world, world)} ({world} in the run files; NOT issue #7\'s seed). '
+            f'Counts use the +0.5 m serving test.',
+            'Every boss altar on a selected island is required; the rest are what the '
+            'priority table happened to select.']):
+        out.append(f'<text x="10" y="{38 + n * 14}" font-size="11" fill="{INK}">'
+                   f'{escape(line)}</text>')
 
     return svg('\n'.join(out), width, height, title=a.title)
 

@@ -312,7 +312,7 @@ def wrap(text, width_px, font_px):
 
 
 def render(view, xs, zs, cells, grid, locations, routes, crossings, contour, title, min_radius,
-           outcomes=None, attempts=None, subtitle=None):
+           outcomes=None, attempts=None, subtitle=None, marks=None):
     out = []
     step = xs[1] - xs[0]
     out.append(f'<g>')
@@ -480,6 +480,19 @@ def render(view, xs, zs, cells, grid, locations, routes, crossings, contour, tit
     for line in wrap(subtitle or '', view.w, 10):
         out.append(f'<text x="6" y="{f(y)}" font-size="10" fill="#444">{escape(line)}</text>')
         y += 11
+
+    # A ring on a named spot, for a figure that is about one place on the map
+    # rather than about the whole view. Drawn last so nothing covers it.
+    for mx, mz, mlabel in (marks or []):
+        px, py = view.X(mx), view.Y(mz)
+        out.append(f'<circle cx="{f(px)}" cy="{f(py)}" r="16" fill="none" '
+                   f'stroke="#d81b1b" stroke-width="2.6"/>')
+        out.append(f'<circle cx="{f(px)}" cy="{f(py)}" r="16" fill="none" '
+                   f'stroke="#ffffff" stroke-width="1"/>')
+        if mlabel:
+            out.append(f'<text x="{f(px)}" y="{f(py - 22)}" font-size="13" fill="#d81b1b" '
+                       f'text-anchor="middle" stroke="#ffffff" stroke-width="3" '
+                       f'paint-order="stroke">{escape(mlabel)}</text>')
     out.append('</g>')
     return '\n'.join(out)
 
@@ -531,6 +544,8 @@ def main():
                                        'instead of all alike')
     ap.add_argument('--attempts', help='attempts CSV: a failed attempt is drawn as a dashed line from its '
                                        'start to the nearest the search came to its destination')
+    ap.add_argument('--mark', action='append', default=[],
+                    help='x,z[,label]: ring a world position, repeatable')
     ap.add_argument('--focus-attempt', help='draw one failed attempt as a case study: a label substring, '
                                             'rank:N for the Nth largest search by cells settled, or index:N '
                                             'for the attempt with that attempt_index. The view '
@@ -551,6 +566,13 @@ def main():
 
     global LABEL_KEYS
     LABEL_KEYS = LABEL_SETS[a.labels]
+
+    marks = []
+    for spec in a.mark:
+        bits = spec.split(',', 2)
+        if len(bits) < 2:
+            sys.exit(f'--mark wants x,z[,label], got {spec}')
+        marks.append((float(bits[0]), float(bits[1]), bits[2] if len(bits) > 2 else ''))
 
     xs, zs, cells = read_world(a.world)
     grid = read_grid(a.background) if a.background else read_grid(a.world)
@@ -696,7 +718,8 @@ def main():
                       'dashed red line a failed attempt to where the search stopped, '
                       'dashed box the ground it settled' if outcomes or attempts else ''))
         body = render(zoom_view, xs, zs, cells, grid, locations, routes, crossings, a.contour,
-                      focus_caption or caption, a.min_radius, outcomes, attempts, subtitle)
+                      focus_caption or caption, a.min_radius, outcomes, attempts, subtitle,
+                      marks)
         svg = ('<?xml version="1.0" encoding="UTF-8"?>\n'
                f'<svg xmlns="http://www.w3.org/2000/svg" width="{f(zoom_view.w)}" height="{f(zoom_view.h)}" '
                f'viewBox="0 0 {f(zoom_view.w)} {f(zoom_view.h)}" font-family="sans-serif">\n'

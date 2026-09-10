@@ -26,10 +26,16 @@ SERIES = ['#2f6f8f', '#c0621a', '#3f7a4d', '#8a4ab0', '#a03030']
 def svg(body, width=W, height=H, title=''):
     head = (f'<text x="8" y="20" font-size="14" fill="{INK}">{escape(title)}</text>'
             if title else '')
+    # Padded to a square, with the drawing's own size in a comment. The only
+    # rasteriser to hand fits a drawing into a square canvas, and which
+    # dimension it fits by depends on the aspect ratio - a wide, short chart
+    # came back with its longest bar's value cut off the right-hand edge.
+    side = max(width, height)
     return ('<?xml version="1.0" encoding="UTF-8"?>\n'
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
-            f'viewBox="0 0 {width} {height}" font-family="sans-serif">\n'
-            f'<rect width="{width}" height="{height}" fill="#ffffff"/>\n'
+            f'<!-- drawing {width}x{height} in a {side}x{side} canvas -->\n'
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{side}" height="{side}" '
+            f'viewBox="0 0 {side} {side}" font-family="sans-serif">\n'
+            f'<rect width="{side}" height="{side}" fill="#ffffff"/>\n'
             + head + '\n' + body + '\n</svg>\n')
 
 
