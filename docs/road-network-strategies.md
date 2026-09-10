@@ -853,6 +853,9 @@ The terrain dumps the runs read are roughly 250 MB each and are not published;
 they are on the machine that made them. What is published is enough to check
 every number in this document against the run that produced it, and not enough
 for someone else to produce those runs.
+[Picking up the study](road-network-strategies-picking-it-up.md) says what it
+would take to regenerate them — and notes that only world A can be, since the
+seeds of worlds B and C were never recorded.
 
 ## Appendix E. Corrections to the previous draft
 
