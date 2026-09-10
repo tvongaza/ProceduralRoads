@@ -19,7 +19,7 @@ waded ford, dashed purple for the unpainted span of a bridge.
 | island54-planners.png | the island with the most coast for its area (0.74 edge cells per land cell) under all four plans |
 | chart-tradeoff.png | places served against distinct road, per plan and per world, with generation time in its own panel |
 | chart-coverage.png | places served by category, four plans, with boss altars marked as the required ones |
-| tee-example.png | the same 1.24 km of world A under the shipped plan and under POI-to-network, with the spot ringed on both |
+| tee-example.png | the same 1.24 km of world A under the shipped plan and under POI-to-network, with the same spot ringed on both. The tee is a 7.7 m proximity result under the study's 12 m metric, not physical contact |
 | chart-funnel.png | places in the world and what became of them - regenerated from the same numbers as the document's table; the copy in `study-2026-09-09` still says "issue seed" and reports planned-and-built (129) rather than the table's connected (128) |
 
 **The planner-comparison charts and the maps use the +0.5 m serving test** (see

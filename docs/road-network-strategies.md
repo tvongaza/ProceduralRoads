@@ -51,7 +51,7 @@ because these worlds are archipelagos. Plan choice matters far less than that.
 | the shipped plan | keep as the baseline | it reaches the most required destinations on two of three worlds; its weakness is shape, not reach — one tee in a world. |
 | nearest-connected-place fallback | worth a second look | serves 3 more places, for 38 more searches and 3.7 km more road running alongside other road. It does not join existing components. |
 | road-sharing discount | conditional | 12 km of distinct road saved once every place is selected; nothing at all at the study baseline. |
-| larger iteration budget | **worth raising from the shipped default** | at the study's 100 000 the budget binds one attempt in 158 — but the mod ships at 10 000, where it binds 33, and 10 000 → 30 000 is worth 10 roads and 10 more places served on world A. Diminishing above ~30 000, and it cannot reach anything selection never chose. |
+| larger iteration budget | **test 30 000 as a candidate** | at the study's 100 000 the budget binds one attempt in 158; the mod ships at 10 000, where it binds 33, and on world A 10 000 → 30 000 added 10 roads and 10 strictly served places. Measured inside the study configuration, not a whole shipped default; diminishing above ~30 000; and no budget reaches what selection never chose. |
 
 **The one hypothesis this study now has a reason to test.** Routed-cost MST
 holds destinations and makes almost no tees; POI-to-network makes tees and
@@ -464,10 +464,18 @@ under all four plans at identical bounds and scale.
 ![island 54, water-fragmented, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/605e9620ec9469955fc91018dda72c29a9abef1f/validation-results/screenshots/study-2026-09-10/island54-planners.png)
 
 And one junction close up, because the tee count is the whole case for
-POI-to-network and the world sheets are too coarse to show one. The same
-1.24 km of world A under both plans: the shipped plan runs a single road across
-it and joins nothing, while POI-to-network's 437 m branch ends **on** the 5.4 km
-road rather than beside it.
+POI-to-network and the world sheets are too coarse to show one. The same 1.24 km
+of world A under both plans, with one spot ringed in each.
+
+Under POI-to-network, the 437 m branch's endpoint is **7.7 m from the nearest
+sampled point on the 5.4 km road**, which qualifies as a tee under the study's
+12 m proximity metric. That is a measured separation, not physical contact, and
+whether a player can step from one to the other is untested.
+
+Two things about the shipped panel are both true and are not in tension: one
+shipped road does cross the frame, and the shipped plan lays **no** road within
+290 m of the ringed spot. The plans route this ground differently, so the ring
+marks a junction in one panel and empty ground in the other.
 
 ![one junction under the shipped plan and under POI-to-network](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/605e9620ec9469955fc91018dda72c29a9abef1f/validation-results/screenshots/study-2026-09-10/tee-example.png)
 
@@ -672,7 +680,7 @@ from the game's line and one existed only in game.
 | anchor on a place | highest-priority place on the island | world A | 0 stillborn, a third fewer attempts (109 against 158), +1 served | advance, cheap |
 | quota by priority-then-nearest | selection, not planning | world A | 123 → 142 served | **advance first** |
 | road-sharing discount | existing road costs less to walk | world A, two densities | nothing at baseline; −12 km distinct at every place | conditional |
-| larger iteration budget | 5 000 → 120 000 | world A | from the shipped 10 000: +10 roads and +10 served by 30 000, +4 and +5 more by 100 000; flat above | raise the default, expect little past 30 000 |
+| larger iteration budget | 5 000 → 120 000, inside the study configuration | world A | from the shipped 10 000: +10 roads and +10 strictly served by 30 000, +4 and +5 more by 100 000; flat above | test 30 000 as a candidate |
 | longer bridge span | not run — see Appendix B | — | — | untested |
 | routed-cost backbone + POI-to-network branches | not built | — | — | **first follow-up** |
 
@@ -901,7 +909,7 @@ against the runs before being changed.
 | the summary's "Appendix C … finds none worse than 5.7 m, which bounds the risk" | withdrawn | the summary was still making the walkability claim Appendix C had already withdrawn, and described connectivity by the 24 m rule alone. It now names both rules and says the height screen prioritises inspection rather than bounding risk. |
 | routed-cost MST "makes no junctions at all" | **very few tees: 0, 1 and 0** | it makes one tee on world B, and it has 40, 25 and 23 end-to-end joins. The absolute claim appeared in the shortlist, the hybrid rationale, section 6 and Appendix A. |
 | the fallback serves 3 more places "for fewer searches" | **for 38 more** | 196 against the baseline's 158. The reduction to 196 was against the *faulty* fallback's 228, not against the baseline. |
-| "the budget binds one attempt in 158", and a blanket no to raising it | **that is the study's 100 000, not the shipped 10 000** | at the shipped default 33 of 158 attempts stop at the cap, and 10 000 → 30 000 is worth 10 roads and 10 more places served on world A. The recommendation is now to raise the default and expect little above 30 000. |
+| "the budget binds one attempt in 158", and a blanket no to raising it | **that is the study's 100 000, not the shipped 10 000** | at the shipped default 33 of 158 attempts stop at the cap, and 10 000 → 30 000 is worth 10 roads and 10 more places served on world A. The recommendation is now to test 30 000 as a candidate, and it is measured inside the study configuration rather than on a whole shipped default. |
 | "Nothing else in this document is left open" | withdrawn | Appendix C leaves the boundary-corrected runtime, coverage and geometry unresolved. It is now row 4 of the outstanding-evidence table, explicitly deferred, with the rankings marked provisional on it. |
 
 Smaller ones from the same review: the charts plotted the +0.5 m counts and
@@ -933,6 +941,14 @@ A fourth review read the document and every embedded image at reading size.
 Captions and legends that ran off the edge of their own images are wrapped into
 reserved space, and the junction figure now carries a ring on the spot it is
 about — which caught its caption describing a road that is 290 m away.
+
+### Found in the fifth review
+
+| claim as it stood | what it is now | how it was resolved |
+|---|---|---|
+| the budget recommendation read three ways: "worth raising from the shipped default", "raise the default", and section 6's "test 30 000 as a candidate" | one wording | "test 30 000 as a candidate", measured inside the study configuration, in all three places. |
+| the junction figure and text said the branch ends **on** the longer road | a proximity result | the endpoint is 7.7 m from the nearest sampled point on that road, which is a tee under the study's 12 m metric and is not physical contact. Traversability is untested, and the figure now says so. |
+| the shipped panel read as though "one road crosses the frame" and "no road near the ringed spot" were in tension | both stated | they are both true: the ring marks a junction in one panel and empty ground in the other, because the plans route this ground differently. |
 
 ### Raised in the first review, fixed since
 
