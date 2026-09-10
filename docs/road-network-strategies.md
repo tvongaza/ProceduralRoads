@@ -75,7 +75,7 @@ selection and connection outcomes, not coverage; the plateau, shore and centre
 charts do not measure coverage at all. Each figure names its own metric. Across
 the twelve planner runs the tolerance adds between 2 and 10 places.
 
-![four planners, three worlds: coverage, road and time](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/screenshots/study-2026-09-10/chart-tradeoff.png)
+![four planners, three worlds: coverage, road and time](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/screenshots/study-2026-09-10/chart-tradeoff.png)
 
 ## 2. Setup and definitions
 
@@ -193,7 +193,7 @@ Of the eligible places, by what became of them:
 | attempted, search frontier exhausted | 29 | 32 | 29 |
 | attempted, iteration budget spent | 1 | 0 | 1 |
 
-![the funnel from placed to connected](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/screenshots/study-2026-09-10/chart-funnel.png)
+![the funnel from placed to connected](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/screenshots/study-2026-09-10/chart-funnel.png)
 
 The funnel's last bar is the table's last row, 128 — selected places whose
 planned road was built. **Planned and built** counts 129 on the same run,
@@ -285,7 +285,7 @@ decides how much road exists and how many searches are wasted.
 | 100 000 (the setting's ceiling) | 88 | 1 | 69 |
 | 120 000 (past it; see below) | 88 | 1 | 69 |
 
-![roads and the two failure kinds against the iteration budget](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/screenshots/study-2026-09-09/chart-plateau.png)
+![roads and the two failure kinds against the iteration budget](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/screenshots/study-2026-09-09/chart-plateau.png)
 
 As the budget grows, attempts that used to stop at the cap instead exhaust
 their frontier: every cell they can reach, settled, without arriving. Past about
@@ -314,9 +314,9 @@ water than the land does and *nearer* the world's centre. That is a statement
 about the whole-world distribution; an island-level report of roads hugging its
 coast is not contradicted by it.
 
-![distance to open water, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/screenshots/study-2026-09-09/chart-shore.png)
+![distance to open water, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/screenshots/study-2026-09-09/chart-shore.png)
 
-![distance from the world's centre, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/screenshots/study-2026-09-09/chart-centre.png)
+![distance from the world's centre, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/screenshots/study-2026-09-09/chart-centre.png)
 
 What roads do favour is swamp: 35.1 % of road on 7.3 % of the land, against
 13.4 % on the Mistlands' 29.2 %. The pathfinder is following its cost model —
@@ -396,7 +396,7 @@ generator tried to build and failed:
 | trunk and spurs | 9 | 14 | 9 |
 | POI-to-network | 12 | 15 | 10 |
 
-![places served by category, four planners](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/screenshots/study-2026-09-10/chart-coverage.png)
+![places served by category, four planners](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/screenshots/study-2026-09-10/chart-coverage.png)
 
 ### What each plan costs
 
@@ -452,7 +452,7 @@ only reason the plans differ at all in runtime here.
 
 ### The maps
 
-![the world under four connection plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/screenshots/study-2026-09-10/world-planners.png)
+![the world under four connection plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/screenshots/study-2026-09-10/world-planners.png)
 
 Three islands, chosen on measured terrain rather than by eye. Of the nineteen
 islands over 3 km² on world A: **42** has the lowest mean height gradient (0.18
@@ -461,11 +461,11 @@ tied at the top, so its steepness is not also fragmentation), **54** the most
 coast per unit area (0.74 edge cells per land cell against 0.53). Each is drawn
 under all four plans at identical bounds and scale.
 
-![island 42, dense and flat, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/screenshots/study-2026-09-10/island42-planners.png)
+![island 42, dense and flat, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/screenshots/study-2026-09-10/island42-planners.png)
 
-![island 58, steep, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/screenshots/study-2026-09-10/island58-planners.png)
+![island 58, steep, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/screenshots/study-2026-09-10/island58-planners.png)
 
-![island 54, water-fragmented, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/screenshots/study-2026-09-10/island54-planners.png)
+![island 54, water-fragmented, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/screenshots/study-2026-09-10/island54-planners.png)
 
 And one junction close up, because the tee count is the whole case for
 POI-to-network and the world sheets are too coarse to show one. The same 1.24 km
@@ -481,7 +481,7 @@ shipped road does cross the frame, and the shipped plan lays **no** road within
 290 m of the ringed spot. The plans route this ground differently, so the ring
 marks a junction in one panel and empty ground in the other.
 
-![one junction under the shipped plan and under POI-to-network](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/screenshots/study-2026-09-10/tee-example.png)
+![one junction under the shipped plan and under POI-to-network](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/screenshots/study-2026-09-10/tee-example.png)
 
 The sheets make a point the tables bury: **on these three example islands the
 plans are almost the same picture.** All three get the same places served under
@@ -588,7 +588,7 @@ served metric; they were not repeated.
 | 32 | 838 | 224.0 km | 959 | 20 % | 234 |
 | every eligible place | 2 080 | 410.7 km | 2 322 | 16 % | 177 |
 
-![places served against distinct road built](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/screenshots/study-2026-09-09/chart-quota.png)
+![places served against distinct road built](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/screenshots/study-2026-09-09/chart-quota.png)
 
 The quota is not protecting generation from failure: it sits where failure is
 *likeliest*, because places added later are near ones already connected and
@@ -779,7 +779,7 @@ Twelve of the 27 destinations have a built road ending within 40 m of them
 anyway, because the plan carries on from the place it was heading for whether
 or not the leg to it was built. The failure costs the link, not the
 destination. Five failure case studies are drawn at
-[validation-results/screenshots/study-2026-09-09](https://github.com/tvongaza/ProceduralRoads/tree/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/screenshots/study-2026-09-09):
+[validation-results/screenshots/study-2026-09-09](https://github.com/tvongaza/ProceduralRoads/tree/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/screenshots/study-2026-09-09):
 a coast anchor 150 m out to sea, a search that settled a whole archipelago, the
 one attempt that spent its whole budget, a bridgeable channel with no usable
 bank, and a harbour whose own cell is below the waterline.
@@ -884,15 +884,15 @@ hash of every input, the settings, four stage timings and the results. The
 manifests, the per-place tables, the per-island tables, the selection and
 attempt tables and the crossings are published beside this document:
 
-[validation-results/study-2026-09-10](https://github.com/tvongaza/ProceduralRoads/tree/58fec105f2ddd1d71e8b80a2816aacf946f02333/validation-results/study-2026-09-10)
+[validation-results/study-2026-09-10](https://github.com/tvongaza/ProceduralRoads/tree/bcbaf106967ab82a144fbea1c4f3fa2b67c1ceb8/validation-results/study-2026-09-10)
 
 Route geometry is not published — several megabytes a run — but it regenerates
 from the manifest, which names the code and the inputs exactly.
 
-**Every link in this document is pinned to commit `58fec10`**, the revision
+**Every link in this document is pinned to commit `bcbaf10`**, the revision
 that published the current data and images, so a later change on the branch
 cannot alter the evidence a claim here rests on. (The runs themselves were
-published at `6d3403a` and are unchanged; `58fec10` corrected the figures on the
+published at `6d3403a` and are unchanged; `bcbaf10` added the hybrid runs on the
 charts and sheets.)
 
 The comparison in section 4 is 48 runs: three worlds × four plans × (one
