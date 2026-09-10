@@ -501,7 +501,8 @@ public static partial class RoadNetworkGenerator
     /// from A may succeed from a point on the road between A and B.
     /// </summary>
     public static bool TryFallbackConnection(Vector3 target, float targetRadius, string targetName,
-        IEnumerable<(Vector3 position, float radius, string name)> onNetwork)
+        IEnumerable<(Vector3 position, float radius, string name)> onNetwork,
+        Vector3? failedFrom = null)
     {
         if (StudyFactors.Fallback == FailureFallback.None)
             return false;
@@ -527,6 +528,14 @@ public static partial class RoadNetworkGenerator
             float best = float.MaxValue;
             foreach ((Vector3 position, float radius, string name) candidate in onNetwork)
             {
+                // The place the failed leg started from is not a fallback. It
+                // is the search that just failed, and running it again spends a
+                // full search to reach the same answer - which is what the
+                // first version of this did, 52 times in 70 on the issue seed,
+                // with identical iteration counts to prove it.
+                if (failedFrom.HasValue
+                    && Vector3.SqrMagnitude(candidate.position - failedFrom.Value) < 1f)
+                    continue;
                 float distance = Vector3.Distance(candidate.position, target);
                 if (distance < best) { best = distance; nearest = candidate; }
             }

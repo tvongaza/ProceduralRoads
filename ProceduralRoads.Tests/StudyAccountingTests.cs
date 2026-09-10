@@ -86,6 +86,47 @@ public class StudyAccountingTests
     }
 
     /// <summary>
+    /// The nearest-connected-place fallback used to pick the place the failed
+    /// leg started from, which is the search that had just failed. On the
+    /// issue seed it did that 52 times in 70, at identical iteration counts,
+    /// and the sweep built on it reported that no fallback recovers anything.
+    /// </summary>
+    [Fact]
+    public void TheFallbackDoesNotRerunTheSearchThatJustFailed()
+    {
+        var world = new TwoIslandsWorld();
+        Setup(world);
+        StudyFactors.Fallback = FailureFallback.NearestConnectedPlace;
+        try
+        {
+            var west = new Vector3(-400f, 0f, 0f);
+            var alsoWest = new Vector3(-350f, 0f, 60f);
+            var east = new Vector3(400f, 0f, 0f);
+
+            RoadNetworkGenerator.GenerateRoad(new Vector2(west.x, west.z), 0f,
+                new Vector2(alsoWest.x, alsoWest.z), 0f, 4f, "west -> alsoWest");
+            int before = RoadAttemptLog.Attempts.Count;
+
+            // The leg west -> east fails. The nearest place on the network to
+            // east is west itself, and that is the one candidate the fallback
+            // must refuse.
+            Assert.False(RoadNetworkGenerator.GenerateRoad(new Vector2(west.x, west.z), 0f,
+                new Vector2(east.x, east.z), 0f, 4f, "west -> east"));
+            RoadNetworkGenerator.TryFallbackConnection(east, 0f, "east",
+                new[] { (west, 0f, "west"), (alsoWest, 0f, "alsoWest") }, west);
+
+            var after = RoadAttemptLog.Attempts.Skip(before).ToList();
+            Assert.DoesNotContain(after.Skip(1), a =>
+                Vector2.Distance(a.Start, new Vector2(west.x, west.z)) < 1f
+                && Vector2.Distance(a.End, new Vector2(east.x, east.z)) < 1f);
+        }
+        finally
+        {
+            TearDown();
+        }
+    }
+
+    /// <summary>
     /// A road built FOR a place is trimmed to that place's exterior radius, so
     /// its last point is ON the circle - which makes "a road end within the
     /// place's radius" a float comparison against the number the point was

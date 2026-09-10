@@ -724,7 +724,7 @@ public static partial class RoadNetworkGenerator
             RoadAttemptLog.NextRow("chain-leg");
             if (!GenerateRoad(current, currentRadius, nearest.position, nearest.radius, RoadWidth,
                     $"{currentName} -> {nearest.name}"))
-                TryFallbackConnection(nearest.position, nearest.radius, nearest.name, reached);
+                TryFallbackConnection(nearest.position, nearest.radius, nearest.name, reached, current);
             reached.Add((nearest.position, nearest.radius, nearest.name));
             
             current = nearest.position;
@@ -792,7 +792,7 @@ public static partial class RoadNetworkGenerator
                 RoadAttemptLog.NextRow("mst-leg");
                 if (!GenerateRoad(from.position, from.radius, to.position, to.radius, RoadWidth,
                         $"{from.name} -> {to.name}"))
-                    TryFallbackConnection(to.position, to.radius, to.name, built);
+                    TryFallbackConnection(to.position, to.radius, to.name, built, from.position);
                 built.Add((to.position, to.radius, to.name));
             }
         }
