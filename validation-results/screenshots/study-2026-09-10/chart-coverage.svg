@@ -1,77 +1,78 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- drawing 760x400 in a 760x760 canvas -->
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="760" viewBox="0 0 760 760" font-family="sans-serif">
-<rect width="760" height="760" fill="#ffffff"/>
+<!-- drawing 900x410 in a 900x900 canvas -->
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="900" viewBox="0 0 900 900" font-family="sans-serif">
+<rect width="900" height="900" fill="#ffffff"/>
 <text x="10" y="21" font-size="15" fill="#1f2933">Places served by category, four planners</text>
-<line x1="60" y1="254.4" x2="740" y2="254.4" stroke="#d7dee5"/>
-<text x="54" y="258.4" font-size="10" fill="#1f2933" text-anchor="end">22</text>
-<line x1="60" y1="204.8" x2="740" y2="204.8" stroke="#d7dee5"/>
-<text x="54" y="208.8" font-size="10" fill="#1f2933" text-anchor="end">44</text>
-<line x1="60" y1="155.2" x2="740" y2="155.2" stroke="#d7dee5"/>
-<text x="54" y="159.2" font-size="10" fill="#1f2933" text-anchor="end">66</text>
-<line x1="60" y1="105.6" x2="740" y2="105.6" stroke="#d7dee5"/>
-<text x="54" y="109.6" font-size="10" fill="#1f2933" text-anchor="end">87</text>
-<line x1="60" y1="56.0" x2="740" y2="56.0" stroke="#d7dee5"/>
-<text x="54" y="60.0" font-size="10" fill="#1f2933" text-anchor="end">109</text>
-<rect x="68.0" y="272.2" width="25.2" height="31.8" fill="#a03030"/>
-<text x="80.6" y="268.2" font-size="9.5" fill="#1f2933" text-anchor="middle">14</text>
-<text x="80.6" y="257.2" font-size="9" fill="#a03030" text-anchor="middle">of 19</text>
-<rect x="97.3" y="90.6" width="25.2" height="213.4" fill="#2f6f8f"/>
-<text x="109.9" y="86.6" font-size="9.5" fill="#1f2933" text-anchor="middle">94</text>
-<rect x="126.6" y="256.3" width="25.2" height="47.7" fill="#8a4ab0"/>
-<text x="139.2" y="252.3" font-size="9.5" fill="#1f2933" text-anchor="middle">21</text>
-<rect x="155.9" y="304.0" width="25.2" height="0.0" fill="#3f7a4d"/>
-<text x="168.5" y="300.0" font-size="9.5" fill="#1f2933" text-anchor="middle">0</text>
-<rect x="185.2" y="304.0" width="25.2" height="0.0" fill="#9aa5b1"/>
-<text x="197.8" y="300.0" font-size="9.5" fill="#1f2933" text-anchor="middle">0</text>
-<text x="145.0" y="321" font-size="11" fill="#1f2933" text-anchor="middle">shipped plan</text>
-<rect x="238.0" y="272.2" width="25.2" height="31.8" fill="#a03030"/>
-<text x="250.6" y="268.2" font-size="9.5" fill="#1f2933" text-anchor="middle">14</text>
-<text x="250.6" y="257.2" font-size="9" fill="#a03030" text-anchor="middle">of 19</text>
-<rect x="267.3" y="88.3" width="25.2" height="215.7" fill="#2f6f8f"/>
-<text x="279.9" y="84.3" font-size="9.5" fill="#1f2933" text-anchor="middle">95</text>
-<rect x="296.6" y="251.8" width="25.2" height="52.2" fill="#8a4ab0"/>
-<text x="309.2" y="247.8" font-size="9.5" fill="#1f2933" text-anchor="middle">23</text>
-<rect x="325.9" y="304.0" width="25.2" height="0.0" fill="#3f7a4d"/>
-<text x="338.5" y="300.0" font-size="9.5" fill="#1f2933" text-anchor="middle">0</text>
-<rect x="355.2" y="304.0" width="25.2" height="0.0" fill="#9aa5b1"/>
-<text x="367.8" y="300.0" font-size="9.5" fill="#1f2933" text-anchor="middle">0</text>
-<text x="315.0" y="321" font-size="11" fill="#2f6f8f" text-anchor="middle">routed-cost MST</text>
-<rect x="408.0" y="283.6" width="25.2" height="20.4" fill="#a03030"/>
-<text x="420.6" y="279.6" font-size="9.5" fill="#1f2933" text-anchor="middle">9</text>
-<text x="420.6" y="268.6" font-size="9" fill="#a03030" text-anchor="middle">of 19</text>
-<rect x="437.3" y="102.0" width="25.2" height="202.0" fill="#2f6f8f"/>
-<text x="449.9" y="98.0" font-size="9.5" fill="#1f2933" text-anchor="middle">89</text>
-<rect x="466.6" y="254.1" width="25.2" height="49.9" fill="#8a4ab0"/>
-<text x="479.2" y="250.1" font-size="9.5" fill="#1f2933" text-anchor="middle">22</text>
-<rect x="495.9" y="304.0" width="25.2" height="0.0" fill="#3f7a4d"/>
-<text x="508.5" y="300.0" font-size="9.5" fill="#1f2933" text-anchor="middle">0</text>
-<rect x="525.2" y="299.5" width="25.2" height="4.5" fill="#9aa5b1"/>
-<text x="537.8" y="295.5" font-size="9.5" fill="#1f2933" text-anchor="middle">2</text>
-<text x="485.0" y="321" font-size="11" fill="#c0621a" text-anchor="middle">trunk + spurs</text>
-<rect x="578.0" y="276.8" width="25.2" height="27.2" fill="#a03030"/>
-<text x="590.6" y="272.8" font-size="9.5" fill="#1f2933" text-anchor="middle">12</text>
-<text x="590.6" y="261.8" font-size="9" fill="#a03030" text-anchor="middle">of 19</text>
-<rect x="607.3" y="102.0" width="25.2" height="202.0" fill="#2f6f8f"/>
-<text x="619.9" y="98.0" font-size="9.5" fill="#1f2933" text-anchor="middle">89</text>
-<rect x="636.6" y="254.1" width="25.2" height="49.9" fill="#8a4ab0"/>
-<text x="649.2" y="250.1" font-size="9.5" fill="#1f2933" text-anchor="middle">22</text>
-<rect x="665.9" y="304.0" width="25.2" height="0.0" fill="#3f7a4d"/>
-<text x="678.5" y="300.0" font-size="9.5" fill="#1f2933" text-anchor="middle">0</text>
-<rect x="695.2" y="297.2" width="25.2" height="6.8" fill="#9aa5b1"/>
-<text x="707.8" y="293.2" font-size="9.5" fill="#1f2933" text-anchor="middle">3</text>
-<text x="655.0" y="321" font-size="11" fill="#3f7a4d" text-anchor="middle">POI-to-network</text>
-<line x1="60" y1="304" x2="740" y2="304" stroke="#1f2933"/>
-<text x="16" y="180.0" font-size="11" fill="#1f2933" text-anchor="middle" transform="rotate(-90 16 180.0)">places served (+0.5 m)</text>
-<rect x="60" y="351" width="11" height="11" fill="#a03030"/>
-<text x="76" y="360" font-size="11" fill="#1f2933">boss altars (required)</text>
-<rect x="290" y="351" width="11" height="11" fill="#2f6f8f"/>
-<text x="306" y="360" font-size="11" fill="#1f2933">dungeons</text>
-<rect x="520" y="351" width="11" height="11" fill="#8a4ab0"/>
-<text x="536" y="360" font-size="11" fill="#1f2933">Mistlands structures</text>
-<rect x="60" y="369" width="11" height="11" fill="#3f7a4d"/>
-<text x="76" y="378" font-size="11" fill="#1f2933">settlements</text>
-<rect x="290" y="369" width="11" height="11" fill="#9aa5b1"/>
-<text x="306" y="378" font-size="11" fill="#1f2933">ruins and towers</text>
-<text x="10" y="40" font-size="11" fill="#1f2933">world A (Issue7 in the run files; NOT issue #7's seed). Every boss altar on a selected island is required; the rest are what the priority table happened to select. Counts use the +0.5 m serving test.</text>
+<line x1="60" y1="265.2" x2="880" y2="265.2" stroke="#d7dee5"/>
+<text x="54" y="269.2" font-size="10" fill="#1f2933" text-anchor="end">22</text>
+<line x1="60" y1="216.4" x2="880" y2="216.4" stroke="#d7dee5"/>
+<text x="54" y="220.4" font-size="10" fill="#1f2933" text-anchor="end">44</text>
+<line x1="60" y1="167.6" x2="880" y2="167.6" stroke="#d7dee5"/>
+<text x="54" y="171.6" font-size="10" fill="#1f2933" text-anchor="end">66</text>
+<line x1="60" y1="118.8" x2="880" y2="118.8" stroke="#d7dee5"/>
+<text x="54" y="122.8" font-size="10" fill="#1f2933" text-anchor="end">87</text>
+<line x1="60" y1="70.0" x2="880" y2="70.0" stroke="#d7dee5"/>
+<text x="54" y="74.0" font-size="10" fill="#1f2933" text-anchor="end">109</text>
+<rect x="68.0" y="282.7" width="30.4" height="31.3" fill="#a03030"/>
+<text x="83.2" y="278.7" font-size="9.5" fill="#1f2933" text-anchor="middle">14</text>
+<text x="83.2" y="267.7" font-size="9" fill="#a03030" text-anchor="middle">of 19</text>
+<rect x="103.3" y="104.1" width="30.4" height="209.9" fill="#2f6f8f"/>
+<text x="118.5" y="100.1" font-size="9.5" fill="#1f2933" text-anchor="middle">94</text>
+<rect x="138.7" y="267.1" width="30.4" height="46.9" fill="#8a4ab0"/>
+<text x="153.9" y="263.1" font-size="9.5" fill="#1f2933" text-anchor="middle">21</text>
+<rect x="174.0" y="314.0" width="30.4" height="0.0" fill="#3f7a4d"/>
+<text x="189.2" y="310.0" font-size="9.5" fill="#1f2933" text-anchor="middle">0</text>
+<rect x="209.4" y="314.0" width="30.4" height="0.0" fill="#9aa5b1"/>
+<text x="224.6" y="310.0" font-size="9.5" fill="#1f2933" text-anchor="middle">0</text>
+<text x="162.5" y="331" font-size="11" fill="#1f2933" text-anchor="middle">shipped plan</text>
+<rect x="273.0" y="282.7" width="30.4" height="31.3" fill="#a03030"/>
+<text x="288.2" y="278.7" font-size="9.5" fill="#1f2933" text-anchor="middle">14</text>
+<text x="288.2" y="267.7" font-size="9" fill="#a03030" text-anchor="middle">of 19</text>
+<rect x="308.3" y="101.8" width="30.4" height="212.2" fill="#2f6f8f"/>
+<text x="323.5" y="97.8" font-size="9.5" fill="#1f2933" text-anchor="middle">95</text>
+<rect x="343.7" y="262.6" width="30.4" height="51.4" fill="#8a4ab0"/>
+<text x="358.9" y="258.6" font-size="9.5" fill="#1f2933" text-anchor="middle">23</text>
+<rect x="379.0" y="314.0" width="30.4" height="0.0" fill="#3f7a4d"/>
+<text x="394.2" y="310.0" font-size="9.5" fill="#1f2933" text-anchor="middle">0</text>
+<rect x="414.4" y="314.0" width="30.4" height="0.0" fill="#9aa5b1"/>
+<text x="429.6" y="310.0" font-size="9.5" fill="#1f2933" text-anchor="middle">0</text>
+<text x="367.5" y="331" font-size="11" fill="#2f6f8f" text-anchor="middle">routed-cost MST</text>
+<rect x="478.0" y="293.9" width="30.4" height="20.1" fill="#a03030"/>
+<text x="493.2" y="289.9" font-size="9.5" fill="#1f2933" text-anchor="middle">9</text>
+<text x="493.2" y="278.9" font-size="9" fill="#a03030" text-anchor="middle">of 19</text>
+<rect x="513.3" y="115.2" width="30.4" height="198.8" fill="#2f6f8f"/>
+<text x="528.5" y="111.2" font-size="9.5" fill="#1f2933" text-anchor="middle">89</text>
+<rect x="548.7" y="264.9" width="30.4" height="49.1" fill="#8a4ab0"/>
+<text x="563.9" y="260.9" font-size="9.5" fill="#1f2933" text-anchor="middle">22</text>
+<rect x="584.0" y="314.0" width="30.4" height="0.0" fill="#3f7a4d"/>
+<text x="599.2" y="310.0" font-size="9.5" fill="#1f2933" text-anchor="middle">0</text>
+<rect x="619.4" y="309.5" width="30.4" height="4.5" fill="#9aa5b1"/>
+<text x="634.6" y="305.5" font-size="9.5" fill="#1f2933" text-anchor="middle">2</text>
+<text x="572.5" y="331" font-size="11" fill="#c0621a" text-anchor="middle">trunk + spurs</text>
+<rect x="683.0" y="287.2" width="30.4" height="26.8" fill="#a03030"/>
+<text x="698.2" y="283.2" font-size="9.5" fill="#1f2933" text-anchor="middle">12</text>
+<text x="698.2" y="272.2" font-size="9" fill="#a03030" text-anchor="middle">of 19</text>
+<rect x="718.3" y="115.2" width="30.4" height="198.8" fill="#2f6f8f"/>
+<text x="733.5" y="111.2" font-size="9.5" fill="#1f2933" text-anchor="middle">89</text>
+<rect x="753.7" y="264.9" width="30.4" height="49.1" fill="#8a4ab0"/>
+<text x="768.9" y="260.9" font-size="9.5" fill="#1f2933" text-anchor="middle">22</text>
+<rect x="789.0" y="314.0" width="30.4" height="0.0" fill="#3f7a4d"/>
+<text x="804.2" y="310.0" font-size="9.5" fill="#1f2933" text-anchor="middle">0</text>
+<rect x="824.4" y="307.3" width="30.4" height="6.7" fill="#9aa5b1"/>
+<text x="839.6" y="303.3" font-size="9.5" fill="#1f2933" text-anchor="middle">3</text>
+<text x="777.5" y="331" font-size="11" fill="#3f7a4d" text-anchor="middle">POI-to-network</text>
+<line x1="60" y1="314" x2="880" y2="314" stroke="#1f2933"/>
+<text x="16" y="192.0" font-size="11" fill="#1f2933" text-anchor="middle" transform="rotate(-90 16 192.0)">places served (+0.5 m)</text>
+<rect x="60" y="361" width="11" height="11" fill="#a03030"/>
+<text x="76" y="370" font-size="11" fill="#1f2933">boss altars (required)</text>
+<rect x="290" y="361" width="11" height="11" fill="#2f6f8f"/>
+<text x="306" y="370" font-size="11" fill="#1f2933">dungeons</text>
+<rect x="520" y="361" width="11" height="11" fill="#8a4ab0"/>
+<text x="536" y="370" font-size="11" fill="#1f2933">Mistlands structures</text>
+<rect x="60" y="379" width="11" height="11" fill="#3f7a4d"/>
+<text x="76" y="388" font-size="11" fill="#1f2933">settlements</text>
+<rect x="290" y="379" width="11" height="11" fill="#9aa5b1"/>
+<text x="306" y="388" font-size="11" fill="#1f2933">ruins and towers</text>
+<text x="10" y="38" font-size="11" fill="#1f2933">world A (Issue7 in the run files; NOT issue #7's seed). Counts use the +0.5 m serving test.</text>
+<text x="10" y="52" font-size="11" fill="#1f2933">Every boss altar on a selected island is required; the rest are what the priority table happened to select.</text>
 </svg>

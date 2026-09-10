@@ -19,12 +19,15 @@ waded ford, dashed purple for the unpainted span of a bridge.
 | island54-planners.png | the island with the most coast for its area (0.74 edge cells per land cell) under all four plans |
 | chart-tradeoff.png | places served against distinct road, per plan and per world, with generation time in its own panel |
 | chart-coverage.png | places served by category, four plans, with boss altars marked as the required ones |
-| tee-example.png | one junction under the shipped plan and under POI-to-network, at 1.24 km across: what a tee looks like against a road that nothing joins |
+| tee-example.png | the same 1.24 km of world A under the shipped plan and under POI-to-network, with the spot ringed on both |
+| chart-funnel.png | places in the world and what became of them - regenerated from the same numbers as the document's table; the copy in `study-2026-09-09` still says "issue seed" and reports planned-and-built (129) rather than the table's connected (128) |
 
-**All served counts on these images use the +0.5 m serving test** (see the
-document's section 2); the strict count is 5 to 8 lower per run. Worlds are
-named A, B and C as in the document — world A is `Issue7` in the run files and
-is **not** issue #7's own seed.
+**The planner-comparison charts and the maps use the +0.5 m serving test** (see
+the document's section 2); across the twelve planner runs it counts 2 to 10
+more places than the strict test. `chart-funnel.png` is not a coverage figure at
+all — its last bar is connected places. Worlds are named A, B and C as in the
+document; world A is `Issue7` in the run files and is **not** issue #7's own
+seed.
 
 The three islands were chosen on the measured terrain in
 `../../study-2026-09-10/Issue7-island-terrain.txt`, not by eye. The charts

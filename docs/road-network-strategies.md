@@ -65,8 +65,11 @@ connection. The endpoint-height screen on world A helps prioritise inspection;
 it does not bound traversal risk. Gameplay validation remains outstanding, and
 nothing here has been played.
 
-Every chart and map in this document plots the **+0.5 m** serving count, which
-is 5 to 8 higher per run than the strict one; the tables give both.
+The planner-comparison charts and the world and island maps use **served
+(+0.5 m)**. The quota chart uses the strict served count; the funnel reports
+selection and connection outcomes, not coverage; the plateau, shore and centre
+charts do not measure coverage at all. Each figure names its own metric. Across
+the twelve planner runs the tolerance adds between 2 and 10 places.
 
 ![four planners, three worlds: coverage, road and time](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-10/chart-tradeoff.png)
 
@@ -145,7 +148,7 @@ Defined once, used throughout.
 | **planning searches** | pathfinder calls a plan ran to *price* a candidate edge before choosing. They lay no road and are not in the attempt log. |
 | **total searches** | the two added. This is the work a plan costs. |
 | **roads** | searches that returned a route and were painted. |
-| **planned and built** | places sitting at an end of one of those roads, matched by the place's own coordinates within 1.5 m. |
+| **planned and built** | places sitting at an end of one of those roads, matched by the place's own coordinates within 1.5 m. On the study baseline this is 129 against the 128 selected places connected, the extra one being the start temple, which is an anchor rather than a destination. |
 | **served** | places with a road end within 25 m, or within the place's own exterior radius if that is larger. |
 | **distinct road** | length of road on the ground, counting a stretch used twice once. |
 | **summed over routes** | every route's length added up, so shared road counts twice. |
@@ -186,7 +189,13 @@ Of the eligible places, by what became of them:
 | attempted, search frontier exhausted | 29 | 32 | 29 |
 | attempted, iteration budget spent | 1 | 0 | 1 |
 
-![the funnel from placed to connected](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-09/chart-funnel.png)
+![the funnel from placed to connected](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-10/chart-funnel.png)
+
+The funnel's last bar is the table's last row, 128 — selected places whose
+planned road was built. **Planned and built** counts 129 on the same run,
+because it counts every place at the end of a road rather than only the
+selected ones, and the 129th is the start temple, which is an anchor rather
+than a road destination.
 
 **Ninety-three per cent of eligible places never get an attempt.** The quota is
 `2 + area / 2 km²`. These worlds have a median island under 2 km², so more than
@@ -533,7 +542,9 @@ least efficient point on the curve for road per place reached.
 Arrangement alone moves coverage from 109 to 142, a wider spread than any
 planner change measured here: choosing destinations near one another is worth
 more than choosing cleverly between them, and deliberately spreading them —
-which sounds like what a road network wants — is the worst of the four.
+which sounds like what a road network wants — spends the most road per place
+reached of the four, 731 m against 305. The fewest places served is the fixed
+draw's 109.
 
 | preset | selected | roads | summed | served | connect rate |
 |---|---|---|---|---|---|
@@ -563,7 +574,8 @@ measurement in the study.
 | bridges only | 57 | 30.6 km | 86 |
 | both | 88 | 58.5 km | 123 |
 
-Crossings are worth more than any other single lever measured. In game, on one
+Crossings are worth more than any other **routing** switch measured — the quota
+in the table above moves coverage far further. In game, on one
 world state: neither, 49 roads; fords only, 90 roads with **three river fords in
 the whole world**; both, 98 roads with 15 crossings. Fords add 41 roads and
 almost none of it is river crossing — it is the swamp wading that comes with the
@@ -581,8 +593,8 @@ builds the same network out of less road; it does not reach more places.**
 ## 6. Recommendation, and what would change it
 
 **Improve selection first.** Arrangement at a fixed count moves coverage by 33
-places where no planner moved it by more than 5. If one change is made, make
-the quota choose priority-then-nearest.
+places on world A, where on that world no planner moved it by more than 5. If
+one change is made, make the quota choose priority-then-nearest.
 
 **Advance two planners, for different reasons.** Routed-cost MST is the
 strongest candidate for preserving destination coverage among those tested —
@@ -595,13 +607,16 @@ has not been run.
 
 **Deprioritise trunk-and-spurs**, which buys junctions by not reaching things.
 
-**Raise the shipped iteration budget, but expect little above 30 000.** The
-"one attempt in 158" figure everywhere else in this document is at the study
-baseline's 100 000. The mod ships at **10 000**, where 33 of 158 attempts stop
-at the cap, and on world A raising it recovers real coverage: 10 000 → 30 000
-takes 74 roads to 84 and 108 places served to 118, and 30 000 → 100 000 adds
-four roads and five places. What it cannot do is reach the ~93 % of eligible
-places that selection never chose, which is the issue's actual cause.
+**Test 30 000 as a candidate iteration default.** On world A, with every other
+study setting held constant, it added ten roads and ten strictly served places
+over the shipped 10 000 — where 33 of 158 attempts stop at the cap, against one
+at the study baseline's 100 000, which is the figure quoted everywhere else
+here. Above 30 000 the returns are small: 30 000 → 100 000 adds four roads and
+five places. Two limits on that: the sweep varies the iteration value inside
+the study configuration (every island, both crossings), not a whole shipped
+default; and no budget reaches the ~93 % of eligible places selection never
+chose. **Selection remained the dominant source of sparseness in the worlds
+tested; the reporter's world remains untested.**
 
 **What evidence would change this.** One table, in order of how much each would
 move the recommendation.
@@ -654,8 +669,8 @@ from the game's line and one existed only in game.
 | grow from the network | nearest waiting place attaches to the nearest point on the road | world A | 82 roads, 116 served, 15 tees, 1.6 km alongside | deprioritise |
 | candidate-set width for routed MST | 3, 6, 12, 24 neighbours priced | world A | flat from 6 onward; the water binds, not the candidates | settled |
 | anchor walked onto land | first point above the waterline | world A | 32 stillborn attempts become 5, +19 % road, +1 served | advance, cheap |
-| anchor on a place | highest-priority place on the island | world A | 0 stillborn, a third of the attempts, +1 served | advance, cheap |
-| quota by priority-then-nearest | selection, not planning | 3 worlds | 123 → 142 served | **advance first** |
+| anchor on a place | highest-priority place on the island | world A | 0 stillborn, a third fewer attempts (109 against 158), +1 served | advance, cheap |
+| quota by priority-then-nearest | selection, not planning | world A | 123 → 142 served | **advance first** |
 | road-sharing discount | existing road costs less to walk | world A, two densities | nothing at baseline; −12 km distinct at every place | conditional |
 | larger iteration budget | 5 000 → 120 000 | world A | from the shipped 10 000: +10 roads and +10 served by 30 000, +4 and +5 more by 100 000; flat above | raise the default, expect little past 30 000 |
 | longer bridge span | not run — see Appendix B | — | — | untested |
