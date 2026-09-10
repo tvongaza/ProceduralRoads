@@ -21,6 +21,12 @@ import sys
 from xml.sax.saxutils import escape
 
 INK, GRID = '#1f2933', '#d7dee5'
+# The document calls the worlds A, B and C. Sorting the run names gives
+# Issue7, RoadTestAuto1, RoadTestMac2 - which is A, C, B, and a chart whose
+# panels disagree with the tables beside it.
+WORLD_ORDER = ['Issue7', 'RoadTestMac2', 'RoadTestAuto1']
+WORLD_LABEL = {'Issue7': 'world A', 'RoadTestMac2': 'world B',
+               'RoadTestAuto1': 'world C'}
 PLANS = ['parity', 'routed-mst', 'trunk', 'reverse']
 PLAN_LABEL = {
     'parity': 'shipped plan',
@@ -93,7 +99,8 @@ def svg(body, width, height, title=''):
 
 def tradeoff(a):
     data = load(a.runs)
-    worlds = sorted({w for w, _ in data})
+    present = {w for w, _ in data}
+    worlds = [w for w in WORLD_ORDER if w in present] + sorted(present - set(WORLD_ORDER))
     if not worlds:
         sys.exit(f'{a.runs}: no runs found')
 
@@ -119,7 +126,7 @@ def tradeoff(a):
         out.append(f'<rect x="{x0}" y="{y1}" width="{panel_w}" height="{panel_h}" fill="none" '
                    f'stroke="{GRID}"/>')
         out.append(f'<text x="{x0 + panel_w / 2}" y="{y1 - 8}" font-size="12" fill="{INK}" '
-                   f'text-anchor="middle">{escape(world)}</text>')
+                   f'text-anchor="middle">{escape(WORLD_LABEL.get(world, world))}</text>')
 
         def px(v):
             return x0 + (v - xlo) / (xhi - xlo) * panel_w
@@ -168,7 +175,7 @@ def tradeoff(a):
                f'fill="{INK}" text-anchor="middle">distinct road on the ground (km)</text>')
     out.append(f'<text x="16" y="{top + panel_h / 2}" font-size="11" fill="{INK}" '
                f'text-anchor="middle" transform="rotate(-90 16 {top + panel_h / 2})">'
-               f'places served</text>')
+               f'places served (+0.5 m)</text>')
 
     # Runtime is its own panel rather than a marker size: it is the third
     # quantity the choice turns on and it varies by a factor of four, which no
@@ -200,7 +207,7 @@ def tradeoff(a):
             n += 1
         out.append(f'<text x="{left + (first + (n - first) / 2) * slot:.1f}" '
                    f'y="{bar_top + bar_h + 15}" font-size="10.5" fill="{INK}" '
-                   f'text-anchor="middle">{escape(world)}</text>')
+                   f'text-anchor="middle">{escape(WORLD_LABEL.get(world, world))}</text>')
         n += 1
     out.append(f'<line x1="{left}" y1="{bar_top + bar_h}" x2="{width - 14}" y2="{bar_top + bar_h}" '
                f'stroke="{INK}"/>')
@@ -276,7 +283,7 @@ def coverage(a):
                f'y2="{topgap + plot_h}" stroke="{INK}"/>')
     out.append(f'<text x="16" y="{topgap + plot_h / 2}" font-size="11" fill="{INK}" '
                f'text-anchor="middle" transform="rotate(-90 16 {topgap + plot_h / 2})">'
-               f'places served</text>')
+               f'places served (+0.5 m)</text>')
     for i, cat in enumerate(CATEGORIES):
         x = left + (i % 3) * 230
         y = height - 40 + (i // 3) * 18
@@ -284,8 +291,10 @@ def coverage(a):
         out.append(f'<text x="{x + 16}" y="{y}" font-size="11" fill="{INK}">'
                    f'{escape(CAT_LABEL[cat])}</text>')
     out.append(f'<text x="10" y="40" font-size="11" fill="{INK}">'
-               f'{escape(world)}; every boss altar on a selected island is required, '
-               f'the rest are what the priority table happened to select</text>')
+               f'{escape(WORLD_LABEL.get(world, world))} ({escape(world)} in the run files; '
+               f'NOT issue #7\'s seed). Every boss altar on a selected island is required; '
+               f'the rest are what the priority table happened to select. '
+               f'Counts use the +0.5 m serving test.</text>')
 
     return svg('\n'.join(out), width, height, title=a.title)
 
