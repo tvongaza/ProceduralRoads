@@ -85,4 +85,36 @@ public class StudyAccountingTests
         }
     }
 
+    /// <summary>
+    /// A road built FOR a place is trimmed to that place's exterior radius, so
+    /// its last point is ON the circle - which makes "a road end within the
+    /// place's radius" a float comparison against the number the point was
+    /// constructed to equal. Eight places on the issue seed fell the wrong
+    /// side of it. This pins the geometry that makes the serving test a knife
+    /// edge, so a future change to trimming shows up here rather than as an
+    /// unexplained drift in the served count.
+    /// </summary>
+    [Fact]
+    public void ARoadBuiltToAPlaceEndsExactlyOnItsApproachCircle()
+    {
+        var world = new TwoIslandsWorld();
+        Setup(world);
+        try
+        {
+            var centre = new Vector2(-330f, 90f);
+            const float radius = 32f;
+            Assert.True(RoadNetworkGenerator.GenerateRoad(
+                new Vector2(-470f, -60f), 0f, centre, radius, 4f, "west -> walled"));
+
+            RoadRoute route = RoadRouteRecorder.Routes.Last();
+            Vector3 last = route.Points[route.Points.Count - 1];
+            float gap = Vector2.Distance(new Vector2(last.x, last.z), centre);
+
+            Assert.InRange(gap, radius - 0.05f, radius + 0.05f);
+        }
+        finally
+        {
+            TearDown();
+        }
+    }
 }

@@ -442,6 +442,7 @@ internal static class Generate
             $"    \"uniqueRoadLengthMeters\": {metrics.UniqueLengthMetres:F0},",
             $"    \"plannedConnections\": {metrics.PlannedConnections},",
             $"    \"placesServed\": {metrics.PlacesServed},",
+            $"    \"placesServedTolerant\": {metrics.PlacesServedTolerant},",
             $"    \"joinedGroups\": {metrics.Components},",
             $"    \"teeJunctions\": {metrics.TeeJunctions},",
             $"    \"endToEndJoins\": {metrics.EndToEndJoins},",

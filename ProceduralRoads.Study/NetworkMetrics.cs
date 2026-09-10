@@ -22,6 +22,24 @@ internal static class NetworkMetrics
     /// <summary>A road end this close to a place serves it.</summary>
     public const float ServedRadius = 25f;
 
+    /// <summary>
+    /// Slack on the serving test, and the reason it exists.
+    ///
+    /// A road built FOR a place is trimmed to that place's exterior radius, so
+    /// its last point is placed ON the circle - and for a place whose radius is
+    /// at least the served radius, "within reach" then asks whether a float
+    /// distance is at most the float radius it was constructed to equal. On the
+    /// issue seed that knife edge decided eight places, seven of them one
+    /// prefab: roads the generator built to their front door, counted as not
+    /// serving them. Half a metre is inside the road's own width and cannot
+    /// reach a road that was not built there.
+    ///
+    /// PlacesServed keeps the original test so every earlier table still means
+    /// what it said; PlacesServedTolerant is the same test with this slack, and
+    /// the two are reported side by side rather than one replacing the other.
+    /// </summary>
+    public const float ServedTolerance = 0.5f;
+
     /// <summary>Two road ends this close together are one junction.</summary>
     public const float JoinRadius = 24f;
 
@@ -45,6 +63,12 @@ internal static class NetworkMetrics
         /// not say the road was built for that place, or that a player can walk
         /// from one to the other.</summary>
         public int PlacesServed;
+
+        /// <summary>Places served, counting a road end that lands exactly on
+        /// the place's own approach circle. See <see cref="ServedTolerance"/>:
+        /// this is the same measure with the boundary resolved, reported
+        /// beside the original rather than instead of it.</summary>
+        public int PlacesServedTolerant;
 
         /// <summary>Places the generator planned a road to and built it. Taken
         /// from the attempt log by the place's own identity, not by distance,
@@ -130,16 +154,22 @@ internal static class NetworkMetrics
         {
             float reach = Mathf.Max(ServedRadius, place.Radius);
             Vector2 at = new(place.Position.x, place.Position.z);
+            bool served = false, tolerant = false;
             foreach (RoadRoute route in routes)
             {
                 if (route.Points.Count == 0)
                     continue;
-                if (Near(route.Points[0], at, reach) || Near(route.Points[route.Points.Count - 1], at, reach))
-                {
-                    result.PlacesServed++;
+                Vector3 first = route.Points[0], last = route.Points[route.Points.Count - 1];
+                if (!served && (Near(first, at, reach) || Near(last, at, reach)))
+                    served = true;
+                if (!tolerant && (Near(first, at, reach + ServedTolerance)
+                        || Near(last, at, reach + ServedTolerance)))
+                    tolerant = true;
+                if (served && tolerant)
                     break;
-                }
             }
+            if (served) result.PlacesServed++;
+            if (tolerant) result.PlacesServedTolerant++;
         }
 
         (result.Components, result.LargestComponentRoutes) = Components(routes, places);

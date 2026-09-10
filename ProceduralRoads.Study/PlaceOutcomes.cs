@@ -51,7 +51,7 @@ internal static class PlaceOutcomes
     {
         StringBuilder sb = new();
         sb.Append("name,category,x,z,radius,priority,island_id,eligible,selected,")
-          .Append("planned_and_built,served,nearest_road_end_m,serving_reach_m\n");
+          .Append("planned_and_built,served,served_tolerant,nearest_road_end_m,serving_reach_m\n");
 
         // Selection is recorded per island by the generator, keyed the same way
         // the selection CSV is: name and rounded position.
@@ -75,7 +75,7 @@ internal static class PlaceOutcomes
             }
 
             float nearest = float.MaxValue;
-            bool served = false;
+            bool served = false, servedTolerant = false;
             foreach (RoadRoute route in routes)
             {
                 if (route.Points.Count == 0) continue;
@@ -84,6 +84,9 @@ internal static class PlaceOutcomes
                 // The same test the run's own counts use, not a paraphrase.
                 if (NetworkMetrics.Serves(first, at, reach) || NetworkMetrics.Serves(last, at, reach))
                     served = true;
+                if (NetworkMetrics.Serves(first, at, reach + NetworkMetrics.ServedTolerance)
+                    || NetworkMetrics.Serves(last, at, reach + NetworkMetrics.ServedTolerance))
+                    servedTolerant = true;
             }
 
             Island? island = null;
@@ -102,6 +105,7 @@ internal static class PlaceOutcomes
                   Mathf.RoundToInt(place.Position.z))) ? "true" : "false").Append(',')
               .Append(planned ? "true" : "false").Append(',')
               .Append(served ? "true" : "false").Append(',')
+              .Append(servedTolerant ? "true" : "false").Append(',')
               .Append(nearest == float.MaxValue ? "" : F(nearest)).Append(',')
               .Append(F(reach)).Append('\n');
         }
