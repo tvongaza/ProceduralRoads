@@ -50,14 +50,18 @@ because these worlds are archipelagos. Plan choice matters far less than that.
 | trunk and spurs | deprioritise | most junctions of any plan (29), but the worst boss coverage on all three worlds (drops 5, 1 and 6): its junctions are bought by not reaching things. |
 | the shipped plan | keep as the baseline | it reaches the most required destinations on two of three worlds; its weakness is shape, not reach — one tee in a world. |
 | nearest-connected-place fallback | worth a second look | serves 3 more places, for 38 more searches and 3.7 km more road running alongside other road. It does not join existing components. |
+| routed backbone + POI-to-network branches | **tested, and retired** | the combination the other two rows appear to argue for. It interpolates rather than combining: every threshold trades coverage against tees along the same curve its parents sit on, and none of them beats both. |
 | road-sharing discount | conditional | 12 km of distinct road saved once every place is selected; nothing at all at the study baseline. |
 | larger iteration budget | **test 30 000 as a candidate** | at the study's 100 000 the budget binds one attempt in 158; the mod ships at 10 000, where it binds 33, and on world A 10 000 → 30 000 added 10 roads and 10 strictly served places. Measured inside the study configuration, not a whole shipped default; diminishing above ~30 000; and no budget reaches what selection never chose. |
 
-**The one hypothesis this study now has a reason to test.** Routed-cost MST
-holds destinations and makes almost no tees; POI-to-network makes tees and
-drops destinations. A routed-cost backbone with POI-to-network branches is the
-obvious combination, and **it has not been built or measured.** It is the first
-follow-up experiment, not a recommendation.
+**The obvious combination was built, and it does not work.** Routed-cost MST
+holds destinations and makes almost no tees; POI-to-network makes tees and drops
+destinations; so a routed-cost backbone with POI-to-network branches ought to
+get both. **It gets neither.** Across three worlds and a sweep of where the
+backbone ends, the hybrid *interpolates* between its parents and is dominated by
+one or the other at every setting — best coverage 130 / 138 / 136 against the
+MST's 134 / 141 / 142, and 0 / 1 / 0 tees. Section 4 has the numbers and the
+reason.
 
 **What remains unproven.** Connectivity is measured geometrically, by endpoint
 proximity and by a shared-place rule, and neither establishes a walkable
@@ -486,6 +490,57 @@ island. Islands chosen for contrast say what happens on them, not how
 representative they are. The world table's differences are many small islands where the plan
 changed nothing plus a few large ones where it changed a great deal.
 
+### The hybrid, and why it fails
+
+Two rows of the shortlist look like an argument for a third. Routed-cost MST
+keeps destinations and makes almost no junctions; the reverse search makes
+junctions and loses destinations. So: a routed-cost tree over the places that
+must be reached, and the destination-free search for everything else. Where the
+backbone ends is a threshold on the generator's own priority table.
+
+Built, and swept on world A. The row at 101 puts nothing on the backbone and is
+therefore the reverse plan; it reproduces it exactly, which is the
+implementation's own check.
+
+| backbone carries priority ≥ | roads | served | served (+0.5 m) | tees | components | alongside | generate |
+|---|---|---|---|---|---|---|---|
+| 101 — nothing; the reverse plan | 86 | 123 | 132 | **28** | 46 | 0.1 km | 14.4 s |
+| 100 — boss altars only | 73 | 105 | 113 | 18 | 42 | 0.5 km | 15.1 s |
+| 80 — bosses, crypts, caves, API-registered | 85 | 118 | 124 | 2 | 45 | 2.7 km | 8.8 s |
+| 76 — the same set on this world | 85 | 118 | 124 | 2 | 45 | 2.7 km | 8.6 s |
+| 71 — nearly everything | 88 | 124 | **130** | 0 | 48 | 2.7 km | 7.9 s |
+| *(routed-cost MST, for reference)* | 90 | 126 | 134 | 0 | 50 | 2.7 km | 7.6 s |
+
+**Every setting is dominated by one parent or the other.** The threshold trades
+coverage against tees along the same curve the two parents already sit on: push
+the backbone out and it becomes the MST with slightly worse coverage; pull it in
+and it becomes the reverse search. A boss-only backbone is worse than both,
+because bosses are scattered and a tree over them alone builds long edges before
+anything can branch off them.
+
+At the default threshold on all three worlds:
+
+| world | shipped | routed-cost MST | POI-to-network | hybrid (≥ 80) | hybrid (≥ 71) |
+|---|---|---|---|---|---|
+| A | 131 served, 1 tee | 134, 0 | 132, 28 | 124, 2 | 130, 0 |
+| B | 139 served, 3 tees | 141, 1 | 136, 24 | 124, 2 | 138, 1 |
+| C | 146 served, 0 tees | 142, 0 | 123, 20 | 125, 2 | 136, 0 |
+
+**The reason is visible in the attempt log**, and it is the interesting part. A
+branch makes a tee only when its place has to *travel* to reach the network. The
+more backbone there is, the more of the remaining places are already within
+reach of it — the destination-free search stops immediately and builds nothing —
+or are unreachable for the same water reasons everything else is. On world A the
+reverse plan runs 70 branch searches and lands 41; the hybrid at ≥ 80 runs
+**12** and lands 4. The backbone swallows the very places whose journeys would
+have made the junctions.
+
+So the two behaviours are not separable by splitting the destination list. Tees
+come from *places far from the network having to reach it*, which is the same
+condition that makes coverage hard — and a backbone good enough to protect
+coverage removes it. Whether some other combination escapes that is open; this
+one does not, and the study is not proposing another.
+
 ### Fallbacks, re-measured
 
 A failed link can be retried against the nearest point on a road, or the
@@ -609,9 +664,10 @@ strongest candidate for preserving destination coverage among those tested —
 not strictly better than the shipped plan: 4 fewer places on world C, almost no
 tees (0, 1 and 0), and 2.3× the time on this harness. POI-to-network is the only
 thing that fixes the network's shape, but as a whole plan it drops required
-destinations on two worlds of three, so it belongs on *branches* off a backbone
-chosen some other way. That combination is the first experiment to run, and it
-has not been run.
+destinations on two worlds of three. **Putting it on branches off a routed-cost
+backbone was the obvious way to have both, and it was tried and does not work**
+— see section 4. Use one or the other for what it is good at, and treat the
+shape problem as unsolved for a plan that also has to protect coverage.
 
 **Deprioritise trunk-and-spurs**, which buys junctions by not reaching things.
 
@@ -631,14 +687,13 @@ move the recommendation.
 
 | # | outstanding evidence | what it would settle | cost |
 |---|---|---|---|
-| 1 | **the hybrid, measured**: a routed-cost backbone with POI-to-network branches, on the same three worlds and the same selected places as both standalone runs | whether it keeps the MST's destinations *and* the reverse search's junctions. If it does, it replaces both rows of the shortlist | a planner to write, then one sweep |
-| 2 | **the gameplay checklist below**, on the three islands named in section 4 | whether a tee is cart-traversable, whether a road end is an entrance, and whether two roads counted as one network are walkable — three metrics this study leans on | a session in game, on a stated build |
-| 3 | **the issue's own seed, `nRleKzu9bI`** | whether anything here describes the reporter's world. Nothing in this document does, so the answer to the issue is currently an argument about the rules rather than a measurement of their map | one dump, then one sweep |
-| 4 | **bound the dump's valid domain and rerun the comparison** | how much of the runtime ordering is the harness. The offline search settles invented ground past the world's rim, unevenly across plans (Appendix C), and the effect on runtime, coverage and geometry is unestablished. Deferred, not resolved: the rankings here are provisional on it | a bound in the harness, then one sweep |
-| 5 | **a fourth and fifth world** | whether POI-to-network's collapse on world C is the terrain or the sample. Every generalisation here rests on three worlds | one dump each, then one sweep |
-| 6 | **coverage by category for the three presets** | whether "settlements raised to compete" does what it was asked to do. The breakdown exists for the four planner runs and not for the presets | three runs, no new code |
-| 7 | **routing rerun at each span cap** (192, 256, 512 m) | whether a longer bridge recovers destinations, which Appendix B's straight-line table cannot say | four runs, no new code |
-| 8 | **the priced route, cached** | how much of routed-cost MST's 2.3× is redundant work: it routes every committed edge twice | a change to the planner, then one sweep |
+| 1 | **the gameplay checklist below**, on the three islands named in section 4 | whether a tee is cart-traversable, whether a road end is an entrance, and whether two roads counted as one network are walkable — three metrics this study leans on | a session in game, on a stated build |
+| 2 | **the issue's own seed, `nRleKzu9bI`** | whether anything here describes the reporter's world. Nothing in this document does, so the answer to the issue is currently an argument about the rules rather than a measurement of their map | one dump, then one sweep |
+| 3 | **bound the dump's valid domain and rerun the comparison** | how much of the runtime ordering is the harness. The offline search settles invented ground past the world's rim, unevenly across plans (Appendix C), and the effect on runtime, coverage and geometry is unestablished. Deferred, not resolved: the rankings here are provisional on it | a bound in the harness, then one sweep |
+| 4 | **a fourth and fifth world** | whether POI-to-network's collapse on world C is the terrain or the sample. Every generalisation here rests on three worlds | one dump each, then one sweep |
+| 5 | **coverage by category for the three presets** | whether "settlements raised to compete" does what it was asked to do. The breakdown exists for the four planner runs and not for the presets | three runs, no new code |
+| 6 | **routing rerun at each span cap** (192, 256, 512 m) | whether a longer bridge recovers destinations, which Appendix B's straight-line table cannot say | four runs, no new code |
+| 7 | **the priced route, cached** | how much of routed-cost MST's 2.3× is redundant work: it routes every committed edge twice | a change to the planner, then one sweep |
 
 ### The validation sequence, if it is run
 
@@ -682,7 +737,7 @@ from the game's line and one existed only in game.
 | road-sharing discount | existing road costs less to walk | world A, two densities | nothing at baseline; −12 km distinct at every place | conditional |
 | larger iteration budget | 5 000 → 120 000, inside the study configuration | world A | from the shipped 10 000: +10 roads and +10 strictly served by 30 000, +4 and +5 more by 100 000; flat above | test 30 000 as a candidate |
 | longer bridge span | not run — see Appendix B | — | — | untested |
-| routed-cost backbone + POI-to-network branches | not built | — | — | **first follow-up** |
+| routed-cost backbone + POI-to-network branches | routed tree over places at or above a priority, destination-free search for the rest | 3 worlds; threshold swept 71-101 on world A | dominated by one parent at every threshold: best 130 / 138 / 136 served with 0 / 1 / 0 tees | **tested, retired** |
 
 ## Appendix B. The failure atlas
 

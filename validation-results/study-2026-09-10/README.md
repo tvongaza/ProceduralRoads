@@ -18,12 +18,16 @@ not re-run.
 | `runs/<world>.<plan>.r1.crossings.csv` | the river crossings of that run, kind, style, banks and depth |
 | `runs/iters-<n>.*` | the iteration sweep, 5 000 to 120 000 |
 | `runs/fb-<kind>.*` | the fallback sweep, with the duplicate search removed |
+| `runs/<world>.hybrid.*` | the routed-cost backbone with POI-to-network branches, at the default threshold (priority >= 80) |
+| `runs/bb-<n>.manifest.json` | the same hybrid on world A with the backbone threshold swept: 71, 76, 100, 101. At 101 nothing rides the backbone, so it reproduces the reverse plan exactly |
+| `runs/<world>-bb<n>.manifest.json` | the two extreme thresholds on worlds B and C |
 | `Issue7-island-terrain.txt` | mean height gradient, bounding-box fill and coast-per-area for every island over 3 km2, and the three the comparison sheets use |
 
 Worlds are `Issue7` ("world A", seed `gqZ5SrFUjk` — **not** issue #7's own seed
 `nRleKzu9bI`, despite the name), `RoadTestMac2` ("world B") and
 `RoadTestAuto1` ("world C"). Plans are `parity` (the shipped plan),
-`routed-mst`, `trunk` and `reverse` (POI-to-network search). Repetitions are
+`routed-mst`, `trunk`, `reverse` (POI-to-network search) and `hybrid` (a routed
+backbone with POI-to-network branches). Repetitions are
 `warm` (a warm-up, never timed) and `r1`-`r3` (measured); only `r1` publishes
 its tables, because the three repetitions are byte-identical.
 
