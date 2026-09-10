@@ -9,6 +9,19 @@ public sealed class RoadAttempt
 {
     public int Index;
     public string Label = "";
+    /// <summary>Which island's generation produced this row. -1 when the row
+    /// was written outside an island's loop.</summary>
+    public int IslandId = -1;
+    /// <summary>What the plan was doing when it ran this search. A plan may
+    /// write more than one row for one connection - the reverse plan writes a
+    /// destination-free search and then the road build - so a count of rows is
+    /// not a count of connections, and this column is what separates
+    /// them.</summary>
+    public string Role = "leg";
+    /// <summary>The connection this row belongs to. Rows sharing an id are one
+    /// connection: the plan decided once, and this is how often it had to ask
+    /// the pathfinder to carry that decision out.</summary>
+    public int ConnectionId = -1;
     public Vector2 Start;
     public Vector2 End;
     public bool Connected;
@@ -50,7 +63,68 @@ public static class RoadAttemptLog
 
     public static IReadOnlyList<RoadAttempt> Attempts => m_attempts;
 
-    public static void Clear() => m_attempts.Clear();
+    /// <summary>
+    /// The island, role and connection every row written from here belongs to.
+    /// The generator sets them; the log only stamps them. They exist because a
+    /// row count answers no question on its own: the study needs to say how
+    /// many CONNECTIONS a plan made and how many SEARCHES that cost, and only
+    /// the generator knows which rows are the same decision.
+    /// </summary>
+    public static int Island = -1;
+
+    private static int m_connection = -1;
+    private static int m_nextConnection;
+    private static string m_role = "leg";
+    private static int? m_join;
+    private static string? m_nextRole;
+
+    /// <summary>
+    /// The role the next row should carry, and - when <paramref name="join"/>
+    /// is given - the connection it belongs to rather than a new one. Both are
+    /// consumed by the row that follows, so a caller that sets neither gets a
+    /// fresh connection labelled with the plan's default role.
+    /// </summary>
+    public static void NextRow(string role, int? join = null)
+    {
+        m_nextRole = role;
+        m_join = join;
+    }
+
+    /// <summary>Opens a connection explicitly, for a plan that runs more than
+    /// one search for one decision. Returns the id to hand back to
+    /// <see cref="NextRow"/>.</summary>
+    public static int OpenConnection(string role)
+    {
+        m_connection = m_nextConnection++;
+        m_role = role;
+        return m_connection;
+    }
+
+    /// <summary>Connections opened in this run, however many rows each cost.</summary>
+    public static int ConnectionCount => m_nextConnection;
+
+    /// <summary>Takes the pending role and connection for one row.</summary>
+    private static void ClaimRow()
+    {
+        if (m_join.HasValue)
+            m_connection = m_join.Value;
+        else
+            m_connection = m_nextConnection++;
+        m_role = m_nextRole ?? "leg";
+        m_join = null;
+        m_nextRole = null;
+    }
+
+    public static void Clear()
+    {
+        m_attempts.Clear();
+        m_connection = -1;
+        m_nextConnection = 0;
+        m_role = "leg";
+        m_join = null;
+        m_nextRole = null;
+        Island = -1;
+    }
 
     /// <summary>Installs a trace for one attempt, if recording is on and no
     /// other probe is watching. Returns the probe to hand back to
@@ -73,6 +147,7 @@ public static class RoadAttemptLog
             return;
 
         RoadPathfinder.Probe = null;
+        ClaimRow();
 
         RoadAttempt attempt = new()
         {
@@ -92,6 +167,9 @@ public static class RoadAttemptLog
                 trace.ClosestCell.y * RoadPathfinder.CellSize),
             RouteLength = routeLength,
             CrossingsOnRoad = crossingsOnRoad,
+            IslandId = Island,
+            Role = m_role,
+            ConnectionId = m_connection,
         };
 
         if (trace.UniqueExpandedCells > 0)
@@ -121,7 +199,7 @@ public static class RoadAttemptLog
         CrossingRejection[] causes = (CrossingRejection[])System.Enum.GetValues(typeof(CrossingRejection));
 
         StringBuilder sb = new();
-        sb.Append("attempt_index,label,connected,outcome,start_x,start_z,end_x,end_z,direct_distance,")
+        sb.Append("attempt_index,connection_id,role,island_id,label,connected,outcome,start_x,start_z,end_x,end_z,direct_distance,")
           .Append("route_length,crossings_on_road,iterations,settled_cells,blocked_moves,crossings_taken,")
           .Append("closest_approach,closest_x,closest_z,settled_min_x,settled_min_z,settled_max_x,settled_max_z");
         foreach (CrossingRejection cause in causes)
@@ -131,6 +209,9 @@ public static class RoadAttemptLog
         foreach (RoadAttempt a in m_attempts)
         {
             sb.Append(a.Index).Append(',')
+              .Append(a.ConnectionId).Append(',')
+              .Append('"').Append(a.Role).Append('"').Append(',')
+              .Append(a.IslandId).Append(',')
               .Append('"').Append(a.Label.Replace("\"", "\"\"")).Append('"').Append(',')
               .Append(a.Connected ? "true" : "false").Append(',')
               .Append('"').Append(a.Outcome).Append('"').Append(',')

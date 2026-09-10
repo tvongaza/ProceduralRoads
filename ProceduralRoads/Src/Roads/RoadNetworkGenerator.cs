@@ -292,7 +292,16 @@ public static partial class RoadNetworkGenerator
                 $"Island {island.Id}: {islandLocations.Count} candidates -> {selected.Count} selected (max {maxLocs}, area {island.ApproxArea/1_000_000:F1}km²)");
             
         bool isStarterIsland = island.ContainsPoint(locations.Value.SpawnPoint);
-            
+
+            // Study instrument: one island's own cost, measured around its own
+            // pass. Everything before this point is selection; everything
+            // inside is planning, searching and painting for this island alone.
+            int roadsBefore = m_roadsGeneratedCount;
+            int rowsBefore = RoadAttemptLog.Attempts.Count;
+            int connectionsBefore = RoadAttemptLog.ConnectionCount;
+            RoadAttemptLog.Island = island.Id;
+            System.DateTime islandStarted = System.DateTime.UtcNow;
+
             if (isStarterIsland)
             {
                 GenerateIslandRoadsForStrategy(island, selected, 
@@ -302,6 +311,30 @@ public static partial class RoadNetworkGenerator
             {
                 GenerateIslandRoadsForStrategy(island, selected);
             }
+
+            double islandSeconds = (System.DateTime.UtcNow - islandStarted).TotalSeconds;
+            RoadAttemptLog.Island = -1;
+            int failed = 0;
+            long settled = 0;
+            for (int r = rowsBefore; r < RoadAttemptLog.Attempts.Count; r++)
+            {
+                if (!RoadAttemptLog.Attempts[r].Connected) failed++;
+                settled += RoadAttemptLog.Attempts[r].UniqueExpandedCells;
+            }
+            RoadIslandLog.Add(new RoadIslandLog.Entry
+            {
+                IslandId = island.Id,
+                AreaKm2 = island.ApproxArea / 1_000_000f,
+                Ring = Mathf.FloorToInt(island.Center.magnitude / 1000f),
+                Candidates = islandLocations.Count,
+                Selected = selected.Count,
+                Seconds = islandSeconds,
+                Roads = m_roadsGeneratedCount - roadsBefore,
+                Searches = RoadAttemptLog.Attempts.Count - rowsBefore,
+                FailedSearches = failed,
+                Connections = RoadAttemptLog.ConnectionCount - connectionsBefore,
+                SettledCells = settled,
+            });
         }
 
         TimeSpan elapsed = DateTime.Now - startTime;
@@ -688,6 +721,7 @@ public static partial class RoadNetworkGenerator
             var nearest = unvisited[nearestIdx];
             unvisited.RemoveAt(nearestIdx);
             
+            RoadAttemptLog.NextRow("chain-leg");
             if (!GenerateRoad(current, currentRadius, nearest.position, nearest.radius, RoadWidth,
                     $"{currentName} -> {nearest.name}"))
                 TryFallbackConnection(nearest.position, nearest.radius, nearest.name, reached);
@@ -755,6 +789,7 @@ public static partial class RoadNetworkGenerator
             {
                 var from = nodes[parent[i]];
                 var to = nodes[i];
+                RoadAttemptLog.NextRow("mst-leg");
                 if (!GenerateRoad(from.position, from.radius, to.position, to.radius, RoadWidth,
                         $"{from.name} -> {to.name}"))
                     TryFallbackConnection(to.position, to.radius, to.name, built);
@@ -1026,6 +1061,7 @@ public static partial class RoadNetworkGenerator
         RoadRouteRecorder.Clear();
         RoadAttemptLog.Clear();
         RoadSelectionLog.Clear();
+        RoadIslandLog.Clear();
         ResetProbeCounters();
         ResetFallbackCounters();
         m_roadCrossings.Clear();

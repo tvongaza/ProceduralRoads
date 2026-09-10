@@ -136,9 +136,12 @@ public static partial class RoadNetworkGenerator
     private static float? Cost(Dictionary<(int, int), float> costs, int a, int b) =>
         costs.TryGetValue(a < b ? (a, b) : (b, a), out float cost) ? cost : null;
 
-    private static bool Build(Node from, Node to) =>
-        GenerateRoad(from.Position, from.Radius, to.Position, to.Radius, RoadWidth,
+    private static bool Build(Node from, Node to, string role = "leg")
+    {
+        RoadAttemptLog.NextRow(role);
+        return GenerateRoad(from.Position, from.Radius, to.Position, to.Radius, RoadWidth,
             $"{from.Name} -> {to.Name}");
+    }
 
     /// <summary>
     /// A minimum spanning tree on routed cost instead of straight-line
@@ -188,7 +191,7 @@ public static partial class RoadNetworkGenerator
                 continue;
             }
 
-            if (Build(nodes[bestFrom], nodes[bestTo]))
+            if (Build(nodes[bestFrom], nodes[bestTo], "mst-edge"))
                 inTree.Add(bestTo);
             else
                 costs.Remove(bestFrom < bestTo ? (bestFrom, bestTo) : (bestTo, bestFrom));
@@ -225,7 +228,7 @@ public static partial class RoadNetworkGenerator
         // a road sees it, not as the map sees it.
         (int a, int b) trunk = costs.OrderByDescending(entry => entry.Value).First().Key;
         HashSet<int> connected = new();
-        if (Build(nodes[trunk.a], nodes[trunk.b]))
+        if (Build(nodes[trunk.a], nodes[trunk.b], "trunk"))
         {
             connected.Add(trunk.a);
             connected.Add(trunk.b);
@@ -250,6 +253,7 @@ public static partial class RoadNetworkGenerator
             {
                 // A spur from a point on the road has no location at its start,
                 // so it is named for the road it leaves.
+                RoadAttemptLog.NextRow("spur");
                 if (GenerateRoad(junction.Value, 0f, nodes[node].Position, nodes[node].Radius, RoadWidth,
                         $"road -> {nodes[node].Name}"))
                 {
@@ -278,7 +282,7 @@ public static partial class RoadNetworkGenerator
                 continue;
             }
 
-            if (Build(nodes[bestAnchor], nodes[node]))
+            if (Build(nodes[bestAnchor], nodes[node], "spur-fallback-to-place"))
                 connected.Add(node);
         }
     }
@@ -312,7 +316,7 @@ public static partial class RoadNetworkGenerator
             return;
         }
         HashSet<int> connected = new() { 0, seed.Value.a, seed.Value.b };
-        Build(nodes[seed.Value.a], nodes[seed.Value.b]);
+        Build(nodes[seed.Value.a], nodes[seed.Value.b], "seed");
         List<int> waiting = Enumerable.Range(1, nodes.Count - 1).Where(i => !connected.Contains(i)).ToList();
 
         // Then, repeatedly, the place nearest the road as it now stands. The
@@ -353,12 +357,13 @@ public static partial class RoadNetworkGenerator
                     }
                 if (bestTo < 0)
                     break;
-                if (Build(nodes[bestFrom], nodes[bestTo]))
+                if (Build(nodes[bestFrom], nodes[bestTo], "branch-fallback-to-place"))
                     connected.Add(bestTo);
                 waiting.Remove(bestTo);
                 continue;
             }
 
+            RoadAttemptLog.NextRow("branch");
             if (GenerateRoad(nextJunction!.Value, 0f, nodes[next].Position, nodes[next].Radius, RoadWidth,
                     $"road -> {nodes[next].Name}"))
                 connected.Add(next);
@@ -445,7 +450,7 @@ public static partial class RoadNetworkGenerator
             return;
         }
         HashSet<int> done = new() { 0, seed.Value.a, seed.Value.b };
-        Build(nodes[seed.Value.a], nodes[seed.Value.b]);
+        Build(nodes[seed.Value.a], nodes[seed.Value.b], "seed");
 
         // Then every remaining place, most important first, reaches for it.
         List<int> waiting = Enumerable.Range(1, nodes.Count - 1).Where(i => !done.Contains(i)).ToList();
@@ -454,6 +459,12 @@ public static partial class RoadNetworkGenerator
         foreach (int node in waiting)
         {
             Node place = nodes[node];
+            // One decision, up to two searches: the destination-free search
+            // that finds the network, and the ordinary build along what it
+            // found. Both rows carry this id, so a reader counting connections
+            // is not misled by a plan that logs twice.
+            int connection = RoadAttemptLog.OpenConnection("branch");
+            RoadAttemptLog.NextRow("branch-search", connection);
             PathfinderTrace? trace = RoadAttemptLog.Begin();
             Vector2 from = new(place.Position.x, place.Position.z);
             List<Vector2>? path = m_pathfinder.FindPathToNetwork(
@@ -473,6 +484,7 @@ public static partial class RoadNetworkGenerator
             RoadAttemptLog.Finish(trace, $"{place.Name} -> road", from, path[path.Count - 1],
                 connected: true, "found", 0f, 0);
             Vector3 junction = new(path[path.Count - 1].x, 0f, path[path.Count - 1].y);
+            RoadAttemptLog.NextRow("branch-build", connection);
             if (GenerateRoad(place.Position, place.Radius, junction, 0f, RoadWidth, $"{place.Name} -> road"))
                 done.Add(node);
         }
@@ -500,6 +512,7 @@ public static partial class RoadNetworkGenerator
         if (road)
         {
             Vector3? junction = NearestPointOnBuiltRoad(target);
+            RoadAttemptLog.NextRow("fallback-road");
             if (junction.HasValue
                 && GenerateRoad(junction.Value, 0f, target, targetRadius, RoadWidth, $"road -> {targetName}"))
             {
@@ -517,6 +530,7 @@ public static partial class RoadNetworkGenerator
                 float distance = Vector3.Distance(candidate.position, target);
                 if (distance < best) { best = distance; nearest = candidate; }
             }
+            RoadAttemptLog.NextRow("fallback-place");
             if (nearest.HasValue
                 && GenerateRoad(nearest.Value.position, nearest.Value.radius, target, targetRadius, RoadWidth,
                     $"{nearest.Value.name} -> {targetName}"))
@@ -620,7 +634,7 @@ public static partial class RoadNetworkGenerator
                 if (bestHub < 0)
                     continue;
 
-                if (Build(nodes[bestHub], nodes[node]))
+                if (Build(nodes[bestHub], nodes[node], "spoke"))
                     served.Add(node);
                 else
                     served.Add(node);   // attempted and failed: it is not waiting on a hub
@@ -648,7 +662,7 @@ public static partial class RoadNetworkGenerator
             }
 
             if (nearestHub >= 0)
-                Build(nodes[nearestHub], nodes[promoted]);
+                Build(nodes[nearestHub], nodes[promoted], "hub-link");
 
             hubs.Add(promoted);
             served.Add(promoted);

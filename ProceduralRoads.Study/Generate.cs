@@ -57,12 +57,19 @@ internal static class Generate
 
         Directory.CreateDirectory(outDir);
 
+        // Four stages, timed apart. A single number for a run cannot be
+        // compared across plans, because reading a quarter-gigabyte dump and
+        // measuring a finished network are not what a planner costs - and the
+        // study's own 21x runtime claim came from comparing numbers whose
+        // scopes did not match.
+        System.Diagnostics.Stopwatch stage = System.Diagnostics.Stopwatch.StartNew();
         CsvWorld world = new CsvWorld().LoadIslandGrid(gridPath);
         foreach (string path in terrainPaths)
             world.Load(path);
         WorldGenerator.instance = world;
 
         List<Program.Location> locations = Program.ReadLocations(locationsPath);
+        TimeSpan loadElapsed = stage.Elapsed;
         ZoneSystem zones = new();
         foreach (Program.Location location in locations)
         {
@@ -97,7 +104,7 @@ internal static class Generate
         Console.WriteLine($"factors:   {StudyFactors.Describe()}");
         Console.WriteLine($"places:    {Presets.Describe()}");
 
-        DateTime started = DateTime.UtcNow;
+        stage.Restart();
         try
         {
             RoadNetworkGenerator.GenerateRoads(force: true);
@@ -107,22 +114,37 @@ internal static class Generate
             Console.Error.WriteLine($"ABORTED: the run asked the world for a position the dumps do not cover.\n  {error.Message}");
             return 3;
         }
-        TimeSpan elapsed = DateTime.UtcNow - started;
+        TimeSpan elapsed = stage.Elapsed;
 
         IReadOnlyList<RoadRoute> routes = RoadRouteRecorder.Routes;
         IReadOnlyList<RoadAttempt> attempts = RoadAttemptLog.Attempts;
         IReadOnlyList<RoadCrossing> sites = RoadNetworkGenerator.GetRoadCrossings();
 
-        File.WriteAllText(Path.Combine(outDir, $"{label}.routes.csv"), RoadRouteRecorder.ToCsv());
+        stage.Restart();
+        NetworkMetrics.Result metrics = NetworkMetrics.Measure(routes, locations, attempts);
+        List<Island> islands = IslandDetector.DetectIslands();
+        string placesCsv = PlaceOutcomes.ToCsv(locations, routes, attempts, islands);
+        TimeSpan analysisElapsed = stage.Elapsed;
+
+        stage.Restart();
+        if (!Options.Has(args, "--no-routes"))
+            File.WriteAllText(Path.Combine(outDir, $"{label}.routes.csv"), RoadRouteRecorder.ToCsv());
         File.WriteAllText(Path.Combine(outDir, $"{label}.attempts.csv"), RoadAttemptLog.ToCsv());
         File.WriteAllText(Path.Combine(outDir, $"{label}.selection.csv"), RoadSelectionLog.ToCsv());
         File.WriteAllText(Path.Combine(outDir, $"{label}.crossings.csv"), RoadCrossingCsv.ToCsv(sites));
+        File.WriteAllText(Path.Combine(outDir, $"{label}.islands.csv"), RoadIslandLog.ToCsv());
+        File.WriteAllText(Path.Combine(outDir, $"{label}.places.csv"), placesCsv);
+        TimeSpan exportElapsed = stage.Elapsed;
+
         File.WriteAllText(Path.Combine(outDir, $"{label}.manifest.json"),
             Manifest(label, strategy, fords, bridges, islandPercentage, iterations, maxLocations, width,
-                NetworkMetrics.Measure(routes, locations, attempts),
-                gridPath, terrainPaths, locationsPath, world, routes, attempts, sites, elapsed));
+                metrics, gridPath, terrainPaths, locationsPath, world, routes, attempts, sites,
+                elapsed, loadElapsed, analysisElapsed, exportElapsed));
 
         Report(routes, attempts, sites, locations, elapsed, outDir, label);
+        Console.WriteLine($"stages:    load {loadElapsed.TotalSeconds:F1} s, generate {elapsed.TotalSeconds:F1} s, " +
+                          $"analyse {analysisElapsed.TotalSeconds:F1} s, export {exportElapsed.TotalSeconds:F1} s " +
+                          $"({Build.Configuration} build)");
         return 0;
     }
 
@@ -326,20 +348,17 @@ internal static class Generate
     /// <summary>The commit the study code was built from, if it can be read.</summary>
     private static string GitDescribe()
     {
+        // With the dirty marker, because the q4 family of runs recorded a
+        // commit whose tree did not contain the code that produced them: the
+        // run happened two minutes before the commit that added the metrics
+        // it reported. A commit id that can be wrong is worse than no id.
         try
         {
-            System.Diagnostics.ProcessStartInfo info = new("git", "rev-parse --short HEAD")
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            };
-            using System.Diagnostics.Process? process = System.Diagnostics.Process.Start(info);
-            if (process == null)
+            string head = Git("rev-parse --short HEAD");
+            string dirty = Git("status --porcelain --untracked-files=no");
+            if (head.Length == 0)
                 return "unknown";
-            string output = process.StandardOutput.ReadToEnd().Trim();
-            process.WaitForExit(3000);
-            return output.Length > 0 ? output : "unknown";
+            return dirty.Length > 0 ? head + "-dirty" : head;
         }
         catch (Exception)
         {
@@ -347,11 +366,35 @@ internal static class Generate
         }
     }
 
+    private static string Git(string arguments)
+    {
+        try
+        {
+            System.Diagnostics.ProcessStartInfo info = new("git", arguments)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            using System.Diagnostics.Process? process = System.Diagnostics.Process.Start(info);
+            if (process == null)
+                return "";
+            string output = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit(3000);
+            return output;
+        }
+        catch (Exception)
+        {
+            return "";
+        }
+    }
+
     private static string Manifest(string label, RoadNetworkStrategy strategy, bool fords, bool bridges,
         int islandPercentage, int iterations, int maxLocations, float width, NetworkMetrics.Result metrics,
         string gridPath, string[] terrainPaths, string locationsPath, CsvWorld world,
         IReadOnlyList<RoadRoute> routes, IReadOnlyList<RoadAttempt> attempts,
-        IReadOnlyList<RoadCrossing> sites, TimeSpan elapsed)
+        IReadOnlyList<RoadCrossing> sites, TimeSpan elapsed,
+        TimeSpan loadElapsed, TimeSpan analysisElapsed, TimeSpan exportElapsed)
     {
         string Json(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"");
         // A run nobody can reproduce is not evidence. The manifest carries what
@@ -365,6 +408,13 @@ internal static class Generate
             $"  \"label\": \"{Json(label)}\",",
             $"  \"studyCommit\": \"{Json(GitDescribe())}\",",
             $"  \"generatedUtc\": \"{DateTime.UtcNow:yyyy-MM-ddTHH:mm:ssZ}\",",
+            // The build configuration belongs in the manifest because it is
+            // worth a factor of six on this workload, and two runs that did
+            // not record it were compared as if it were free.
+            $"  \"buildConfiguration\": \"{Build.Configuration}\",",
+            $"  \"runtime\": \"{Json(System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription)}\",",
+            $"  \"platform\": \"{Json(System.Runtime.InteropServices.RuntimeInformation.OSDescription.Split('\n')[0])} {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture}\",",
+            $"  \"processors\": {Environment.ProcessorCount},",
             "  \"terrain\": \"approx\",",
             $"  \"islandGrid\": \"{Json(Path.GetFileName(gridPath))}\",",
             $"  \"islandGridSha\": \"{FileDigest(gridPath)}\",",
@@ -405,7 +455,21 @@ internal static class Generate
             $"    \"crossingCount\": {sites.Count},",
             $"    \"bridgeCount\": {sites.Count(c => c.Kind == CrossingKind.Bridge)},",
             $"    \"roadNetworkVersion\": {RoadSpatialGrid.RoadNetworkVersion},",
-            $"    \"seconds\": {elapsed.TotalSeconds:F1}",
+            // Rows, connections and searches are three different counts and
+            // the study needs all three: one plan writes two rows for one
+            // connection, and a priced plan runs searches that write no row
+            // at all.
+            $"    \"connectionCount\": {RoadAttemptLog.ConnectionCount},",
+            $"    \"buildSearches\": {attempts.Count},",
+            $"    \"planningSearches\": {RoadNetworkGenerator.RoutingProbes},",
+            $"    \"totalSearches\": {attempts.Count + RoadNetworkGenerator.RoutingProbes},",
+            $"    \"expandedCells\": {attempts.Sum(a => (long)a.UniqueExpandedCells)},",
+            $"    \"islandsWithRoads\": {RoadIslandLog.Entries.Count(i => i.Roads > 0)},",
+            $"    \"seconds\": {elapsed.TotalSeconds:F1},",
+            $"    \"loadSeconds\": {loadElapsed.TotalSeconds:F1},",
+            $"    \"generateSeconds\": {elapsed.TotalSeconds:F2},",
+            $"    \"analysisSeconds\": {analysisElapsed.TotalSeconds:F2},",
+            $"    \"exportSeconds\": {exportElapsed.TotalSeconds:F2}",
             "  }",
             "}",
         };
@@ -421,5 +485,13 @@ internal static class Options
             if (args[i] == name)
                 return args[i + 1];
         return null;
+    }
+
+    public static bool Has(string[] args, string name)
+    {
+        foreach (string arg in args)
+            if (arg == name)
+                return true;
+        return false;
     }
 }

@@ -266,6 +266,10 @@ internal static class NetworkMetrics
         return unique;
     }
 
+    /// <summary>The serving test itself, so a per-place table and the run's
+    /// own counts cannot disagree about one place.</summary>
+    public static bool Serves(Vector3 point, Vector2 at, float radius) => Near(point, at, radius);
+
     private static bool Near(Vector3 point, Vector2 at, float radius)
     {
         float dx = point.x - at.x, dz = point.z - at.y;

@@ -98,7 +98,7 @@ public class AttemptLogTests
 
             string[] lines = RoadAttemptLog.ToCsv().Split('\n').Where(l => l.Length > 0).ToArray();
             Assert.Equal(3, lines.Length);
-            Assert.StartsWith("attempt_index,label,connected,outcome,", lines[0]);
+            Assert.StartsWith("attempt_index,connection_id,role,island_id,label,connected,outcome,", lines[0]);
             foreach (CrossingRejection cause in System.Enum.GetValues(typeof(CrossingRejection)))
                 Assert.Contains($",reject_{cause}", lines[0]);
             Assert.Contains("\"ok\",true,\"found\"", lines[1]);
