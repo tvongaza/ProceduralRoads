@@ -1,9 +1,10 @@
 # Planner comparison, 10 September 2026
 
-Pictures for section 4 of `docs/road-network-strategies.md`. All from the issue
-#7 seed, generated offline on terrain dumped at the pathfinder's own 8 m
-spacing (Valheim 0.221.12, buildid 21981559), with fords and bridges enabled
-and every island selected.
+Pictures for section 4 of `docs/road-network-strategies.md`. All from world A
+(seed `gqZ5SrFUjk`; the world is named `Issue7` in the run files but it is
+**not** issue #7's own seed), generated offline on terrain dumped at the
+pathfinder's own 8 m spacing (Valheim 0.221.12, buildid 21981559), with fords
+and bridges enabled and every island selected.
 
 Land is drawn one pixel per 8 m cell. Water is three different things: a
 swamp's shallows, a river, and the sea. Roads: black where ordinary, green

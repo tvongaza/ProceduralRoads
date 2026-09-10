@@ -20,8 +20,9 @@ not re-run.
 | `runs/fb-<kind>.*` | the fallback sweep, with the duplicate search removed |
 | `Issue7-island-terrain.txt` | mean height gradient, bounding-box fill and coast-per-area for every island over 3 km2, and the three the comparison sheets use |
 
-Worlds are `Issue7` (the issue's seed, `gqZ5SrFUjk`), `RoadTestMac2` ("world B")
-and `RoadTestAuto1` ("world C"). Plans are `parity` (the shipped plan),
+Worlds are `Issue7` ("world A", seed `gqZ5SrFUjk` — **not** issue #7's own seed
+`nRleKzu9bI`, despite the name), `RoadTestMac2` ("world B") and
+`RoadTestAuto1` ("world C"). Plans are `parity` (the shipped plan),
 `routed-mst`, `trunk` and `reverse` (POI-to-network search). Repetitions are
 `warm` (a warm-up, never timed) and `r1`-`r3` (measured); only `r1` publishes
 its tables, because the three repetitions are byte-identical.
