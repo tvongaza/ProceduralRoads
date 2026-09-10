@@ -235,6 +235,16 @@ internal static class Generate
                 throw new ArgumentException($"--places must be all, formula or a number, not '{places}'");
         }
 
+        string? tie = Options.Value(args, "--tie-break");
+        if (tie != null)
+            StudyFactors.TieBreak = tie switch
+            {
+                "list" => PriorityTieBreak.ListOrder,
+                "shuffle" => PriorityTieBreak.SeededShuffle,
+                "spread" => PriorityTieBreak.Spread,
+                _ => throw new ArgumentException($"--tie-break must be list, shuffle or spread, not '{tie}'"),
+            };
+
         string? multiplier = Options.Value(args, "--quota-multiplier");
         if (multiplier != null)
             StudyFactors.QuotaMultiplier = int.Parse(multiplier, CultureInfo.InvariantCulture);

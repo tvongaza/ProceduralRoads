@@ -84,6 +84,26 @@ public enum IslandQuota
 }
 
 /// <summary>How the chosen places are connected.</summary>
+/// <summary>
+/// How a tie in priority is broken when an island's quota cannot take every
+/// place of equal importance.
+/// </summary>
+public enum PriorityTieBreak
+{
+    /// <summary>Whatever order the location list gave them. The shipped
+    /// behaviour, and an accident: it makes prefab enumeration order the
+    /// selector.</summary>
+    ListOrder,
+
+    /// <summary>A hash of the world seed and the place's own position, so the
+    /// choice is arbitrary but not biased, and reproducible.</summary>
+    SeededShuffle,
+
+    /// <summary>Farthest-first within the band: take the place furthest from
+    /// everything already taken.</summary>
+    Spread,
+}
+
 public enum ConnectionPlan
 {
     /// <summary>The shipped rule: MST on even island ids, nearest-neighbour
@@ -167,6 +187,9 @@ public static class StudyFactors
     /// </summary>
     public static int QuotaMultiplier = 1;
 
+    /// <summary>How a tie in priority is broken. See <see cref="PriorityTieBreak"/>.</summary>
+    public static PriorityTieBreak TieBreak = PriorityTieBreak.ListOrder;
+
     /// <summary>How many places an island may have roads to.</summary>
     public static IslandQuota Quantity = IslandQuota.AreaFormula;
 
@@ -230,7 +253,7 @@ public static class StudyFactors
     public static string Describe() =>
         $"anchor={Anchor}, islands={Islands}, sharing={ExistingRoadCostFraction:0.##}, places={Quantity}" +
         (Quantity == IslandQuota.FixedCount ? $"({FixedPlaceCount})" : "") +
-        $", quota={Quota}, plan={Plan}" +
+        $", quota={Quota}, tie={TieBreak}, plan={Plan}" +
         (Plan == ConnectionPlan.RoutedBackboneReverseBranches ? $"(backbone>={BackbonePriority})" : "") +
         $", fallback={Fallback}, " +
         $"filterEndpoints={FilterUnreachableEndpoints}, snapEndpoints={SnapEndpointsToPathableGround}";

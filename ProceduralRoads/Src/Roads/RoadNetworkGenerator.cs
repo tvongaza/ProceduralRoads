@@ -663,11 +663,101 @@ public static partial class RoadNetworkGenerator
     {
         if (candidates.Count <= maxCount)
             return candidates;
-        
-        return candidates
+
+        // OrderByDescending is a STABLE sort, so places of equal priority keep
+        // the order the location list happened to give them - and on this
+        // world that decides the outcome for every place on every island where
+        // the quota binds. Sunken crypts sit near the front of the list and
+        // mountain caves near the back, so at equal priority the swamp is
+        // selected at 90 % and the mountain at 51 %. Nobody chose that.
+        if (StudyFactors.TieBreak == PriorityTieBreak.ListOrder)
+        {
+            return candidates
+                .OrderByDescending(loc => GetLocationPriority(loc.name))
+                .Take(maxCount)
+                .ToList();
+        }
+
+        if (StudyFactors.TieBreak == PriorityTieBreak.SeededShuffle)
+        {
+            // A per-place key from the world seed and the place's own position:
+            // order-independent, so it does not matter what order the list
+            // arrives in, and identical for the same world every time.
+            int seed = WorldGenerator.instance?.GetSeed() ?? 0;
+            return candidates
+                .OrderByDescending(loc => GetLocationPriority(loc.name))
+                .ThenBy(loc => TieKey(seed, loc.position))
+                .Take(maxCount)
+                .ToList();
+        }
+
+        // Spread: among places the quota can still afford, take the one
+        // farthest from everything already taken. Priority still comes first -
+        // this only decides which of an equally important set to keep - but
+        // within a band it spreads the choice over the island instead of over
+        // the location list.
+        List<(string name, Vector3 position, float radius)> pool = candidates
             .OrderByDescending(loc => GetLocationPriority(loc.name))
-            .Take(maxCount)
             .ToList();
+        List<(string name, Vector3 position, float radius)> chosen = new();
+        while (chosen.Count < maxCount && pool.Count > 0)
+        {
+            int band = GetLocationPriority(pool[0].name);
+            int end = 0;
+            while (end < pool.Count && GetLocationPriority(pool[end].name) == band)
+                end++;
+
+            int room = maxCount - chosen.Count;
+            if (end <= room)
+            {
+                // The whole band fits; no choice to make.
+                chosen.AddRange(pool.GetRange(0, end));
+                pool.RemoveRange(0, end);
+                continue;
+            }
+
+            for (int taken = 0; taken < room; taken++)
+            {
+                int best = 0;
+                float bestDistance = -1f;
+                for (int i = 0; i < end; i++)
+                {
+                    float nearest = float.MaxValue;
+                    foreach ((string name, Vector3 position, float radius) already in chosen)
+                        nearest = Mathf.Min(nearest, Vector3.SqrMagnitude(already.position - pool[i].position));
+                    if (chosen.Count == 0)
+                        nearest = 0f;
+                    if (nearest > bestDistance)
+                    {
+                        bestDistance = nearest;
+                        best = i;
+                    }
+                }
+                chosen.Add(pool[best]);
+                pool.RemoveAt(best);
+                end--;
+            }
+        }
+        return chosen;
+    }
+
+    /// <summary>
+    /// A stable per-place ordering key from the world seed and the place's own
+    /// position. Not a shuffle of a list - a hash of the place - so the answer
+    /// does not depend on what order the places arrived in.
+    /// </summary>
+    private static uint TieKey(int seed, Vector3 position)
+    {
+        unchecked
+        {
+            uint h = (uint)seed * 2166136261u;
+            h = (h ^ (uint)Mathf.RoundToInt(position.x)) * 16777619u;
+            h = (h ^ (uint)Mathf.RoundToInt(position.z)) * 16777619u;
+            h ^= h >> 13;
+            h *= 2246822519u;
+            h ^= h >> 16;
+            return h;
+        }
     }
 
     /// <summary>The generator's own priority for a place, for study tables.</summary>
