@@ -62,7 +62,7 @@
 <text x="707.8" y="293.2" font-size="9.5" fill="#1f2933" text-anchor="middle">3</text>
 <text x="655.0" y="321" font-size="11" fill="#3f7a4d" text-anchor="middle">POI-to-network</text>
 <line x1="60" y1="304" x2="740" y2="304" stroke="#1f2933"/>
-<text x="16" y="180.0" font-size="11" fill="#1f2933" text-anchor="middle" transform="rotate(-90 16 180.0)">places served</text>
+<text x="16" y="180.0" font-size="11" fill="#1f2933" text-anchor="middle" transform="rotate(-90 16 180.0)">places served (+0.5 m)</text>
 <rect x="60" y="351" width="11" height="11" fill="#a03030"/>
 <text x="76" y="360" font-size="11" fill="#1f2933">boss altars (required)</text>
 <rect x="290" y="351" width="11" height="11" fill="#2f6f8f"/>
@@ -73,5 +73,5 @@
 <text x="76" y="378" font-size="11" fill="#1f2933">settlements</text>
 <rect x="290" y="369" width="11" height="11" fill="#9aa5b1"/>
 <text x="306" y="378" font-size="11" fill="#1f2933">ruins and towers</text>
-<text x="10" y="40" font-size="11" fill="#1f2933">Issue7; every boss altar on a selected island is required, the rest are what the priority table happened to select</text>
+<text x="10" y="40" font-size="11" fill="#1f2933">world A (Issue7 in the run files; NOT issue #7's seed). Every boss altar on a selected island is required; the rest are what the priority table happened to select. Counts use the +0.5 m serving test.</text>
 </svg>
