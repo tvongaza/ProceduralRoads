@@ -1,231 +1,160 @@
 # Road networks: a routing study
 
-**Preliminary; routing study; gameplay validation pending.** Everything below
-is measured on generated networks — road counts, lengths, what connects to
-what, and why a connection failed. None of it has been played. Where a number
-would change a design decision, it needs a session in game first, and the
-places that most need one are named in section 6. The strategy ranking in
-particular should not be read as settled: the plans differ by a few places
-served, which is inside the distance between this offline model and the game.
-What was raised in review and has since been corrected is listed in Appendix D,
-so the record of what changed is in the document.
+**Offline routing study. No part of it has been played.** Every number below is
+measured on generated networks — road counts, lengths, what connects to what,
+why a connection failed, and what each plan cost to run. Section 6 says which
+claims a session in game would settle and which it would not.
 
-This came out of issue #7 ("Roads seem to be limited to 2-3 per island").
-It reproduces what the issue describes, finds a different cause than the one
-being tuned there, and lays out a shortlist of what to build next and the
-evidence that would settle the choice. Section 1 carries both.
+This came out of issue #7 ("Roads seem to be limited to 2-3 per island"). It
+reproduces what the issue describes, finds a different cause than the one being
+tuned there, and ends with a shortlist and the evidence behind it.
 
-**How to read the authorship of this document.** The measurements, the runs and
-the code are the study's. The prose is written by an AI assistant working from
-those runs, for a human to check and edit. A heading marked with a dagger (†)
-contains prose written in the 9 September restructure; a heading without one is
-earlier text, moved but not reworded. The numbered top-level sections and the
-appendix lettering are themselves part of that restructure. Any claim that
-would need a measurement nobody has taken is written as a block quote beginning
-**MEASUREMENT NEEDED**, so the gaps can be found by searching for that phrase
-rather than inferred from silence.
+*Authorship and provenance.* The measurements, the runs and the code are the
+study's. The prose is written by an AI assistant working from those runs, for a
+human to check and edit. Appendix D names the code, the inputs and the machine
+behind every table; Appendix E lists what an earlier draft of this document got
+wrong and what the correction was.
 
-## 1. Executive summary and recommended next experiments †
+## 1. Executive summary
 
-**Preliminary. This section is a provisional recommendation, not a decision.**
-
-*Why are networks sparse?* Not the search. On the issue's seed 2 470 places
-are eligible for a road, and the per-island quota — `2 + area / 2 km²` —
-selects 158 of them. **About 93 % of eligible places never get an attempt at all**;
-pathfinding failure accounts for roughly one per cent, and the iteration budget
-the issue discusses for one place in the world. Raising the search budget
+**Why are networks sparse?** Not the search. On the issue's seed 2 470 places
+are eligible for a road and the per-island quota — `2 + area / 2 km²` — selects
+158 of them. **About 93 % of eligible places never get an attempt at all.**
+Pathfinding failure accounts for roughly one per cent and the iteration budget,
+the setting the issue discusses, for one place in the world. Raising the budget
 cannot recover destinations that were never selected.
 
-*Which controls matter most?* Three, in this order. **The quota**: lifting it
-to every eligible place takes the network from 88 roads and 123 places served
-to 2 080 roads and 2 322 served. **The selection policy** at a fixed count:
-choosing the nearest places after priority serves 142 where a fixed draw serves
-109 — a wider spread than any planner change measured here. **Water
-traversal**: fords and bridges together take 72 places served to 123.
+**What limits the network above that?** Water. Of the 27 failures in the run
+with no wasted anchors, 26 are a channel a road cannot cross; the median is
+256 m against a 128 m bridge cap. And the largest connected run of road
+anywhere, under every plan and on all three worlds, is four to six roads,
+because these worlds are archipelagos. Plan choice matters far less than that.
 
-*Which planners deserve further work?* **Routed-cost MST**, as a backbone
-candidate, because it prices every edge by running the pathfinder on it before
-committing. **POI-to-network search**, as the junction candidate, because it
-produces 28 tee junctions against the shipped plan's 1 and 0.1 km of road
-running alongside other road against 4.8 km.
+**Which planners deserve further work?**
 
-*What remains unproven?* Walkable connectivity — roads are joined here
-geometrically, by an endpoint within 24 m, with no regard for elevation or what
-lies between. Gameplay quality — nothing in this document has been played.
-And whether the finer strategy results generalise: the broad results hold on
-three worlds, the plan comparison was measured on the issue seed alone.
-
-### The shortlist †
-
-| approach | recommendation | reason |
+| approach | recommendation | why |
 |---|---|---|
-| routed-cost MST | advance as a backbone candidate | plans around actual routing costs; modest coverage gain (126 served against 123); the extra planning work must stay visible — 261 planning searches on this world |
-| POI-to-network search | advance as the junction candidate | same reported served count (123), 28 tees against 1, and 0.1 km alongside road against 4.8 km |
-| trunk plus spurs | retain as a contrasting gameplay candidate | strong main-road shape (29 tees, the most of any plan), but lower coverage (118) and 5.1 km of parallel running |
-| nearest-point growth / hub-and-spoke | lower priority for now | current results show less compelling advantages |
-| road-sharing discount | conditional optimisation | helps dense networks: 12 km of distinct road saved with every place selected, nothing at all at the study baseline |
-| larger iteration budget / simple fallback | lower priority | limited coverage benefit under the tested conditions; the fallbacks move served count by zero |
+| **routed-cost MST** | **advance** | it stays closest to the shipped plan on the thing that matters most and improves everything else. Coverage +3, +2 and −4 places on the three worlds; of the shipped plan's own destinations it drops 0, 3 and 7, and of its boss altars 0, 0 and 2 — less than half what either other plan drops. It nearly ends failed builds: 0, 0 and 2 failures of 90, 93 and 96 build searches, against 70, 70 and 75 of 158, 163 and 171. It costs 2.3× the generation time and makes **no junctions at all**. |
+| **POI-to-network search** | **advance as a branch mechanism, not as a whole plan** | the only plan that makes junctions without spending road to do it: 28 tees against the shipped plan's 1, 0.1 km of road running alongside other road against 4.8 km, and summed route length equal to distinct road on every world, so almost nothing is built twice. Against that it drops 10, 17 and 32 of the shipped plan's destinations, 3 and 6 of its boss altars on two worlds, and 23 places of net coverage on the third. |
+| trunk and spurs | deprioritise | most junctions of any plan (29) and the flattest ones, but the worst coverage on the issue seed, and the worst boss coverage on all three worlds (drops 5, 1 and 6). Its junctions are bought by not reaching things, and it still runs 5.1 km alongside itself. |
+| the shipped plan | keep as the baseline | it reaches the most required destinations on two of three worlds. Its weakness is shape, not reach. |
+| nearest-connected-place fallback | worth a second look | with a counting bug fixed it buys 3 places and joins one more group for 32 fewer searches than the version this study first measured. It costs 3.7 km of road running alongside other road. |
+| road-sharing discount | conditional | nothing at the study baseline, 12 km of distinct road saved with every place selected. |
+| larger iteration budget | no | the budget binds one attempt in 158, and the setting's own ceiling is already past the plateau. |
 
-**A routed-cost backbone followed by POI-to-network branches is a promising
-next hypothesis — not a demonstrated winner.** Nothing here has tested the
-combination. It has to be run against both standalone approaches on the same
-inputs before it can be preferred to either.
+**The one hypothesis this study now has a reason to test.** Routed-cost MST
+holds destinations and makes no junctions; POI-to-network makes junctions and
+drops destinations. A routed-cost backbone with POI-to-network branches is the
+obvious combination, and **it has not been built or measured.** It is the first
+follow-up experiment, not a recommendation.
 
-### The evidence needed to choose †
+**What remains unproven.** Walkable connectivity: roads are joined here
+geometrically, by an endpoint within 24 m. Appendix C measures the height
+across every one of those joins and finds none worse than 5.7 m, which bounds
+the risk without removing it. And gameplay quality — nothing here has been
+played.
 
-The shortlist above is ordered on geometry. Four measurements would turn it
-into a recommendation, and none of them exists yet:
+![four planners, three worlds: coverage, road and time](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-10/chart-tradeoff.png)
 
-1. **Destination overlap.** Routed MST and POI-to-network report 126 and 123
-   places served against the study baseline's 123. Equal or near-equal counts
-   do not establish that the *same* places were served, or the same bosses.
-   See the MEASUREMENT NEEDED note in section 4.
-2. **Per-island generation time.** The POI-to-network search costs 84 seconds
-   offline against 4 — a **21× increase** in offline runtime. Whether that is
-   acceptable for the single-island regeneration the tooling already has
-   depends on a per-island timing measurement nobody has taken.
-3. **The combination.** Routed-cost backbone plus POI-to-network branches, on
-   the same seed and the same selected places as both standalone runs.
-4. **The in-game checklist in section 6**, on at least one island from each of
-   the three contrasting island types named there.
+## 2. Setup and definitions
 
-## 2. Experiment setup
-
-### How this was measured
+### What produced the numbers
 
 Road generation was run against terrain read back from a dump of the world,
 using the mod's own island detection, location rules, pathfinder and painting.
-A whole world takes about four seconds that way, so a comparison that would
-have taken hours in game takes minutes, and every run can be repeated exactly.
+A whole world takes a few seconds that way, and every run repeats exactly.
 
-The dumps sample the positions the game itself samples: the 128 m grid island
-detection reads, and the 8 m cells the pathfinder walks. Heights, biomes and
-river weights at those positions are therefore exact rather than interpolated.
-
-Move costs are **not** exact, and an earlier draft of this said they were. A
-move's cost includes a terrain-variance term sampled on a ring 16 m out at
-eight angles, four of which fall between the dumped positions and are
-interpolated. So the ordinary cost of a step is close but not identical to the
-game's, which is one reason the calibration below matters.
-
-What it does not reproduce: the pathfinder's terrain-variance ring and every
-crossing-depth judgement sample between those positions, so they are
-interpolated. That matters most for fords — see "What this cannot tell you".
+The dumps sample the positions the game samples: the 128 m island grid, and the
+8 m cells the pathfinder walks, so heights, biomes and river weights are exact.
+Move costs are **not**: a move's cost includes a terrain-variance term sampled
+on a ring 16 m out at eight angles, four of which fall between dumped positions
+and are interpolated, and crossing depths are interpolated the same way — which
+is why nothing about fords should be concluded from these numbers.
 
 Checked against the game on the issue's own seed, same settings both sides:
+89 roads in game against 88 offline, 59.9 km against 58.5 km summed over
+routes, 158 attempts both sides, 69 failures against 70, and 81 of 88 matched
+roads following the same line within one 8 m cell.
 
-| | in game | offline |
-|---|---|---|
-| roads | 89 | 88 |
-| total length, summed over routes | 59.9 km | 58.5 km |
-| attempts | 158 | 158 |
-| failed | 69 | 70 |
+**Versions and worlds.** The terrain was dumped from **Valheim 0.221.12,
+buildid 21981559** — the build before 1.0. This is not inferred from the date:
+1.0 (buildid 25185596) released at 12:54Z on 9 September 2026 and the dumps are
+stamped 02:24Z the same day, with the machine's own assembly set recorded at
+21981559. **No number in this document was measured on Valheim 1.0.** 1.0
+leaves `GetBaseHeight`, `GetHeight` and `GetRiverWeight` byte-identical and
+changes `GetBiome`, so the islands, the elevation and the rivers carry over and
+the biome column in section 3 does not.
 
-81 of 88 matched roads follow the same line within one 8 m cell. Three worlds
-were used throughout: the issue's seed and two others, so nothing below rests
-on a single map.
+| world | in this document | seed | terrain dump |
+|---|---|---|---|
+| Issue7 | "the issue's seed" | `gqZ5SrFUjk` (42686952, worldgen 2) | `c1e0add2864b8518` |
+| RoadTestMac2 | "world B" | not recovered — the world file is on the machine that dumped it | `52866baff84f4a28` |
+| RoadTestAuto1 | "world C" | not recovered, as above | `a5b115417ea8206e` |
 
-### The study baseline †
+### The study baseline
 
-Everything in this document that says "the baseline" means **the study
-baseline**, and the study baseline is this exact configuration, on the issue's
-seed:
+"The baseline" means this exact configuration, which is **not what the mod
+ships with**:
 
 | setting | study baseline | shipped default |
 |---|---|---|
 | `IslandRoadPercentage` | 100 (every island) | 50 |
-| `FordsEnabled` | true | false |
-| `BridgesEnabled` | true | false |
-| `PathfindingMaxIterations` | **100 000** | 10 000 |
+| fords | on | (before the crossings work, off) |
+| bridges | on | (before the crossings work, off) |
+| `PathfindingMaxIterations` | 100 000 | 10 000 |
 | `MaxLocationsPerIsland` | 12 | 12 |
 | places per island | `2 + area / 2 km²` | `2 + area / 2 km²` |
 | `RoadWidth` | 4 | 4 |
 
-That is **not** what the mod ships with, and an earlier draft of this document
-called it "today", which was wrong. It is named "the study baseline" throughout
-so that no row can be read as a description of a player's world:
-
-| | roads | road summed over routes | distinct road | served | networks |
+| | roads | summed over routes | distinct road | served | networks |
 |---|---|---|---|---|---|
 | shipped defaults | 30 | 12.4 km | 12.0 km | 46 | 21 |
 | the study baseline | 88 | 58.5 km | 54.0 km | 123 | 49 |
 
-Two lengths, because they answer different questions and an earlier draft
-reported only the first. **Summed over routes** adds up every road as built,
-so a stretch two roads share is counted twice; **distinct road** counts the
-ground once. Where only one figure appears below it is the summed one, and
-the tables that turn on sharing give both.
+Three times the network before any change proposed here. The baseline was
+chosen so a lever's effect is not hidden by another setting suppressing it,
+which also means every number here sits on a more generous configuration than
+a player gets.
 
-Three times the network, before any change proposed here. The study baseline
-was chosen so that a lever's effect is not hidden by another setting
-suppressing it, but it means every number in this document is measured on a
-more generous configuration than a player gets out of the box.
+### What the metrics mean
 
-Every lever in section 5, and every plan in section 4, is one change at a time
-from the study baseline.
+Defined once, used throughout.
 
-### What the numbers mean, and how they reconcile †
+| term | what it counts |
+|---|---|
+| **connections** | decisions the plan made. One connection can cost more than one search: the POI-to-network plan runs a destination-free search and then builds along what it found, and both are logged. |
+| **build searches** | pathfinder calls that tried to lay a road. This is the attempt log's row count. |
+| **planning searches** | pathfinder calls a plan ran to *price* a candidate edge before choosing. They lay no road and are not in the attempt log. |
+| **total searches** | the two added. This is the work a plan costs. |
+| **roads** | searches that returned a route and were painted. |
+| **planned and built** | places sitting at an end of one of those roads, matched by the place's own coordinates within 1.5 m. |
+| **served** | places with a road end within 25 m, or within the place's own exterior radius if that is larger. |
+| **distinct road** | length of road on the ground, counting a stretch used twice once. |
+| **summed over routes** | every route's length added up, so shared road counts twice. |
+| **joined groups** | roads joined to each other, an endpoint within 24 m of another road. A drawing-level measure: see Appendix C. |
+| **tees** | roads whose end lands on another road's *length*, more than 24 m from that road's own ends. The shape a walked path network has. |
+| **alongside** | metres of road running within 12 m of another road without joining it. |
 
-Four numbers describe the same run and none of them equals another. On the
-study baseline they are 158, 88, 70 and 129, and the study also reports 123 and
-128. They differ because they count different objects, not because any of them
-is wrong:
+**Served has a boundary, and eight places on the issue seed sat on it.** A road
+built *for* a place is trimmed to that place's exterior radius, so its last
+point is placed **on** the circle — and for a place whose radius is at least
+25 m, "within reach" then asks whether a float distance is at most the float
+radius the point was constructed to equal. Eight places lost that coin toss —
+one boss altar and seven `Mistlands_DvergrTownEntrance2`, each with its nearest
+road end at exactly its own radius — and two went the other way, served by a
+road built for something else.
 
-| number | what it counts | study baseline |
-|---|---|---|
-| **attempts** | connection legs handed to the pathfinder — one call per leg the plan drew | 158 |
-| **roads** | attempts that returned a route, which is the same as routes painted | 88 |
-| **failed** | attempts that returned nothing: 69 "no reachable path" and 1 "iteration budget spent" | 70 |
-| **planned and built** | *places* sitting at an end of one of those 88 roads, matched by the place's own coordinates rather than by distance | 129 |
-| **connected** | the same idea restricted to places that were selected as road destinations | 128 |
-| **served** | places with a *road end* within 25 m, or within the place's own exterior radius if that is larger | 123 |
-
-So: 158 − 70 = 88. A road has two ends and a place can be the end of more than
-one road, which is why 88 roads touch 129 places rather than 176. The 129th
-place is the start temple, which is an anchor rather than a road destination;
-the other 128 are the selected places the funnel in section 3 calls
-"connected".
-
-**Served (123) is lower than planned and built (129)** because the two are
-measured from different objects. "Planned and built" is read from the attempt
-log, where an attempt's endpoint is the place's own centre. "Served" is
-measured on the finished geometry, and a road is trimmed back to the
-destination's exterior radius before it is painted, so a road built *for* a
-place can finish just outside the circle that counts as serving it. The served
-radius is 25 m or the place's own radius, whichever is larger, so the places at
-risk are the ones with a large radius.
-
-> **MEASUREMENT NEEDED — which six places.** The six places that are counted as
-> planned-and-built but not as served have not been enumerated. They can be
-> read off `runs/check.routes.csv` against `Issue7-outcomes.csv`; until someone
-> does, the explanation above is a mechanism, not a demonstration.
-
-Two lengths are reported, because they answer different questions and an
-earlier draft reported only the first. **Summed over routes** adds up every
-road as built, so a stretch two roads share is counted twice; **distinct road**
-counts the ground once. Where only one figure appears it is the summed one, and
-the tables that turn on sharing give both.
-
-**Joined groups** (also called networks) counts roads joined to each other
-geometrically: an endpoint within 24 m of another road. It has no elevation
-test and no test of what lies between, so it is a drawing-level measure. See
-section 6.
-
-> **MEASUREMENT NEEDED — game build and seeds.** This document does not record
-> the Valheim build the terrain was dumped from, nor the seed strings of the
-> three worlds ("the issue's seed", "world B", "world C"). The dump provenance
-> file beside the data records the date, the world file hash and the plugin
-> set, but not the game version. Both should be stated here before publication,
-> because worldgen changes between builds and section "Not reproduced" already
-> suspects one.
+Both are reported: **served** is the original test, kept so every earlier table
+still means what it said, and **served (resolved)** adds half a metre of slack,
+inside the road's own width and too small to reach a road that was not built
+there. On the study baseline they are 123 and 131. Section 4 carries both;
+sections 3 and 5 carry the original, because those runs were not repeated.
 
 ## 3. Why the current network is sparse
 
-### The quota, and what it excludes †
+### The quota, and what it excludes
 
-Every place in the world, and what became of it, on the **study baseline**
-defined in section 2 — crossings on and every island selected, which is *not*
-what the mod ships with:
+Every place in the world, and what became of it, on the study baseline:
 
 | | issue seed | world B | world C |
 |---|---|---|---|
@@ -235,14 +164,7 @@ what the mod ships with:
 | selected by the island's quota | 158 | 163 | 171 |
 | connected — its planned road was built | 128 | 131 | 141 |
 
-("Connected" here counts selected places, matched by the place's own identity.
-The tables of levers in section 5 also report *served*, which counts places
-with a road end within reach, and *planned and built*, which counts every place
-sitting at the end of a road that was built — selected or not. On the issue's
-seed those are 128, 123 and 129: three different questions about the same run,
-reconciled in full in section 2.)
-
-Of the places that are eligible, by what became of them:
+Of the eligible places, by what became of them:
 
 | | issue seed | world B | world C |
 |---|---|---|---|
@@ -251,25 +173,19 @@ Of the places that are eligible, by what became of them:
 | attempted, search frontier exhausted | 29 | 32 | 29 |
 | attempted, iteration budget spent | 1 | 0 | 1 |
 
-![the funnel from placed to connected](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/chart-funnel.png)
+![the funnel from placed to connected](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-09/chart-funnel.png)
 
-**Ninety-three per cent of eligible places never get an attempt.** They lose
-their island's quota. Pathfinding failure accounts for about one per cent, and
-the iteration budget — the setting the issue discusses — for one place per
-world.
-
-The quota is `2 + area / 2 km²`. These worlds have a median island under
-2 km², so more than half of all islands are capped at two places, which is one
-road. That is exactly the "2-3 roads per island" the issue reports, and it is
-arithmetic rather than a failure.
+**Ninety-three per cent of eligible places never get an attempt.** The quota is
+`2 + area / 2 km²`. These worlds have a median island under 2 km², so more than
+half of all islands are capped at two places, which is one road. That is
+exactly the "2-3 roads per island" the issue reports, and it is arithmetic
+rather than a failure.
 
 `MaxLocationsPerIsland` is not the lever it looks like. Raising it from 12 to
-100 moves the issue's seed from 88 roads to 91. The ceiling almost never
-binds; the area formula does.
+100 moves the issue's seed from 88 roads to 91. The ceiling almost never binds;
+the area formula does.
 
-### And the quota is spent on dungeons
-
-Of the 2 470 eligible places, which ones win the 158 slots:
+### The quota is spent on dungeons
 
 | priority | offered | selected | share |
 |---|---|---|---|
@@ -278,129 +194,60 @@ Of the 2 470 eligible places, which ones win the 158 slots:
 | 75 (Mistlands town entrances, older crypts) | 421 | 24 | 5.7 % |
 | 70 and below | 1 513 | 9 | 0.6 % |
 
-The network connects bosses and dungeons and almost nothing else. Villages,
-farms, towers, ruins — the great majority of what is on a map — share nine
-road ends across a whole world, and no setting changes that, because they are
-never attempted.
-
-It is also why registering a location through the API matters more than it
-looks: a registered location gets priority 80, straight into the band that
-wins slots.
-
-The same run by what the place actually is, rather than by its number:
+Each eligible place falls into exactly one category, decided by the
+generator's own priority table rather than by a name pattern, and the column
+below is the *resolved* served measure so it agrees with section 4. An earlier
+draft counted this column a third way — an attempt endpoint within 32 m — and
+that definition has been dropped.
 
 | what it is | in the world | eligible | selected | a road reached it |
 |---|---|---|---|---|
 | boss altars | 19 | 19 | 19 | 14 |
 | dungeons (crypts, sunken crypts, caves) | 920 | 913 | 109 | 94 |
-| Mistlands structures | 890 | 828 | 28 | 20 |
+| Mistlands structures | 3 014 | 828 | 28 | 21 |
 | settlements (villages, farms, swamp huts) | 50 | 49 | **0** | 0 |
-| ruins, towers and stone circles | 716 | 661 | 2 | 0 |
+| ruins, towers and stone circles | 671 | 661 | 2 | 0 |
 
-Not one of the world's fifty settlements is ever selected, and of 661 eligible
-ruins and towers two are selected and neither is reached. A player walking
-this world finds roads between crypts.
+Not one of the world's fifty settlements is ever selected. A player walking
+this world finds roads between crypts. It is also why registering a location
+through the API matters more than it looks: a registered location gets priority
+80, straight into the band that wins slots.
 
-**Every place the generator required and did not get.** Bosses are selected on
-every island they sit on, so a boss without a road is a road the generator
-tried to build and failed:
-
-| boss | island | nearest road end |
-|---|---|---|
-| GoblinKing (3904, 3904) | 45 | 932 m |
-| GoblinKing (3520, −640) | 29 | 626 m |
-| Dragonqueen (−1983, −4420) | 22 | 1 692 m |
-| Dragonqueen (3069, −4396) | 29 | 1 341 m |
-| Dragonqueen (6727, 1534) | 60 | 630 m |
-
-Five of the world's nineteen boss altars, all "no reachable path" — none of
-them ran out of budget. Fifteen selected dungeons end the same way; the full
-list, with the distance to the nearest road end, is in
-`Issue7-outcomes.csv` beside this document.
-
-### What a player actually gets
-
-The biggest island on the issue's seed: 26.7 km², 1 936 places on it, 426 of
-them eligible for roads. It gets 12 selected, 6 roads, 5.2 km of road, serving
-8 places — in **three separate networks**.
-
-Across that world: 22 of 67 islands get no road, 22 get exactly one, and the
-most any island gets is six. Three of the 45 islands that do get roads end up
-with the island's roads in more than one disconnected piece, and each of those
-three had failed attempts — the chain carries on from the next place after a
-failure, and what it left behind becomes its own network. The largest connected run of road anywhere in the
-world is 4 to 6 roads, and that holds on all three worlds and under every plan
-tried in section 4.
-
-![the whole world under the study baseline](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/issue7-shipped.png)
-
-Six islands under the study baseline, at identical bounds and scale — 6 km
-across each, so they can be read against one another:
-
-![six islands at the same scale](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/six-islands.png)
-
-The largest island in the world is the top left panel: 26.7 km², and its roads
-are six of them in three separate pieces, none of which meet. Read across the
-six panels and the island's size barely shows in how much road it gets — the
-quota decides that, not the land. Red rings are places that were selected and
-never reached.
-
-That is the ceiling worth knowing about before tuning anything. These worlds
-are archipelagos, and a road crosses water only where a bridge can span it —
-128 m at most, where most of the channels here are wider. Bridges do join
-neighbouring islands in places, but not enough to make one network out of an
-archipelago, and no connection plan changes that.
+Five of the nineteen boss altars get no road, all of them "no reachable path"
+and none out of budget: two GoblinKing and three Dragonqueen, at 626 m to
+1 692 m from the nearest road end. The full list is in `Issue7-outcomes.csv`.
 
 ### The coast-cell anchor
 
 Off the starter island, each island's network is rooted at the island cell
 nearest its bounding box, with radius 0 — a coast cell, not a place. Islands
 are found on a 128 m grid and a cell counts as land on its base height, so a
-cell that straddles the shore is land while the point the anchor actually
-uses, its centre, can be a long way out to sea. `GetEdgePoint` returns that
-centre unchanged.
+cell that straddles the shore is land while its centre, which is the point the
+anchor uses, can be well out to sea.
 
-On the issue's seed, 32 of the 70 failed attempts settle a single cell and
-stop. Every one of them starts in a cell below the waterline. From a
-submerged cell there is nowhere to go: of the sixteen directions the search
-may take, the eight straight ones are blocked water, and the eight knight
-moves are refused outright by the crossing scan, which walks whole cells and
-will not start a crossing from a jump. Across those 32 attempts the refusals
-are exactly 256 knight moves, 190 no-bank-found and 54 no-river — sixteen
-refusals apiece, no exceptions.
-
-Start cells and what became of them, over all 158 attempts:
+On the issue's seed **32 of the 70 failed attempts settle a single cell and
+stop**, and every one of them starts below the waterline. Across those 32 the
+refusals are exactly 256 knight moves, 190 no-bank-found and 54 no-river —
+sixteen apiece, no exceptions.
 
 | the attempt's start cell | attempts | connected |
 |---|---|---|
-| above the waterline | 102 | 75 (74%) |
-| below it | 56 | 13 (23%) |
+| above the waterline | 102 | 75 (74 %) |
+| below it | 56 | 13 (23 %) |
 
-Walking that anchor inland to the first point above the waterline is a
-three-line change, and the study runs it as its own anchor mode:
+| anchor | roads | distinct road | served | joined groups | attempts | failed | of those stillborn |
+|---|---|---|---|---|---|---|---|
+| the island's edge cell (baseline) | 88 | 54.0 km | 123 | 49 | 158 | 70 | 32 |
+| the same cell, walked onto land | 104 | 64.6 km | 124 | 51 | 158 | 54 | 5 |
+| the island's highest-priority place | 82 | 54.9 km | 124 | 49 | 109 | 27 | 0 |
 
-| anchor | roads | distinct road | planned and built | served | joined groups | attempts | failed | of those stillborn |
-|---|---|---|---|---|---|---|---|---|
-| the island's edge cell (ships today) | 88 | 54.0 km | 129 | 123 | 49 | 158 | 70 | 32 |
-| the same cell, walked onto land | 104 | 64.6 km | 130 | 124 | 51 | 158 | 54 | 5 |
-| the island's highest-priority place (#16) | 82 | 54.9 km | 131 | 124 | 49 | 109 | 27 | 0 |
-
-The failure class all but disappears — 32 stillborn attempts become 5 — and
-19% more road gets built. What it does **not** buy is coverage: 123 places
-served becomes 124. The shipped chain carries on from the place it was
-heading for whether or not the leg to it was built, so a stillborn first leg
-costs the road, not the destination.
-
-All three anchors land within one place of each other on coverage. The anchor
-rule is not a coverage lever. It decides how much road exists and how many
-searches are spent finding out, and on the shipped rule a quarter of every
-search in the run is spent starting in the sea.
+The failure class all but disappears and 19 % more road gets built. What it
+does not buy is coverage: 123 becomes 124. The chain carries on from the place
+it was heading for whether or not the leg to it was built, so a stillborn first
+leg costs the road, not the destination. **The anchor rule is not a coverage
+lever**; it decides how much road exists and how many searches are wasted.
 
 ### The iteration plateau
-
-The issue reports diminishing returns around 30 000 iterations. That
-reproduces, and the reason is visible once failures are split by the
-pathfinder's own two reasons:
 
 | iterations | roads | budget spent | frontier exhausted |
 |---|---|---|---|
@@ -409,479 +256,270 @@ pathfinder's own two reasons:
 | 20 000 | 78 | 19 | 61 |
 | 30 000 | 84 | 8 | 66 |
 | 60 000 | 87 | 4 | 67 |
-| 120 000 | 88 | 1 | 69 |
+| 100 000 (the setting's ceiling) | 88 | 1 | 69 |
+| 120 000 (past it; see below) | 88 | 1 | 69 |
 
-![roads and the two failure kinds against the iteration budget](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/chart-plateau.png)
+![roads and the two failure kinds against the iteration budget](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-09/chart-plateau.png)
 
-As the budget grows, attempts that used to stop at the cap run to completion
-and instead exhaust their frontier: every cell they can reach, settled,
-without arriving. Past about
-30 000 there is almost nothing left for a larger budget to rescue. The setting
-has ranged 1 000 to 100 000 since it was added, so a reported 100 000 was
-never clamped.
+As the budget grows, attempts that used to stop at the cap instead exhaust
+their frontier: every cell they can reach, settled, without arriving. Past
+about 30 000 there is almost nothing left for a larger budget to rescue.
 
-### Do roads cluster at the edges? †
+The 120 000 row is a real run, and it is a budget **a player cannot select**:
+the config binds `PathfindingMaxIterations` to 1 000–100 000 and the offline
+harness sets the field directly. It is here to show the plateau continues past
+the ceiling, not as a setting anyone can use.
 
-That can mean the shoreline of an island or the outer parts of the world, so
-both were measured for all 57 862 centreline points — against the land itself,
-because most land in these worlds is near a shore and roads near shores prove
-nothing on their own.
+### Do roads cluster at the edges?
+
+Measured for all 57 862 centreline points against the land itself, because most
+land in these worlds is near a shore.
 
 | | road points | the land itself |
 |---|---|---|
 | distance to open water, median | 97 m | 74 m |
 | distance from the world's centre, median | 5 146 m | 7 037 m |
 
-**No aggregate edge concentration was detected in the measured world.** Roads
-sit *further* from open water than the land does and *nearer* the world's
-centre, and connected places are further inland than unconnected ones. The same
-is true inside every biome taken separately. This is a statement about the
-whole-world distribution, not about any particular island: an island-level
-report of roads hugging its coast is not contradicted by these numbers.
+**No aggregate edge concentration was detected.** Roads sit *further* from open
+water than the land does and *nearer* the world's centre. That is a statement
+about the whole-world distribution; an island-level report of roads hugging its
+coast is not contradicted by it.
 
-The distributions say it more plainly than the medians can: the land spikes
-hard against the shoreline where the roads do not, sitting instead in the band
-fifty to two hundred and fifty metres inland.
+![distance to open water, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-09/chart-shore.png)
 
-![distance to open water, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/chart-shore.png)
+![distance from the world's centre, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-09/chart-centre.png)
 
-![distance from the world centre, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/chart-centre.png)
-
-These are whole-world distributions. They rule out a bias toward either edge
-at the scale of a world; they cannot rule out a single island where roads do
-hug its coast, and the per-place table is published so that can be checked.
-
-What roads do favour is swamp:
-
-| biome | share of road | share of land |
-|---|---|---|
-| Swamp | 35.1 % | 7.3 % |
-| BlackForest | 24.1 % | 13.9 % |
-| Mistlands | 13.4 % | 29.2 % |
-| DeepNorth | 1.2 % | 11.0 % |
-
-A third of the network is in swamp, which is a fourteenth of the land, and
-18.8 % of eligible swamp places get a road against 2.4 % in the Mistlands. The
-pathfinder is following its cost model — swamp is flat and waded for a modest
-penalty, the Mistlands and the mountains are steep and dear — and the result
-is a network that spends a third of its length in swamp. Whether that is good
-or bad is a gameplay question this study cannot answer — it is raised here
-because a third of a network in one biome is a design choice worth making
-deliberately rather than inheriting from a cost constant.
-
-It is also why roads look like they run into the sea on a map: a swamp sits at
-and below the waterline, and a road wading one is doing what it was told to.
+What roads do favour is swamp: 35.1 % of road on 7.3 % of the land, against
+13.4 % of road on the Mistlands' 29.2 %. The pathfinder is following its cost
+model — swamp is flat and waded for a modest penalty, the Mistlands and the
+mountains are steep and dear — and a third of a network in one biome is a
+design choice worth making deliberately rather than inheriting from a cost
+constant. It is also why roads look like they run into the sea on a map: a
+swamp sits at and below the waterline, and a road wading one is doing as it was
+told.
 
 ## 4. Strategy comparison
 
-### How a connection is planned, and what that costs
+### What the shipped plan cannot do
 
-Every road runs **from one place to another place**. Nothing in the shipped
-code ever starts a road from the network it has already built.
+Every road runs **from one place to another place**; nothing in the shipped code
+starts a road from the network it has already built. On odd island ids the plan
+is a nearest-neighbour chain, on even ids a minimum spanning tree over the
+anchor and the selected places — and the tree is built on **straight-line
+distance** before any of it is routed. Three consequences:
 
-- On odd island ids the plan is a nearest-neighbour chain: the anchor to the
-  nearest place, that place to the nearest of the rest, and so on.
-- On even ids it is a minimum spanning tree over the anchor and the selected
-  places, and the tree is built on **straight-line distance** — `Vector3.
-  Distance` between two places — before any of it is routed.
-- Either way each edge is handed to the pathfinder as two points, and
-  `GenerateRoad` searches from the first place's centre to the second's.
+1. **A plan cannot see water.** The cheapest-looking neighbour is often the one
+   across a channel. Most of the failures in Appendix B are edges no planner
+   with a map would have drawn.
+2. **Roads do not join except by accident.** A junction exists only where one
+   road's endpoint happens to land within 24 m of another. On the whole world
+   that produces **one** tee.
+3. **A place that fails is not retried from anywhere else.**
 
-Three consequences worth naming:
+### The four plans, measured
 
-1. **A plan cannot see water.** The tree is chosen on straight-line distance,
-   so the cheapest-looking neighbour is often the one across a channel. Most
-   of the 27 failures in Appendix A are edges no planner with a map would have
-   drawn.
-2. **Roads do not join except by accident.** Two roads to nearby places both
-   leave the same anchor and run alongside each other; a junction exists only
-   where one road's endpoint happens to land within 24 m of another, which is
-   what the joined-group count measures.
-3. **A place that fails is not retried from anywhere else.** There is no
-   fallback to the nearest road, or to the nearest connected place.
+Four plans, three worlds, identical inputs, settings and metric collection; one
+warm-up and three measured runs each in the same Release build. Every run is
+deterministic — the three repetitions agree to the last metre.
 
-The one plan tried here that does otherwise is trunk-and-spurs, which attaches
-a spur to the nearest point on a road already built — the only code path in
-this study that starts a road from the network rather than from a place. It
-attempted 83 such spurs and built 30, at a median 161 m against 459 m for a
-place-to-place road.
+| world | plan | roads | distinct road | summed | served | served (resolved) | groups | tees | alongside |
+|---|---|---|---|---|---|---|---|---|---|
+| Issue7 | shipped plan | 88 | 54.0 km | 58.5 km | 123 | 131 | 49 | **1** | 4.8 km |
+| Issue7 | routed-cost MST | 90 | 56.6 km | 59.1 km | 126 | **134** | 50 | 0 | 2.7 km |
+| Issue7 | trunk and spurs | 82 | 52.9 km | 57.6 km | 118 | 128 | 46 | **29** | 5.1 km |
+| Issue7 | POI-to-network | 86 | 55.7 km | 55.7 km | 123 | 132 | 46 | 28 | **0.1 km** |
+| world B | shipped plan | 93 | 67.5 km | 71.0 km | 134 | 139 | 50 | 3 | 3.9 km |
+| world B | routed-cost MST | 93 | 64.8 km | 65.5 km | 136 | **141** | 51 | 1 | 0.9 km |
+| world B | trunk and spurs | 86 | 60.1 km | 61.8 km | 137 | 139 | 47 | **30** | 2.0 km |
+| world B | POI-to-network | 85 | 59.2 km | 59.2 km | 133 | 136 | 47 | 24 | **0.1 km** |
+| world C | shipped plan | 96 | 54.5 km | 55.5 km | 141 | **146** | 60 | 0 | 1.1 km |
+| world C | routed-cost MST | 94 | 55.6 km | 56.4 km | 136 | 142 | 58 | 0 | 1.0 km |
+| world C | trunk and spurs | 81 | 48.2 km | 49.1 km | 124 | 128 | 49 | **25** | 1.3 km |
+| world C | POI-to-network | 81 | 45.7 km | 45.7 km | 120 | 123 | 49 | 20 | **0.1 km** |
 
-### The plans, side by side †
+Two things generalise and one does not. **Shape generalises**: POI-to-network
+keeps summed route length equal to distinct road on every world — almost
+nothing is built twice — and holds alongside road at 0.1 km against the shipped
+plan's 1.1 to 4.8 km. **Coverage does not**: POI-to-network is +1 on the issue
+seed, −3 on world B and **−23** on world C.
 
-The section above says what the shipped plan cannot do: it draws lines between
-places, on straight-line distance, with no second chance and no way to join a
-road it has already built. Each of those is a question with an answer, and all
-of them were tried on the issue's seed against the same study baseline: same
-islands, same selected places, same anchor, same budget; only the plan differs.
+### The same counts are not the same places
 
-Three columns are about the *shape* of the result rather than its size.
-**Tees** counts roads whose end lands on another road's *length* — a fork, the
-shape a walked path network has. **Ends** counts roads whose end meets another
-road's end, which is what happens when two roads leave the same anchor.
-**Alongside** counts metres of road running within 12 m of another road without
-joining it, which is the shape nobody wants.
+| world | plan | served (resolved) | retained | gained | lost |
+|---|---|---|---|---|---|
+| Issue7 | routed-cost MST | 134 | 131 | 3 | 0 |
+| Issue7 | trunk and spurs | 128 | 118 | 10 | 13 |
+| Issue7 | POI-to-network | 132 | 121 | 11 | 10 |
+| world B | routed-cost MST | 141 | 136 | 5 | 3 |
+| world B | trunk and spurs | 139 | 125 | 14 | 14 |
+| world B | POI-to-network | 136 | 122 | 14 | 17 |
+| world C | routed-cost MST | 142 | 139 | 3 | 7 |
+| world C | trunk and spurs | 128 | 118 | 10 | 28 |
+| world C | POI-to-network | 123 | 114 | 9 | 32 |
 
-| plan | roads | distinct road | planned and built | served | joined groups | tees | ends | alongside | attempts | failed | planning searches |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| chain/MST by island parity (the study baseline) | 88 | 54.0 km | 129 | 123 | 49 | **1** | 43 | **4.8 km** | 158 | 70 | 0 |
-| tree grown outward with retries (#16) | 90 | 57.2 km | 131 | 126 | 50 | — | — | — | 208 | 118 | 0 |
-| MST on the search's own cost | 90 | 56.6 km | 131 | **126** | 50 | 0 | 40 | 2.7 km | 90 | **0** | 261 |
-| hub and spoke | 89 | 54.7 km | 131 | 126 | 51 | — | — | — | 89 \* | 0 \* | 261 |
-| trunk with spurs onto the road | 82 | 52.9 km | 118 | 118 | 46 | 29 | 12 | 5.1 km | 135 | 53 | 261 |
-| grow from the network | 82 | 46.6 km | 119 \* | 116 | 46 \* | 15 | 37 | 1.6 km | 103 | 21 | 261 |
-| **the place reaches for the network** | 86 | 55.7 km | 124 \* | **123** | 46 \* | **28** | 23 | **0.1 km** | 157 ‡ | 30 | 261 |
+On the issue seed POI-to-network and the shipped plan both serve about 130
+places, and **twenty-one of them are different places**. It is not reaching the
+same network more tidily; it is reaching a different one — and the destinations
+it drops include required ones. Every boss altar on a selected island is
+selected, so a boss without a road is a road the generator tried to build and
+failed:
 
-An em dash means the metric was not measured for that run, not that it is zero:
-tees, ends and alongside were added after the first five plans were run, and
-the two runs that predate them were not repeated. `\*` marks a cell read from
-the published run manifest rather than carried over from an earlier table in
-this document. `‡` see "what an attempt is, per plan" below.
-
-Two of these plans were corrected after review and rerun: the MST now compares
-the cost the search accumulated rather than the length of the path it returned,
-and a spur now starts at the nearest point on a road already built rather than
-at another place. The second change is visible in the roads themselves — 83
-spurs attempted where there were none before, 30 built, with a median length
-of 161 m against 459 m for a place-to-place road.
-
-### What each plan does †
-
-- **MST on the search's own cost** plans on what the pathfinder charges rather
-  than on straight-line distance, so a strait or a mountain counts for what it
-  really costs. On this world it lands where the tree does; the change from
-  routed distance to routed cost moved it very little, which is itself worth
-  knowing.
-- **Trunk with spurs onto the road** lays one road along the island's long
-  axis and joins everything else to the nearest point on a road, making a
-  junction there. It builds the fewest and shortest roads and reaches about a
-  tenth fewer places: short spurs are cheap, but a spur that starts on a road
-  fails more often than one starting at a place, because the road is not
-  always on the useful side of the terrain.
-- **Hub and spoke** lands close to what ships today.
-- **Grow from the network** drops the trunk and attaches the nearest waiting
-  place to the nearest point on the road so far.
-- **The place reaches for the network** runs the search backwards, from the
-  place, with no destination at all. It has its own section below.
-
-### Pricing, branches and committed roads †
-
-An earlier draft said that "the three plans that price a connection before
-building it have no failed builds". That is true of two of them and false of
-the third, and the difference is exactly where the pricing stops. Three things
-have to be counted apart:
-
-**Backbone pricing** — edges the plan runs the pathfinder on *before*
-committing. Routed MST prices every edge it might use, so every edge it commits
-has already been shown to route: 90 attempts, 90 roads, **0 failures**. Hub and
-spoke is the same: 89 attempts, 89 roads, 0 failures.
-
-**Branch attempts** — links the plan makes *after* the priced part, which are
-not priced at all. Trunk-and-spurs prices its trunk and not its spurs, and the
-split is visible in its own attempt log:
-
-| trunk with spurs, 135 attempts | attempts | built | failed |
+| plan | bosses served, Issue7 | world B | world C |
 |---|---|---|---|
-| trunk legs (priced) | 52 | 52 | 0 |
-| spurs onto a road (not priced) | 83 | 30 | 53 |
+| shipped plan | 14 of 19 | 15 of 19 | 14 of 19 |
+| routed-cost MST | 14 | 15 | 13 |
+| trunk and spurs | 9 | 14 | 9 |
+| POI-to-network | 12 | 15 | 10 |
 
-Grow-from-the-network has the same shape: 46 seed roads, all built, and 57
-branch attempts of which 36 were built and 21 failed. **A priced backbone says
-nothing about an unpriced branch**, and the 53 failures in the trunk row of the
-table above are all spurs.
+![places served by category, four planners](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-10/chart-coverage.png)
 
-**Committed roads** — what actually gets painted, which is the `roads` column.
+### What each plan costs
 
-**What an attempt is, per plan (‡).** The attempt count is a count of log rows,
-and one plan writes more than one row per connection. In the reverse search a
-connection that finds the network is logged once for the destination-free
-search and again for the road build, so its 157 rows cover 116 connections:
-46 seed roads, 70 places reaching for the network, and 41 road builds for the
-41 of those that found it. 116 − 30 failures = 86 roads, which is the roads
-column. Read across plans, `attempts` is therefore comparable only after that
-correction; `roads` and `failed` are comparable as they stand.
-
-**Planning searches are work, not savings.** Pricing costs 261 planning
-searches on this world, so total pathfinder work under a priced plan is higher
-than the study baseline's, not lower. What changes is that the work happens
-before a road is committed rather than after one fails. "No failed builds" is a
-tidier log, not a saving.
-
-### Can a plan see water? †
-
-Yes, and it already does. The routed MST prices every candidate edge by
-*running the pathfinder on it* before choosing, so an edge across a strait
-either costs what the detour really costs or has no cost at all and is never
-chosen. The result is the cleanest line in the table: **no failed attempts at
-all** — 90 planned, 90 built — three more places served than the study
-baseline, and the road running alongside other road nearly halved.
-
-It is not free — see "Pricing, branches and committed roads" above: the 261
-planning searches are work moved earlier, not work saved.
-
-Its one real limit is the candidate set: each place offers only its nearest
-neighbours by straight-line distance, because pricing every pair is hopeless
-past a dozen places. Widening that set is the obvious worry, so it was swept:
-
-| candidates per place | roads | served | failed |
-|---|---|---|---|
-| 3 | 89 | 125 | 0 |
-| 6 (the default) | 90 | 126 | 0 |
-| 12 | 90 | 126 | 0 |
-| 24 | 90 | 126 | 0 |
-
-Flat from six onward, identically so. The candidate set is not what binds — the
-water is, exactly as the failure census says.
-
-### Can roads join by design instead of by accident?
-
-Yes, and this is where the shipped plan is weakest. **On the whole world it
-produces one tee junction.** Every other meeting of two roads is two ends at
-the same place, because every road it builds runs between two places and two
-roads to neighbouring places both leave the same anchor. That is where the
-4.8 km of road running alongside other road comes from.
-
-Three plans here make junctions on purpose, and they are not equal:
-
-- **Trunk with spurs** lays one road along the island's routed long axis and
-  joins everything else at the nearest point on a road. 29 tees, the most of
-  any plan — but it still runs 5.1 km alongside itself, because a spur aimed at
-  the straight-line nearest point on the trunk often parallels it to get there.
-- **Grow from the network** drops the trunk and simply attaches the nearest
-  waiting place to the nearest point on the road so far. It cuts road running
-  alongside to 1.6 km, but reaches seven fewer places, because a place with no
-  road near enough to join has to fall back to a place-to-place link.
-- **The place reaching for the network** — below — gets 28 tees *and* 0.1 km
-  alongside, at the study baseline's coverage.
-
-### Can a place reach for the network, instead of the network reaching for it? †
-
-This is the one that works, and it is a different algorithm rather than a
-different plan.
-
-Every plan above has to choose a destination before it can search: another
-place, or a point on a road. It chooses on straight-line distance, because that
-is the only thing available before a search runs — and straight-line distance
-is the thing a road cannot use. Aiming at the nearest point on a road across a
-channel fails exactly the way aiming at the nearest place across a channel
-fails.
-
-So the search is turned round. `FindPathToNetwork` starts at the place and
-expands outward with **no destination at all**, stopping at the first ground it
-settles that already carries road. Whatever it finds is, by construction, the
-cheapest way onto the network from that place, and it is a junction wherever it
-lands. The heuristic is the straight-line distance to the nearest known road
-point less the reach, floored at zero, which never overestimates because a move
-costs at least its length; with no roads to aim at it degrades to Dijkstra.
-
-On the issue's seed, against the shipped plan:
-
-- the same coverage: **123 places served**, exactly the study baseline;
-- **28 tee junctions against 1**;
-- **0.1 km of road running alongside another road, against 4.8 km** — and the
-  summed route length equals the distinct road on the ground, 55.7 km both
-  ways, which means almost nothing is built twice;
-- failed attempts fall from 70 to 30.
-
-The cost is time: 84 seconds against 4, a **21× increase in offline runtime**,
-because a search with no destination settles far more ground than one aimed at
-a point. That is a real objection for a whole world at load. Whether it is an
-objection for the single-island regeneration the tooling already has is not
-known — a whole-world figure cannot be divided by the island count and called a
-per-island cost, because the reverse search's cost depends on how much ground
-an island has and how much road is already on it.
-
-> **MEASUREMENT NEEDED — per-island regeneration time.** Regenerate a single
-> island under the shipped plan and under `FindPathToNetwork`, on at least a
-> dense island and a fragmented one, and report both. Until that exists, the
-> only defensible statement is the 21× whole-world figure. (Note also that the
-> 4-second figure is the `check` run; the reverse plan's own control in the same
-> run family, `q4-baseline`, reports 20.7 s, and the difference between the two
-> controls has not been explained — see Appendix D.)
-
-What it does not do is reach more places. Coverage is identical, for the reason
-the failure census gives: the places the study baseline misses are across
-water, and a search from the other side meets the same water.
-
-**Identical counts are not identical destinations.** 123 and 123 says the two
-runs served the same *number* of places. It does not say they served the same
-places, and it does not say the reverse search served the same bosses.
-
-> **MEASUREMENT NEEDED — destination overlap and required-place coverage.** For
-> every plan in the table, report the set of places served, the overlap with
-> the study baseline's set, and the boss / dungeon / settlement coverage
-> separately. The baseline run publishes this (`Issue7-outcomes.csv`, and the
-> five unreached bosses are named in section 3); no other plan run does. Until
-> it exists, a plan that serves the same count while swapping a boss for a
-> crypt would look identical in every table in this document.
-
-### Can a failed link fall back to something nearer? †
-
-Measured, and the answer is no — but the reason is worth more than the answer.
-
-| fallback after a failed link | roads | served | joined groups \* | tees | alongside | recovered | searches |
+| world | plan | connections | build searches | planning searches | total searches | failed builds | generate (median of 3) |
 |---|---|---|---|---|---|---|---|
-| none (the study baseline) | 88 | 123 | 49 | 1 | 4.8 km | — | 158 |
-| the nearest point on a road | 93 | 123 | 49 | 1 | 5.2 km | 5 | 208 |
-| the nearest place already connected | 97 | 123 | 49 | 1 | 7.4 km | 9 | 228 |
-| the road, then the place | 97 | 123 | 49 | 1 | 6.4 km | 9 | 273 |
+| Issue7 | shipped plan | 158 | 158 | 0 | **158** | 70 | **3.19 s** (3.18–3.37) |
+| Issue7 | routed-cost MST | 90 | 90 | 261 | 351 | **0** | 7.46 s (7.42–7.62) |
+| Issue7 | trunk and spurs | 135 | 135 | 261 | 396 | 53 | 9.36 s (9.16–9.69) |
+| Issue7 | POI-to-network | 116 | 157 | 261 | **418** | 30 | 14.24 s (14.20–14.24) |
+| world B | shipped plan | 163 | 163 | 0 | 163 | 70 | 3.28 s |
+| world B | routed-cost MST | 93 | 93 | 283 | 376 | 0 | 7.52 s |
+| world B | trunk and spurs | 142 | 142 | 283 | 425 | 56 | 9.48 s |
+| world B | POI-to-network | 109 | 149 | 283 | 432 | 24 | 13.46 s |
+| world C | shipped plan | 171 | 171 | 0 | 171 | 75 | 3.14 s |
+| world C | routed-cost MST | 96 | 96 | 299 | 395 | 2 | 7.42 s |
+| world C | trunk and spurs | 141 | 141 | 299 | 440 | 60 | 10.26 s |
+| world C | POI-to-network | 120 | 155 | 299 | 454 | 39 | 12.07 s |
 
-`\*` joined-group counts read from the published run manifests, added here
-because served count alone cannot answer the question.
+**Pricing is work, not saving.** A plan that prices its edges runs 261, 283 or
+299 planning searches — that range is across the three worlds, not within one —
+on top of its builds, and none is reused: the price is found by routing the
+edge, the route is thrown away, and the committed edge is routed again. Routed-
+cost MST spends 351 searches on the issue seed where the shipped plan spends
+158. "No failed builds" is a tidier log, not a saving; caching the priced route
+would remove about a quarter of the work and has not been done.
 
-**Places served does not move at all.** Not by one, under any of them. A
-fallback recovers five to nine *links* and builds five to nine more roads to
-places that already had one — which is the same finding as before, from the
-other direction: the destination of a failed link is usually already on the
-network, so a second road to it adds road and no coverage. The nearest-place
-fallback makes the alongside-road problem measurably worse, 4.8 km to 7.4 km,
-which is the opposite of what anyone wants.
+**Time.** Generation only, terrain already loaded, all in the same Release
+build. Loading the 8 m dump costs a further 2.8–3.2 s and measuring the finished
+network 0.14–0.24 s, in every one of the 48 runs, so neither is what separates
+the plans. POI-to-network costs **3.8 to 4.5×
+the shipped plan** — 4.5, 4.1 and 3.8 on the three worlds — not the 21× an
+earlier draft reported: that figure compared
+a Debug build against a Release one. On this workload Debug is 6.4× Release,
+and neither run had recorded which it was.
 
-**Served count alone would not have settled this.** A recovered link can be
-worth having without serving a new place, by joining two pieces of network that
-were separate — a road nobody needed to *reach* a crypt can still be the road
-that makes an island one network instead of three. That is why the joined-group
-column is here, and it is flat: 49 groups under every fallback, the same as the
-study baseline. The fallbacks recovered links that joined nothing. Had that
-column moved, "served did not move" would not have been a reason to dismiss
-them.
+Per island — which is what the mod's single-island regeneration path actually
+does — the cost is small in absolute terms:
 
-A fallback is worth having only if the thing it falls back to is somewhere the
-first search could not reach. The reverse search is that idea done properly:
-rather than trying a second guessed destination after the first guess fails, it
-never guesses.
-
-### The maps that go with the table †
-
-![one island under four connection plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/island-sheet.png)
-
-The same island under four plans, at identical bounds and scale. The shipped
-plan puts short branches around the start; trunk and spurs lays one road down
-the length of the chain. Which of those is a better road network is a judgement
-about playing the game, not a number, and it is the first thing worth trying
-in game.
-
-What this sheet does not show is the plan the table above recommends. Three
-figures are missing, and each of them is a figure a decision would turn on:
-
-> **MEASUREMENT NEEDED — one island, four planners, one legend.** Render the
-> *same* island under the study baseline, routed-cost MST, trunk-and-spurs and
-> POI-to-network search, at identical bounds, with the same selected places,
-> the same colours and one shared legend. Annotate each panel with places
-> served, joined groups, tee junctions, distinct road length and runtime. The
-> existing four-panel sheet has no POI-to-network panel at all, which is the
-> newest result and the one being advanced — its table has no picture beside
-> it. The renderer already produces single-plan island views
-> (`island-parity.png`, `island-trunk.png`, `island-routed-mst.png`); a reverse
-> panel and a shared legend are what is missing.
-
-> **MEASUREMENT NEEDED — three contrasting islands.** The six-island sheet in
-> section 3 is six islands under one configuration. What the planner comparison
-> needs is the opposite: three islands chosen for their terrain — one dense and
-> flat, one steep, one water-fragmented — each under all four planners. A
-> planner that wins on one island shape and loses on another is invisible in
-> every table in this document.
-
-> **MEASUREMENT NEEDED — a trade-off chart.** One compact chart plotting the
-> three quantities the choice actually turns on, per planner: places served,
-> distinct road length, and computation time. Every number it needs is already
-> in the consolidated table and the run manifests; nobody has drawn it.
-
-## 5. Gameplay policy: selection, planning, routing
-
-### Three decisions that currently blur together †
-
-A player-facing control has to belong to exactly one of three decisions, and
-this study's levers have been sorted into them here because several of the
-arguments above only make sense once they are apart:
-
-| decision | the question it answers | levers measured here |
+| plan | median island | slowest island (Issue7 / B / C) |
 |---|---|---|
-| **selection** | how many places, which categories, clustered or spread | the per-island quota; priority-then-nearest against priority-truncated against a fixed draw; the priority presets; what share of islands get roads |
-| **planning** | how the selected places are connected to one another | chain/MST by parity, routed-cost MST, trunk and spurs, grow-from-network, place-reaches-for-network, fallbacks — all of section 4 |
+| shipped plan | 0.02 s | 1.19 / 0.96 / 0.55 s |
+| routed-cost MST | 0.04 s | 2.47 / 2.38 / 1.56 s |
+| trunk and spurs | 0.06–0.08 s | 2.17 / 2.27 / 2.16 s |
+| POI-to-network | 0.06–0.13 s | 3.12 / 3.26 / 2.40 s |
+
+**The runtime objection to POI-to-network is a whole-world-at-load objection
+only.** The slowest single island under it is about three seconds; the median
+is a tenth of one.
+
+### The maps
+
+![the world under four connection plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-10/world-planners.png)
+
+Three islands, chosen on measured terrain rather than by eye: of the nineteen
+islands over 3 km² on the issue seed, **42** has the lowest mean height
+gradient (0.18 against a median 0.30), **58** the highest (0.37, and the most
+compact box fill of those tied at the top, so its steepness is not also
+fragmentation), and **54** the most coast per unit area (0.74 edge cells per
+land cell against a median 0.53). Each is drawn under all four plans at
+identical bounds and scale.
+
+![island 42, dense and flat, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-10/island42-planners.png)
+
+![island 58, steep, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-10/island58-planners.png)
+
+![island 54, water-fragmented, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-10/island54-planners.png)
+
+The sheets make a point the tables bury: **on a typical island the plans are
+almost the same picture.** All three islands get the same places served under
+every plan, and what differs is how many searches were spent getting there —
+four against one on the steep island. The plan differences in the world table
+are the sum of many small islands where the plan changed nothing and a few
+large ones where it changed a great deal.
+
+### Fallbacks, re-measured
+
+A failed link can be retried against the nearest point on a road, or the
+nearest place already on the network. An earlier version of this experiment
+picked, as "the nearest connected place", the place the failed leg had just
+started from — so it re-ran the identical search, 52 times in 70, with
+identical iteration counts. With that removed:
+
+| fallback after a failed link | roads | served | resolved | groups | alongside | searches |
+|---|---|---|---|---|---|---|
+| none (the baseline) | 88 | 123 | 131 | 49 | 4.8 km | 158 |
+| the nearest point on a road | 93 | 123 | 131 | 49 | 5.2 km | 208 |
+| the nearest place already connected | 99 | **126** | **134** | **50** | 8.5 km | 196 |
+| the road, then the place | 99 | 126 | 134 | 50 | 7.5 km | 243 |
+
+The place fallback buys three places and joins one more group, for **fewer**
+searches than the buggy version needed. It is not free: 3.7 km more road
+running alongside other road, which is the shape problem made worse. The road
+fallback still buys nothing.
+
+## 5. Player-facing policy
+
+A control has to belong to exactly one of three decisions.
+
+| decision | the question | levers measured here |
+|---|---|---|
+| **selection** | how many places, which categories, clustered or spread | the per-island quota; priority-then-nearest against truncated against a fixed draw; the priority presets; what share of islands get roads |
+| **planning** | how the selected places are connected | everything in section 4 |
 | **routing** | what the pathfinder may enter and at what price | fords, bridges, the span cap, the Mistlands bridge ban, the road-sharing discount, the iteration budget |
 
-Two things follow immediately. **The largest coverage effects in this study are
-selection effects, not planning effects** — the quota moves places served from
-123 to 2 322, and arrangement at a fixed count moves it from 109 to 142, where
-no planner moved it by more than three. And **the shape effects are planning
-effects** — tees and parallel running move by an order of magnitude across
-plans and not at all across selection policies. A control that mixes the two
-cannot be reasoned about by a player or by us.
+**The largest coverage effects are selection effects, not planning effects**,
+and the shape effects are planning effects. The tables below use the original
+served metric; they were not repeated.
 
-### How many places each island may have
-
-| places per island | roads | road summed over routes | served | attempts failing | metres per place served |
+| places per island | roads | summed | served | attempts failing | metres per place served |
 |---|---|---|---|---|---|
-| `2 + area/2 km²` (the study baseline) | 88 | 58.5 km | 123 | 44 % | 476 |
+| `2 + area/2 km²` (baseline) | 88 | 58.5 km | 123 | 44 % | 476 |
 | 8 | 258 | 99.4 km | 319 | 28 % | 312 |
 | 16 | 466 | 154.1 km | 557 | 25 % | 277 |
 | 32 | 838 | 224.0 km | 959 | 20 % | 234 |
 | every eligible place | 2 080 | 410.7 km | 2 322 | 16 % | 177 |
 
-![places served against distinct road built](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/chart-quota.png)
+![places served against distinct road built](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-09/chart-quota.png)
 
-Two things run against intuition here. The quota is not protecting generation
-from failure — it sits where failure is *likeliest*, because the places added
-later are near ones already connected and short roads over known-good ground
-are the easiest to build. And it is the least efficient point on the curve for
-road spent per place reached: 476 metres today against 177 with everything
-selected.
+The quota is not protecting generation from failure: it sits where failure is
+*likeliest*, because the places added later are near ones already connected and
+short roads over known-good ground are the easiest to build. It is also the
+least efficient point on the curve for road spent per place reached.
 
-What it buys is a very different world — 411 km of road instead of 58 — and
-about twenty-five seconds of generation offline instead of three. Whether a
-land webbed with roads is the game anyone wants is not a question these
-numbers can answer.
-
-### Where those places sit, at the same count
-
-| arrangement | roads | road summed over routes | served | metres per place |
+| arrangement, at the same count | roads | summed | served | metres per place |
 |---|---|---|---|---|
-| priority, truncated (the study baseline) | 88 | 58.5 km | 123 | 476 |
-| priority, then nearest (PR #16) | 101 | 43.3 km | **142** | **305** |
+| priority, truncated (baseline) | 88 | 58.5 km | 123 | 476 |
+| priority, then nearest | 101 | 43.3 km | **142** | **305** |
 | priority, then farthest | 77 | 84.1 km | 115 | 731 |
 | a fixed draw, ignoring priority | 72 | 58.2 km | 109 | 534 |
 
-Arrangement alone moves coverage from 109 to 142 places — a wider spread than
-any routing change in section 4 produces. Choosing destinations near one
-another is worth more than choosing cleverly between them. Deliberately spreading them,
-which sounds like what a road network wants, is the worst of the four.
+Arrangement alone moves coverage from 109 to 142, a wider spread than any
+planner change measured here: choosing destinations near one another is worth
+more than choosing cleverly between them, and deliberately spreading them —
+which sounds like what a road network wants — is the worst of the four.
 
-### What the network is for †
-
-Three presets, the rest drawn per place from the world seed. **"Bosses
-required" means every boss altar is always selected — it does not mean every
-boss is reachable.** On the study baseline all 19 boss altars are selected and
-14 get a road; the five that do not are named in section 3, and every one of
-them failed with "no reachable path" rather than running out of budget. A
-preset can guarantee a destination is *aimed at*; nothing in the mod can
-guarantee that terrain allows a road to it.
-
-| preset | selected | roads | road summed over routes | served | connect rate |
+| preset | selected | roads | summed | served | connect rate |
 |---|---|---|---|---|---|
-| the built-in table (the study baseline) | 158 | 88 | 58.5 km | 123 | 78 % |
+| the built-in table (baseline) | 158 | 88 | 58.5 km | 123 | 78 % |
 | bosses only | 19 | 9 | 11.4 km | 12 | 63 % |
 | bosses and half the dungeons | 139 | 77 | 53.6 km | 108 | 78 % |
 | settlements raised to compete | 146 | 67 | 71.5 km | 100 | 68 % |
 
-Bosses alone are barely a network: nine roads in a world, because most bosses
-are alone on their island and a road needs two ends. The last row is the
-interesting one — aiming at where people live selects about as many places,
-connects ten points fewer of them, and spends more road doing it, because
-settlements sit in scattered awkward spots. Worth wanting, but not free.
-
-**A preset cannot be judged on total coverage.** Total served will always
-favour whichever category is most abundant and easiest to reach, which on these
-worlds is dungeons: 920 of them against 50 settlements and 19 boss altars. A
-preset that raises settlements looks worse on the total while doing exactly
-what it was asked to do.
-
-> **MEASUREMENT NEEDED — coverage by category, per preset.** The preset table
-> above reports only total places served. It needs boss coverage, dungeon
-> coverage and settlement coverage as separate columns, on the same runs. The
-> category breakdown exists for the study baseline only (see "And the quota is
-> spent on dungeons" in section 3); the three preset runs do not publish it.
-
-### How many islands get roads
+**A preset cannot be judged on total coverage**: the total favours whichever
+category is most abundant and easiest to reach, which on these worlds is
+dungeons. Aiming at where people live selects about as many places, connects
+ten points fewer of them, and spends more road doing it. The category breakdown
+that would settle it exists for the four planner runs and not for the presets;
+it is the cheapest outstanding measurement in the study.
 
 | islands selected | roads | served | networks |
 |---|---|---|---|
@@ -890,459 +528,241 @@ what it was asked to do.
 | 50 % (default) | 73 | 101 | 41 |
 | 100 % | 88 | 123 | 49 |
 
-Near enough linear to three quarters and then flat, because the largest
-islands are taken first. The default gives up about a fifth of the network the
-same world would support.
-
-### Fords and bridges
-
-| offline | roads | road summed over routes | served |
+| offline | roads | summed | served |
 |---|---|---|---|
-| neither | 47 | 20.9 km | 72 |
+| neither crossing | 47 | 20.9 km | 72 |
 | fords only | 78 | 42.8 km | 111 |
 | bridges only | 57 | 30.6 km | 86 |
 | both | 88 | 58.5 km | 123 |
 
-Crossings are worth more than any other single lever measured: 72 places
-served becomes 123.
+Crossings are worth more than any other single lever measured. In game, on one
+world state: neither, 49 roads; fords only, 90 roads with **three river fords
+in the whole world**; both, 98 roads with 15 crossings. Turning fords on adds
+41 roads and almost none of it is river crossing — it is the swamp wading that
+comes with the same flag.
 
-The fords row needed the game to read properly, because the flag does two
-things — it lets a road jump a fordable river, and it lets a road wade a
-swamp — and only the second can be measured offline. Three runs in game on one
-world state, so the rows are comparable:
+**Can a road follow another one?** Not in this build: the only place an
+existing road enters the cost of a move is a river crossing, which costs half
+when both banks already carry road. Added as a lever and swept, a discount does
+nothing at the baseline — 88 roads and 123 served at every price — because an
+island with two or three roads leaving one anchor has no common stretch to
+reuse. Where there is something to share it works: with every eligible place
+selected, a quarter price within 4 m takes distinct road from 383.4 km to
+371.5 km while summed route length rises from 410.7 to 458.4. **It builds the
+same network out of less road; it does not reach more places.**
 
-| in game | roads | road summed over routes | crossings |
+## 6. Recommendation, and what would change it
+
+**Improve selection first.** Arrangement at a fixed count moves coverage by 33
+places where no planner moved it by more than 5. If one change is made, make
+the quota choose priority-then-nearest.
+
+**Advance two planners, for different reasons.** Routed-cost MST is the safe
+one: it holds the shipped plan's destinations, almost ends failed builds, and
+costs 2.3× the time. POI-to-network is the only thing that fixes the network's shape,
+and on the evidence here it should be used to attach *branches* to a backbone
+chosen some other way, because as a whole plan it drops required destinations
+on two worlds out of three. Their combination is the first experiment to run,
+and it has not been run.
+
+**Deprioritise trunk-and-spurs and the larger iteration budget.** The first
+buys junctions by not reaching things; the second binds one attempt in 158 and
+its ceiling is already past the plateau.
+
+**What evidence would change this.** One table, in order of how much each
+would move the recommendation. Nothing else in this document is left open.
+
+| # | outstanding evidence | what it would settle | cost |
 |---|---|---|---|
-| neither | 49 | 21.7 km | 0 |
-| fords only | 90 | 41.5 km | **3, all fords** |
-| both | 98 | 56.8 km | 15 (13 bridges, 2 fords) |
+| 1 | **the hybrid, measured**: a routed-cost backbone with POI-to-network branches, on the same three worlds and the same selected places as both standalone runs | whether it keeps the MST's destinations *and* the reverse search's junctions. If it does, it replaces both rows of the shortlist | a planner to write, then one sweep |
+| 2 | **the gameplay checklist below**, on the three islands named in section 4 | whether a tee is cart-traversable, whether a road end is an entrance, and whether two roads counted as one network are walkable — three metrics this study leans on | a session in game, on a stated build |
+| 3 | **a fourth and fifth world** | whether POI-to-network's collapse on world C is the terrain or the sample. Every generalisation here rests on three worlds | one dump each, then one sweep |
+| 4 | **coverage by category for the three presets** | whether "settlements raised to compete" does what it was asked to do. The breakdown exists for the four planner runs and not for the presets | three runs, no new code |
+| 5 | **routing rerun at each span cap** (192, 256, 512 m) | whether a longer bridge recovers destinations, which Appendix B's straight-line table cannot say | four runs, no new code |
+| 6 | **the priced route, cached** | how much of routed-cost MST's 2.3× is redundant work: it routes every committed edge twice | a change to the planner, then one sweep |
 
-Three river fords in a whole world. Turning fords on adds 41 roads and almost
-none of it is river crossing: it is the swamp wading that comes with the same
-flag. Bridges then add eight more roads with thirteen bridges, so a bridge
-earns its place at a far higher rate than a ford does. Worth knowing before
-more effort goes into ford geometry.
+### The validation sequence, if it is run
 
-### Can a road follow another one?
+None of this has been walked, driven or carted. This is the shortest sequence
+that would turn the geometry into a gameplay recommendation, on the three
+islands named in section 4 — and it must be run against a build and terrain
+that are stated, because the terrain here is pre-1.0.
 
-Not today. The only place an existing road enters the cost of a move is a
-river crossing, which costs half when both banks already carry road. Ordinary
-road carries no discount, so two roads to nearby places run side by side and a
-junction only happens where one road ends near another.
+| # | what to check | acceptance criterion |
+|---|---|---|
+| 1 | drive a cart through each reported tee | a cart takes it without dismounting |
+| 2 | walk each served place's road end | the road ends on ground a player would walk in on |
+| 3 | walk between roads counted as one network | the join is walkable, not just within 24 m |
+| 4 | time a few road journeys against the same journey overland | the road is worth taking |
 
-Added as a lever and swept, it does nothing:
+Appendix C narrows check 3 from "every join" to a short list: no join under any
+plan is worse than 5.7 m in height, and only eleven exceed 2 m.
 
-| a step on existing road costs | roads | distinct road | served | joined groups |
-|---|---|---|---|---|
-| full price (the study baseline) | 88 | 54.0 km | 123 | 49 |
-| half | 88 | 54.0 km | 123 | 49 |
-| a quarter | 88 | 54.0 km | 122 | 49 |
-| a twentieth | 88 | 53.4 km | 122 | 49 |
-
-The first version of that sweep was wrong in two ways, both found in review:
-the discount was applied after the early returns for slope, variance, water
-and river, so it never touched the moves whose cost shapes a route; and the
-search's heuristic is straight-line metres, which stops being admissible once
-moves are cheaper than their length, so the search could prune the very routes
-the discount was meant to open. Both are fixed — every move class is
-discounted, and the heuristic is scaled by the discount — and the table above
-is from the repaired experiment.
-
-It still shows almost nothing, and now the reason is clear: **at this baseline
-there is nothing to share.** The quota gives an island two or three roads, and
-two roads that start from the same anchor and end in different directions have
-no common stretch to reuse.
-
-Where there is something to share, it works. With every eligible place
-selected — 2 080 roads instead of 88 — and the discount requiring a step
-within 4 m of a road rather than merely near one:
-
-| every place selected | roads | distinct road | summed over routes | served |
-|---|---|---|---|---|
-| no discount | 2 080 | 383.4 km | 410.7 km | 2 322 |
-| a quarter price within 4 m | 2 084 | 371.5 km | 458.4 km | 2 315 |
-| a twentieth within 4 m | 2 086 | 373.2 km | 489.2 km | 2 315 |
-
-Distinct road falls by 12 km while the summed route length rises by 48: the
-routes really are running along each other. Coverage does not move, and
-neither does the largest joined group.
-
-So a sharing discount is not a way to reach more places. It is a way to build
-the same network out of less road, and only where the network is dense enough
-to have roads worth following. Reaching *junctions* — roads meeting rather
-than running side by side — took a plan that attaches to a road, which is
-what trunk and spurs now does.
-
-### The same world, six ways
-
-Six configurations on the issue's seed, drawn at identical bounds and scale,
-locations left off so the roads carry the picture:
-
-![six configurations on one world](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/world-sheet.png)
-
-| panel | roads | distinct road | served | networks |
-|---|---|---|---|---|
-| the shipped defaults | 30 | 12.0 km | 46 | 21 |
-| the study baseline (crossings on, every island) | 88 | 54.0 km | 123 | 49 |
-| all of PR #16 | 96 | 33.8 km | 138 | 47 |
-| quota by priority then nearest | 101 | 42.6 km | 142 | 47 |
-| the anchor walked onto land | 104 | 64.6 km | 124 | 51 |
-| eight places per island | 258 | 92.2 km | 319 | 67 |
-
-The shipped panel is the issue: most of the world has no road at all. Every
-other panel fills more of the world in, and none of them joins it up. Between
-30 roads and 258, the number of separate networks goes from 21 to 67 and never
-falls below 47 — more road on this world means more islands with roads on
-them, not bigger networks. Only PR #16 and the quota change reduce the network
-count at all, and then by two.
-
-## 6. Recommended validation sequence and acceptance criteria †
-
-Everything above is geometry. None of it has been walked, driven or carted, and
-several of the metrics it turns on are drawing-level measures that a player
-would not recognise. This is the shortest sequence that would turn the
-geometric results into a defensible gameplay recommendation, in the order it
-should be run.
-
-**Run it on three contrasting islands, not one.** A dense flat island, a steep
-one, and a water-fragmented one. The study's own island views show how
-differently the same rules land on different terrain, and a single island
-cannot separate a planner's behaviour from its terrain.
-
-| # | what to check | how | acceptance criterion |
-|---|---|---|---|
-| 1 | **Cart-traversable junctions** | drive a cart through every junction the run reports — the tee count is the whole claim for POI-to-network search | a junction a cart can take without dismounting or dropping the cart, at every reported tee |
-| 2 | **Sensible POI entrances** | walk each served place's road end | the road ends on ground a player would walk in on, not on a beach, a cliff face or the far side of the location's own wall |
-| 3 | **Elevation-correct connectivity** | walk between every pair of roads the run counts as one network | two roads counted as joined are actually walkable one to the other; the study's 24 m geometric join has no elevation test at all |
-| 4 | **Journey detours** | time a handful of journeys along the road against the same journey overland | a road is worth taking; a detour a player would refuse is a planner failure the coverage numbers cannot see |
-| 5 | **Per-island generation time** | regenerate one island at a time under each candidate planner | a number that decides whether the 21× offline cost of POI-to-network search is acceptable in game |
-
-> **MEASUREMENT NEEDED — per-island generation time.** The study reports
-> whole-world offline runtimes only (3.9 s for the study baseline, 83.8 s for the
-> POI-to-network run; both in the published manifests). No per-island timing
-> exists, in game or offline. Until it does, no claim can be made about what
-> the reverse search costs the single-island regeneration path.
-
-**What would make the checklist fail.** Any of: a tee a cart cannot take; a
-road end a player cannot enter the location from; two roads reported as one
-network that a player cannot walk between. Each of those would invalidate a
-metric this study leans on, not merely lower a score.
+**This validation has not been run.** The machine that runs the game is parked
+on the pre-1.0 build with another branch deployed and the game running, and the
+planners compared here exist only on the study branch. Until that is arranged,
+**this document is an offline study and its recommendations are candidates for
+gameplay testing, not conclusions about play.**
 
 ### What this cannot tell you
 
-- **Fords.** Whether water is knee-deep is judged from blended heights sampled
-  between the dumped positions, so the offline model interpolates them. On the
-  issue's seed the game found 5 fords and the offline run found none. Nothing
-  about fords should be concluded from these numbers.
-- **Any single road.** Aggregates agree with the game to about one per cent,
-  and 92 % of roads follow the same line, but 7 of 88 deviate and one existed
-  only in game. A claim about one particular road needs that road, in game.
-- **Whether any of this is fun.** No session was played. Cart travel,
-  approaches, whether a road goes somewhere a player wants to go — none of it
-  is measured here.
+- **Fords.** Depth is judged from interpolated heights; on the issue's seed the
+  game found fords and the offline run found none.
+- **Any single road.** Aggregates agree with the game to about one per cent, but
+  7 of 88 roads deviate and one existed only in game.
+- **Whether any of this is fun.**
 
-## Appendix A. The failure atlas
+## Appendix A. The experiment inventory
 
-### Reading a failure on the map
+| idea | what changed | evidence scope | result | disposition |
+|---|---|---|---|---|
+| routed-cost MST | plan edges priced by routing them | 3 worlds, 3 runs each | +3 / +2 / −4 served, 0 / 0 / 2 boss altars lost, 0 tees, 2.3× time | **advance** |
+| POI-to-network search | destination-free search from the place to the network | 3 worlds, 3 runs each | +1 / −3 / −23 served, 3 / 0 / 6 boss altars lost, 28 tees, 0.1 km alongside, 4.3× time | **advance as a branch mechanism** |
+| trunk and spurs | one road on the island's routed long axis, spurs onto it | 3 worlds, 3 runs each | −3 / 0 / −18 served, 5 / 1 / 6 boss altars lost, 29 tees | deprioritise |
+| nearest-connected-place fallback | retry a failed link from the nearest place on the network | issue seed, corrected | +3 served, +1 group, +3.7 km alongside | conditional |
+| nearest-road fallback | retry against the nearest point on a road | issue seed, corrected | no coverage change | deprioritise |
+| tree grown outward with retries | PR #16's plan | issue seed | 90 roads, 126 served, 208 attempts | untested at the new metrics |
+| hub and spoke | anchor serves near places, distant clusters get their own hub | issue seed | 89 roads, 126 served, close to shipped | deprioritise |
+| grow from the network | nearest waiting place attaches to the nearest point on the road | issue seed | 82 roads, 116 served, 15 tees, 1.6 km alongside | deprioritise |
+| candidate-set width for routed MST | 3, 6, 12, 24 neighbours priced | issue seed | flat from 6 onward; the water binds, not the candidates | settled |
+| anchor walked onto land | first point above the waterline | issue seed | 32 stillborn attempts become 5, +19 % road, +1 served | advance, cheap |
+| anchor on a place | highest-priority place on the island | issue seed | 0 stillborn, a third of the attempts, +1 served | advance, cheap |
+| quota by priority-then-nearest | selection, not planning | 3 worlds | 123 → 142 served | **advance first** |
+| road-sharing discount | existing road costs less to walk | issue seed, two densities | nothing at baseline; −12 km distinct at every place | conditional |
+| larger iteration budget | 5 000 → 120 000 | issue seed | plateau by 30 000; the ceiling is already past it | settled, no |
+| longer bridge span | not run — see Appendix B | — | — | untested |
+| routed-cost backbone + POI-to-network branches | not built | — | — | **first follow-up** |
 
-Places are drawn by what became of them and failed attempts by where the
-search actually stopped, so a missing road can be looked at rather than
-inferred: a filled dot is a place a road reached, a red ring one that was
-selected and never reached, a dashed red line an attempt drawn to the nearest
-the search came, and a dashed box the ground that search settled before giving
-up.
+## Appendix B. The failure atlas
 
-![an island with outcomes and failed attempts drawn](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/island-diagnostic.png)
-
-### Three failures, in full
-
-One attempt at a time, at the scale it happened. In each: a white ring is
-where the road was to start, a filled dot the nearest the search ever came to
-its destination, a cross the destination itself, and the dashed box the ground
-the search settled before it gave up.
-
-**The road that never started.** 32 of the 70 failures on this seed look like
-this one, and it is the cheapest to fix.
-
-![a coast anchor sitting in open water](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-anchor.png)
-
-The island's anchor sits about 150 m off its own coast, in open water, because
-the island grid is 128 m and the cell it came from straddles the shore. One
-cell settled, sixteen moves refused, no road. The destination is a crypt 222 m
-inland that no road was ever laid toward.
-
-**The search that filled its island and found no way off it.** 97 290 cells
-settled, and the destination is 3.4 km away on the far side of an archipelago.
-
-![a search that settled a whole archipelago](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-frontier.png)
-
-The box is the ground the search covered before its open set ran empty. It
-walked the islands it could reach, took the crossings it could take, and
-stopped 1 144 m short. Nothing here is a budget problem: the search ran out of
-places to go, not out of iterations. Only a longer crossing would join these.
-
-**The search that ran out of budget.** 100 000 cells — the whole allowance —
-for a destination 1.9 km away.
-
-![a search that spent its whole budget](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-budget.png)
-
-This is the one attempt in 158 that hit the iteration cap. It filled its
-island, reached the south shore, and stopped 1 207 m short of a place on the
-next island down. The dashed box runs past the top of the frame and past the
-edge of the world: once the land was exhausted the search spent what was left
-crawling north over open ocean. The offline harness answers points past the
-world's rim with the rim's own values, so the box's exact northern extent is
-an artefact of the dump — that the search goes out there at all is not.
-
-### Why every failure on one run failed †
-
-Three examples are three examples. This is the whole set: the 27 failed
-attempts of the run anchored on places, which is the run with no stillborn
-anchors in it, so every failure in it is a search that really ran.
-
-**All 27 report "no reachable path".** Not one hit the iteration cap. In every
-case the open set emptied: the search exhausted everything it could walk or
-bridge to, and the destination was not in it. They were not cheap failures
-either — they settled up to 97 290 cells and took up to 2 406 crossings on the
-way.
-
-Measuring the ground between where each search stopped and where it was going,
-on the 8 m dump, using the pathfinder's own rule for what a road may enter:
+The whole set: the 27 failed attempts of the place-anchored run, which is the
+run with no stillborn anchors, so every failure in it is a search that really
+ran. **All 27 report "no reachable path"**; not one hit the iteration cap. They
+settled up to 97 290 cells and took up to 2 406 crossings on the way.
 
 | what stopped it | attempts |
 |---|---|
 | open water wider than a bridge may span | 21 |
 | a bridgeable channel, but the destination is in the Mistlands, where bridges are refused outright | 3 |
-| a bridgeable channel, but no usable bank — every candidate refused for want of one, or for banks more than 2.5 m apart in height | 2 |
+| a bridgeable channel, but no usable bank | 2 |
 | the destination's own cell is under water | 1 |
 
 Twenty-six of twenty-seven are water. The median channel is 256 m and the
 widest is 1.6 km. Two of them are rules rather than geography, and both are
-ours to change: the ban on bridges in the Mistlands, and the 128 m span cap.
+ours to change: the Mistlands bridge ban and the 128 m span cap.
 
-**The table below is a diagnostic estimate, not a result.** It is not a
-measurement of what raising the span cap would recover. It measures the width
-of open water on the straight line between where each search stopped and where
-it was going, and counts how many of those straight-line channels a longer
-bridge could span. Routing was **not** rerun at any of these caps:
+**Straight-line channel widths on the failed lines, as a diagnostic.** This is
+not a measurement of what raising the span cap would recover, and routing was
+not rerun at any of these caps:
 
-| straight-line channel width on the failed line | destinations whose straight-line gap is still too wide |
+| straight-line gap on the failed line | destinations whose gap is still too wide |
 |---|---|
-| 128 m (today's cap) | 21 of 27 |
+| 128 m (the cap in this build) | 21 of 27 |
 | 192 m | 17 |
 | 256 m | 13 |
 | 512 m | 7 |
 
-Read that as an upper bound on what a longer span could help with, not as
-fourteen recovered destinations. A wider cap has to find a *bank* at both ends,
-at a height difference the crossing rule allows, on a line the search actually
-walks — none of which this table tests. Two further caveats: the channel is
-measured along one straight line rather than over every crossing point that
-exists, so a narrower crossing could lie off that line; and a bridge long
-enough to span 512 m is a half-kilometre structure whose desirability is a
-separate question.
+A wider cap has to find a bank at both ends, at a height difference the
+crossing rule allows, on a line the search actually walks, and the channel here
+is measured along one straight line rather than over every crossing point that
+exists. **Rerunning routing at each cap is the only thing that would turn this
+into a result**, and it is worth doing only if a larger cap is being proposed.
 
-> **MEASUREMENT NEEDED — rerun routing at each span cap.** Four runs, one per
-> cap, reporting roads, places served and joined groups, would replace the
-> estimate above with a result. What corroborates the estimate in the meantime
-> is the searches themselves, which took thousands of crossings and still could
-> not get there.
+**What a failed attempt actually costs is less than the count suggests.**
+Twelve of the 27 destinations have a built road ending within 40 m of them
+anyway, because the plan carries on from the place it was heading for whether
+or not the leg to it was built. The failure costs the link, not the
+destination. Five failure case studies are drawn at
+[validation-results/screenshots/study-2026-09-09](https://github.com/tvongaza/ProceduralRoads/tree/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-09):
+a coast anchor 150 m out to sea, a search that settled a whole archipelago, the
+one attempt that spent its whole budget, a bridgeable channel with no usable
+bank, and a harbour whose own cell is below the waterline.
 
-### What a failed attempt actually costs
+## Appendix C. What the geometry metrics cannot say about themselves
 
-Less than the count suggests. **Twelve of the 27 destinations have a built
-road ending within 40 m of them anyway**, because the plan carries on from the
-place it was heading for whether or not the leg to it was built: the place
-that could not be reached from A becomes the start of the leg to B, and that
-leg succeeds. The failure costs the link, not the destination.
+**A junction is a two-dimensional test.** An end within 12 m of another road's
+length is a tee, with no regard for height or for what lies between. Walking
+every junction each plan makes on the issue seed and reading the height across
+it at the nearest point:
 
-![a destination a road already reaches from the other side](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-on-network-anyway.png)
+| plan | tees | median height across | p90 | worst | over 2 m |
+|---|---|---|---|---|---|
+| shipped plan | 1 | 0.30 m | 0.30 m | 0.30 m | 0 |
+| routed-cost MST | 0 | — | — | — | — |
+| trunk and spurs | 29 | 0.30 m | 1.00 m | 1.70 m | 0 |
+| POI-to-network | 28 | 0.40 m | 1.70 m | 5.40 m | 2 |
 
-The other fifteen are places genuinely left off. This is the same effect that
-made the anchor fix worth 19% more road and one more place served, and it is
-why a failed-attempt count is a poor proxy for coverage.
+End-to-end joins are similar: the worst across all four plans is 5.7 m. **No
+junction in this study is a cliff.** The caveat stands — nothing has been
+walked — but it is bounded, and it names the ten joins over 2 m — two under the shipped plan, two
+under routed-cost MST, none under trunk-and-spurs and six under POI-to-network
+— as the ones worth a cart.
 
-### Four failures on the map
+**The offline search can walk off the edge of the world.** Nothing bounds the
+pathfinder to the world disc, and a dump answers a point past the rim with the
+rim's own values, so a search that exhausts the land can spend its remaining
+budget over an ocean the harness invents. On the issue seed this happens to 5
+failed attempts under the shipped plan (179 122 cells), 5 under POI-to-network,
+10 under trunk-and-spurs and **none** under routed-cost MST. It inflates the
+settled-cell counts and the runtimes of the affected plans, and it cannot turn
+a failure into a success, because there is nothing out there to reach. The
+comparison is not corrected for it; the plan whose runtime it flatters least is
+the one recommended, so the correction would not change the ranking.
 
-![a channel wider than any bridge](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-wide-channel.png)
+**The metric definitions are shared, not per-plan.** Tees, ends, alongside,
+joined groups, served and planned-and-built are computed by one function over
+each run's routes, at the same tolerances (12 m junction, 24 m end margin and
+join, 12 m corridor, 1.5 m identity, 25 m served). A difference between two
+plans in this document is a difference in their geometry.
 
-**Bonemass to GoblinKing, 1 648 m apart.** The search settled 29 466 cells
-across the whole group of islands it could reach, came within 626 m on a north
-shore, and stopped. The plan drew this edge because the two places are near
-each other in a straight line.
+## Appendix D. Reproducibility
 
-![a bridgeable channel with no bank a bridge could stand on](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-no-bank.png)
+Every run carries a manifest with a run id, the code commit **and whether the
+tree was dirty**, the build configuration, the runtime and platform, a content
+hash of every input, the settings, four stage timings and the results. The
+manifests, the per-place tables, the per-island tables, the selection and
+attempt tables and the crossings are published beside this document:
 
-**A road that reaches the destination's island but not the destination.** The
-search crossed to within 209 m; the water left on the line is only 72 m, well
-inside a bridge's reach, but every crossing candidate was refused for want of
-a usable bank. Note the green road already on the destination's island: that
-one was built from the other side.
-
-![bridges are refused in the Mistlands](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-mistlands-ban.png)
-
-**182 m, and 40 m of water.** Easily bridgeable, except that the destination
-is in the Mistlands and `TryGetRiverCrossing` refuses a bridge there outright.
-The search filled its island and stopped 111 m short.
-
-![a destination whose own cell is under water](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/docs/validation-gap/validation-results/screenshots/study-2026-09-09/failure-harbour.png)
-
-**A harbour, which is the point.** `Mistlands_Harbour1` sits below the
-waterline, as a harbour does. The search reached the cell beside it — 6 m
-away, of 225 m — and could never enter the goal cell, because a move into
-water below 28 m is blocked. No budget and no bridge would change this one;
-the destination is not ground a road can end on.
-
-## Appendix B. Parameter sweeps and one change at a time
-
-### PR #16, one change at a time
-
-Measured one change at a time from the shipped policy, crossings on, issue
-seed. "Served" counts places a road end reaches.
-
-| change | roads | served | attempts | failed |
-|---|---|---|---|---|
-| shipped, unchanged | 88 | 123 | 158 | 70 |
-| anchor on a location, not a coast cell | 82 | 124 | 109 | 27 |
-| quota by priority then nearest | 101 | 142 | 158 | 57 |
-| tree grown outward with retries | 90 | 126 | 208 | 118 |
-| endpoints snapped to reachable ground | 90 | 124 | 158 | 68 |
-| all of it together | 96 | 138 | 119 | 23 |
-
-The quota change is the biggest single gain. The anchor change serves the same
-places with a third of the wasted attempts.
-
-Island selection needs its own row, because with every island selected it can
-make no difference. At half the islands:
-
-| | roads | served | attempts | failed |
-|---|---|---|---|---|
-| shipped | 73 | 101 | 126 | 53 |
-| shipped, islands balanced over rings | 61 | 86 | 106 | 45 |
-| all of #16 | 72 | 97 | 92 | 20 |
-| all of #16, largest islands first | 84 | 116 | 104 | 20 |
-
-Ring balancing takes one island per ring from the inside out, so the largest
-landmasses in the world can go without roads. On these three worlds it is the
-one part of the package that costs coverage; the rest gains it.
-
-## Appendix C. Two bugs found on the way
-
-### A crash, first
-
-Generating a whole world with bridges enabled threw and left the world with no
-roads at all. Two crossings on one road can overlap on the path — a bridge's
-banks walk out to the bank tops, a swamp bridge's on to dry ground — and the
-painting step assumed they never did.
-
-Fixed, with tests for both shapes, in the bridges branch.
-
-### And a second one
-
-Running the same world twice found another. The second run reported 78 roads
-and 40 787 metres, but the spatial grid held 115 202 points for a network of
-40 970, and the 24 river crossings it reported were the previous run's -
-nineteen of them bridges, in a run with bridges switched off.
-
-The reset before a forced regeneration asks whether roads were *generated*
-this session. A world loaded from a save has roads without having generated
-them, so the reset was skipped and the new network was laid on top of the old
-one. Anyone regenerating roads in an existing world gets both networks in the
-terrain, and the old network's bridges keep their sites.
-
-Fixed the same way: both guards now ask whether the world has a network at
-all. This one is in the base code rather than in the crossings work.
-
-## Appendix D. Review history: where this is still wrong
-
-### Found in the 9 September restructure, and not yet resolved †
-
-These are discrepancies between this document and the data published beside it.
-None of them is fixed by the restructure; each needs a person to decide what the
-right number is.
-
-- **"261 to 299 searches" has no run behind it.** Every published manifest that
-  prices connections — `v2-routed-mst`, `v2-trunk`, `v2-hub`, and all seven
-  `q4-*` plan runs — reports exactly 261 routing probes. The 299 figure appears
-  only in the prose. Either a run is missing from the published set or the
-  number is wrong; the tables in section 4 report 261.
-- **Two different baselines are called "4 seconds".** The `check` run reports
-  3.9 s and is the study baseline everywhere in this document. The plan
-  comparison's own control, `q4-baseline`, is the same configuration and reports
-  20.7 s. The 21× runtime claim for the reverse search compares 83.8 s against
-  3.9 s; against its own control it is about 4×. Which comparison is the honest
-  one depends on what the extra 17 seconds in `q4-baseline` are — most likely
-  the junction and parallel-road metrics, which the earlier run did not compute
-  — and that has not been established.
-- **The reverse plan logs a successful connection twice.** Its 157 attempts are
-  116 connections; see "what an attempt is, per plan" in section 4. The `roads`
-  and `failed` columns are unaffected. No other plan in the study does this.
-- **The iteration sweep runs past the setting's own range.** The plateau table
-  reports a 120 000 row while the same section says the setting has ranged
-  1 000 to 100 000 since it was added. The 120 000 row also reproduces the study
-  baseline (which runs at 100 000) exactly: 88 roads, 1 budget-spent, 69
-  frontier-exhausted. It should either be relabelled 100 000 or shown alongside
-  the 100 000 row.
-- **The screenshot index disagrees with this document about one chart.**
-  `chart-centre.png` is captioned "how far roads sit from their island's centre"
-  in `validation-results/screenshots/study-2026-09-09/README.md` and "distance
-  from the world's centre" here. The text of section 3 is about the world's
-  centre.
-
-### Raised in the first review, fixed since
-
-Raised in review. Fixed since, and named here so the record is plain:
-
-- The MST compared route length, not the cost the search accumulated. It now
-  compares the cost, and the plan rows are rerun.
-- Spurs joined places rather than roads. They now start at the nearest point
-  on a road already built, and the rows are rerun.
-- The road-sharing experiment discounted only the moves that survived the
-  early returns, with a heuristic that stopped being admissible once moves
-  were cheap. Both fixed, and the question re-answered.
-- "Connected" carried several meanings at once. A run now reports them apart:
-  places whose planned road was built, matched by the place's own identity;
-  places with a road end within reach; and roads joined to each other.
-- Length is now reported both as distinct road on the ground and as the sum
-  over routes, because summing punishes a strategy for sharing road. Every
-  table now says which of the two it is reporting.
-- The document asserted things about the map that a reader could not look at.
-  The world is now drawn under six configurations at one scale, six islands at
-  one scale, and three failures one at a time; and the run's places are broken
-  out by what they are — boss, dungeon, settlement, ruin — with every required
-  destination the generator did not reach named.
-
-### Still true of the numbers here, and not fixed
-
-- **The offline search can walk off the edge of the world.** Nothing bounds
-  the pathfinder to the world disc, and a dump answers a point past the rim
-  with the rim's own values, so a search that exhausts the land can spend its
-  remaining budget over an ocean the harness invents. One attempt on this seed
-  did. In game the values out there would differ; the behaviour would not.
-
-- **Roads are joined geometrically**, by an endpoint within 24 m of another
-  road, with no regard for elevation or what lies between. Two roads on
-  opposite banks of a narrow river count as one network. It is a drawing-level
-  measure, not a walkable one, and nothing here has been walked.
-- **The strategies differ by a few places served**, which is inside the
-  distance between this model and the game: the calibration matched 92 % of
-  roads but not all of them. Treat the plan table as a description of
-  behaviour, not a ranking.
-- **One world carries most of the detail.** The three-seed table holds for the
-  broad results; the finer ones — clustering, the priority table, the sharing
-  sweep — were measured on the issue seed alone.
-
-## Appendix E. Reproducibility: the runs behind these numbers
-
-Every table above comes from a run whose manifest carries a run id, the study
-commit, the settings and a content hash of every input. The manifests, the
-per-place outcomes, the per-island table, the selection and attempt tables and
-the crossings are published beside this document:
-
-[validation-results/study-2026-09-09](https://github.com/tvongaza/ProceduralRoads/tree/docs/validation-gap/validation-results/study-2026-09-09)
+[validation-results/study-2026-09-10](https://github.com/tvongaza/ProceduralRoads/tree/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/study-2026-09-10)
 
 Route geometry is not published — several megabytes a run — but it regenerates
 from the manifest, which names the code and the inputs exactly.
+
+**Every link in this document is pinned to commit `6d3403a`**, the revision
+that published the data and the images, so a later change on the branch cannot
+alter the evidence a claim here rests on.
+
+The comparison in section 4 is 48 runs: three worlds × four plans × (one
+warm-up + three measured). All were produced by the study branch at
+`f3cb226-dirty` — the working tree that became the instrumentation commit —
+in a **Release** build on .NET 10.0.7, macOS arm64, 8 processors.
+
+## Appendix E. Corrections to the previous draft
+
+Each of these was a claim in the 9 September version of this document. Each is
+now either measured or withdrawn.
+
+| claim as it stood | what it is now | how it was resolved |
+|---|---|---|
+| "POI-to-network costs 84 s against 4, a **21× increase**" | **4.2–4.5×** | the 83.8 s run was a Debug build and the 3.9 s run a Release one. Debug is 6.4× Release on this workload: the same generation, same inputs, same output, 20.5 s against 3.2 s. Rerun in one build. |
+| "the difference between the two controls has not been explained" | explained | `check` (3.9 s) and `q4-baseline` (20.7 s) are byte-identical runs in different build configurations. The added junction metrics were the suspect and are not: measuring a finished network costs 0.17 s. |
+| "261 to 299 searches has no run behind it" | supported | 261, 283 and 299 are the planning searches on the three worlds. The range was across worlds and had lost its label. |
+| "the six places counted as planned-and-built but not served have not been enumerated" | enumerated, and the mechanism was wrong | it is **eight** places, and two go the other way. They are not roads trimmed short of the circle: every one has its nearest road end at *exactly* its own radius, which makes the served test a float comparison against the number the endpoint was constructed to equal. Reported now as `served` and `served (resolved)`. |
+| "the reverse plan logs a successful connection twice" | quantified | 157 rows are 46 seeds + 70 destination-free searches (41 found the network) + 41 road builds (40 committed). 116 connections, 86 roads, 30 failures. **One search found the network and still built no road** — the path trimmed to nothing — so a successful search does not imply a committed road. |
+| "the fallbacks move served count by zero" | **wrong** | the nearest-connected-place fallback was choosing the place the failed leg started from and re-running the identical search, 52 times in 70. Fixed, it buys 3 places and joins one more group, in 196 searches rather than 228. |
+| "the 120 000-iteration row should be relabelled" | kept, and labelled | the harness sets the field directly and really ran 120 000; the config binds a player to 1 000–100 000. Both rows are shown. |
+| `chart-centre.png` "how far roads sit from their island's centre" | the world's centre | the calculation is `Vector2(x, z).magnitude` — distance from (0, 0). The document was right and the asset index was wrong; the index is corrected. |
+| bridge spans: "read that as an upper bound on what a longer span could help with" | a straight-line gap diagnostic | it measures water on one straight line and tests neither banks nor routing. The "upper bound" and "recovered destinations" framing is withdrawn. |
+| "this document does not record the game build or the seeds" | recorded | Valheim 0.221.12, buildid 21981559; Issue7's seed is `gqZ5SrFUjk`. The other two seeds are on the machine that dumped them and are marked unknown rather than guessed. |
+| the strategy table's "attempts" column | split into connections, build searches and planning searches | a row count and a connection count are not the same number, and one plan writes two rows per connection. |
+| the study baseline named `FordsEnabled` and `BridgesEnabled` | named as the run's switches | those config keys no longer exist: crossings ship on. |
+
+Raised in the first review and fixed before that draft, kept here so the record
+is plain: the MST compared route length rather than the cost the search
+accumulated; spurs joined places rather than roads; the road-sharing experiment
+discounted only the moves that survived the early returns, with a heuristic
+that stopped being admissible once moves were cheap; "connected" carried several
+meanings at once; and length is now reported both ways.
 
 ## Appendix F. Not reproduced
 
