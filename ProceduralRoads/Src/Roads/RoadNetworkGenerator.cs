@@ -680,13 +680,11 @@ public static partial class RoadNetworkGenerator
 
         if (StudyFactors.TieBreak == PriorityTieBreak.SeededShuffle)
         {
-            // A per-place key from the world seed and the place's own position:
-            // order-independent, so it does not matter what order the list
-            // arrives in, and identical for the same world every time.
-            int seed = WorldGenerator.instance?.GetSeed() ?? 0;
+            // The candidate list already arrives in seeded order (see Reorder),
+            // so the stable sort now preserves THAT instead of prefab
+            // enumeration order.
             return candidates
                 .OrderByDescending(loc => GetLocationPriority(loc.name))
-                .ThenBy(loc => TieKey(seed, loc.position))
                 .Take(maxCount)
                 .ToList();
         }
@@ -980,7 +978,29 @@ public static partial class RoadNetworkGenerator
         List<(string name, Vector3 position, float radius)> candidates, int maxCount) =>
         maxCount <= 0
             ? new List<(string name, Vector3 position, float radius)>()
-            : StudyFactors.Quota switch
+            : QuotaRule(Reorder(candidates), maxCount);
+
+    /// <summary>
+    /// The tie-break, applied to the CANDIDATE LIST rather than inside one
+    /// selection rule - because every rule here inherits the order it is given.
+    /// The truncating quota inherits it through a stable sort; PR #16's rule
+    /// inherits it through the seed of its greedy loop, which is the first
+    /// element after that same stable sort. A tie-break that only fixed one of
+    /// them would leave the other reading prefab enumeration order, and a test
+    /// of it would prove nothing about the other.
+    /// </summary>
+    private static List<(string name, Vector3 position, float radius)> Reorder(
+        List<(string name, Vector3 position, float radius)> candidates)
+    {
+        if (StudyFactors.TieBreak == PriorityTieBreak.ListOrder)
+            return candidates;
+        int seed = WorldGenerator.instance?.GetSeed() ?? 0;
+        return candidates.OrderBy(loc => TieKey(seed, loc.position)).ToList();
+    }
+
+    private static List<(string name, Vector3 position, float radius)> QuotaRule(
+        List<(string name, Vector3 position, float radius)> candidates, int maxCount) =>
+            StudyFactors.Quota switch
             {
                 LocationQuota.PriorityThenNearest => SelectLocationsPriorityThenNearest(candidates, maxCount),
                 LocationQuota.PriorityThenFarthest => SelectLocationsPriorityThenFarthest(candidates, maxCount),
