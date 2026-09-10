@@ -593,6 +593,97 @@ public static partial class RoadNetworkGenerator
     }
 
     /// <summary>
+    /// Decide per place instead of in advance: price BOTH ways onto the
+    /// network and take whichever the pathfinder says is cheaper.
+    ///
+    /// The hybrid partitions the destination list by priority and so decides
+    /// which places branch before it has measured anything. That is why it
+    /// interpolates: the partition is a guess, and the study's whole argument
+    /// against straight-line planning is that guesses about routing are the
+    /// thing that goes wrong. Here nothing is guessed. For each place in turn,
+    /// the plan prices the cheapest routed edge from a place already on the
+    /// network, prices the destination-free search from the place itself, and
+    /// builds the cheaper of the two.
+    ///
+    /// Both prices are in the same unit - the cost the pathfinder accumulated,
+    /// which is what <see cref="RoadPathfinder.LastPathCost"/> reports for
+    /// either search - so the comparison is meaningful rather than a
+    /// straight-line proxy.
+    ///
+    /// Study instrument. Not part of any PR.
+    /// </summary>
+    private static void GenerateCheapestOfBothRoads(
+        Vector3 startPos, float startRadius,
+        List<(string name, Vector3 position, float radius)> locations,
+        string startName)
+    {
+        List<Node> nodes = PlanNodes(startPos, startRadius, startName, locations);
+        if (nodes.Count < 2 || m_pathfinder == null)
+            return;
+
+        Dictionary<(int, int), float> costs = RoutedCosts(nodes);
+        (int a, int b)? seed = SeedConnection(nodes, costs);
+        if (!seed.HasValue)
+        {
+            Log.LogDebug("Cheapest of both: nothing on this island is routable to anything else");
+            return;
+        }
+        HashSet<int> onNetwork = new() { 0, seed.Value.a, seed.Value.b };
+        Build(nodes[seed.Value.a], nodes[seed.Value.b], "seed");
+
+        List<int> waiting = Enumerable.Range(1, nodes.Count - 1).Where(i => !onNetwork.Contains(i)).ToList();
+        waiting.Sort((x, y) => GetLocationPriority(nodes[y].Name).CompareTo(GetLocationPriority(nodes[x].Name)));
+
+        foreach (int node in waiting)
+        {
+            Node place = nodes[node];
+            Vector2 from = new(place.Position.x, place.Position.z);
+
+            // What the tree would charge: the cheapest already-priced edge from
+            // something already on the network.
+            int bestFrom = -1;
+            float edgeCost = float.MaxValue;
+            foreach (int on in onNetwork)
+            {
+                float? cost = Cost(costs, on, node);
+                if (cost.HasValue && cost.Value < edgeCost) { edgeCost = cost.Value; bestFrom = on; }
+            }
+
+            // What the reverse search would charge. This is a real search, so
+            // it is logged - it is work the plan spent whether or not it wins.
+            int connection = RoadAttemptLog.OpenConnection("race");
+            RoadAttemptLog.NextRow("race-probe", connection);
+            PathfinderTrace? trace = RoadAttemptLog.Begin();
+            List<Vector2>? reverse = m_pathfinder.FindPathToNetwork(
+                from, StudyFactors.ReverseSearchReach, NetworkHints());
+            float reverseCost = reverse != null && reverse.Count >= 2 ? m_pathfinder.LastPathCost : float.MaxValue;
+            RoadAttemptLog.Finish(trace, $"{place.Name} -> road (probe)", from,
+                reverse != null && reverse.Count >= 2 ? reverse[reverse.Count - 1] : from,
+                connected: reverse != null && reverse.Count >= 2, m_pathfinder.LastOutcome, 0f, 0);
+
+            if (reverseCost == float.MaxValue && bestFrom < 0)
+            {
+                Log.LogDebug($"Cheapest of both: {place.Name} is not routable either way");
+                continue;
+            }
+
+            if (reverseCost <= edgeCost && reverse != null)
+            {
+                Vector3 junction = new(reverse[reverse.Count - 1].x, 0f, reverse[reverse.Count - 1].y);
+                RoadAttemptLog.NextRow("race-branch", connection);
+                if (GenerateRoad(place.Position, place.Radius, junction, 0f, RoadWidth, $"{place.Name} -> road"))
+                    onNetwork.Add(node);
+            }
+            else
+            {
+                RoadAttemptLog.NextRow("race-edge", connection);
+                if (Build(nodes[bestFrom], nodes[node], "race-edge"))
+                    onNetwork.Add(node);
+            }
+        }
+    }
+
+    /// <summary>
     /// A second chance at a connection the pathfinder could not build: the
     /// nearest point on a road already built, then the nearest place already
     /// on the network. Both are searches the plan did not intend to run, so

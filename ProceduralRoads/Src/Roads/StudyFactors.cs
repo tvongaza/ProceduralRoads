@@ -119,6 +119,10 @@ public enum ConnectionPlan
     /// <summary>Study proposal: a routed-cost tree over the places that must be
     /// reached, then the destination-free search for everything else.</summary>
     RoutedBackboneReverseBranches,
+
+    /// <summary>Study proposal: price both ways onto the network per place and
+    /// build the cheaper.</summary>
+    CheapestOfBoth,
 }
 
 /// <summary>
@@ -154,6 +158,14 @@ public static class StudyFactors
     /// keeping.
     /// </summary>
     public static int BackbonePriority = 80;
+
+    /// <summary>
+    /// Multiplies the per-island quota the area formula produces, so "twice as
+    /// many places on an island" can be asked without replacing the rule. The
+    /// MaxLocationsPerIsland ceiling still applies afterwards and will bind
+    /// sooner at a multiplier above one.
+    /// </summary>
+    public static int QuotaMultiplier = 1;
 
     /// <summary>How many places an island may have roads to.</summary>
     public static IslandQuota Quantity = IslandQuota.AreaFormula;

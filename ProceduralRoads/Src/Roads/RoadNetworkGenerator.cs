@@ -652,6 +652,9 @@ public static partial class RoadNetworkGenerator
     private static int GetMaxLocationsForIsland(Island island)
     {
         int scaled = MinLocationsPerIsland + (int)(island.ApproxArea / AreaPerLocation);
+        // Study lever: ask for a multiple of what the formula gives, without
+        // replacing the formula. One is the shipped behaviour.
+        scaled *= Mathf.Max(1, StudyFactors.QuotaMultiplier);
         return Mathf.Clamp(scaled, MinLocationsPerIsland, MaxLocationsPerIsland);
     }
 
@@ -967,6 +970,9 @@ public static partial class RoadNetworkGenerator
                     break;
                 case ConnectionPlan.RoutedBackboneReverseBranches:
                     GenerateRoutedBackboneReverseBranchRoads(startPos, startRadius, roadLocations, startName);
+                    break;
+                case ConnectionPlan.CheapestOfBoth:
+                    GenerateCheapestOfBothRoads(startPos, startRadius, roadLocations, startName);
                     break;
             }
 

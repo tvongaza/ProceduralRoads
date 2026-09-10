@@ -198,8 +198,9 @@ internal static class Generate
                 "grow" => ConnectionPlan.GrowFromNetwork,
                 "reverse" => ConnectionPlan.ReverseToNetwork,
                 "hybrid" => ConnectionPlan.RoutedBackboneReverseBranches,
+                "race" => ConnectionPlan.CheapestOfBoth,
                 _ => throw new ArgumentException(
-                    $"--plan must be parity, tree, routed-mst, trunk, hub, grow, reverse or hybrid, not '{plan}'"),
+                    $"--plan must be parity, tree, routed-mst, trunk, hub, grow, reverse, hybrid or race, not '{plan}'"),
             };
 
         string? fallback = Options.Value(args, "--fallback");
@@ -233,6 +234,10 @@ internal static class Generate
             else
                 throw new ArgumentException($"--places must be all, formula or a number, not '{places}'");
         }
+
+        string? multiplier = Options.Value(args, "--quota-multiplier");
+        if (multiplier != null)
+            StudyFactors.QuotaMultiplier = int.Parse(multiplier, CultureInfo.InvariantCulture);
 
         string? backbone = Options.Value(args, "--backbone-priority");
         if (backbone != null)
