@@ -115,6 +115,10 @@ public enum ConnectionPlan
     /// stops at the first road it reaches, so nothing has to guess which point
     /// on the network to aim at.</summary>
     ReverseToNetwork,
+
+    /// <summary>Study proposal: a routed-cost tree over the places that must be
+    /// reached, then the destination-free search for everything else.</summary>
+    RoutedBackboneReverseBranches,
 }
 
 /// <summary>
@@ -141,6 +145,15 @@ public static class StudyFactors
     /// having reached the network. One pathfinding cell: closer than this and
     /// the junction is on the road; further and it is a road beside a road.</summary>
     public static float ReverseSearchReach = 8f;
+
+    /// <summary>
+    /// The priority at or above which a place rides the hybrid's routed
+    /// backbone rather than reaching for it. 80 is the band the generator's own
+    /// table gives bosses, crypts, mountain caves and anything registered
+    /// through the API - which is very nearly the set the study cares about
+    /// keeping.
+    /// </summary>
+    public static int BackbonePriority = 80;
 
     /// <summary>How many places an island may have roads to.</summary>
     public static IslandQuota Quantity = IslandQuota.AreaFormula;
@@ -205,6 +218,8 @@ public static class StudyFactors
     public static string Describe() =>
         $"anchor={Anchor}, islands={Islands}, sharing={ExistingRoadCostFraction:0.##}, places={Quantity}" +
         (Quantity == IslandQuota.FixedCount ? $"({FixedPlaceCount})" : "") +
-        $", quota={Quota}, plan={Plan}, fallback={Fallback}, " +
+        $", quota={Quota}, plan={Plan}" +
+        (Plan == ConnectionPlan.RoutedBackboneReverseBranches ? $"(backbone>={BackbonePriority})" : "") +
+        $", fallback={Fallback}, " +
         $"filterEndpoints={FilterUnreachableEndpoints}, snapEndpoints={SnapEndpointsToPathableGround}";
 }

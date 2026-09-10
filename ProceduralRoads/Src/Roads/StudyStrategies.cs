@@ -159,8 +159,21 @@ public static partial class RoadNetworkGenerator
             return;
 
         Dictionary<(int, int), float> costs = RoutedCosts(nodes);
+        GrowRoutedTree(nodes, costs, Enumerable.Range(1, nodes.Count - 1), "mst-edge");
+    }
+
+    /// <summary>
+    /// Prim's, on the cost the pathfinder accumulated rather than on
+    /// straight-line distance, over the anchor and whichever nodes the caller
+    /// names. Shared by the routed MST, which passes every selected place, and
+    /// by the hybrid, which passes only its backbone.
+    /// </summary>
+    private static HashSet<int> GrowRoutedTree(
+        List<Node> nodes, Dictionary<(int, int), float> costs, IEnumerable<int> members, string role)
+    {
         HashSet<int> inTree = new() { 0 };
-        HashSet<int> remaining = new(Enumerable.Range(1, nodes.Count - 1));
+        HashSet<int> remaining = new(members);
+        remaining.Remove(0);
 
         while (remaining.Count > 0)
         {
@@ -187,19 +200,21 @@ public static partial class RoadNetworkGenerator
                 int next = remaining.OrderByDescending(i => GetLocationPriority(nodes[i].Name)).First();
                 inTree.Add(next);
                 remaining.Remove(next);
-                Log.LogDebug($"Routed MST: no route to the rest; new component at {nodes[next].Name}");
+                Log.LogDebug($"Routed tree: no route to the rest; new component at {nodes[next].Name}");
                 continue;
             }
 
-            if (Build(nodes[bestFrom], nodes[bestTo], "mst-edge"))
+            if (Build(nodes[bestFrom], nodes[bestTo], role))
                 inTree.Add(bestTo);
             else
                 costs.Remove(bestFrom < bestTo ? (bestFrom, bestTo) : (bestTo, bestFrom));
 
             remaining.Remove(bestTo);
             if (!inTree.Contains(bestTo))
-                Log.LogDebug($"Routed MST: {nodes[bestFrom].Name} -> {nodes[bestTo].Name} planned but not built");
+                Log.LogDebug($"Routed tree: {nodes[bestFrom].Name} -> {nodes[bestTo].Name} planned but not built");
         }
+
+        return inTree;
     }
 
     /// <summary>
@@ -487,6 +502,93 @@ public static partial class RoadNetworkGenerator
             RoadAttemptLog.NextRow("branch-build", connection);
             if (GenerateRoad(place.Position, place.Radius, junction, 0f, RoadWidth, $"{place.Name} -> road"))
                 done.Add(node);
+        }
+    }
+
+    /// <summary>
+    /// The hybrid the study's own results argued for: a routed-cost backbone
+    /// carrying the places that must be reached, and everything else finding
+    /// its own way onto it.
+    ///
+    /// The comparison in section 4 of the study says the two halves fail in
+    /// opposite directions. A routed-cost MST keeps the shipped plan's
+    /// destinations - it drops the fewest boss altars of any plan tried - and
+    /// makes almost no junctions. The reverse search makes junctions and builds
+    /// almost nothing twice, but as a whole plan it swaps destinations heavily
+    /// and loses required ones on two worlds of three. Neither result argues
+    /// for the other plan; both argue for this one.
+    ///
+    /// So: the backbone is a routed tree over the anchor and every place at or
+    /// above <see cref="StudyFactors.BackbonePriority"/>, which is what the MST
+    /// is good at. Everything below that priority then runs the
+    /// destination-free search and joins the backbone wherever it can, which is
+    /// what the reverse search is good at.
+    /// </summary>
+    private static void GenerateRoutedBackboneReverseBranchRoads(
+        Vector3 startPos, float startRadius,
+        List<(string name, Vector3 position, float radius)> locations,
+        string startName)
+    {
+        List<Node> nodes = PlanNodes(startPos, startRadius, startName, locations);
+        if (nodes.Count < 2 || m_pathfinder == null)
+            return;
+
+        List<int> backbone = Enumerable.Range(1, nodes.Count - 1)
+            .Where(i => GetLocationPriority(nodes[i].Name) >= StudyFactors.BackbonePriority)
+            .ToList();
+        List<int> branches = Enumerable.Range(1, nodes.Count - 1)
+            .Where(i => !backbone.Contains(i))
+            .ToList();
+
+        Dictionary<(int, int), float> costs = RoutedCosts(nodes);
+
+        if (backbone.Count == 0)
+        {
+            // No place on this island clears the bar. Something still has to
+            // exist before anything can reach it, so seed exactly as the
+            // reverse plan does rather than leaving the island bare.
+            (int a, int b)? seed = SeedConnection(nodes, costs);
+            if (!seed.HasValue)
+            {
+                Log.LogDebug("Hybrid: nothing on this island is routable to anything else");
+                return;
+            }
+            Build(nodes[seed.Value.a], nodes[seed.Value.b], "seed");
+            branches.Remove(seed.Value.a);
+            branches.Remove(seed.Value.b);
+        }
+        else
+        {
+            GrowRoutedTree(nodes, costs, backbone, "backbone-edge");
+        }
+
+        // Then everything else reaches for whatever the backbone built, most
+        // important first. Identical to the reverse plan's branch loop, so the
+        // two are comparable: same search, same reach, same logging.
+        branches.Sort((x, y) => GetLocationPriority(nodes[y].Name).CompareTo(GetLocationPriority(nodes[x].Name)));
+
+        foreach (int node in branches)
+        {
+            Node place = nodes[node];
+            int connection = RoadAttemptLog.OpenConnection("branch");
+            RoadAttemptLog.NextRow("branch-search", connection);
+            PathfinderTrace? trace = RoadAttemptLog.Begin();
+            Vector2 from = new(place.Position.x, place.Position.z);
+            List<Vector2>? path = m_pathfinder.FindPathToNetwork(
+                from, StudyFactors.ReverseSearchReach, NetworkHints());
+
+            if (path == null || path.Count < 2)
+            {
+                RoadAttemptLog.Finish(trace, $"{place.Name} -> road", from, from,
+                    connected: false, m_pathfinder.LastOutcome, 0f, 0);
+                continue;
+            }
+
+            RoadAttemptLog.Finish(trace, $"{place.Name} -> road", from, path[path.Count - 1],
+                connected: true, "found", 0f, 0);
+            Vector3 junction = new(path[path.Count - 1].x, 0f, path[path.Count - 1].y);
+            RoadAttemptLog.NextRow("branch-build", connection);
+            GenerateRoad(place.Position, place.Radius, junction, 0f, RoadWidth, $"{place.Name} -> road");
         }
     }
 

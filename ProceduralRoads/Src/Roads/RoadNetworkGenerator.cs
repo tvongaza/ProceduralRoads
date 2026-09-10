@@ -965,6 +965,9 @@ public static partial class RoadNetworkGenerator
                 case ConnectionPlan.ReverseToNetwork:
                     GenerateReverseToNetworkRoads(startPos, startRadius, roadLocations, startName);
                     break;
+                case ConnectionPlan.RoutedBackboneReverseBranches:
+                    GenerateRoutedBackboneReverseBranchRoads(startPos, startRadius, roadLocations, startName);
+                    break;
             }
 
             return;

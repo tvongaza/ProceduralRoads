@@ -197,8 +197,9 @@ internal static class Generate
                 "hub" => ConnectionPlan.HubAndSpoke,
                 "grow" => ConnectionPlan.GrowFromNetwork,
                 "reverse" => ConnectionPlan.ReverseToNetwork,
+                "hybrid" => ConnectionPlan.RoutedBackboneReverseBranches,
                 _ => throw new ArgumentException(
-                    $"--plan must be parity, tree, routed-mst, trunk, hub, grow or reverse, not '{plan}'"),
+                    $"--plan must be parity, tree, routed-mst, trunk, hub, grow, reverse or hybrid, not '{plan}'"),
             };
 
         string? fallback = Options.Value(args, "--fallback");
@@ -232,6 +233,10 @@ internal static class Generate
             else
                 throw new ArgumentException($"--places must be all, formula or a number, not '{places}'");
         }
+
+        string? backbone = Options.Value(args, "--backbone-priority");
+        if (backbone != null)
+            StudyFactors.BackbonePriority = int.Parse(backbone, CultureInfo.InvariantCulture);
 
         string? neighbours = Options.Value(args, "--neighbours");
         if (neighbours != null)
