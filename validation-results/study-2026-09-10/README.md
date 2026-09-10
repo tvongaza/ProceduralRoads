@@ -43,5 +43,13 @@ writes two rows for one connection, so this is not a connection count.
 `planningSearches` is searches a plan ran to price a candidate edge; they lay
 no road and appear in no attempt row. `totalSearches` is the work.
 
+## Resolving the commit id
+
+Every manifest here records `f3cb226-dirty`: the runs were made from a working
+tree that had not yet been committed, and the marker says so rather than naming
+a commit whose tree was not the one that ran. **That tree is the study branch's
+`be34d54`.** A clean `be34d54` reproduces these runs on every metric except the
+timings.
+
 Route geometry is not published: several megabytes per run, and it regenerates
 from the manifest, which names the code and the inputs by content hash.

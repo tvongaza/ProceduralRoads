@@ -734,8 +734,13 @@ alter the evidence a claim here rests on.
 
 The comparison in section 4 is 48 runs: three worlds × four plans × (one
 warm-up + three measured). All were produced by the study branch at
-`f3cb226-dirty` — the working tree that became the instrumentation commit —
-in a **Release** build on .NET 10.0.7, macOS arm64, 8 processors.
+`f3cb226-dirty` in a **Release** build on .NET 10.0.7, macOS arm64, 8
+processors. **That dirty tree is now committed as `be34d54`**, and the
+committed code reproduces the published runs exactly: rerunning
+POI-to-network on the issue seed from a clean `be34d54` gives the same roads,
+lengths, served counts, joined groups, tees, alongside metres, connections and
+searches — every metric in the manifest except the timings, which are the
+machine.
 
 ## Appendix E. Corrections to the previous draft
 
