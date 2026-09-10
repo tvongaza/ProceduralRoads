@@ -25,12 +25,15 @@ table; Appendix E lists what earlier drafts got wrong.
 
 ## 1. Executive summary
 
-**Why are networks sparse?** Not the search. On world A 2 470 places
-are eligible for a road and the per-island quota — `2 + area / 2 km²` — selects
-158 of them. **About 93 % of eligible places never get an attempt at all.**
-Pathfinding failure accounts for roughly one per cent and the iteration budget,
-the setting the issue discusses, for one place in the world. Raising the budget
-cannot recover destinations that were never selected.
+**Why are networks sparse?** Not mainly the search. On world A 2 470 places are
+eligible for a road and the per-island quota — `2 + area / 2 km²` — selects 158
+of them. **About 93 % of eligible places never get an attempt at all**, and no
+search setting can reach a place selection never chose. The iteration budget,
+the setting the issue discusses, is worth something but not that: at the study
+baseline's 100 000 it binds one attempt in 158, while at the **shipped 10 000**
+it binds 33, and raising it to 30 000 is worth 10 roads and 10 more places
+served. That is a real gain inside the 7 % that were selected, and it leaves
+the 93 % untouched.
 
 **What limits the network above that?** Water. Of the 27 failures in the run
 with no wasted anchors, 26 are a channel a road cannot cross; the median is
@@ -42,27 +45,30 @@ because these worlds are archipelagos. Plan choice matters far less than that.
 
 | approach | recommendation | why |
 |---|---|---|
-| **routed-cost MST** | **advance** | the strongest candidate for preserving destination coverage among the alternatives tested: of the shipped plan's own destinations it drops 0, 3 and 7 on the three worlds, and of its boss altars 0, 0 and 2 — less than half what either other plan drops. Against that it makes **no junctions at all**, and costs 2.3× the generation time on this harness (Appendix C: a figure the boundary artifact flatters). |
+| **routed-cost MST** | **advance** | the strongest candidate for preserving destination coverage among the alternatives tested: of the shipped plan's own destinations it drops 0, 3 and 7 on the three worlds, and of its boss altars 0, 0 and 2 — less than half what either other plan drops. Against that it produces **very few tees — 0, 1 and 0 across the three worlds** — and costs 2.3× the generation time on this harness (Appendix C: a figure the boundary artifact flatters). |
 | **POI-to-network search** | **advance as a branch mechanism, not as a whole plan** | the only plan that makes junctions without spending road to do it: 28 tees against 1, and 0.1 km running alongside other road against 4.8 km. Against that it drops 10, 17 and 32 of the shipped plan's destinations and up to 6 of its boss altars. |
 | trunk and spurs | deprioritise | most junctions of any plan (29), but the worst boss coverage on all three worlds (drops 5, 1 and 6): its junctions are bought by not reaching things. |
 | the shipped plan | keep as the baseline | it reaches the most required destinations on two of three worlds; its weakness is shape, not reach — one tee in a world. |
-| nearest-connected-place fallback | worth a second look | serves 3 more places, for fewer searches than the shipped chain spends failing. It joins nothing, and costs 3.7 km more road running alongside other road. |
+| nearest-connected-place fallback | worth a second look | serves 3 more places, for 38 more searches and 3.7 km more road running alongside other road. It does not join existing components. |
 | road-sharing discount | conditional | 12 km of distinct road saved once every place is selected; nothing at all at the study baseline. |
-| larger iteration budget | no | the budget binds one attempt in 158, and the setting's ceiling is already past the plateau. |
+| larger iteration budget | **worth raising from the shipped default** | at the study's 100 000 the budget binds one attempt in 158 — but the mod ships at 10 000, where it binds 33, and 10 000 → 30 000 is worth 10 roads and 10 more places served on world A. Diminishing above ~30 000, and it cannot reach anything selection never chose. |
 
 **The one hypothesis this study now has a reason to test.** Routed-cost MST
-holds destinations and makes no junctions; POI-to-network makes junctions and
+holds destinations and makes almost no tees; POI-to-network makes tees and
 drops destinations. A routed-cost backbone with POI-to-network branches is the
 obvious combination, and **it has not been built or measured.** It is the first
 follow-up experiment, not a recommendation.
 
-**What remains unproven.** Walkable connectivity: roads are joined here
-geometrically, by an endpoint within 24 m. Appendix C measures the height
-across every one of those joins and finds none worse than 5.7 m, which bounds
-the risk without removing it. And gameplay quality — nothing here has been
-played.
+**What remains unproven.** Connectivity is measured geometrically, by endpoint
+proximity and by a shared-place rule, and neither establishes a walkable
+connection. The endpoint-height screen on world A helps prioritise inspection;
+it does not bound traversal risk. Gameplay validation remains outstanding, and
+nothing here has been played.
 
-![four planners, three worlds: coverage, road and time](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-10/chart-tradeoff.png)
+Every chart and map in this document plots the **+0.5 m** serving count, which
+is 5 to 8 higher per run than the strict one; the tables give both.
+
+![four planners, three worlds: coverage, road and time](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-10/chart-tradeoff.png)
 
 ## 2. Setup and definitions
 
@@ -180,7 +186,7 @@ Of the eligible places, by what became of them:
 | attempted, search frontier exhausted | 29 | 32 | 29 |
 | attempted, iteration budget spent | 1 | 0 | 1 |
 
-![the funnel from placed to connected](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-09/chart-funnel.png)
+![the funnel from placed to connected](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-09/chart-funnel.png)
 
 **Ninety-three per cent of eligible places never get an attempt.** The quota is
 `2 + area / 2 km²`. These worlds have a median island under 2 km², so more than
@@ -266,11 +272,14 @@ decides how much road exists and how many searches are wasted.
 | 100 000 (the setting's ceiling) | 88 | 1 | 69 |
 | 120 000 (past it; see below) | 88 | 1 | 69 |
 
-![roads and the two failure kinds against the iteration budget](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-09/chart-plateau.png)
+![roads and the two failure kinds against the iteration budget](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-09/chart-plateau.png)
 
 As the budget grows, attempts that used to stop at the cap instead exhaust
-their frontier: every cell they can reach, settled, without arriving. Past
-about 30 000 there is almost nothing left for a larger budget to rescue.
+their frontier: every cell they can reach, settled, without arriving. Past about
+30 000 there is almost nothing left for a larger budget to rescue — but the
+**shipped default is 10 000**, not 100 000, and between the two the network
+gains 14 roads and 15 places served on this world. The plateau is an argument
+against raising the budget far, not against raising it at all.
 
 The 120 000 row is a real run, and it is a budget **a player cannot select**:
 the config binds `PathfindingMaxIterations` to 1 000–100 000 and the offline
@@ -292,9 +301,9 @@ water than the land does and *nearer* the world's centre. That is a statement
 about the whole-world distribution; an island-level report of roads hugging its
 coast is not contradicted by it.
 
-![distance to open water, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-09/chart-shore.png)
+![distance to open water, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-09/chart-shore.png)
 
-![distance from the world's centre, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-09/chart-centre.png)
+![distance from the world's centre, roads against land](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-09/chart-centre.png)
 
 What roads do favour is swamp: 35.1 % of road on 7.3 % of the land, against
 13.4 % on the Mistlands' 29.2 %. The pathfinder is following its cost model —
@@ -374,7 +383,7 @@ generator tried to build and failed:
 | trunk and spurs | 9 | 14 | 9 |
 | POI-to-network | 12 | 15 | 10 |
 
-![places served by category, four planners](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-10/chart-coverage.png)
+![places served by category, four planners](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-10/chart-coverage.png)
 
 ### What each plan costs
 
@@ -430,7 +439,7 @@ only reason the plans differ at all in runtime here.
 
 ### The maps
 
-![the world under four connection plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-10/world-planners.png)
+![the world under four connection plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-10/world-planners.png)
 
 Three islands, chosen on measured terrain rather than by eye. Of the nineteen
 islands over 3 km² on world A: **42** has the lowest mean height gradient (0.18
@@ -439,16 +448,25 @@ tied at the top, so its steepness is not also fragmentation), **54** the most
 coast per unit area (0.74 edge cells per land cell against 0.53). Each is drawn
 under all four plans at identical bounds and scale.
 
-![island 42, dense and flat, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-10/island42-planners.png)
+![island 42, dense and flat, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-10/island42-planners.png)
 
-![island 58, steep, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-10/island58-planners.png)
+![island 58, steep, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-10/island58-planners.png)
 
-![island 54, water-fragmented, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-10/island54-planners.png)
+![island 54, water-fragmented, under four plans](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-10/island54-planners.png)
 
-The sheets make a point the tables bury: **on a typical island the plans are
-almost the same picture.** All three get the same places served under every
-plan; what differs is the searches spent — four against one on the steep
-island. The world table's differences are many small islands where the plan
+And one junction close up, because the tee count is the whole case for
+POI-to-network and the world sheets are too coarse to show one. The same
+1.24 km of world A under both plans: the shipped plan runs a single road across
+it and joins nothing, while POI-to-network's 437 m branch ends **on** the 5.4 km
+road rather than beside it.
+
+![one junction under the shipped plan and under POI-to-network](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-10/tee-example.png)
+
+The sheets make a point the tables bury: **on these three example islands the
+plans are almost the same picture.** All three get the same places served under
+every plan; what differs is the searches spent — four against one on the steep
+island. Islands chosen for contrast say what happens on them, not how
+representative they are. The world table's differences are many small islands where the plan
 changed nothing plus a few large ones where it changed a great deal.
 
 ### Fallbacks, re-measured
@@ -465,9 +483,11 @@ just failed:
 | the nearest place already connected | 99 | **126** | **134** | **50** | 8.5 km | 196 |
 | the road, then the place | 99 | 126 | 134 | 50 | 7.5 km | 243 |
 
-The place fallback serves three more places. It is not free: 3.7 km more road
-running alongside other road, which is the shape problem made worse. The road
-fallback buys nothing at all.
+The place fallback serves three more places, for 38 searches more than the
+baseline's 158 — the drop to 196 in an earlier draft was against the faulty
+version's 228, not against the baseline. It is not free either way: 3.7 km more
+road running alongside other road, which is the shape problem made worse. The
+road fallback buys nothing at all.
 
 **It does not improve connectivity.** The component count rises 49 → 50, which
 is one *more* disconnected piece, and a road-by-road membership comparison
@@ -496,7 +516,7 @@ served metric; they were not repeated.
 | 32 | 838 | 224.0 km | 959 | 20 % | 234 |
 | every eligible place | 2 080 | 410.7 km | 2 322 | 16 % | 177 |
 
-![places served against distinct road built](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-09/chart-quota.png)
+![places served against distinct road built](https://raw.githubusercontent.com/tvongaza/ProceduralRoads/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-09/chart-quota.png)
 
 The quota is not protecting generation from failure: it sits where failure is
 *likeliest*, because places added later are near ones already connected and
@@ -566,29 +586,36 @@ the quota choose priority-then-nearest.
 
 **Advance two planners, for different reasons.** Routed-cost MST is the
 strongest candidate for preserving destination coverage among those tested —
-not strictly better than the shipped plan: 4 fewer places on world C, no
-junctions at all, and 2.3× the time on this harness. POI-to-network is the only
+not strictly better than the shipped plan: 4 fewer places on world C, almost no
+tees (0, 1 and 0), and 2.3× the time on this harness. POI-to-network is the only
 thing that fixes the network's shape, but as a whole plan it drops required
 destinations on two worlds of three, so it belongs on *branches* off a backbone
 chosen some other way. That combination is the first experiment to run, and it
 has not been run.
 
-**Deprioritise trunk-and-spurs and the larger iteration budget.** The first
-buys junctions by not reaching things; the second binds one attempt in 158 and
-its ceiling is already past the plateau.
+**Deprioritise trunk-and-spurs**, which buys junctions by not reaching things.
 
-**What evidence would change this.** One table, in order of how much each
-would move the recommendation. Nothing else in this document is left open.
+**Raise the shipped iteration budget, but expect little above 30 000.** The
+"one attempt in 158" figure everywhere else in this document is at the study
+baseline's 100 000. The mod ships at **10 000**, where 33 of 158 attempts stop
+at the cap, and on world A raising it recovers real coverage: 10 000 → 30 000
+takes 74 roads to 84 and 108 places served to 118, and 30 000 → 100 000 adds
+four roads and five places. What it cannot do is reach the ~93 % of eligible
+places that selection never chose, which is the issue's actual cause.
+
+**What evidence would change this.** One table, in order of how much each would
+move the recommendation.
 
 | # | outstanding evidence | what it would settle | cost |
 |---|---|---|---|
 | 1 | **the hybrid, measured**: a routed-cost backbone with POI-to-network branches, on the same three worlds and the same selected places as both standalone runs | whether it keeps the MST's destinations *and* the reverse search's junctions. If it does, it replaces both rows of the shortlist | a planner to write, then one sweep |
 | 2 | **the gameplay checklist below**, on the three islands named in section 4 | whether a tee is cart-traversable, whether a road end is an entrance, and whether two roads counted as one network are walkable — three metrics this study leans on | a session in game, on a stated build |
 | 3 | **the issue's own seed, `nRleKzu9bI`** | whether anything here describes the reporter's world. Nothing in this document does, so the answer to the issue is currently an argument about the rules rather than a measurement of their map | one dump, then one sweep |
-| 4 | **a fourth and fifth world** | whether POI-to-network's collapse on world C is the terrain or the sample. Every generalisation here rests on three worlds | one dump each, then one sweep |
-| 5 | **coverage by category for the three presets** | whether "settlements raised to compete" does what it was asked to do. The breakdown exists for the four planner runs and not for the presets | three runs, no new code |
-| 6 | **routing rerun at each span cap** (192, 256, 512 m) | whether a longer bridge recovers destinations, which Appendix B's straight-line table cannot say | four runs, no new code |
-| 7 | **the priced route, cached** | how much of routed-cost MST's 2.3× is redundant work: it routes every committed edge twice | a change to the planner, then one sweep |
+| 4 | **bound the dump's valid domain and rerun the comparison** | how much of the runtime ordering is the harness. The offline search settles invented ground past the world's rim, unevenly across plans (Appendix C), and the effect on runtime, coverage and geometry is unestablished. Deferred, not resolved: the rankings here are provisional on it | a bound in the harness, then one sweep |
+| 5 | **a fourth and fifth world** | whether POI-to-network's collapse on world C is the terrain or the sample. Every generalisation here rests on three worlds | one dump each, then one sweep |
+| 6 | **coverage by category for the three presets** | whether "settlements raised to compete" does what it was asked to do. The breakdown exists for the four planner runs and not for the presets | three runs, no new code |
+| 7 | **routing rerun at each span cap** (192, 256, 512 m) | whether a longer bridge recovers destinations, which Appendix B's straight-line table cannot say | four runs, no new code |
+| 8 | **the priced route, cached** | how much of routed-cost MST's 2.3× is redundant work: it routes every committed edge twice | a change to the planner, then one sweep |
 
 ### The validation sequence, if it is run
 
@@ -617,10 +644,10 @@ from the game's line and one existed only in game.
 
 | idea | what changed | evidence scope | result | disposition |
 |---|---|---|---|---|
-| routed-cost MST | plan edges priced by routing them | 3 worlds, 3 runs each | +3 / +2 / −4 served, 0 / 0 / 2 boss altars lost, 0 tees, 2.3× time | **advance** |
+| routed-cost MST | plan edges priced by routing them | 3 worlds, 3 runs each | +3 / +2 / −4 served, 0 / 0 / 2 boss altars lost, 0 / 1 / 0 tees, 2.3× time | **advance** |
 | POI-to-network search | destination-free search from the place to the network | 3 worlds, 3 runs each | +1 / −3 / −23 served, 3 / 0 / 6 boss altars lost, 28 tees, 0.1 km alongside, 4.3× time | **advance as a branch mechanism** |
 | trunk and spurs | one road on the island's routed long axis, spurs onto it | 3 worlds, 3 runs each | −3 / 0 / −18 served, 5 / 1 / 6 boss altars lost, 29 tees | deprioritise |
-| nearest-connected-place fallback | retry a failed link from the nearest place on the network | world A, corrected | +3 served, +1 group, +3.7 km alongside | conditional |
+| nearest-connected-place fallback | retry a failed link from the nearest place on the network | world A, corrected | +3 served, one additional disconnected component, +38 searches, +3.7 km alongside | conditional |
 | nearest-road fallback | retry against the nearest point on a road | world A, corrected | no coverage change | deprioritise |
 | tree grown outward with retries | PR #16's plan | world A | 90 roads, 126 served, 208 attempts | untested at the new metrics |
 | hub and spoke | anchor serves near places, distant clusters get their own hub | world A | 89 roads, 126 served, close to shipped | deprioritise |
@@ -630,7 +657,7 @@ from the game's line and one existed only in game.
 | anchor on a place | highest-priority place on the island | world A | 0 stillborn, a third of the attempts, +1 served | advance, cheap |
 | quota by priority-then-nearest | selection, not planning | 3 worlds | 123 → 142 served | **advance first** |
 | road-sharing discount | existing road costs less to walk | world A, two densities | nothing at baseline; −12 km distinct at every place | conditional |
-| larger iteration budget | 5 000 → 120 000 | world A | plateau by 30 000; the ceiling is already past it | settled, no |
+| larger iteration budget | 5 000 → 120 000 | world A | from the shipped 10 000: +10 roads and +10 served by 30 000, +4 and +5 more by 100 000; flat above | raise the default, expect little past 30 000 |
 | longer bridge span | not run — see Appendix B | — | — | untested |
 | routed-cost backbone + POI-to-network branches | not built | — | — | **first follow-up** |
 
@@ -674,7 +701,7 @@ Twelve of the 27 destinations have a built road ending within 40 m of them
 anyway, because the plan carries on from the place it was heading for whether
 or not the leg to it was built. The failure costs the link, not the
 destination. Five failure case studies are drawn at
-[validation-results/screenshots/study-2026-09-09](https://github.com/tvongaza/ProceduralRoads/tree/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/screenshots/study-2026-09-09):
+[validation-results/screenshots/study-2026-09-09](https://github.com/tvongaza/ProceduralRoads/tree/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/screenshots/study-2026-09-09):
 a coast anchor 150 m out to sea, a search that settled a whole archipelago, the
 one attempt that spent its whole budget, a bridgeable channel with no usable
 bank, and a harbour whose own cell is below the waterline.
@@ -779,24 +806,30 @@ hash of every input, the settings, four stage timings and the results. The
 manifests, the per-place tables, the per-island tables, the selection and
 attempt tables and the crossings are published beside this document:
 
-[validation-results/study-2026-09-10](https://github.com/tvongaza/ProceduralRoads/tree/6d3403a4a9bc7b209cd2cda4a47d3974f00841d0/validation-results/study-2026-09-10)
+[validation-results/study-2026-09-10](https://github.com/tvongaza/ProceduralRoads/tree/3d14749e6451e25fd5e34d7ae884e50db94745a4/validation-results/study-2026-09-10)
 
 Route geometry is not published — several megabytes a run — but it regenerates
 from the manifest, which names the code and the inputs exactly.
 
-**Every link in this document is pinned to commit `6d3403a`**, the revision
-that published the data and the images, so a later change on the branch cannot
-alter the evidence a claim here rests on.
+**Every link in this document is pinned to commit `3d14749`**, the revision
+that published the current data and images, so a later change on the branch
+cannot alter the evidence a claim here rests on. (The runs themselves were
+published at `6d3403a` and are unchanged; `3d14749` corrected the labels on the
+charts and sheets.)
 
 The comparison in section 4 is 48 runs: three worlds × four plans × (one
 warm-up + three measured). All were produced by the study branch at
 `f3cb226-dirty` in a **Release** build on .NET 10.0.7, macOS arm64, 8
-processors. **That dirty tree is now committed as `be34d54`**, and the
-committed code reproduces the published runs exactly: rerunning
-POI-to-network on world A from a clean `be34d54` gives the same roads,
-lengths, served counts, components, tees, alongside metres, connections and
-searches — every metric in the manifest except the timings, which are the
-machine.
+processors. **That dirty tree is now committed as `be34d54`.** Clean-code
+reproduction was verified for **one** run — POI-to-network on world A, which
+matched every metric in its manifest except the timings; the other 47 were not
+re-verified that way.
+
+**This is not yet independently reproducible from the public artifacts alone.**
+The terrain dumps the runs read are roughly 250 MB each and are not published;
+they are on the machine that made them. What is published is enough to check
+every number in this document against the run that produced it, and not enough
+for someone else to produce those runs.
 
 ## Appendix E. Corrections to the previous draft
 
@@ -843,6 +876,29 @@ none; the ten-against-eleven joins over 2 m is reconciled at ten; and the
 category grouping is described as the study's own, since the Mistlands bucket
 is a name prefix rather than a priority-table entry.
 
+### Found in the third review
+
+A third review read the whole document and the images. Five more, all confirmed
+against the runs before being changed.
+
+| claim as it stood | what it is now | how it was resolved |
+|---|---|---|
+| the summary's "Appendix C … finds none worse than 5.7 m, which bounds the risk" | withdrawn | the summary was still making the walkability claim Appendix C had already withdrawn, and described connectivity by the 24 m rule alone. It now names both rules and says the height screen prioritises inspection rather than bounding risk. |
+| routed-cost MST "makes no junctions at all" | **very few tees: 0, 1 and 0** | it makes one tee on world B, and it has 40, 25 and 23 end-to-end joins. The absolute claim appeared in the shortlist, the hybrid rationale, section 6 and Appendix A. |
+| the fallback serves 3 more places "for fewer searches" | **for 38 more** | 196 against the baseline's 158. The reduction to 196 was against the *faulty* fallback's 228, not against the baseline. |
+| "the budget binds one attempt in 158", and a blanket no to raising it | **that is the study's 100 000, not the shipped 10 000** | at the shipped default 33 of 158 attempts stop at the cap, and 10 000 → 30 000 is worth 10 roads and 10 more places served on world A. The recommendation is now to raise the default and expect little above 30 000. |
+| "Nothing else in this document is left open" | withdrawn | Appendix C leaves the boundary-corrected runtime, coverage and geometry unresolved. It is now row 4 of the outstanding-evidence table, explicitly deferred, with the rankings marked provisional on it. |
+
+Smaller ones from the same review: the charts plotted the +0.5 m counts and
+labelled the axis "places served"; the trade-off chart ordered its panels A, C,
+B by sorting the run names; the sheets leaned on a legend too small to read;
+"a typical island" became "these three example islands"; Appendix D claimed the
+committed code reproduces the published runs when one run was verified that way,
+and now also says the terrain dumps are not published, so this is not
+independently reproducible from the public artifacts alone; and Appendix F
+grouped the 27-failure census with the three-world findings when it is world A
+alone.
+
 ### Raised in the first review, fixed since
 
 Raised in review. Fixed before the 10 September draft, kept here so the record
@@ -861,14 +917,15 @@ seed `gqZ5SrFUjk` and the issue's is `nRleKzu9bI`, so the two are different
 maps and there is nothing to reconcile. Island detection depends on no setting,
 so a count that differs between two different worlds says nothing at all.
 
-What that does and does not cost the study. It costs nothing to the findings
-that are about the *rules* rather than about one map — the quota arithmetic,
-the priority table, the funnel, the failure census, the planner comparison —
-because those are measured on three worlds rather than on one map's quirks — though
-"measured on three" is not "true of all", and the failure census and the planner
-comparison are empirical findings, not consequences of the quota arithmetic. It costs the
-right to say anything about the reporter's world in particular: whether it has
-80 islands, whether its bosses are reachable, whether a plan would serve it
+What that does and does not cost the study. Least affected are the findings
+about the *rules* — the quota arithmetic and the priority table — which are
+properties of the code. Next are the funnel and the planner comparison,
+measured on three worlds; "measured on three" is not "true of all", and they
+are empirical findings rather than consequences of the arithmetic. **Appendix
+B's 27-failure census is world A alone**, as are the clustering, the priority
+breakdown and every sweep in section 5. What the wrong seed costs outright is
+the right to say anything about the reporter's world in particular: whether it
+has 80 islands, whether its bosses are reachable, whether a plan would serve it
 better. **Generating `nRleKzu9bI` and running the section-4 comparison on it is
 one dump and one sweep**, and until that is done this document should not be
 quoted at the reporter as though it were about their map.
