@@ -214,6 +214,41 @@ public class ServerBakeTests
     /// vanilla finishes generating it, so it never takes the new-zone path
     /// again, and the queue has already passed it by.
     /// </summary>
+    // ---- the scheduler: when a zone comes round again, and how many tries ----
+    //
+    // These drive the real scheduler with a fake clock, because the bug they
+    // guard against was an interaction rather than a rule: a failed write made
+    // the ledger ready for its next poll AND entered a separate ten-second wait
+    // list. When the budget ran out the ledger dropped the zone, the surviving
+    // wait entry queued it again, and a zone with no entry was treated as
+    // having unlimited retries. Work carried on after "given up", forever.
+
+    private const float Delay = 10f;
+
+    /// <summary>
+    /// One look at a zone, mapped exactly as ServerTerrainBake.Resolve maps it:
+    /// the real ResolveRepair, the real scheduler. Returns whether it is worth
+    /// coming back.
+    /// </summary>
+    private static bool Apply(GhostRepairLedger ledger, Vector2s zone, ServerBakePlanner.Action action,
+        ServerBakePlanner.WriteReport report, float now)
+    {
+        switch (ServerBakePlanner.ResolveRepair(action, report))
+        {
+            case ServerBakePlanner.RepairOutcome.Resolved:
+                ledger.Succeeded(zone);
+                return true;
+            case ServerBakePlanner.RepairOutcome.FailedWrite:
+                return !ledger.FailedWrite(zone, now, Delay);
+            case ServerBakePlanner.RepairOutcome.Terminal:
+                ledger.Terminal(zone);
+                return false;
+            default:
+                ledger.Defer(zone, now, Delay);
+                return true;
+        }
+    }
+
     [Fact]
     public void AZoneWhoseGhostWriteFailedIsWrittenFromTheQueueInstead()
     {
@@ -223,27 +258,24 @@ public class ServerBakeTests
         Assert.True(ledger.Holds(zone));
 
         // Still generating: nothing to hand over yet, and it is not forgotten.
-        Assert.Empty(ledger.TakeReady(_ => false));
+        Assert.Empty(ledger.TakeReady(_ => false, 0f));
         Assert.Equal(1, ledger.Count);
 
         // Generated: it goes to the queue, and stays watched until the write
         // actually lands -- being handed over is not the same as fixed.
-        Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true));
-        Assert.True(ledger.Holds(zone));
+        Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true, 0f));
         Assert.True(ledger.IsQueued(zone));
 
-        // The queue wrote it: nothing left to watch.
+        // The queue wrote it: nothing left to watch, at any later time.
         ledger.Succeeded(zone);
         Assert.False(ledger.Holds(zone));
-        Assert.Empty(ledger.TakeReady(_ => true));
+        Assert.Empty(ledger.TakeReady(_ => true, 1000f));
     }
 
     /// <summary>
-    /// The repair budget belongs to failed WRITES, not to the clock. The timer
-    /// polls once a second whatever the queue is doing, and a zone can sit in
-    /// it through a backlog, a terrain build, or a ten-second wait for an owner
-    /// to leave. Spending an attempt per poll burned the whole allowance
-    /// without a single write being tried, and queued a fresh copy each time.
+    /// The budget belongs to failed WRITES, not to the clock. A zone can sit in
+    /// the queue through a backlog or a terrain build; polling it must cost
+    /// nothing and must never hand over a second copy.
     /// </summary>
     [Fact]
     public void PollingSpendsNothingAndNeverQueuesTheZoneTwice()
@@ -253,54 +285,109 @@ public class ServerBakeTests
         ledger.Record(zone);
 
         int queued = 0;
-        for (int poll = 1; poll <= 12; poll++)
-            queued += ledger.TakeReady(_ => true).Count;
+        for (int poll = 0; poll < 12; poll++)
+            queued += ledger.TakeReady(_ => true, poll).Count;
 
         Assert.Equal(1, queued);
         Assert.True(ledger.Holds(zone));
         Assert.Equal(0, ledger.FailedWrites(zone));
     }
 
+    /// <summary>
+    /// The reviewer's sequence: three failed live writes, then the clock run
+    /// past every deadline any of them scheduled. Nothing may come back.
+    /// </summary>
     [Fact]
-    public void OnlyAFailedWriteSpendsTheBudgetAndTheLastOneIsTerminal()
+    public void ThreeFailedLiveWritesStopForGoodEvenAfterEveryOldDeadlinePasses()
     {
         var ledger = new GhostRepairLedger();
-        var zone = new Vector2s(1, 1);
+        var zone = new Vector2s(7, 7);
         ledger.Record(zone);
 
-        // Every round is a real write that failed, not a poll.
-        for (int spent = 1; spent < GhostRepairLedger.MaxFailedWrites; spent++)
+        int writes = 0;
+        float now = 0f;
+        bool worthRetrying = true;
+        while (worthRetrying && writes < 10)
         {
-            Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true));
-            Assert.False(ledger.FailedWrite(zone));
-            Assert.Equal(spent, ledger.FailedWrites(zone));
-            Assert.False(ledger.IsQueued(zone));
+            List<Vector2s> ready = ledger.TakeReady(_ => true, now);
+            if (ready.Count == 0)
+            {
+                now += 1f;
+                continue;
+            }
+            Assert.Equal(new[] { zone }, ready);
+            writes++;
+            worthRetrying = Apply(ledger, zone, ServerBakePlanner.Action.WriteLiveCompiler,
+                ServerBakePlanner.WriteReport.Failed, now);
         }
 
-        // The last failure is the one that gives up, and it says so.
-        Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true));
-        Assert.True(ledger.FailedWrite(zone));
+        Assert.Equal(GhostRepairLedger.MaxFailedWrites, writes);
+        Assert.False(worthRetrying);
         Assert.False(ledger.Holds(zone));
-        Assert.Empty(ledger.TakeReady(_ => true));
+
+        // Long past every deadline the failures ever set: still nothing.
+        for (float later = now; later <= now + 1000f; later += 10f)
+            Assert.Empty(ledger.TakeReady(_ => true, later));
+    }
+
+    /// <summary>
+    /// A live write failing in an ordinary bake -- no ghost failure before it --
+    /// used to have no ledger entry, and absence from the ledger was treated as
+    /// permission to retry for ever. The first failure starts the budget.
+    /// </summary>
+    [Fact]
+    public void AnOrdinaryFailedWriteGetsABudgetFromItsFirstFailure()
+    {
+        var ledger = new GhostRepairLedger();
+        var zone = new Vector2s(3, 3);
+        Assert.False(ledger.Holds(zone));
+
+        Assert.True(Apply(ledger, zone, ServerBakePlanner.Action.WriteLiveCompiler,
+            ServerBakePlanner.WriteReport.Failed, 0f));
+        Assert.True(ledger.Holds(zone));
+        Assert.Equal(1, ledger.FailedWrites(zone));
+
+        Assert.True(Apply(ledger, zone, ServerBakePlanner.Action.WriteLiveCompiler,
+            ServerBakePlanner.WriteReport.Failed, Delay));
+        Assert.False(Apply(ledger, zone, ServerBakePlanner.Action.WriteLiveCompiler,
+            ServerBakePlanner.WriteReport.Failed, Delay * 2));
+        Assert.False(ledger.Holds(zone));
+        Assert.Empty(ledger.TakeReady(_ => true, 1000f));
     }
 
     [Fact]
-    public void AWriteThatLandsEndsTheWatchWhicheverPathWroteIt()
+    public void TwoFailuresThenSuccessIsNotRevivedByTheClock()
     {
-        // The queue's temporary-terrain path: handed over, then written.
-        var viaQueue = new GhostRepairLedger();
-        var zone = new Vector2s(2, 2);
-        viaQueue.Record(zone);
-        viaQueue.TakeReady(_ => true);
-        viaQueue.Succeeded(zone);
-        Assert.Equal(0, viaQueue.Count);
+        var ledger = new GhostRepairLedger();
+        var zone = new Vector2s(5, 5);
+        ledger.Record(zone);
 
-        // The live-compiler path, and the nothing-to-write case: the zone is
-        // finished without the ledger ever handing it anywhere.
-        var viaLiveZone = new GhostRepairLedger();
-        viaLiveZone.Record(zone);
-        viaLiveZone.Succeeded(zone);
-        Assert.Equal(0, viaLiveZone.Count);
+        Assert.True(Apply(ledger, zone, ServerBakePlanner.Action.WriteLiveCompiler,
+            ServerBakePlanner.WriteReport.Failed, 0f));
+        Assert.True(Apply(ledger, zone, ServerBakePlanner.Action.WriteLiveCompiler,
+            ServerBakePlanner.WriteReport.Failed, Delay));
+
+        // It works on the third go. The deadlines the failures left behind must
+        // not bring the finished job back.
+        Assert.True(Apply(ledger, zone, ServerBakePlanner.Action.WriteLiveCompiler,
+            ServerBakePlanner.WriteReport.Written, Delay * 2));
+        Assert.False(ledger.Holds(zone));
+        for (float later = 0f; later <= 1000f; later += 10f)
+            Assert.Empty(ledger.TakeReady(_ => true, later));
+    }
+
+    [Fact]
+    public void ADuplicateCompilerRepairIsEndedRatherThanLeftQueued()
+    {
+        var ledger = new GhostRepairLedger();
+        var zone = new Vector2s(6, 6);
+        ledger.Record(zone);
+        ledger.TakeReady(_ => true, 0f);
+
+        Assert.False(Apply(ledger, zone, ServerBakePlanner.Action.DuplicateCompilers,
+            ServerBakePlanner.WriteReport.NotAttempted, 0f));
+        Assert.False(ledger.Holds(zone));
+        Assert.Empty(ledger.TakeReady(_ => true, 1000f));
     }
 
     // ---- what the queue owes a zone it is repairing ----
@@ -360,45 +447,39 @@ public class ServerBakeTests
     }
 
     /// <summary>
-    /// The dispatcher and the ledger together, in the order production runs
-    /// them: a live compiler that never takes the roads must spend the budget
-    /// and stop, rather than being rescheduled for ever.
+    /// An owner that holds the compiler far longer than the wait: every round
+    /// defers the zone again, none of them spends a write attempt, and the
+    /// queue is never handed a second copy. (The three-failure sequence has its
+    /// own fake-clock regression above.)
     /// </summary>
     [Fact]
-    public void ThreeFailedLiveWritesExhaustTheBudgetAndOwnerWaitsDoNot()
+    public void AnOwnerHeldLongerThanTheWaitSpendsNothing()
     {
         var ledger = new GhostRepairLedger();
         var zone = new Vector2s(7, 7);
         ledger.Record(zone);
 
-        // Handed to the queue ONCE. While it waits for an owner the queue still
-        // holds it -- the wait list puts it back by itself -- so the ledger must
-        // not hand it over a second time, and no amount of waiting costs it an
-        // attempt.
-        Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true));
-        for (int round = 0; round < 2; round++)
+        // An owner keeps hold of the compiler for far longer than the wait.
+        // Every round defers it again; none of them costs an attempt, and the
+        // queue is never given a second copy of the zone.
+        float now = 0f;
+        int handedOver = 0;
+        for (int round = 0; round < 5; round++)
         {
-            Assert.Equal(ServerBakePlanner.RepairOutcome.Waiting, Outcome(ServerBakePlanner.Action.WaitForOwner));
-            Assert.Empty(ledger.TakeReady(_ => true));
-            Assert.True(ledger.IsQueued(zone));
+            handedOver += ledger.TakeReady(_ => true, now).Count;
+            Assert.True(Apply(ledger, zone, ServerBakePlanner.Action.WaitForOwner,
+                ServerBakePlanner.WriteReport.NotAttempted, now));
             Assert.Equal(0, ledger.FailedWrites(zone));
+            now += Delay * 1.5f;
         }
+        Assert.Equal(5, handedOver);
+        Assert.True(ledger.Holds(zone));
 
-        // Then the writes themselves fail. Each failure spends one attempt and
-        // puts the zone back, so the next poll does hand it over again.
-        for (int spent = 1; spent < GhostRepairLedger.MaxFailedWrites; spent++)
-        {
-            Assert.Equal(ServerBakePlanner.RepairOutcome.FailedWrite,
-                Outcome(ServerBakePlanner.Action.WriteLiveCompiler, ServerBakePlanner.WriteReport.Failed));
-            Assert.False(ledger.FailedWrite(zone));
-            Assert.Equal(spent, ledger.FailedWrites(zone));
-            Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true));
-        }
-
-        // The last failed write is terminal, and nothing is handed over again.
-        Assert.True(ledger.FailedWrite(zone));
+        // The owner finally leaves and the write lands: nothing is left behind.
+        ledger.TakeReady(_ => true, now);
+        Assert.True(Apply(ledger, zone, ServerBakePlanner.Action.WriteLiveCompiler,
+            ServerBakePlanner.WriteReport.Written, now));
         Assert.False(ledger.Holds(zone));
-        Assert.Empty(ledger.TakeReady(_ => true));
     }
 
     [Theory]
