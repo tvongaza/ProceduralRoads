@@ -170,6 +170,44 @@ public class RoadEdgesAndVegetationTests
         Assert.False(VegetationClearing.ShouldRemove(Tree, new Vector2(10f, 10f), true, Vegetation, Areas, NoLocations, NoPlayerGround));
     }
 
+    /// <summary>
+    /// A build at (31, 0) and a tree at (33, 0) are two metres apart with a
+    /// zone border between them. Gathering a player's objects from the tree's
+    /// own zone only made the advertised 8 m radius shrink to nothing at every
+    /// zone edge, so the tree beside somebody's hut was still eligible.
+    /// </summary>
+    [Fact]
+    public void ABuildJustOverAZoneBorderStillProtectsTheTreeBesideIt()
+    {
+        var onTheBorder = new List<VegetationClearing.Area> { new(new Vector2(33f, 0f), 2.4f) };
+        var hutNextDoor = new List<VegetationClearing.Footprint> { new(new Vector2(31f, 0f), VegetationClearing.PlayerGroundRadius) };
+        Assert.False(VegetationClearing.ShouldRemove(Tree, new Vector2(33f, 0f), false, Vegetation, onTheBorder, NoLocations, hutNextDoor));
+
+        // A diagonal zone corner is the same story.
+        var atTheCorner = new List<VegetationClearing.Area> { new(new Vector2(33f, 33f), 2.4f) };
+        var hutDiagonally = new List<VegetationClearing.Footprint> { new(new Vector2(31f, 31f), VegetationClearing.PlayerGroundRadius) };
+        Assert.False(VegetationClearing.ShouldRemove(Tree, new Vector2(33f, 33f), false, Vegetation, atTheCorner, NoLocations, hutDiagonally));
+
+        // Control: a build in the neighbouring zone but outside the radius
+        // protects nothing, so the road is still cleared.
+        var hutFarOff = new List<VegetationClearing.Footprint> { new(new Vector2(20f, 0f), VegetationClearing.PlayerGroundRadius) };
+        Assert.True(VegetationClearing.ShouldRemove(Tree, new Vector2(33f, 0f), false, Vegetation, onTheBorder, NoLocations, hutFarOff));
+    }
+
+    /// <summary>
+    /// Why the eight neighbours are enough to gather: nothing outside that
+    /// block can reach into the middle zone, because the radius is smaller
+    /// than a zone step.
+    /// </summary>
+    [Fact]
+    public void TheProtectionRadiusFitsInsideOneZoneStep()
+    {
+        // Half a zone is the real bound: a point inside the middle zone is at
+        // most this far from its centre, so nothing beyond the 3x3 block can
+        // come within the radius of it.
+        Assert.True(VegetationClearing.PlayerGroundRadius <= RoadConstants.HalfZoneSize);
+    }
+
     [Fact]
     public void VegetationOnGroundAPlayerBuiltOnStays()
     {
