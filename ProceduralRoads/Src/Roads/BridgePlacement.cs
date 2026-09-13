@@ -36,6 +36,13 @@ public static class BridgePlacement
         SpawnInZone(zoneID, mode == ZoneSystem.SpawnMode.Ghost);
 
     /// <summary>
+    /// Spawn a zone's plans as ZDOs only, for a zone the server has generated
+    /// but does not have loaded: one generated before the network existed,
+    /// which no zone spawn will offer again. See ServerTerrainBake.
+    /// </summary>
+    public static int SpawnGhostInZone(Vector2s zoneID) => SpawnInZone(zoneID, ghost: true);
+
+    /// <summary>
     /// Spawn the plans into every zone that is already loaded: zones generated
     /// before the network existed (around the login position, or on a world
     /// the mod was added to) never spawn again while they stay loaded, so

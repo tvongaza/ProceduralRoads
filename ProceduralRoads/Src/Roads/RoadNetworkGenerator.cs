@@ -809,6 +809,7 @@ public static class RoadNetworkGenerator
         m_roadStartPoints.Clear();
         m_roadCrossings.Clear();
         BridgePlans.Reset();
+        VegetationClearing.Reset();
         RoadNetworkPersistence.Reset();
         RoadSpatialGrid.Clear();
     }
@@ -950,15 +951,30 @@ public static class RoadNetworkGenerator
             BridgePlans.MarkSpawned(bridgeZones);
             // A world whose bridges were laid out by an older build: their
             // pieces are destroyed everywhere now, and since no zone is marked
-            // spawned, each gets the current layout when it next comes alive.
-            // Never one bridge half old, half new.
+            // spawned, each gets the current layout when it next comes alive
+            // (or from the server bake). Never one bridge half old, half new.
             if (RoadNetworkPersistence.BridgeLayoutIsStale)
             {
                 int gone = BridgePlacement.ClearSpawnedPieces();
                 Log.LogInfo($"[BRIDGES] replaced an older bridge layout: destroyed {gone} piece(s)");
             }
+            var cleared = new HashSet<Vector2s>();
+            if (RoadNetworkPersistence.TryLoadClearedZones(out int clearedVersion, cleared))
+                VegetationClearing.Load(clearedVersion, cleared, RoadSpatialGrid.RoadNetworkVersion);
         }
         return loaded;
+    }
+
+    /// <summary>
+    /// Save which zones' vegetation matches the network (VegetationClearing),
+    /// so a zone is cleared once per network and not again on every start.
+    /// </summary>
+    public static void SaveClearedZones()
+    {
+        if (!RoadsAvailable || VegetationClearing.Version == 0 ||
+            VegetationClearing.Version != RoadSpatialGrid.RoadNetworkVersion)
+            return;
+        RoadNetworkPersistence.SaveClearedZones(VegetationClearing.Version, VegetationClearing.ClearedZones);
     }
 
     #endregion

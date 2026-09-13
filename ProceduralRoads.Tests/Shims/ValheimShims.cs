@@ -308,7 +308,20 @@ public class TerrainComp
         m_modifiedPaint = new bool[n];
     }
 
-    public void Save() => SaveCount++;
+    /// <summary>Like the game: only the owner's compiler saves, into the ZDO's TCData.</summary>
+    public void Save()
+    {
+        if (m_nview == null || !m_nview.IsValid() || !m_nview.IsOwner())
+            return;
+        SaveCount++;
+        m_nview.GetZDO().Set(ZDOVars.s_TCData, new byte[] { 1 });
+    }
+}
+
+/// <summary>Shim for ZDOVars: the ZDO keys the road code reads.</summary>
+public static class ZDOVars
+{
+    public static readonly int s_TCData = "TCData".GetStableHashCode();
 }
 
 /// <summary>
