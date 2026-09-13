@@ -152,12 +152,23 @@ grew a tree — a planted birch and a wild one are the same object, at the same 
 position, with nothing to tell them apart — so it is cleared like any other tree the
 world grew there.
 
-To see what a pass would take, before it takes anything:
+**To look before anything is cleared, the bake has to be off when the server
+starts.** Clearing begins on its own once the road network is available, which is
+well before anyone can type a command, and these commands only report — they do not
+pause the queue. `PROCEDURALROADS_SERVER_BAKE` is read once at startup and cached, so
+it has to be set in the environment the server launches with, not changed afterwards.
+
+On a copy of the world:
 
 ```
-road_bake vegetation      # road zones still holding vegetation on the road, most first
-road_bake zone [x z]      # one zone: what is in it and what would happen to it
+PROCEDURALROADS_SERVER_BAKE=off   # in the server's environment, before launching
+road_bake vegetation              # road zones holding vegetation on the road, most first
+road_bake zone [x z]              # one zone: what is in it and what would happen to it
 ```
+
+Then restart with the switch unset (the default, on) once the policy above is
+acceptable. On a server already running with the bake on, these commands report what
+is left rather than what is coming.
 
 This only happens on a server, only for zones generated before the road network they
 now carry, and only once per zone per network — so a tree planted after a zone has
