@@ -77,7 +77,7 @@ public static class ServerTerrainBake
 
     private struct Counts
     {
-        public int Zones, Created, Rewritten, Current, Ungenerated, Loaded, Duplicates, Failed, BridgeZones;
+        public int Zones, Created, Rewritten, LiveWritten, Current, Ungenerated, Loaded, Duplicates, Failed, BridgeZones;
         public int NothingToWrite, VegetationZones, VegetationRemoved;
         public int GhostCreated, GhostRewritten, GhostFailed;
         public long Bytes;
@@ -291,7 +291,8 @@ public static class ServerTerrainBake
         Counts c = s_counts;
         int pending = Math.Max(0, s_queue.Count - s_next);
         return $"network {s_version}, {c.Zones} zones: {c.Created} compilers created, {c.Rewritten} saved ones written, " +
-               $"{c.Current} already current, {c.Ungenerated} left to generation, {c.Loaded} loaded here, " +
+               $"{c.LiveWritten} written through a live compiler, " +
+               $"{c.Current} already current, {c.Ungenerated} left to generation, {c.Loaded} loaded here without one, " +
                $"{c.Duplicates} with duplicate compilers, {c.NothingToWrite} with nothing to write, {c.Failed} failed, " +
                $"{s_waiting.Count} waiting for a player to leave, {pending} pending; bridge pieces into {c.BridgeZones} zones; " +
                $"vegetation removed from {c.VegetationZones} zones ({c.VegetationRemoved} objects); {c.Bytes / 1024} KiB written; " +
@@ -428,6 +429,48 @@ public static class ServerTerrainBake
             case ServerBakePlanner.Action.LeaveToLiveZone:
                 s_counts.Loaded++;
                 return Outcome.Done;
+            case ServerBakePlanner.Action.WriteLiveCompiler:
+            {
+                // The zone is live here and already has a compiler: write
+                // through that one. Raising the saved ZDO on a temporary
+                // terrain would put a second compiler in a zone that has one,
+                // and the game destroys "another terrain compiler in this
+                // area" on sight. Anything that stops the write leaves the
+                // zone pending rather than counted as done.
+                TerrainComp? live = TerrainComp.FindTerrainCompiler(ZoneSystem.GetZonePos(zone));
+                if (live == null || live.m_hmap == null || live.m_nview == null || !live.m_nview.IsValid())
+                {
+                    s_waiting[zone] = Time.time + WaitForOwnerSeconds;
+                    return Outcome.Waiting;
+                }
+                if (!live.m_nview.IsOwner())
+                {
+                    // Somebody else's to write; ours only once they let go.
+                    if (live.m_nview.HasOwner())
+                    {
+                        s_waiting[zone] = Time.time + WaitForOwnerSeconds;
+                        return Outcome.Waiting;
+                    }
+                    live.m_nview.ClaimOwnership();
+                }
+                RoadTerrainModifier.LastWriteOutcome = RoadTerrainModifier.WriteOutcome.None;
+                RoadTerrainModifier.ApplyRoadTerrainModsWithContext(
+                    zone, RoadSpatialGrid.GetRoadPointsInZone(zone), live.m_hmap, live);
+                if (RoadTerrainModifier.CarriesCurrentRoads(live))
+                {
+                    s_counts.LiveWritten++;
+                    return Outcome.Done;
+                }
+                if (RoadTerrainModifier.LastWriteOutcome == RoadTerrainModifier.WriteOutcome.NothingToWrite)
+                {
+                    s_counts.NothingToWrite++;
+                    return Outcome.Done;
+                }
+                // Not stamped, so nothing claims these roads are in: look again.
+                Log.LogWarning($"[BAKE] zone {zone}: its live terrain compiler did not take the roads; still pending");
+                s_waiting[zone] = Time.time + WaitForOwnerSeconds;
+                return Outcome.Waiting;
+            }
             case ServerBakePlanner.Action.AlreadyCurrent:
                 s_counts.Current++;
                 return Outcome.Done;

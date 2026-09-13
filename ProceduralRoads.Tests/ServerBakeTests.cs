@@ -40,7 +40,40 @@ public class ServerBakeTests
     [Fact]
     public void AZoneLoadedHereIsLeftToTheLiveZoneHooks()
     {
+        // Nothing saved yet: the zone-spawn hook makes its one compiler.
         Assert.Equal(ServerBakePlanner.Action.LeaveToLiveZone, Decide(true, true, Compilers()));
+    }
+
+    /// <summary>
+    /// A loaded zone is not evidence its terrain was written. The live write is
+    /// an Awake postfix that returns without writing when another peer owns the
+    /// compiler, and no later ownership transfer makes Awake run again -- so a
+    /// stale compiler in a loaded zone must stay pending, not be counted done.
+    /// </summary>
+    [Fact]
+    public void AStaleCompilerInALoadedZoneIsNeverCountedAsDone()
+    {
+        // Owned by a peer standing there: wait for them, whether or not it is loaded here.
+        Assert.Equal(ServerBakePlanner.Action.WaitForOwner,
+            Decide(true, true, Compilers(new ServerBakePlanner.Compiler(0, 7, ownerActiveHere: true))));
+
+        // Ours, or nobody's, and the zone is live: write through the live compiler
+        // rather than raising a second one on a temporary terrain.
+        Assert.Equal(ServerBakePlanner.Action.WriteLiveCompiler,
+            Decide(true, true, Compilers(new ServerBakePlanner.Compiler(0, 0, false))));
+        Assert.Equal(ServerBakePlanner.Action.WriteLiveCompiler,
+            Decide(true, true, Compilers(new ServerBakePlanner.Compiler(Version - 1, Me, ownerActiveHere: true))));
+        // Its owner has gone elsewhere: still ours to write, through the live one.
+        Assert.Equal(ServerBakePlanner.Action.WriteLiveCompiler,
+            Decide(true, true, Compilers(new ServerBakePlanner.Compiler(0, 7, ownerActiveHere: false))));
+
+        // Already carrying this network: nothing to do, loaded or not.
+        Assert.Equal(ServerBakePlanner.Action.AlreadyCurrent,
+            Decide(true, true, Compilers(new ServerBakePlanner.Compiler(Version, 0, false))));
+        // Two compilers are left alone in a loaded zone too.
+        Assert.Equal(ServerBakePlanner.Action.DuplicateCompilers,
+            Decide(true, true, Compilers(new ServerBakePlanner.Compiler(0, 0, false),
+                new ServerBakePlanner.Compiler(0, 0, false))));
     }
 
     [Fact]
