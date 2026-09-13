@@ -468,6 +468,15 @@ public static class ServerTerrainBake
             BridgePlacement.SpawnGhostInZone(zone) > 0)
             s_counts.BridgeZones++;
 
+        // Terrain has spent its attempts on this zone for this network. Say so
+        // and stop, WITHOUT touching the ledger: the zone may still be here for
+        // vegetation, and that deferral used to recreate its entry with the
+        // count back at zero, which handed terrain a fresh three every time a
+        // player stood near an uncleared zone. Only a new network, or the zone
+        // being resolved outright, lifts this.
+        if (s_ghostRepair.HasGivenUp(zone))
+            return Outcome.Done;
+
         if (RoadSpatialGrid.GetRoadPointsInZone(zone).Count == 0)
         {
             // Nothing to write here at all, so nothing is owed to it either.

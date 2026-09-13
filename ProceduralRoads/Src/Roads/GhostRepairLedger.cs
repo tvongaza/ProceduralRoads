@@ -50,6 +50,26 @@ public sealed class GhostRepairLedger
 
     private readonly Dictionary<Vector2s, Entry> m_zones = new();
 
+    /// <summary>
+    /// Zones whose TERRAIN has spent its attempts, kept apart from the entries
+    /// on purpose.
+    ///
+    /// Giving up used to mean only "remove the entry", and an entry is also
+    /// what every other kind of deferral works through. So when terrain gave
+    /// up on a zone that still had vegetation to clear with a player standing
+    /// near it, the vegetation deferral recreated the entry a moment later --
+    /// with the count back at zero -- and terrain started again with a fresh
+    /// three. Unbounded, through a door terrain never looked at.
+    ///
+    /// Remembering it here instead means deferring a zone for other work
+    /// cannot revive terrain's budget. It is forgotten by <see cref="Clear"/>
+    /// (a new network) or by an explicit success.
+    /// </summary>
+    private readonly HashSet<Vector2s> m_gaveUp = new();
+
+    /// <summary>Whether this zone's terrain has spent its attempts for this network.</summary>
+    public bool HasGivenUp(Vector2s zone) => m_gaveUp.Contains(zone);
+
     /// <summary>Zones with something still owed to them: queued, waiting, or ready.</summary>
     public int Count => m_zones.Count;
 
@@ -107,7 +127,12 @@ public sealed class GhostRepairLedger
         m_zones[zone] = entry;
     }
 
-    public void Clear() => m_zones.Clear();
+    /// <summary>A new network: everything is owed afresh, given-up marks included.</summary>
+    public void Clear()
+    {
+        m_zones.Clear();
+        m_gaveUp.Clear();
+    }
 
     /// <summary>
     /// The zones to hand to the queue now: those out of the queue, due, and
@@ -138,14 +163,22 @@ public sealed class GhostRepairLedger
     /// work: forget it entirely, deadline included. Nothing scheduled earlier
     /// can bring it back.
     /// </summary>
-    public void Succeeded(Vector2s zone) => m_zones.Remove(zone);
+    public void Succeeded(Vector2s zone)
+    {
+        m_zones.Remove(zone);
+        m_gaveUp.Remove(zone);
+    }
 
     /// <summary>
     /// Nothing here can finish it -- two saved compilers, say. Forget it, and
     /// let the caller say so. Same effect as success: no stale deadline is
     /// left behind to revive it.
     /// </summary>
-    public void Terminal(Vector2s zone) => m_zones.Remove(zone);
+    public void Terminal(Vector2s zone)
+    {
+        m_zones.Remove(zone);
+        m_gaveUp.Remove(zone);
+    }
 
     /// <summary>
     /// A write was attempted for this zone and failed. A zone that was not
@@ -157,11 +190,20 @@ public sealed class GhostRepairLedger
     /// </summary>
     public bool FailedWrite(Vector2s zone, float now, float delay)
     {
+        // Given up stays given up. The caller should not be asking again --
+        // ProcessTerrain refuses first -- but the invariant must not rest on
+        // every caller remembering to check. A fresh budget has to be
+        // impossible from here, not merely unlikely.
+        if (m_gaveUp.Contains(zone))
+            return true;
         if (!m_zones.TryGetValue(zone, out Entry entry))
             entry = new Entry { FailedWrites = 0, Repair = true };
         entry.FailedWrites++;
         if (entry.FailedWrites >= MaxFailedWrites)
         {
+            // Remembered apart from the entry: another concern deferring this
+            // zone must not hand terrain a fresh budget.
+            m_gaveUp.Add(zone);
             m_zones.Remove(zone);
             return true;
         }
