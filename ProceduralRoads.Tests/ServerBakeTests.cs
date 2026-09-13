@@ -376,6 +376,62 @@ public class ServerBakeTests
             Assert.Empty(ledger.TakeReady(_ => true, later));
     }
 
+    /// <summary>
+    /// The production sequence, not the ledger alone: ProcessZone runs vegetation
+    /// whenever terrain returns Done -- and a TERMINAL terrain failure returns
+    /// Done. So on a generated, uncleared zone with a player standing near it,
+    /// vegetation deferred the zone immediately after terrain gave up, and the
+    /// deferral recreated the entry the give-up had just removed, with the count
+    /// back at zero. Terrain then started again with a fresh three, for ever.
+    /// Terrain's terminal state has to survive other work deferring the zone.
+    /// </summary>
+    [Fact]
+    public void VegetationDeferralCannotRestartAnExhaustedTerrainBudget()
+    {
+        var ledger = new GhostRepairLedger();
+        var zone = new Vector2s(8, 8);
+        int writes = 0;
+        float now = 0f;
+
+        for (int round = 1; round <= 7; round++)
+        {
+            // ProcessTerrain refuses once terrain has given up -- the zone is
+            // still here, but not for terrain.
+            if (!ledger.HasGivenUp(zone))
+            {
+                writes++;
+                ledger.FailedWrite(zone, now, Delay);
+            }
+            // ProcessVegetation: generated, uncleared, a peer nearby.
+            ledger.Defer(zone, now, Delay);
+            now += Delay;
+        }
+
+        Assert.Equal(GhostRepairLedger.MaxFailedWrites, writes);
+        Assert.True(ledger.HasGivenUp(zone));
+    }
+
+    [Fact]
+    public void ANewNetworkOrAnOutrightResolutionLiftsTheGiveUp()
+    {
+        var ledger = new GhostRepairLedger();
+        var zone = new Vector2s(9, 9);
+        for (int i = 0; i < GhostRepairLedger.MaxFailedWrites; i++)
+            ledger.FailedWrite(zone, 0f, Delay);
+        Assert.True(ledger.HasGivenUp(zone));
+
+        // road_bake again / a new network version.
+        ledger.Clear();
+        Assert.False(ledger.HasGivenUp(zone));
+
+        // And an explicit resolution does the same for one zone.
+        for (int i = 0; i < GhostRepairLedger.MaxFailedWrites; i++)
+            ledger.FailedWrite(zone, 0f, Delay);
+        Assert.True(ledger.HasGivenUp(zone));
+        ledger.Succeeded(zone);
+        Assert.False(ledger.HasGivenUp(zone));
+    }
+
     [Fact]
     public void ADuplicateCompilerRepairIsEndedRatherThanLeftQueued()
     {
