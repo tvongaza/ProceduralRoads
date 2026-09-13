@@ -4,76 +4,117 @@ using System.Collections.Generic;
 namespace ProceduralRoads;
 
 /// <summary>
-/// Zones whose road terrain failed to go in while the game generated them for
-/// a remote peer, kept until they can be written another way.
+/// The one place that decides when the bake queue looks at a zone again, and
+/// how many more times it is worth trying.
 ///
-/// The ghost write is the only chance the queue gives a zone it left to
-/// generation: once the game has generated it, it no longer takes the
-/// new-zone path, and the queue that passed over it has long since drained.
-/// So a single failure there -- a compiler that would not come alive, a save
-/// refused, an exception -- left that zone without its road for the rest of
-/// the session, recoverable only by road_bake again or a restart.
+/// It began as a ledger of zones whose road terrain failed to go in while the
+/// game generated them for a remote peer. That is still the case it exists
+/// for -- the ghost write is the only chance the queue gives a zone it left to
+/// generation, so a failure there used to mean no road until a restart -- but
+/// it now owns EVERY deferral, because two owners is a bug:
 ///
-/// The budget is spent by FAILED WRITES, never by the passage of time. A zone
-/// handed to the queue is marked as being in it and is not handed over again
-/// until the queue reports back, so the queue never holds two copies of it and
-/// a wait -- for its owner to leave, for the game to build its terrain, for a
-/// backlog to clear -- costs it nothing. Only <see cref="FailedWrite"/> spends
-/// an attempt, and when the attempts are gone the zone is a reported failure
-/// rather than a silent one.
+///   A failed live write used to spend an attempt here (making the zone ready
+///   for the next one-second poll) AND enter a separate ten-second wait list.
+///   The zone was scheduled twice. Worse, when the third failure gave up and
+///   dropped the entry, the wait entry from the second failure survived; when
+///   it came due it queued the zone again with no entry behind it, and a zone
+///   with no entry was treated as having unlimited retries. Work continued
+///   after "given up", forever.
 ///
-/// Pure bookkeeping; ServerTerrainBake supplies "has it generated yet?", does
-/// the requeueing, and reports what each write did.
+/// So: one entry per zone, holding both when it may be looked at again and how
+/// many writes have actually failed for it. Waiting costs nothing -- for an
+/// owner to leave, for terrain to be built, for a player to walk away -- and
+/// only <see cref="FailedWrite"/> spends the budget. A zone handed to the
+/// queue is marked as being in it and is not handed over again until the queue
+/// answers, so the queue never holds two copies of it.
+///
+/// The clock is passed in rather than read, so the whole schedule can be run
+/// against a fake one.
 /// </summary>
 public sealed class GhostRepairLedger
 {
     /// <summary>How many writes may actually fail before the zone is called a failure.</summary>
     public const int MaxFailedWrites = 3;
 
-    private enum State
-    {
-        /// <summary>Waiting to be handed to the queue.</summary>
-        Pending,
-        /// <summary>Handed over; the queue owes an answer.</summary>
-        InQueue,
-    }
-
     private struct Entry
     {
+        /// <summary>Writes that were tried for this zone and failed.</summary>
         public int FailedWrites;
-        public State State;
+        /// <summary>The queue holds it and owes an answer; it is not scheduled.</summary>
+        public bool InQueue;
+        /// <summary>Not before this time, once it is out of the queue.</summary>
+        public float DueAt;
+        /// <summary>It is here because a ghost write failed, not merely deferred.</summary>
+        public bool Repair;
     }
 
     private readonly Dictionary<Vector2s, Entry> m_zones = new();
 
+    /// <summary>Zones with something still owed to them: queued, waiting, or ready.</summary>
     public int Count => m_zones.Count;
 
     public bool Holds(Vector2s zone) => m_zones.ContainsKey(zone);
 
-    /// <summary>Whether the queue currently holds this zone (so it must not be handed over again).</summary>
-    public bool IsQueued(Vector2s zone) => m_zones.TryGetValue(zone, out Entry entry) && entry.State == State.InQueue;
+    /// <summary>Zones held because a write failed, rather than merely waiting for a prerequisite.</summary>
+    public int RepairCount
+    {
+        get
+        {
+            int n = 0;
+            foreach (KeyValuePair<Vector2s, Entry> kv in m_zones)
+                if (kv.Value.Repair)
+                    n++;
+            return n;
+        }
+    }
+
+    /// <summary>Whether the queue currently holds this zone (so it must not be scheduled).</summary>
+    public bool IsQueued(Vector2s zone) => m_zones.TryGetValue(zone, out Entry entry) && entry.InQueue;
 
     /// <summary>How many writes have actually failed for this zone.</summary>
     public int FailedWrites(Vector2s zone) => m_zones.TryGetValue(zone, out Entry entry) ? entry.FailedWrites : 0;
 
+    /// <summary>When it may next be handed over (only meaningful while it is not in the queue).</summary>
+    public float DueAt(Vector2s zone) => m_zones.TryGetValue(zone, out Entry entry) ? entry.DueAt : 0f;
+
     /// <summary>
-    /// A ghost write failed here. A zone already being watched keeps the
-    /// attempts it has spent and whatever the queue is doing with it.
+    /// A ghost write failed here: watch this zone and hand it to the queue as
+    /// soon as the game has finished generating it. A zone already held keeps
+    /// the attempts it has spent and whatever is scheduled for it.
     /// </summary>
     public void Record(Vector2s zone)
     {
-        if (!m_zones.ContainsKey(zone))
-            m_zones[zone] = new Entry { FailedWrites = 0, State = State.Pending };
+        if (m_zones.TryGetValue(zone, out Entry entry))
+        {
+            entry.Repair = true;
+            m_zones[zone] = entry;
+            return;
+        }
+        m_zones[zone] = new Entry { FailedWrites = 0, InQueue = false, DueAt = 0f, Repair = true };
+    }
+
+    /// <summary>
+    /// Look at this zone again no sooner than <paramref name="delay"/> from
+    /// now: a prerequisite is missing (an owner in the zone, terrain the game
+    /// has not built, a player standing near it). This spends nothing.
+    /// </summary>
+    public void Defer(Vector2s zone, float now, float delay)
+    {
+        if (!m_zones.TryGetValue(zone, out Entry entry))
+            entry = new Entry { FailedWrites = 0, Repair = false };
+        entry.InQueue = false;
+        entry.DueAt = now + delay;
+        m_zones[zone] = entry;
     }
 
     public void Clear() => m_zones.Clear();
 
     /// <summary>
-    /// The zones to hand to the queue now: those the game has finished
-    /// generating and that the queue is not already holding. Handing one over
-    /// spends nothing -- it only records that the queue owes an answer.
+    /// The zones to hand to the queue now: those out of the queue, due, and
+    /// which the game has finished generating. Handing one over spends
+    /// nothing; it only records that the queue owes an answer.
     /// </summary>
-    public List<Vector2s> TakeReady(Func<Vector2s, bool> isGenerated)
+    public List<Vector2s> TakeReady(Func<Vector2s, bool> isGenerated, float now)
     {
         var ready = new List<Vector2s>();
         if (m_zones.Count == 0)
@@ -83,35 +124,50 @@ public sealed class GhostRepairLedger
         foreach (Vector2s zone in zones)
         {
             Entry entry = m_zones[zone];
-            if (entry.State == State.InQueue || !isGenerated(zone))
+            if (entry.InQueue || now < entry.DueAt || !isGenerated(zone))
                 continue;
-            entry.State = State.InQueue;
+            entry.InQueue = true;
             m_zones[zone] = entry;
             ready.Add(zone);
         }
         return ready;
     }
 
-    /// <summary>Its roads are in, or it has nothing to write: stop watching it.</summary>
+    /// <summary>
+    /// Its roads are in, it has nothing to write, or it is not this queue's
+    /// work: forget it entirely, deadline included. Nothing scheduled earlier
+    /// can bring it back.
+    /// </summary>
     public void Succeeded(Vector2s zone) => m_zones.Remove(zone);
 
     /// <summary>
-    /// A write was attempted for this zone and failed. Spends one attempt and
-    /// returns whether that was the last: the zone is then dropped, and the
-    /// caller reports a real failure. Otherwise it goes back to waiting and
-    /// will be handed to the queue again.
+    /// Nothing here can finish it -- two saved compilers, say. Forget it, and
+    /// let the caller say so. Same effect as success: no stale deadline is
+    /// left behind to revive it.
     /// </summary>
-    public bool FailedWrite(Vector2s zone)
+    public void Terminal(Vector2s zone) => m_zones.Remove(zone);
+
+    /// <summary>
+    /// A write was attempted for this zone and failed. A zone that was not
+    /// being watched starts being watched here, so a first failure from the
+    /// ordinary queue gets the same budget as a repair instead of retrying
+    /// without one. Spends an attempt and returns whether that was the last:
+    /// the zone is then dropped and the caller reports a real failure.
+    /// Otherwise it is scheduled once, <paramref name="delay"/> from now.
+    /// </summary>
+    public bool FailedWrite(Vector2s zone, float now, float delay)
     {
         if (!m_zones.TryGetValue(zone, out Entry entry))
-            return false;
+            entry = new Entry { FailedWrites = 0, Repair = true };
         entry.FailedWrites++;
         if (entry.FailedWrites >= MaxFailedWrites)
         {
             m_zones.Remove(zone);
             return true;
         }
-        entry.State = State.Pending;
+        entry.Repair = true;
+        entry.InQueue = false;
+        entry.DueAt = now + delay;
         m_zones[zone] = entry;
         return false;
     }

@@ -63,14 +63,16 @@ public static class ServerTerrainBake
     private static int s_version;
     private static readonly List<Vector2s> s_queue = new();
     private static int s_next;
-    private static readonly Dictionary<Vector2s, float> s_waiting = new();
     private static readonly Dictionary<Vector2s, int> s_notReady = new();
     private static readonly Stopwatch s_wall = new();
     private static double s_busyMs;
     private static float s_nextProgress;
-    private static float s_nextWaitCheck;
     private static float s_nextRepairCheck;
-    /// <summary>Zones whose ghost write failed, waiting to be written through the queue instead.</summary>
+    /// <summary>
+    /// The one owner of "when does this zone come round again, and how many
+    /// more tries is it worth": deferrals and repair budgets both. A second
+    /// scheduler is how a zone came back after it had been given up.
+    /// </summary>
     private static readonly GhostRepairLedger s_ghostRepair = new();
     private static float s_nextProbe;
     private static bool s_finished;
@@ -102,7 +104,6 @@ public static class ServerTerrainBake
         s_version = 0;
         s_queue.Clear();
         s_next = 0;
-        s_waiting.Clear();
         s_notReady.Clear();
         s_wall.Reset();
         s_busyMs = 0;
@@ -304,11 +305,11 @@ public static class ServerTerrainBake
                $"{c.LiveWritten} written through a live compiler, " +
                $"{c.Current} already current, {c.Ungenerated} left to generation, {c.Loaded} loaded here without one, " +
                $"{c.Duplicates} with duplicate compilers, {c.NothingToWrite} with nothing to write, {c.Failed} failed, " +
-               $"{s_waiting.Count} waiting for a player to leave, {pending} pending; bridge pieces into {c.BridgeZones} zones; " +
+               $"{s_ghostRepair.Count} deferred, {pending} pending; bridge pieces into {c.BridgeZones} zones; " +
                $"vegetation removed from {c.VegetationZones} zones ({c.VegetationRemoved} objects); {c.Bytes / 1024} KiB written; " +
                $"{s_busyMs / 1000.0:F1} s of frame time over {s_wall.Elapsed.TotalSeconds:F1} s. " +
                $"Generated for peers: {c.GhostCreated} compilers created, {c.GhostRewritten} saved ones written, " +
-               $"{c.GhostFailed} failed ({s_ghostRepair.Count} awaiting repair), {c.GhostMs:F0} ms";
+               $"{c.GhostFailed} failed ({s_ghostRepair.RepairCount} awaiting repair), {c.GhostMs:F0} ms";
     }
 
     private static void Enqueue(int version)
@@ -337,38 +338,19 @@ public static class ServerTerrainBake
     {
         float now = Time.time;
 
-        // Zones whose ghost write failed: once the game has finished generating
-        // them they can be written like any other generated zone, so hand them
-        // back to the queue instead of leaving the road missing for the session.
+        // One drain, because there is one scheduler. A zone comes back when it
+        // is due and the game has generated it -- whether it is here because a
+        // ghost write failed, because a write failed, or because it was waiting
+        // for an owner to leave. There is no second list that could hand the
+        // same zone over again, or revive one that has been given up.
         if (s_ghostRepair.Count > 0 && now >= s_nextRepairCheck)
         {
             s_nextRepairCheck = now + 1f;
-            // Only zones the queue is not already holding: handing one over
-            // again would put a second copy of it in the queue, and waiting is
-            // not failing, so nothing is spent here.
-            List<Vector2s> ready = s_ghostRepair.TakeReady(zone => ZoneSystem.instance.IsZoneGenerated(zone));
+            List<Vector2s> ready = s_ghostRepair.TakeReady(
+                zone => ZoneSystem.instance.IsZoneGenerated(zone), now);
             foreach (Vector2s zone in ready)
             {
                 s_queue.Add(zone);
-                s_finished = false;
-                Log.LogInfo($"[BAKE] zone {zone}: its ghost write failed; writing it from the queue instead");
-            }
-        }
-
-        if (s_waiting.Count > 0 && now >= s_nextWaitCheck)
-        {
-            s_nextWaitCheck = now + 1f;
-            List<Vector2s>? due = null;
-            foreach (KeyValuePair<Vector2s, float> kv in s_waiting)
-                if (now >= kv.Value)
-                    (due ??= new List<Vector2s>()).Add(kv.Key);
-            if (due != null)
-            {
-                foreach (Vector2s zone in due)
-                {
-                    s_waiting.Remove(zone);
-                    s_queue.Add(zone);
-                }
                 s_finished = false;
             }
         }
@@ -399,7 +381,7 @@ public static class ServerTerrainBake
         // Repairs still owed an answer are unfinished work: saying "done" over
         // the top of them is how an unresolved zone went unnoticed.
         bool idle = s_next >= s_queue.Count;
-        if (idle && s_waiting.Count == 0 && s_ghostRepair.Count == 0)
+        if (idle && s_ghostRepair.Count == 0)
         {
             if (!s_finished)
             {
@@ -479,7 +461,6 @@ public static class ServerTerrainBake
                 {
                     // Its compiler is not up yet: a prerequisite, not a failure.
                     Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
-                    s_waiting[zone] = Time.time + WaitForOwnerSeconds;
                     return Outcome.Waiting;
                 }
                 if (!live.m_nview.IsOwner())
@@ -488,7 +469,6 @@ public static class ServerTerrainBake
                     if (live.m_nview.HasOwner())
                     {
                         Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
-                        s_waiting[zone] = Time.time + WaitForOwnerSeconds;
                         return Outcome.Waiting;
                     }
                     live.m_nview.ClaimOwnership();
@@ -513,10 +493,11 @@ public static class ServerTerrainBake
                 // compiler that never takes the roads is retried forever.
                 Log.LogWarning($"[BAKE] zone {zone}: its live terrain compiler did not take the roads");
                 s_counts.Failed++;
-                if (!Resolve(zone, action, ServerBakePlanner.WriteReport.Failed))
-                    return Outcome.Done;
-                s_waiting[zone] = Time.time + WaitForOwnerSeconds;
-                return Outcome.Waiting;
+                // Resolve spends the attempt AND schedules the retry. Adding a
+                // wait of our own here is what gave the zone two schedulers,
+                // and left one of them alive after the budget was gone.
+                Resolve(zone, action, ServerBakePlanner.WriteReport.Failed);
+                return Outcome.Done;
             }
             case ServerBakePlanner.Action.AlreadyCurrent:
                 s_counts.Current++;
@@ -532,7 +513,6 @@ public static class ServerTerrainBake
                 return Outcome.Done;
             case ServerBakePlanner.Action.WaitForOwner:
                 Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
-                s_waiting[zone] = Time.time + WaitForOwnerSeconds;
                 return Outcome.Waiting;
             case ServerBakePlanner.Action.CreateCompiler:
             case ServerBakePlanner.Action.WriteSavedCompiler:
@@ -592,24 +572,30 @@ public static class ServerTerrainBake
         switch (ServerBakePlanner.ResolveRepair(action, report))
         {
             case ServerBakePlanner.RepairOutcome.Resolved:
+                // Forgotten entirely, deadline included: nothing scheduled
+                // earlier can bring finished work back.
                 s_ghostRepair.Succeeded(zone);
                 return true;
             case ServerBakePlanner.RepairOutcome.FailedWrite:
-                if (s_ghostRepair.Holds(zone) && s_ghostRepair.FailedWrite(zone))
+                // A zone that was not being watched starts being watched here,
+                // so a first failure from the ordinary queue gets a budget
+                // instead of retrying without one.
+                if (s_ghostRepair.FailedWrite(zone, Time.time, WaitForOwnerSeconds))
                 {
-                    Log.LogWarning($"[BAKE] zone {zone}: {GhostRepairLedger.MaxFailedWrites} writes failed; given up");
+                    Log.LogWarning($"[BAKE] zone {zone}: {GhostRepairLedger.MaxFailedWrites} writes failed; given up. " +
+                                   "road_bake again after fixing the cause, or a new road network, will take it up afresh");
                     return false;
                 }
                 return true;
             case ServerBakePlanner.RepairOutcome.Terminal:
                 if (s_ghostRepair.Holds(zone))
-                {
-                    s_ghostRepair.Succeeded(zone);
                     Log.LogWarning($"[BAKE] zone {zone}: its repair cannot be finished here and needs a person; no longer watched");
-                }
+                s_ghostRepair.Terminal(zone);
                 return false;
             default:
-                // Waiting: it is still in the queue and will come back.
+                // Waiting on a prerequisite: costs nothing, and the scheduler
+                // brings it back. Nothing else may schedule it.
+                s_ghostRepair.Defer(zone, Time.time, WaitForOwnerSeconds);
                 return true;
         }
     }
@@ -629,7 +615,8 @@ public static class ServerTerrainBake
         {
             if (AnyPeerNear(zone))
             {
-                s_waiting[zone] = Time.time + WaitForOwnerSeconds;
+                // Through the one scheduler, like every other deferral.
+                s_ghostRepair.Defer(zone, Time.time, WaitForOwnerSeconds);
                 return Outcome.Waiting;
             }
             int removed = RemoveVegetation(zone, areas);
