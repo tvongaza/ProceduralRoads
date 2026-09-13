@@ -170,6 +170,21 @@ public sealed class GhostRepairLedger
     }
 
     /// <summary>
+    /// The work this zone was still owed is finished, but terrain's give-up
+    /// STANDS. Distinct from <see cref="Succeeded"/> on purpose: that one means
+    /// "terrain is fine now" and lifts the mark, which would let the budget
+    /// start over.
+    ///
+    /// Without this there was nowhere to put "vegetation is done, terrain is
+    /// not coming back": terrain returned early without touching the ledger,
+    /// vegetation cleared and returned without touching it either, and the
+    /// entry vegetation's own Defer had created sat there marked as queued for
+    /// the rest of the session -- so the bake never reported itself finished
+    /// even though nothing was left to do.
+    /// </summary>
+    public void PendingWorkDone(Vector2s zone) => m_zones.Remove(zone);
+
+    /// <summary>
     /// Nothing here can finish it -- two saved compilers, say. Forget it, and
     /// let the caller say so. Same effect as success: no stale deadline is
     /// left behind to revive it.

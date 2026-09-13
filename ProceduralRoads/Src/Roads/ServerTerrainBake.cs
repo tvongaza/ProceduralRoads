@@ -674,7 +674,13 @@ public static class ServerTerrainBake
     private static Outcome ProcessVegetation(Vector2s zone, bool generated)
     {
         if (!generated || VegetationClearing.IsCleared(zone, s_version))
+        {
+            // Nothing owed here any more. Terrain's give-up, if it has one,
+            // stands -- this says the PENDING work is done, not that terrain
+            // is well again.
+            s_ghostRepair.PendingWorkDone(zone);
             return Outcome.Done;
+        }
         List<VegetationClearing.Area> areas = ClearAreasFor(zone);
         if (areas.Count > 0)
         {
@@ -693,6 +699,10 @@ public static class ServerTerrainBake
             }
         }
         VegetationClearing.MarkCleared(zone, s_version);
+        // Vegetation is finished for this zone and this network. If terrain
+        // gave up earlier it stays given up; what goes is the pending entry,
+        // which otherwise kept the bake from ever reporting itself done.
+        s_ghostRepair.PendingWorkDone(zone);
         return Outcome.Done;
     }
 
