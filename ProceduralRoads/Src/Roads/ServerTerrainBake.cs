@@ -69,6 +69,9 @@ public static class ServerTerrainBake
     private static double s_busyMs;
     private static float s_nextProgress;
     private static float s_nextWaitCheck;
+    private static float s_nextRepairCheck;
+    /// <summary>Zones whose ghost write failed, waiting to be written through the queue instead.</summary>
+    private static readonly GhostRepairLedger s_ghostRepair = new();
     private static float s_nextProbe;
     private static bool s_finished;
     private static int s_loggedGhost;
@@ -106,6 +109,7 @@ public static class ServerTerrainBake
         s_finished = false;
         s_counts = default;
         s_vegetationPrefabs = null;
+        s_ghostRepair.Clear();
     }
 
     /// <summary>
@@ -268,7 +272,12 @@ public static class ServerTerrainBake
             WriteResult result = WriteOnGhostTerrain(zone, hmap, out bool created, out int bytes);
             s_counts.GhostMs += clock.Elapsed.TotalMilliseconds;
             if (result == WriteResult.Failed)
+            {
                 s_counts.GhostFailed++;
+                // Vanilla will finish generating this zone regardless, after
+                // which nothing would look at it again this session.
+                s_ghostRepair.Record(zone);
+            }
             else if (result == WriteResult.NothingToWrite)
                 s_counts.NothingToWrite++;
             else if (created)
@@ -282,6 +291,7 @@ public static class ServerTerrainBake
         catch (Exception ex)
         {
             s_counts.GhostFailed++;
+            s_ghostRepair.Record(zone);
             Log.LogError($"[BAKE] zone {zone} (generated for a peer): {ex}");
         }
     }
@@ -298,7 +308,7 @@ public static class ServerTerrainBake
                $"vegetation removed from {c.VegetationZones} zones ({c.VegetationRemoved} objects); {c.Bytes / 1024} KiB written; " +
                $"{s_busyMs / 1000.0:F1} s of frame time over {s_wall.Elapsed.TotalSeconds:F1} s. " +
                $"Generated for peers: {c.GhostCreated} compilers created, {c.GhostRewritten} saved ones written, " +
-               $"{c.GhostFailed} failed, {c.GhostMs:F0} ms";
+               $"{c.GhostFailed} failed ({s_ghostRepair.Count} awaiting repair), {c.GhostMs:F0} ms";
     }
 
     private static void Enqueue(int version)
@@ -326,6 +336,29 @@ public static class ServerTerrainBake
     private static void RunSlice()
     {
         float now = Time.time;
+
+        // Zones whose ghost write failed: once the game has finished generating
+        // them they can be written like any other generated zone, so hand them
+        // back to the queue instead of leaving the road missing for the session.
+        if (s_ghostRepair.Count > 0 && now >= s_nextRepairCheck)
+        {
+            s_nextRepairCheck = now + 1f;
+            var gaveUp = new List<Vector2s>();
+            List<Vector2s> ready = s_ghostRepair.TakeReady(
+                zone => ZoneSystem.instance.IsZoneGenerated(zone), gaveUp);
+            foreach (Vector2s zone in ready)
+            {
+                s_queue.Add(zone);
+                s_finished = false;
+                Log.LogInfo($"[BAKE] zone {zone}: its ghost write failed; writing it from the queue instead");
+            }
+            foreach (Vector2s zone in gaveUp)
+            {
+                s_counts.Failed++;
+                Log.LogWarning($"[BAKE] zone {zone}: still unwritten after {GhostRepairLedger.MaxAttempts} attempts; given up");
+            }
+        }
+
         if (s_waiting.Count > 0 && now >= s_nextWaitCheck)
         {
             s_nextWaitCheck = now + 1f;
@@ -473,6 +506,7 @@ public static class ServerTerrainBake
             }
             case ServerBakePlanner.Action.AlreadyCurrent:
                 s_counts.Current++;
+                s_ghostRepair.Succeeded(zone);
                 return Outcome.Done;
             case ServerBakePlanner.Action.DuplicateCompilers:
                 s_counts.Duplicates++;
@@ -503,11 +537,15 @@ public static class ServerTerrainBake
                         else
                             s_counts.Rewritten++;
                         s_counts.Bytes += bytes;
+                        s_ghostRepair.Succeeded(zone);
                         break;
                     case WriteResult.NothingToWrite:
                         s_counts.NothingToWrite++;
+                        s_ghostRepair.Succeeded(zone);
                         break;
                     default:
+                        // Left in the repair ledger: it is handed back until it
+                        // is written or has spent its attempts.
                         s_counts.Failed++;
                         break;
                 }
