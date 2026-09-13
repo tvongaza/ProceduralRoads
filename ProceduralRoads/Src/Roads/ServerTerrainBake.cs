@@ -343,19 +343,15 @@ public static class ServerTerrainBake
         if (s_ghostRepair.Count > 0 && now >= s_nextRepairCheck)
         {
             s_nextRepairCheck = now + 1f;
-            var gaveUp = new List<Vector2s>();
-            List<Vector2s> ready = s_ghostRepair.TakeReady(
-                zone => ZoneSystem.instance.IsZoneGenerated(zone), gaveUp);
+            // Only zones the queue is not already holding: handing one over
+            // again would put a second copy of it in the queue, and waiting is
+            // not failing, so nothing is spent here.
+            List<Vector2s> ready = s_ghostRepair.TakeReady(zone => ZoneSystem.instance.IsZoneGenerated(zone));
             foreach (Vector2s zone in ready)
             {
                 s_queue.Add(zone);
                 s_finished = false;
                 Log.LogInfo($"[BAKE] zone {zone}: its ghost write failed; writing it from the queue instead");
-            }
-            foreach (Vector2s zone in gaveUp)
-            {
-                s_counts.Failed++;
-                Log.LogWarning($"[BAKE] zone {zone}: still unwritten after {GhostRepairLedger.MaxAttempts} attempts; given up");
             }
         }
 
@@ -492,11 +488,13 @@ public static class ServerTerrainBake
                 if (RoadTerrainModifier.CarriesCurrentRoads(live))
                 {
                     s_counts.LiveWritten++;
+                    s_ghostRepair.Succeeded(zone);
                     return Outcome.Done;
                 }
                 if (RoadTerrainModifier.LastWriteOutcome == RoadTerrainModifier.WriteOutcome.NothingToWrite)
                 {
                     s_counts.NothingToWrite++;
+                    s_ghostRepair.Succeeded(zone);
                     return Outcome.Done;
                 }
                 // Not stamped, so nothing claims these roads are in: look again.
@@ -526,6 +524,7 @@ public static class ServerTerrainBake
                         return Outcome.TerrainNotReady;
                     s_counts.Failed++;
                     Log.LogWarning($"[BAKE] zone {zone}: the game never built its terrain; not written");
+                    ReportFailedWrite(zone);
                     return Outcome.Done;
                 }
                 ZDO? existing = action == ServerBakePlanner.Action.WriteSavedCompiler ? saved[0] : null;
@@ -544,15 +543,29 @@ public static class ServerTerrainBake
                         s_ghostRepair.Succeeded(zone);
                         break;
                     default:
-                        // Left in the repair ledger: it is handed back until it
-                        // is written or has spent its attempts.
+                        // A write was attempted and failed: that, and only
+                        // that, spends one of the zone's repair attempts.
                         s_counts.Failed++;
+                        ReportFailedWrite(zone);
                         break;
                 }
                 return Outcome.Done;
             default:
                 return Outcome.Done;
         }
+    }
+
+    /// <summary>
+    /// A write this zone was being watched for has failed. Spends one of its
+    /// repair attempts, and says so once they are gone -- a zone nobody will
+    /// try again for is worth a line of its own.
+    /// </summary>
+    private static void ReportFailedWrite(Vector2s zone)
+    {
+        if (!s_ghostRepair.Holds(zone))
+            return;
+        if (s_ghostRepair.FailedWrite(zone))
+            Log.LogWarning($"[BAKE] zone {zone}: {GhostRepairLedger.MaxFailedWrites} writes failed; given up");
     }
 
     /// <summary>

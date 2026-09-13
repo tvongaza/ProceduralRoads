@@ -222,45 +222,85 @@ public class ServerBakeTests
         ledger.Record(zone);
         Assert.True(ledger.Holds(zone));
 
-        // Still generating: nothing to hand back yet, and it is not forgotten.
-        var gaveUp = new List<Vector2s>();
-        Assert.Empty(ledger.TakeReady(_ => false, gaveUp));
-        Assert.Empty(gaveUp);
+        // Still generating: nothing to hand over yet, and it is not forgotten.
+        Assert.Empty(ledger.TakeReady(_ => false));
         Assert.Equal(1, ledger.Count);
 
-        // Generated: it goes back to the queue, and stays watched until the
-        // write actually lands -- being handed back is not the same as fixed.
-        List<Vector2s> ready = ledger.TakeReady(_ => true, gaveUp);
-        Assert.Equal(new[] { zone }, ready);
-        Assert.Empty(gaveUp);
+        // Generated: it goes to the queue, and stays watched until the write
+        // actually lands -- being handed over is not the same as fixed.
+        Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true));
         Assert.True(ledger.Holds(zone));
+        Assert.True(ledger.IsQueued(zone));
 
         // The queue wrote it: nothing left to watch.
         ledger.Succeeded(zone);
         Assert.False(ledger.Holds(zone));
-        Assert.Empty(ledger.TakeReady(_ => true, gaveUp));
+        Assert.Empty(ledger.TakeReady(_ => true));
+    }
+
+    /// <summary>
+    /// The repair budget belongs to failed WRITES, not to the clock. The timer
+    /// polls once a second whatever the queue is doing, and a zone can sit in
+    /// it through a backlog, a terrain build, or a ten-second wait for an owner
+    /// to leave. Spending an attempt per poll burned the whole allowance
+    /// without a single write being tried, and queued a fresh copy each time.
+    /// </summary>
+    [Fact]
+    public void PollingSpendsNothingAndNeverQueuesTheZoneTwice()
+    {
+        var ledger = new GhostRepairLedger();
+        var zone = new Vector2s(4, -9);
+        ledger.Record(zone);
+
+        int queued = 0;
+        for (int poll = 1; poll <= 12; poll++)
+            queued += ledger.TakeReady(_ => true).Count;
+
+        Assert.Equal(1, queued);
+        Assert.True(ledger.Holds(zone));
+        Assert.Equal(0, ledger.FailedWrites(zone));
     }
 
     [Fact]
-    public void AZoneThatKeepsFailingIsGivenUpRatherThanRetriedForever()
+    public void OnlyAFailedWriteSpendsTheBudgetAndTheLastOneIsTerminal()
     {
         var ledger = new GhostRepairLedger();
         var zone = new Vector2s(1, 1);
-        var gaveUp = new List<Vector2s>();
         ledger.Record(zone);
 
-        // It is handed back, and the write fails again, for as many attempts
-        // as it is allowed -- nothing calls Succeeded.
-        for (int attempt = 1; attempt <= GhostRepairLedger.MaxAttempts; attempt++)
+        // Every round is a real write that failed, not a poll.
+        for (int spent = 1; spent < GhostRepairLedger.MaxFailedWrites; spent++)
         {
-            Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true, gaveUp));
-            Assert.Empty(gaveUp);
+            Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true));
+            Assert.False(ledger.FailedWrite(zone));
+            Assert.Equal(spent, ledger.FailedWrites(zone));
+            Assert.False(ledger.IsQueued(zone));
         }
 
-        // The attempts are spent: a failure to report, not another retry.
-        Assert.Empty(ledger.TakeReady(_ => true, gaveUp));
-        Assert.Equal(new[] { zone }, gaveUp);
-        Assert.Equal(0, ledger.Count);
+        // The last failure is the one that gives up, and it says so.
+        Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true));
+        Assert.True(ledger.FailedWrite(zone));
+        Assert.False(ledger.Holds(zone));
+        Assert.Empty(ledger.TakeReady(_ => true));
+    }
+
+    [Fact]
+    public void AWriteThatLandsEndsTheWatchWhicheverPathWroteIt()
+    {
+        // The queue's temporary-terrain path: handed over, then written.
+        var viaQueue = new GhostRepairLedger();
+        var zone = new Vector2s(2, 2);
+        viaQueue.Record(zone);
+        viaQueue.TakeReady(_ => true);
+        viaQueue.Succeeded(zone);
+        Assert.Equal(0, viaQueue.Count);
+
+        // The live-compiler path, and the nothing-to-write case: the zone is
+        // finished without the ledger ever handing it anywhere.
+        var viaLiveZone = new GhostRepairLedger();
+        viaLiveZone.Record(zone);
+        viaLiveZone.Succeeded(zone);
+        Assert.Equal(0, viaLiveZone.Count);
     }
 
     [Theory]
