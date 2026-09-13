@@ -120,6 +120,39 @@ The mod must be installed on the server (or the hosting player) and on
 every client, as for the roads themselves; this feature does not add a
 server-only mode.
 
+### Vegetation on the road (servers, existing worlds)
+
+The game keeps vegetation off a road only while it generates a zone. On a world that
+already existed before its roads, the zones it had already generated keep every tree,
+rock and bush they grew — including the ones now standing in the middle of a road. A
+server running this mod clears those, once per zone for each road network.
+
+Never removed:
+
+- anything a player built — it is not vegetation, road or no road
+- any object carrying a creator, whoever placed it
+- any vegetation within 8 metres of something a player built, planted or wild
+- saplings and other growing plants
+- anything standing inside a location's own footprint
+
+One thing **is** still removed, and is worth knowing before installing this on a
+long-played world: a fully grown tree a player planted that stands on the road line
+and more than 8 metres from anything they built. Valheim's save does not record who
+grew a tree — a planted birch and a wild one are the same object, at the same kind of
+position, with nothing to tell them apart — so it is cleared like any other tree the
+world grew there.
+
+To see what a pass would take, before it takes anything:
+
+```
+road_bake vegetation      # road zones still holding vegetation on the road, most first
+road_bake zone [x z]      # one zone: what is in it and what would happen to it
+```
+
+This only happens on a server, only for zones generated before the road network they
+now carry, and only once per zone per network — so a tree planted after a zone has
+been cleared stays until the road network itself changes.
+
 ## API for Mod Authors
 
 Other mods can register locations for road generation programmatically.
