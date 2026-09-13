@@ -32,11 +32,14 @@ namespace ProceduralRoads
         private static bool Prefix(ZRpc rpc, ZPackage pkg, ref ZNet __instance)
         {
             if (!__instance.IsServer() || RpcHandlers.ValidatedPeers.Contains(rpc)) return true;
-            // Disconnect peer if they didn't send mod version at all
-            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogWarning(
-                $"Peer ({rpc.m_socket.GetHostName()}) never sent version or couldn't due to previous disconnect, disconnecting");
-            rpc.Invoke("Error", 3);
-            return false; // Prevent calling underlying method
+            // A peer that never answered the version check has no
+            // ProceduralRoads. It is let in: the roads reach it as vanilla
+            // terrain and vanilla pieces. A peer that answered with another
+            // version was turned away when its answer arrived.
+            PeerAdmission.Verdict verdict = PeerAdmission.Decide(answeredVersionCheck: false, versionMatched: false);
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo(
+                $"A peer without {ProceduralRoadsPlugin.ModName} joined: it receives the roads as vanilla terrain");
+            return PeerAdmission.Admits(verdict);
         }
 
         private static void Postfix(ZNet __instance)

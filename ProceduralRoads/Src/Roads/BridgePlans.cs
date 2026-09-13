@@ -114,6 +114,16 @@ public static class BridgePlans
         }
     }
 
+    /// <summary>The zones the plans put pieces in (a copy).</summary>
+    public static List<Vector2s> PlannedZones
+    {
+        get
+        {
+            EnsurePlans();
+            return s_plansByZone != null ? new List<Vector2s>(s_plansByZone.Keys) : new List<Vector2s>();
+        }
+    }
+
     /// <summary>Pieces the plan puts at a crossing (0 for a ford that is not spanned).</summary>
     public static int PiecesAt(RoadCrossing crossing) =>
         WorldGenerator.instance == null ? 0 : BridgeLayout.Solve(crossing, WorldGenerator.instance, WorldGenerator.instance.GetSeed()).Count;
