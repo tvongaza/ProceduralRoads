@@ -630,7 +630,9 @@ public static class ServerTerrainBake
         List<VegetationClearing.Footprint> locations = LocationsNear(zone);
         var zdos = new List<ZDO>();
         ZDOMan.instance.FindObjects(zone, zdos, new HashSet<ZoneSystem.SectorIndex>());
-        List<VegetationClearing.Footprint> playerGround = PlayerGroundIn(zdos);
+        // The same gathering the removal uses, so the preview and the deletion
+        // cannot disagree about what is protected.
+        List<VegetationClearing.Footprint> playerGround = PlayerGroundNear(zone);
         int count = 0;
         foreach (ZDO zdo in zdos)
         {
@@ -662,22 +664,40 @@ public static class ServerTerrainBake
     private static bool IsPlayerCreated(ZDO zdo) => zdo.GetLong(ZDOVars.s_creator, 0L) != 0L;
 
     /// <summary>
-    /// Ground in the zone a player has built on, as a circle around each of
-    /// their objects. Vegetation standing there is left alone, planted or not:
-    /// see VegetationClearing.ShouldRemove for what the save cannot tell us.
-    /// Only this zone's objects count -- a build just over the border does not
-    /// reach in, which errs toward clearing a tree rather than missing one.
+    /// Ground a player has built on, as a circle around each of their objects,
+    /// gathered from this zone AND its eight neighbours. Vegetation standing
+    /// there is left alone, planted or not: see VegetationClearing.ShouldRemove
+    /// for what the save cannot tell us.
+    ///
+    /// The neighbours are the whole point. A hut at (31, 0) and a tree at
+    /// (33, 0) are two metres apart with a zone border between them; the border
+    /// is an artefact of how the world is stored, not a fact about the ground,
+    /// and a protection radius that stopped at it would be 8 m in the middle of
+    /// a zone and nothing at its edge. The radius is smaller than a zone
+    /// (asserted in the tests), so the eight neighbours reach everything that
+    /// can reach in.
     /// </summary>
-    private static List<VegetationClearing.Footprint> PlayerGroundIn(List<ZDO> zdos)
+    private static List<VegetationClearing.Footprint> PlayerGroundNear(Vector2s zone)
     {
         var ground = new List<VegetationClearing.Footprint>();
-        foreach (ZDO zdo in zdos)
+        for (int dy = -1; dy <= 1; dy++)
         {
-            if (!IsPlayerCreated(zdo))
-                continue;
-            Vector3 position = zdo.GetPosition();
-            ground.Add(new VegetationClearing.Footprint(
-                new Vector2(position.x, position.z), VegetationClearing.PlayerGroundRadius));
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                var zdos = new List<ZDO>();
+                // A fresh visited set per call, as every other caller does:
+                // sharing one would make the later zones return nothing.
+                ZDOMan.instance.FindObjects(new Vector2s(zone.x + dx, zone.y + dy), zdos,
+                    new HashSet<ZoneSystem.SectorIndex>());
+                foreach (ZDO zdo in zdos)
+                {
+                    if (!IsPlayerCreated(zdo))
+                        continue;
+                    Vector3 position = zdo.GetPosition();
+                    ground.Add(new VegetationClearing.Footprint(
+                        new Vector2(position.x, position.z), VegetationClearing.PlayerGroundRadius));
+                }
+            }
         }
         return ground;
     }
@@ -688,7 +708,7 @@ public static class ServerTerrainBake
         List<VegetationClearing.Footprint> locations = LocationsNear(zone);
         var zdos = new List<ZDO>();
         ZDOMan.instance.FindObjects(zone, zdos, new HashSet<ZoneSystem.SectorIndex>());
-        List<VegetationClearing.Footprint> playerGround = PlayerGroundIn(zdos);
+        List<VegetationClearing.Footprint> playerGround = PlayerGroundNear(zone);
         long me = ZDOMan.GetSessionID();
         int removed = 0;
         foreach (ZDO zdo in zdos)
