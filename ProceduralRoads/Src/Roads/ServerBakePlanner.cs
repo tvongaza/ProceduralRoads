@@ -45,6 +45,72 @@ public static class ServerBakePlanner
         WriteSavedCompiler,
     }
 
+    /// <summary>What a write actually did, where one was attempted at all.</summary>
+    public enum WriteReport
+    {
+        /// <summary>No write was tried: something it needed was missing.</summary>
+        NotAttempted,
+        Written,
+        NothingToWrite,
+        Failed,
+    }
+
+    /// <summary>
+    /// What the queue owes a zone it is repairing, once it has looked at it.
+    /// Every path out of processing lands on exactly one of these, so a zone
+    /// handed over for repair always gets an answer and can never sit in the
+    /// ledger marked as queued with nothing coming.
+    /// </summary>
+    public enum RepairOutcome
+    {
+        /// <summary>Written, nothing to write, or not this queue's work: stop watching it.</summary>
+        Resolved,
+        /// <summary>What it needs is not there yet; it stays queued and comes back.</summary>
+        Waiting,
+        /// <summary>A write was tried and failed: spend one of its attempts.</summary>
+        FailedWrite,
+        /// <summary>Nothing here can fix it; a person must. Stop watching, and say so.</summary>
+        Terminal,
+    }
+
+    /// <summary>
+    /// Map what the queue decided and what its write did onto the repair
+    /// ledger's four states. Waiting for a prerequisite -- an owner to leave,
+    /// the game to build terrain, a live compiler to appear -- is not a
+    /// failure and costs a zone nothing; only an attempted write that failed
+    /// does. Duplicate compilers are terminal: the queue refuses to touch
+    /// either of them, so retrying would repeat that refusal forever.
+    /// </summary>
+    public static RepairOutcome ResolveRepair(Action action, WriteReport report)
+    {
+        switch (action)
+        {
+            case Action.DuplicateCompilers:
+                return RepairOutcome.Terminal;
+            case Action.WaitForOwner:
+                return RepairOutcome.Waiting;
+            case Action.CreateCompiler:
+            case Action.WriteSavedCompiler:
+            case Action.WriteLiveCompiler:
+                switch (report)
+                {
+                    case WriteReport.Written:
+                    case WriteReport.NothingToWrite:
+                        return RepairOutcome.Resolved;
+                    case WriteReport.Failed:
+                        return RepairOutcome.FailedWrite;
+                    default:
+                        return RepairOutcome.Waiting;
+                }
+            default:
+                // NoNetwork, LeaveToGeneration, LeaveToLiveZone, AlreadyCurrent:
+                // nothing for the repair queue to carry. The generation and
+                // live-zone hooks own those, and a ghost failure there records
+                // the zone again.
+                return RepairOutcome.Resolved;
+        }
+    }
+
     /// <summary>What the server knows about one saved compiler ZDO.</summary>
     public readonly struct Compiler
     {
