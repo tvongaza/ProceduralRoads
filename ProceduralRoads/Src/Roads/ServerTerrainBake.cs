@@ -60,6 +60,23 @@ public static class ServerTerrainBake
     private static bool Enabled => s_enabled ??= DebugSwitches.Flag("SERVER_BAKE", true);
     private static bool Probe => s_probe ??= DebugSwitches.Flag("PEER_PROBE", false);
 
+    /// <summary>
+    /// Validation switches: make the first N ghost writes, or the first N
+    /// writes on temporary terrain, report failure without writing anything.
+    /// They exist to prove in a running game what the tests prove in
+    /// isolation -- a ghost failure that is repaired, and a repair that spends
+    /// its attempts and is given up. Both default to 0, so an unset
+    /// environment behaves exactly as before, and the counters are NOT reset
+    /// with the queue: "the first N this session" stays the first N even if
+    /// the network is regenerated.
+    /// </summary>
+    private static int? s_failGhostWrites;
+    private static int? s_failZoneWrites;
+    private static int FailGhostWrites => s_failGhostWrites ??= DebugSwitches.Count("FAIL_GHOST_WRITES", 0);
+    private static int FailZoneWrites => s_failZoneWrites ??= DebugSwitches.Count("FAIL_ZONE_WRITES", 0);
+    private static int s_ghostWritesFailed;
+    private static int s_zoneWritesFailed;
+
     private static int s_version;
     private static readonly List<Vector2s> s_queue = new();
     private static int s_next;
@@ -270,7 +287,24 @@ public static class ServerTerrainBake
                 return;
 
             var clock = Stopwatch.StartNew();
-            WriteResult result = WriteOnGhostTerrain(zone, hmap, out bool created, out int bytes);
+            WriteResult result;
+            bool created = false;
+            int bytes = 0;
+            if (s_ghostWritesFailed < FailGhostWrites)
+            {
+                // PROCEDURALROADS_FAIL_GHOST_WRITES: fail without writing, so
+                // the repair path can be proven in a real game rather than
+                // only in tests. Nothing is written, so the zone really is
+                // left without its road until the repair writes it.
+                s_ghostWritesFailed++;
+                result = WriteResult.Failed;
+                Log.LogWarning($"[BAKE] zone {zone}: ghost write failed ON PURPOSE " +
+                               $"({s_ghostWritesFailed} of {FailGhostWrites}, PROCEDURALROADS_FAIL_GHOST_WRITES)");
+            }
+            else
+            {
+                result = WriteOnGhostTerrain(zone, hmap, out created, out bytes);
+            }
             s_counts.GhostMs += clock.Elapsed.TotalMilliseconds;
             if (result == WriteResult.Failed)
             {
@@ -528,7 +562,23 @@ public static class ServerTerrainBake
                     return Outcome.Done;
                 }
                 ZDO? existing = action == ServerBakePlanner.Action.WriteSavedCompiler ? saved[0] : null;
-                switch (WriteOnTemporaryTerrain(zone, existing, out int bytes))
+                WriteResult wrote;
+                int bytes = 0;
+                if (s_zoneWritesFailed < FailZoneWrites)
+                {
+                    // PROCEDURALROADS_FAIL_ZONE_WRITES: the repair's own write
+                    // fails, so the attempt budget can be driven to exhaustion
+                    // and the terminal case seen in a real game.
+                    s_zoneWritesFailed++;
+                    wrote = WriteResult.Failed;
+                    Log.LogWarning($"[BAKE] zone {zone}: zone write failed ON PURPOSE " +
+                                   $"({s_zoneWritesFailed} of {FailZoneWrites}, PROCEDURALROADS_FAIL_ZONE_WRITES)");
+                }
+                else
+                {
+                    wrote = WriteOnTemporaryTerrain(zone, existing, out bytes);
+                }
+                switch (wrote)
                 {
                     case WriteResult.Written:
                         if (existing == null)
