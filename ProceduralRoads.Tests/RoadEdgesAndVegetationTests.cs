@@ -125,15 +125,16 @@ public class RoadEdgesAndVegetationTests
     private static readonly HashSet<int> Vegetation = new() { Tree };
     private static readonly List<VegetationClearing.Area> Areas = new() { new(new Vector2(10f, 10f), 2.4f) };
     private static readonly List<VegetationClearing.Footprint> NoLocations = new();
+    private static readonly List<VegetationClearing.Footprint> NoPlayerGround = new();
 
     [Fact]
     public void OnlyTheGamesVegetationInsideTheRoadsClearAreasGoes()
     {
-        Assert.True(VegetationClearing.ShouldRemove(Tree, new Vector2(10f, 10f), Vegetation, Areas, NoLocations));
+        Assert.True(VegetationClearing.ShouldRemove(Tree, new Vector2(10f, 10f), false, Vegetation, Areas, NoLocations, NoPlayerGround));
         // A player's build is not vegetation, road or no road.
-        Assert.False(VegetationClearing.ShouldRemove(Wall, new Vector2(10f, 10f), Vegetation, Areas, NoLocations));
+        Assert.False(VegetationClearing.ShouldRemove(Wall, new Vector2(10f, 10f), false, Vegetation, Areas, NoLocations, NoPlayerGround));
         // Off the road.
-        Assert.False(VegetationClearing.ShouldRemove(Tree, new Vector2(13f, 10f), Vegetation, Areas, NoLocations));
+        Assert.False(VegetationClearing.ShouldRemove(Tree, new Vector2(13f, 10f), false, Vegetation, Areas, NoLocations, NoPlayerGround));
     }
 
     [Fact]
@@ -150,7 +151,35 @@ public class RoadEdgesAndVegetationTests
     public void ObjectsWithinALocationAreLeftToTheLocation()
     {
         var locations = new List<VegetationClearing.Footprint> { new(new Vector2(0f, 10f), 12f) };
-        Assert.False(VegetationClearing.ShouldRemove(Tree, new Vector2(10f, 10f), Vegetation, Areas, locations));
+        Assert.False(VegetationClearing.ShouldRemove(Tree, new Vector2(10f, 10f), false, Vegetation, Areas, locations, NoPlayerGround));
+    }
+
+    // ---- what the clearing must not take: somebody's own work ----
+    //
+    // A grown tree carries nothing in the save that says a player planted it
+    // (vanilla's PlaceVegetation writes only a scale, and Plant.Grow carries no
+    // creator onto the grown prefab), so these are the two facts that CAN be
+    // honoured: an object stamped with a creator, and vegetation standing on
+    // ground a player has built on.
+
+    [Fact]
+    public void AnObjectAPlayerMadeIsNeverTaken()
+    {
+        // Same prefab, same spot on the road, but it carries a creator.
+        Assert.True(VegetationClearing.ShouldRemove(Tree, new Vector2(10f, 10f), false, Vegetation, Areas, NoLocations, NoPlayerGround));
+        Assert.False(VegetationClearing.ShouldRemove(Tree, new Vector2(10f, 10f), true, Vegetation, Areas, NoLocations, NoPlayerGround));
+    }
+
+    [Fact]
+    public void VegetationOnGroundAPlayerBuiltOnStays()
+    {
+        // A hut 3 m away: the tree beside it is left alone.
+        var nearBuild = new List<VegetationClearing.Footprint> { new(new Vector2(13f, 10f), VegetationClearing.PlayerGroundRadius) };
+        Assert.False(VegetationClearing.ShouldRemove(Tree, new Vector2(10f, 10f), false, Vegetation, Areas, NoLocations, nearBuild));
+
+        // The same build far off protects nothing: a natural tree on the road still goes.
+        var farBuild = new List<VegetationClearing.Footprint> { new(new Vector2(60f, 60f), VegetationClearing.PlayerGroundRadius) };
+        Assert.True(VegetationClearing.ShouldRemove(Tree, new Vector2(10f, 10f), false, Vegetation, Areas, NoLocations, farBuild));
     }
 
     [Fact]

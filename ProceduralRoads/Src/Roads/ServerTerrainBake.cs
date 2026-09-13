@@ -536,12 +536,13 @@ public static class ServerTerrainBake
         List<VegetationClearing.Footprint> locations = LocationsNear(zone);
         var zdos = new List<ZDO>();
         ZDOMan.instance.FindObjects(zone, zdos, new HashSet<ZoneSystem.SectorIndex>());
+        List<VegetationClearing.Footprint> playerGround = PlayerGroundIn(zdos);
         int count = 0;
         foreach (ZDO zdo in zdos)
         {
             Vector3 position = zdo.GetPosition();
             if (VegetationClearing.ShouldRemove(zdo.GetPrefab(), new Vector2(position.x, position.z),
-                    vegetation, areas, locations))
+                    IsPlayerCreated(zdo), vegetation, areas, locations, playerGround))
                 count++;
         }
         return count;
@@ -563,19 +564,44 @@ public static class ServerTerrainBake
         return locations;
     }
 
+    /// <summary>Whether a player made this object: vanilla stamps what a player builds with its creator.</summary>
+    private static bool IsPlayerCreated(ZDO zdo) => zdo.GetLong(ZDOVars.s_creator, 0L) != 0L;
+
+    /// <summary>
+    /// Ground in the zone a player has built on, as a circle around each of
+    /// their objects. Vegetation standing there is left alone, planted or not:
+    /// see VegetationClearing.ShouldRemove for what the save cannot tell us.
+    /// Only this zone's objects count -- a build just over the border does not
+    /// reach in, which errs toward clearing a tree rather than missing one.
+    /// </summary>
+    private static List<VegetationClearing.Footprint> PlayerGroundIn(List<ZDO> zdos)
+    {
+        var ground = new List<VegetationClearing.Footprint>();
+        foreach (ZDO zdo in zdos)
+        {
+            if (!IsPlayerCreated(zdo))
+                continue;
+            Vector3 position = zdo.GetPosition();
+            ground.Add(new VegetationClearing.Footprint(
+                new Vector2(position.x, position.z), VegetationClearing.PlayerGroundRadius));
+        }
+        return ground;
+    }
+
     private static int RemoveVegetation(Vector2s zone, List<VegetationClearing.Area> areas)
     {
         HashSet<int> vegetation = VegetationPrefabs();
         List<VegetationClearing.Footprint> locations = LocationsNear(zone);
         var zdos = new List<ZDO>();
         ZDOMan.instance.FindObjects(zone, zdos, new HashSet<ZoneSystem.SectorIndex>());
+        List<VegetationClearing.Footprint> playerGround = PlayerGroundIn(zdos);
         long me = ZDOMan.GetSessionID();
         int removed = 0;
         foreach (ZDO zdo in zdos)
         {
             Vector3 position = zdo.GetPosition();
             if (!VegetationClearing.ShouldRemove(zdo.GetPrefab(), new Vector2(position.x, position.z),
-                    vegetation, areas, locations))
+                    IsPlayerCreated(zdo), vegetation, areas, locations, playerGround))
                 continue;
             // As BridgePlacement.ClearSpawnedPieces: through the scene when the
             // object is alive here, straight from the ZDOs otherwise.
