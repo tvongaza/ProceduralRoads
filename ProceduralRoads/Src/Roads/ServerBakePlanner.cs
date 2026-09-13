@@ -24,9 +24,13 @@ public static class ServerBakePlanner
         /// <summary>The zone has not been generated. It is written while it
         /// is generated (the ghost-generation hook), not before.</summary>
         LeaveToGeneration,
-        /// <summary>The zone is loaded on this peer; the live-zone hooks
-        /// (zone spawn, compiler coming alive) write it.</summary>
+        /// <summary>The zone is loaded on this peer and has no compiler yet;
+        /// the zone-spawn hook makes its one compiler and writes it.</summary>
         LeaveToLiveZone,
+        /// <summary>The zone is loaded on this peer and its compiler is alive
+        /// and writable: write through that one. Never make a second compiler
+        /// for a zone the game already has in hand.</summary>
+        WriteLiveCompiler,
         /// <summary>Its compiler already carries the current network.</summary>
         AlreadyCurrent,
         /// <summary>More than one saved compiler: writing either would leave
@@ -66,18 +70,26 @@ public static class ServerBakePlanner
             return Action.NoNetwork;
         if (!generated)
             return Action.LeaveToGeneration;
-        if (loadedHere)
-            return Action.LeaveToLiveZone;
         if (compilers.Count > 1)
             return Action.DuplicateCompilers;
+        // A loaded zone with no compiler yet gets one from the zone-spawn hook.
         if (compilers.Count == 0)
-            return Action.CreateCompiler;
+            return loadedHere ? Action.LeaveToLiveZone : Action.CreateCompiler;
 
         Compiler compiler = compilers[0];
         if (compiler.AppliedVersion == networkVersion)
             return Action.AlreadyCurrent;
+        // Another peer's compiler is theirs to write, whether or not the zone
+        // is loaded here. Being loaded is not evidence the roads went in: the
+        // live hook is an Awake postfix and returns without writing when
+        // somebody else owns the compiler, and no ownership transfer makes
+        // Awake run a second time. So the zone waits and is looked at again
+        // rather than being counted as done.
         if (compiler.Owner != 0 && compiler.Owner != mySession && compiler.OwnerActiveHere)
             return Action.WaitForOwner;
-        return Action.WriteSavedCompiler;
+        // Loaded here with a stale compiler of our own: write through the live
+        // one. Bringing the saved ZDO alive on a temporary terrain would put a
+        // second compiler in a zone that already has one.
+        return loadedHere ? Action.WriteLiveCompiler : Action.WriteSavedCompiler;
     }
 }
