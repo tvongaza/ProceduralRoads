@@ -409,6 +409,43 @@ public class ServerBakeTests
 
         Assert.Equal(GhostRepairLedger.MaxFailedWrites, writes);
         Assert.True(ledger.HasGivenUp(zone));
+
+        // The peer leaves: the zone is handed over once more, terrain still
+        // refuses, and vegetation finally clears. Something has to retire the
+        // entry vegetation's own Defer created, or the zone stays pending for
+        // the rest of the session and the bake never reports itself finished --
+        // while terrain's give-up must survive that retirement.
+        Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true, now));
+        Assert.True(ledger.HasGivenUp(zone));
+        ledger.PendingWorkDone(zone);
+
+        Assert.Equal(0, ledger.Count);
+        Assert.True(ledger.HasGivenUp(zone));
+        for (float later = now; later <= now + 1000f; later += 50f)
+            Assert.Empty(ledger.TakeReady(_ => true, later));
+        Assert.Equal(GhostRepairLedger.MaxFailedWrites, writes);
+    }
+
+    /// <summary>
+    /// The already-cleared exit matters as much as the clearing one: a zone
+    /// whose vegetation was done long ago still arrives here, and it must not
+    /// leave a pending entry behind either.
+    /// </summary>
+    [Fact]
+    public void VegetationThatWasAlreadyDoneAlsoRetiresThePendingEntry()
+    {
+        var ledger = new GhostRepairLedger();
+        var zone = new Vector2s(11, 11);
+        for (int i = 0; i < GhostRepairLedger.MaxFailedWrites; i++)
+            ledger.FailedWrite(zone, i * Delay, Delay);
+        ledger.Defer(zone, 0f, Delay);
+        Assert.Equal(1, ledger.Count);
+
+        ledger.PendingWorkDone(zone);
+
+        Assert.Equal(0, ledger.Count);
+        // Retiring the work is not terrain getting well again.
+        Assert.True(ledger.HasGivenUp(zone));
     }
 
     [Fact]
