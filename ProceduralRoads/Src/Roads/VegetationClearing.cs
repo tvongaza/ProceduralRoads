@@ -48,6 +48,15 @@ public static class VegetationClearing
         }
     }
 
+    /// <summary>
+    /// How far around a player's own object its vegetation is left alone. A
+    /// planted grove stands beside the thing it was planted for -- a hut, a
+    /// fence, a workbench -- so ground a player has built on is treated as
+    /// theirs. Leaving a natural tree on the road is a blemish; taking a
+    /// planted one is somebody's work gone.
+    /// </summary>
+    public const float PlayerGroundRadius = 8f;
+
     /// <summary>ZoneSystem.InsideClearArea, the test PlaceVegetation uses: strict, and square.</summary>
     public static bool InsideClearArea(IReadOnlyList<Area> areas, Vector2 point)
     {
@@ -60,18 +69,43 @@ public static class VegetationClearing
         return false;
     }
 
-    /// <summary>Whether an existing object is one generation would not have placed on the road.</summary>
-    public static bool ShouldRemove(int prefab, Vector2 position, ICollection<int> vegetationPrefabs,
-        IReadOnlyList<Area> clearAreas, IReadOnlyList<Footprint> locations)
+    /// <summary>
+    /// Whether an existing object is one generation would not have placed on
+    /// the road.
+    ///
+    /// What this CANNOT tell, and why the two guards below exist: a tree a
+    /// player planted and grew is the same prefab as one the game grew, at an
+    /// ordinary position, and vanilla writes nothing to tell them apart --
+    /// ZoneSystem.PlaceVegetation spawns its vegetation under a ghost init and
+    /// sets only the scale, and Plant.Grow instantiates the grown prefab
+    /// without carrying the sapling's creator or plantTime onto it. So on a
+    /// world that already exists there is no saved fact that says "a player
+    /// grew this". What can be honoured is what IS marked: an object carrying
+    /// a creator is somebody's, and vegetation standing on ground a player has
+    /// built on is treated as theirs (PlayerGroundRadius). A grown tree alone
+    /// on the road in a zone that predates the network is still taken.
+    /// </summary>
+    public static bool ShouldRemove(int prefab, Vector2 position, bool playerCreated,
+        ICollection<int> vegetationPrefabs, IReadOnlyList<Area> clearAreas,
+        IReadOnlyList<Footprint> locations, IReadOnlyList<Footprint> playerGround)
     {
+        // Somebody's own object, whatever it is: never ours to take.
+        if (playerCreated)
+            return false;
         if (!vegetationPrefabs.Contains(prefab) || !InsideClearArea(clearAreas, position))
             return false;
-        foreach (Footprint location in locations)
+        // Left to the location, and left to the player who built there.
+        return !Inside(locations, position) && !Inside(playerGround, position);
+    }
+
+    private static bool Inside(IReadOnlyList<Footprint> footprints, Vector2 position)
+    {
+        foreach (Footprint footprint in footprints)
         {
-            if ((position - location.Centre).sqrMagnitude < location.Radius * location.Radius)
-                return false;
+            if ((position - footprint.Centre).sqrMagnitude < footprint.Radius * footprint.Radius)
+                return true;
         }
-        return true;
+        return false;
     }
 
     // ---- which zones' vegetation already matches the current network ----
