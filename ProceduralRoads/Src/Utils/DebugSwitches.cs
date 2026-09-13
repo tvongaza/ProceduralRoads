@@ -47,4 +47,27 @@ internal static class DebugSwitches
                 return fallback;
         }
     }
+
+    /// <summary>
+    /// A counting switch, for validation that has to make something happen a
+    /// fixed number of times -- proving a failure path in game needs a way to
+    /// cause exactly that many failures. Unset means the fallback, and a value
+    /// that is not a count is reported and ignored rather than silently
+    /// changing what the mod does.
+    /// </summary>
+    internal static int Count(string name, int fallback)
+    {
+        string variable = Prefix + name;
+        string? value = Environment.GetEnvironmentVariable(variable);
+        if (string.IsNullOrWhiteSpace(value))
+            return fallback;
+
+        if (int.TryParse(value.Trim(), out int parsed) && parsed >= 0)
+        {
+            Log.LogInfo($"{variable}={parsed}");
+            return parsed;
+        }
+        Log.LogWarning($"{variable} is '{value}', which is not a count; using {fallback}");
+        return fallback;
+    }
 }
