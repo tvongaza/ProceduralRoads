@@ -43,6 +43,7 @@
         <Compile Include="../ProceduralRoads/Src/Utils/DebugSwitches.cs" Link="ModSrc/DebugSwitches.cs"/>
         <Compile Include="../ProceduralRoads/Src/Utils/PeerAdmission.cs" Link="ModSrc/PeerAdmission.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/ServerBakePlanner.cs" Link="ModSrc/ServerBakePlanner.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/GhostRepairLedger.cs" Link="ModSrc/GhostRepairLedger.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/VegetationClearing.cs" Link="ModSrc/VegetationClearing.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/TerrainFingerprint.cs" Link="ModSrc/TerrainFingerprint.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadEndReport.cs" Link="ModSrc/RoadEndReport.cs"

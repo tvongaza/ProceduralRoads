@@ -209,6 +209,60 @@ public class ServerBakeTests
         }
     }
 
+    /// <summary>
+    /// A failed ghost write is the zone's only chance unless something keeps it:
+    /// vanilla finishes generating it, so it never takes the new-zone path
+    /// again, and the queue has already passed it by.
+    /// </summary>
+    [Fact]
+    public void AZoneWhoseGhostWriteFailedIsWrittenFromTheQueueInstead()
+    {
+        var ledger = new GhostRepairLedger();
+        var zone = new Vector2s(4, -9);
+        ledger.Record(zone);
+        Assert.True(ledger.Holds(zone));
+
+        // Still generating: nothing to hand back yet, and it is not forgotten.
+        var gaveUp = new List<Vector2s>();
+        Assert.Empty(ledger.TakeReady(_ => false, gaveUp));
+        Assert.Empty(gaveUp);
+        Assert.Equal(1, ledger.Count);
+
+        // Generated: it goes back to the queue, and stays watched until the
+        // write actually lands -- being handed back is not the same as fixed.
+        List<Vector2s> ready = ledger.TakeReady(_ => true, gaveUp);
+        Assert.Equal(new[] { zone }, ready);
+        Assert.Empty(gaveUp);
+        Assert.True(ledger.Holds(zone));
+
+        // The queue wrote it: nothing left to watch.
+        ledger.Succeeded(zone);
+        Assert.False(ledger.Holds(zone));
+        Assert.Empty(ledger.TakeReady(_ => true, gaveUp));
+    }
+
+    [Fact]
+    public void AZoneThatKeepsFailingIsGivenUpRatherThanRetriedForever()
+    {
+        var ledger = new GhostRepairLedger();
+        var zone = new Vector2s(1, 1);
+        var gaveUp = new List<Vector2s>();
+        ledger.Record(zone);
+
+        // It is handed back, and the write fails again, for as many attempts
+        // as it is allowed -- nothing calls Succeeded.
+        for (int attempt = 1; attempt <= GhostRepairLedger.MaxAttempts; attempt++)
+        {
+            Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true, gaveUp));
+            Assert.Empty(gaveUp);
+        }
+
+        // The attempts are spent: a failure to report, not another retry.
+        Assert.Empty(ledger.TakeReady(_ => true, gaveUp));
+        Assert.Equal(new[] { zone }, gaveUp);
+        Assert.Equal(0, ledger.Count);
+    }
+
     [Theory]
     [InlineData(false, false, PeerAdmission.Verdict.WithoutMod, true)]
     [InlineData(false, true, PeerAdmission.Verdict.WithoutMod, true)]
