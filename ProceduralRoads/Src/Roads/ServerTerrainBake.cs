@@ -386,6 +386,12 @@ public static class ServerTerrainBake
             {
                 s_queue.Add(zone);
                 s_finished = false;
+                // Say so. Collapsing the two drains lost this line, and a
+                // repair that leaves no trace cannot be told apart from one
+                // that never happened -- an in-game run of the repair path
+                // had to be read from a compilers-created count instead.
+                Log.LogInfo($"[BAKE] zone {zone}: handed back to the queue after a failed write " +
+                            $"({s_ghostRepair.FailedWrites(zone)} so far)");
             }
         }
 
