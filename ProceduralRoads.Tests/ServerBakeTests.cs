@@ -303,6 +303,104 @@ public class ServerBakeTests
         Assert.Equal(0, viaLiveZone.Count);
     }
 
+    // ---- what the queue owes a zone it is repairing ----
+    //
+    // The ledger alone was not enough: the queue has paths that end without
+    // writing anything, and a repair that leaves one of them unanswered stays
+    // marked as queued for ever -- never handed over again, never given up.
+
+    private static ServerBakePlanner.RepairOutcome Outcome(ServerBakePlanner.Action action,
+        ServerBakePlanner.WriteReport report = ServerBakePlanner.WriteReport.NotAttempted) =>
+        ServerBakePlanner.ResolveRepair(action, report);
+
+    [Fact]
+    public void WaitingForAPrerequisiteCostsTheZoneNothing()
+    {
+        // An owner standing in the zone, a compiler not up yet, terrain the
+        // game has not built: all of them mean "come back", not "that failed".
+        Assert.Equal(ServerBakePlanner.RepairOutcome.Waiting, Outcome(ServerBakePlanner.Action.WaitForOwner));
+        Assert.Equal(ServerBakePlanner.RepairOutcome.Waiting, Outcome(ServerBakePlanner.Action.WriteLiveCompiler));
+        Assert.Equal(ServerBakePlanner.RepairOutcome.Waiting, Outcome(ServerBakePlanner.Action.WriteSavedCompiler));
+    }
+
+    [Fact]
+    public void AFailedWriteIsAFailedWriteWhicheverCompilerItWas()
+    {
+        Assert.Equal(ServerBakePlanner.RepairOutcome.FailedWrite,
+            Outcome(ServerBakePlanner.Action.WriteLiveCompiler, ServerBakePlanner.WriteReport.Failed));
+        Assert.Equal(ServerBakePlanner.RepairOutcome.FailedWrite,
+            Outcome(ServerBakePlanner.Action.WriteSavedCompiler, ServerBakePlanner.WriteReport.Failed));
+        Assert.Equal(ServerBakePlanner.RepairOutcome.FailedWrite,
+            Outcome(ServerBakePlanner.Action.CreateCompiler, ServerBakePlanner.WriteReport.Failed));
+    }
+
+    [Fact]
+    public void AWriteOrANoOpEndsTheRepairAndSoDoesWorkThatIsNotOurs()
+    {
+        Assert.Equal(ServerBakePlanner.RepairOutcome.Resolved,
+            Outcome(ServerBakePlanner.Action.WriteLiveCompiler, ServerBakePlanner.WriteReport.Written));
+        Assert.Equal(ServerBakePlanner.RepairOutcome.Resolved,
+            Outcome(ServerBakePlanner.Action.WriteLiveCompiler, ServerBakePlanner.WriteReport.NothingToWrite));
+        // Handed to the generation or live-zone hooks, or already carrying the
+        // roads: the repair queue has nothing left to do about it.
+        Assert.Equal(ServerBakePlanner.RepairOutcome.Resolved, Outcome(ServerBakePlanner.Action.LeaveToGeneration));
+        Assert.Equal(ServerBakePlanner.RepairOutcome.Resolved, Outcome(ServerBakePlanner.Action.LeaveToLiveZone));
+        Assert.Equal(ServerBakePlanner.RepairOutcome.Resolved, Outcome(ServerBakePlanner.Action.AlreadyCurrent));
+        Assert.Equal(ServerBakePlanner.RepairOutcome.Resolved, Outcome(ServerBakePlanner.Action.NoNetwork));
+    }
+
+    /// <summary>
+    /// Two saved compilers are refused the same way every time, so a repair
+    /// waiting on that zone would wait for ever. It is ended and reported.
+    /// </summary>
+    [Fact]
+    public void DuplicateCompilersEndTheRepairInsteadOfStrandingIt()
+    {
+        Assert.Equal(ServerBakePlanner.RepairOutcome.Terminal, Outcome(ServerBakePlanner.Action.DuplicateCompilers));
+    }
+
+    /// <summary>
+    /// The dispatcher and the ledger together, in the order production runs
+    /// them: a live compiler that never takes the roads must spend the budget
+    /// and stop, rather than being rescheduled for ever.
+    /// </summary>
+    [Fact]
+    public void ThreeFailedLiveWritesExhaustTheBudgetAndOwnerWaitsDoNot()
+    {
+        var ledger = new GhostRepairLedger();
+        var zone = new Vector2s(7, 7);
+        ledger.Record(zone);
+
+        // Handed to the queue ONCE. While it waits for an owner the queue still
+        // holds it -- the wait list puts it back by itself -- so the ledger must
+        // not hand it over a second time, and no amount of waiting costs it an
+        // attempt.
+        Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true));
+        for (int round = 0; round < 2; round++)
+        {
+            Assert.Equal(ServerBakePlanner.RepairOutcome.Waiting, Outcome(ServerBakePlanner.Action.WaitForOwner));
+            Assert.Empty(ledger.TakeReady(_ => true));
+            Assert.True(ledger.IsQueued(zone));
+            Assert.Equal(0, ledger.FailedWrites(zone));
+        }
+
+        // Then the writes themselves fail. Each failure spends one attempt and
+        // puts the zone back, so the next poll does hand it over again.
+        for (int spent = 1; spent < GhostRepairLedger.MaxFailedWrites; spent++)
+        {
+            Assert.Equal(ServerBakePlanner.RepairOutcome.FailedWrite,
+                Outcome(ServerBakePlanner.Action.WriteLiveCompiler, ServerBakePlanner.WriteReport.Failed));
+            Assert.False(ledger.FailedWrite(zone));
+            Assert.Equal(spent, ledger.FailedWrites(zone));
+            Assert.Equal(new[] { zone }, ledger.TakeReady(_ => true));
+        }
+
+        // The last failed write is terminal, and nothing is handed over again.
+        Assert.True(ledger.FailedWrite(zone));
+        Assert.False(ledger.Holds(zone));
+        Assert.Empty(ledger.TakeReady(_ => true));
+    }
+
     [Theory]
     [InlineData(false, false, PeerAdmission.Verdict.WithoutMod, true)]
     [InlineData(false, true, PeerAdmission.Verdict.WithoutMod, true)]

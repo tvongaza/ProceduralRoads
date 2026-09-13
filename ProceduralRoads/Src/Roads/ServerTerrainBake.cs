@@ -396,8 +396,10 @@ public static class ServerTerrainBake
             }
         }
 
+        // Repairs still owed an answer are unfinished work: saying "done" over
+        // the top of them is how an unresolved zone went unnoticed.
         bool idle = s_next >= s_queue.Count;
-        if (idle && s_waiting.Count == 0)
+        if (idle && s_waiting.Count == 0 && s_ghostRepair.Count == 0)
         {
             if (!s_finished)
             {
@@ -445,7 +447,11 @@ public static class ServerTerrainBake
             s_counts.BridgeZones++;
 
         if (RoadSpatialGrid.GetRoadPointsInZone(zone).Count == 0)
+        {
+            // Nothing to write here at all, so nothing is owed to it either.
+            s_ghostRepair.Succeeded(zone);
             return Outcome.Done;
+        }
 
         List<ZDO> saved = FindSavedCompilers(zone);
         ServerBakePlanner.Action action = ServerBakePlanner.Decide(
@@ -454,9 +460,11 @@ public static class ServerTerrainBake
         {
             case ServerBakePlanner.Action.LeaveToGeneration:
                 s_counts.Ungenerated++;
+                Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
                 return Outcome.Done;
             case ServerBakePlanner.Action.LeaveToLiveZone:
                 s_counts.Loaded++;
+                Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
                 return Outcome.Done;
             case ServerBakePlanner.Action.WriteLiveCompiler:
             {
@@ -469,6 +477,8 @@ public static class ServerTerrainBake
                 TerrainComp? live = TerrainComp.FindTerrainCompiler(ZoneSystem.GetZonePos(zone));
                 if (live == null || live.m_hmap == null || live.m_nview == null || !live.m_nview.IsValid())
                 {
+                    // Its compiler is not up yet: a prerequisite, not a failure.
+                    Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
                     s_waiting[zone] = Time.time + WaitForOwnerSeconds;
                     return Outcome.Waiting;
                 }
@@ -477,6 +487,7 @@ public static class ServerTerrainBake
                     // Somebody else's to write; ours only once they let go.
                     if (live.m_nview.HasOwner())
                     {
+                        Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
                         s_waiting[zone] = Time.time + WaitForOwnerSeconds;
                         return Outcome.Waiting;
                     }
@@ -488,30 +499,39 @@ public static class ServerTerrainBake
                 if (RoadTerrainModifier.CarriesCurrentRoads(live))
                 {
                     s_counts.LiveWritten++;
-                    s_ghostRepair.Succeeded(zone);
+                    Resolve(zone, action, ServerBakePlanner.WriteReport.Written);
                     return Outcome.Done;
                 }
                 if (RoadTerrainModifier.LastWriteOutcome == RoadTerrainModifier.WriteOutcome.NothingToWrite)
                 {
                     s_counts.NothingToWrite++;
-                    s_ghostRepair.Succeeded(zone);
+                    Resolve(zone, action, ServerBakePlanner.WriteReport.NothingToWrite);
                     return Outcome.Done;
                 }
-                // Not stamped, so nothing claims these roads are in: look again.
-                Log.LogWarning($"[BAKE] zone {zone}: its live terrain compiler did not take the roads; still pending");
+                // A write WAS tried here and left no stamp. That spends an
+                // attempt like any other failed write; without that, a live
+                // compiler that never takes the roads is retried forever.
+                Log.LogWarning($"[BAKE] zone {zone}: its live terrain compiler did not take the roads");
+                s_counts.Failed++;
+                if (!Resolve(zone, action, ServerBakePlanner.WriteReport.Failed))
+                    return Outcome.Done;
                 s_waiting[zone] = Time.time + WaitForOwnerSeconds;
                 return Outcome.Waiting;
             }
             case ServerBakePlanner.Action.AlreadyCurrent:
                 s_counts.Current++;
-                s_ghostRepair.Succeeded(zone);
+                Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
                 return Outcome.Done;
             case ServerBakePlanner.Action.DuplicateCompilers:
                 s_counts.Duplicates++;
                 Log.LogWarning($"[BAKE] zone {zone}: {saved.Count} terrain compilers saved; " +
                                "left alone rather than write one and leave the other to fight it");
+                // Terminal: the queue will refuse this zone the same way every
+                // time, so a repair waiting on it would wait for ever.
+                Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
                 return Outcome.Done;
             case ServerBakePlanner.Action.WaitForOwner:
+                Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
                 s_waiting[zone] = Time.time + WaitForOwnerSeconds;
                 return Outcome.Waiting;
             case ServerBakePlanner.Action.CreateCompiler:
@@ -524,7 +544,7 @@ public static class ServerTerrainBake
                         return Outcome.TerrainNotReady;
                     s_counts.Failed++;
                     Log.LogWarning($"[BAKE] zone {zone}: the game never built its terrain; not written");
-                    ReportFailedWrite(zone);
+                    Resolve(zone, action, ServerBakePlanner.WriteReport.Failed);
                     return Outcome.Done;
                 }
                 ZDO? existing = action == ServerBakePlanner.Action.WriteSavedCompiler ? saved[0] : null;
@@ -546,7 +566,7 @@ public static class ServerTerrainBake
                         // A write was attempted and failed: that, and only
                         // that, spends one of the zone's repair attempts.
                         s_counts.Failed++;
-                        ReportFailedWrite(zone);
+                        Resolve(zone, action, ServerBakePlanner.WriteReport.Failed);
                         break;
                 }
                 return Outcome.Done;
@@ -556,16 +576,42 @@ public static class ServerTerrainBake
     }
 
     /// <summary>
-    /// A write this zone was being watched for has failed. Spends one of its
-    /// repair attempts, and says so once they are gone -- a zone nobody will
-    /// try again for is worth a line of its own.
+    /// Tell the repair ledger what became of this zone, and say whether there
+    /// is any point coming back to it.
+    ///
+    /// EVERY path out of ProcessTerrain goes through here. A zone the ledger
+    /// has handed over is marked as being in the queue and is not handed over
+    /// again until the queue answers, so one that left without an answer would
+    /// sit there for the rest of the session: never retried, never given up,
+    /// and never counted. Waiting for a prerequisite is not an answer that
+    /// costs anything; a write that was tried and failed is.
     /// </summary>
-    private static void ReportFailedWrite(Vector2s zone)
+    private static bool Resolve(Vector2s zone, ServerBakePlanner.Action action,
+        ServerBakePlanner.WriteReport report)
     {
-        if (!s_ghostRepair.Holds(zone))
-            return;
-        if (s_ghostRepair.FailedWrite(zone))
-            Log.LogWarning($"[BAKE] zone {zone}: {GhostRepairLedger.MaxFailedWrites} writes failed; given up");
+        switch (ServerBakePlanner.ResolveRepair(action, report))
+        {
+            case ServerBakePlanner.RepairOutcome.Resolved:
+                s_ghostRepair.Succeeded(zone);
+                return true;
+            case ServerBakePlanner.RepairOutcome.FailedWrite:
+                if (s_ghostRepair.Holds(zone) && s_ghostRepair.FailedWrite(zone))
+                {
+                    Log.LogWarning($"[BAKE] zone {zone}: {GhostRepairLedger.MaxFailedWrites} writes failed; given up");
+                    return false;
+                }
+                return true;
+            case ServerBakePlanner.RepairOutcome.Terminal:
+                if (s_ghostRepair.Holds(zone))
+                {
+                    s_ghostRepair.Succeeded(zone);
+                    Log.LogWarning($"[BAKE] zone {zone}: its repair cannot be finished here and needs a person; no longer watched");
+                }
+                return false;
+            default:
+                // Waiting: it is still in the queue and will come back.
+                return true;
+        }
     }
 
     /// <summary>
