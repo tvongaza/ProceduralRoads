@@ -865,6 +865,48 @@ public class BridgeTests
     }
 
     [Fact]
+    public void ARespawnRebuildsEveryGeneratedZone_NotOnlyTheOnesWithATerrainMesh()
+    {
+        // The decision a respawn makes, apart from the game: which planned
+        // zones need their pieces put back. It must be answered from what the
+        // WORLD has generated, because on a dedicated server the engine's
+        // loaded zones are the block around a sentinel reference position and
+        // the players' surroundings are ghost zones with no Heightmap at all.
+        var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
+        WorldGenerator.instance = world;
+        ZDOMan.instance = new ZDOMan();
+        RoadNetworkGenerator.Reset();
+        SetPathfinder(Pathfinder(world, true));
+        try
+        {
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-300f, 0f), 0f, new Vector2(400f, 0f), 0f, 4f, "Cross river"));
+            Assert.True(BridgePlans.PlannedZoneCount >= 1);
+            var planned = BridgePlans.PlannedZones;
+
+            // Nothing generated yet: those zones get their pieces when they are
+            // generated, so a respawn must not try to build them now.
+            Assert.Empty(BridgePlans.ZonesNeedingPieces(_ => false));
+
+            // Everything generated, nothing recorded as spawned: all of them.
+            Assert.Equal(planned.Count, BridgePlans.ZonesNeedingPieces(_ => true).Count);
+
+            // A zone already rebuilt by the loaded-zone pass is left alone, so
+            // the two passes cannot spawn one zone twice.
+            BridgePlans.MarkSpawned(planned[0]);
+            var need = BridgePlans.ZonesNeedingPieces(_ => true);
+            Assert.DoesNotContain(planned[0], need);
+            Assert.Equal(planned.Count - 1, need.Count);
+
+            // And a zone the world has not generated stays out even when it is
+            // the only one left.
+            BridgePlans.ForgetSpawned();
+            Assert.Equal(new List<Vector2s> { planned[0] },
+                BridgePlans.ZonesNeedingPieces(z => z == planned[0]));
+        }
+        finally { TearDownGeneration(); }
+    }
+
+    [Fact]
     public void SpawnedZonesSurviveASaveAndLoadEvenOnALoadedNetwork()
     {
         var world = new SyntheticWorld { HasRiver = true, HasMountain = false };

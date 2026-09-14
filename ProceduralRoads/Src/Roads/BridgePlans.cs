@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using BepInEx.Logging;
 using UnityEngine;
@@ -122,6 +123,34 @@ public static class BridgePlans
             EnsurePlans();
             return s_plansByZone != null ? new List<Vector2s>(s_plansByZone.Keys) : new List<Vector2s>();
         }
+    }
+
+    /// <summary>
+    /// The planned zones a respawn has to put pieces back into: every zone the
+    /// world has already GENERATED and which is not recorded as spawned.
+    ///
+    /// The point of asking the world rather than the engine's loaded zones is
+    /// that on a dedicated server those are not the same question. A server
+    /// keeps its players' surroundings as GHOST zones, and
+    /// ZoneSystem.SpawnZone destroys a ghost zone's root -- Heightmap and all
+    /// -- as soon as it has generated it. So "the zones with a Heightmap" is
+    /// the block around the server's own reference position, which is a
+    /// sentinel far from any player, while "the zones the world has generated"
+    /// is where the bridges actually are.
+    ///
+    /// A zone that is NOT generated yet is left out on purpose: it gets its
+    /// pieces when it is generated, from the zone-spawn hook.
+    /// </summary>
+    public static List<Vector2s> ZonesNeedingPieces(Func<Vector2s, bool> isZoneGenerated)
+    {
+        List<Vector2s> zones = new();
+        foreach (Vector2s zone in PlannedZones)
+        {
+            if (IsSpawned(zone) || !isZoneGenerated(zone))
+                continue;
+            zones.Add(zone);
+        }
+        return zones;
     }
 
     /// <summary>Pieces the plan puts at a crossing (0 for a ford that is not spanned).</summary>

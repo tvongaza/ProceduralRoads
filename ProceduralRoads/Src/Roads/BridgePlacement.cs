@@ -77,7 +77,40 @@ public static class BridgePlacement
         // already standing and skip every zone it was asked to rebuild.
         var condemned = new HashSet<ZDOID>();
         int destroyed = ClearSpawnedPieces(condemned);
-        return (destroyed, SpawnInLoadedZones(condemned));
+        int zones = SpawnInLoadedZones(condemned);
+        zones += SpawnGhostsIntoGeneratedZones(condemned);
+        return (destroyed, zones);
+    }
+
+    /// <summary>
+    /// Put the plans back into every zone the world has already generated,
+    /// as ZDOs -- the route the server bake uses for a zone it does not have
+    /// loaded. Zones already handled above are recorded as spawned and skipped.
+    ///
+    /// Without this a respawn on a dedicated server destroyed everywhere and
+    /// rebuilt nowhere. ClearSpawnedPieces walks every marked ZDO in the world,
+    /// while SpawnInLoadedZones can only reach zones that still have a
+    /// Heightmap -- and a dedicated server has none where its players are,
+    /// because their surroundings are ghost zones whose root ZoneSystem
+    /// destroys on the spot. Nor did the loss heal when the players came back:
+    /// ZoneSystem.CreateGhostZones calls SpawnZone only for a zone that is NOT
+    /// yet generated, so the hook that spawns pieces never fired again. Only a
+    /// server restart put them back, through the bake. Measured on 14 Sep 2026
+    /// with two clients standing on the bridge: 142 pieces to 0, and still 0
+    /// after both left and rejoined.
+    /// </summary>
+    private static int SpawnGhostsIntoGeneratedZones(ICollection<ZDOID>? condemned)
+    {
+        if (!IsServer || ZoneSystem.instance == null)
+            return 0;
+
+        int zones = 0;
+        foreach (Vector2s zone in BridgePlans.ZonesNeedingPieces(ZoneSystem.instance.IsZoneGenerated))
+        {
+            if (SpawnInZone(zone, ghost: true, condemned) > 0)
+                zones++;
+        }
+        return zones;
     }
 
     private static int SpawnInZone(Vector2s zoneID, bool ghost, ICollection<ZDOID>? condemned = null)
