@@ -42,14 +42,29 @@ public class BridgeRepairabilityTests
         /// <summary>Ground height as a function of distance PAST the far bank
         /// (metres outward); null means flat at ToBankH.</summary>
         public Func<float, float>? FarApproach;
+        /// <summary>Metres of fall per metre to the RIGHT of the crossing line,
+        /// past the far bank. The bank falls away ACROSS the deck as well as
+        /// along it, which is the only way the two lanes -- and the two corners
+        /// of one step's foot edge -- can reach the dirt at different steps.</summary>
+        public float CrossSlope = 0f;
 
         public override float GetHeight(float wx, float wy)
         {
             Vector2 d = (To - From).normalized;
             float w = Vector2.Distance(From, To);
-            float t = Vector2.Dot(new Vector2(wx, wy) - From, d);
+            Vector2 p = new(wx, wy);
+            float t = Vector2.Dot(p - From, d);
             if (t <= 0f) return FromBankH;
-            if (t >= w) return FarApproach != null ? FarApproach(t - w) : ToBankH;
+            if (t >= w)
+            {
+                float h = FarApproach != null ? FarApproach(t - w) : ToBankH;
+                if (CrossSlope != 0f)
+                {
+                    float lateral = Vector2.Dot(p - From, new Vector2(-d.y, d.x));
+                    h -= lateral * CrossSlope;
+                }
+                return h;
+            }
             return Bed;
         }
 
@@ -69,13 +84,13 @@ public class BridgeRepairabilityTests
     private static (RoadCrossing crossing, CrossingWorld world) Crossing(
         float width, float headingDegrees = 0f, float fromBankH = 32f, float toBankH = 32f,
         float fairwayWidth = 0f, CrossingKind kind = CrossingKind.Bridge, FordStyle style = FordStyle.None,
-        Func<float, float>? farApproach = null)
+        Func<float, float>? farApproach = null, float crossSlope = 0f)
     {
         float rad = headingDegrees * Mathf.PI / 180f;
         Vector2 dir = new(Mathf.Sin(rad), Mathf.Cos(rad));
         Vector2 from = new(-width * 0.5f * dir.x, -width * 0.5f * dir.y);
         Vector2 to = from + dir * width;
-        var world = new CrossingWorld { From = from, To = to, FromBankH = fromBankH, ToBankH = toBankH, FarApproach = farApproach };
+        var world = new CrossingWorld { From = from, To = to, FromBankH = fromBankH, ToBankH = toBankH, FarApproach = farApproach, CrossSlope = crossSlope };
         var crossing = RoadCrossing.Between(from, to, world.Bed, (from + to) * 0.5f, fairwayWidth, kind, style);
         return (crossing, world);
     }
@@ -219,11 +234,15 @@ public class BridgeRepairabilityTests
     }
 
     [Fact]
-    public void ACrossSlopedBankLandsBothLanesSeparately()
+    public void ACrossSlopedBankLandsEveryFootCornerSeparately()
     {
-        // The bank falls away ACROSS the deck as well as along it, so one
-        // lane's foot corners reach dirt a step before the other's.
-        AssertRepairable(Crossing(64f, farApproach: past => 32f - past * 0.35f));
+        // The bank falls away ACROSS the deck. At 1 m per metre the first
+        // step's centre is exactly on the dirt in the right lane while its
+        // OUTER foot corner, a metre further out, is a metre below it: the
+        // centre rule lands here, the foot-edge rule marches one more step.
+        // (At 0.5 the corner comes out exactly level with the foot and the two
+        // rules agree, which is why this case is steep.)
+        AssertRepairable(Crossing(64f, crossSlope: 1f));
     }
 
     /// <summary>The whole requirement, asserted on the emitted pieces' snaps.</summary>
