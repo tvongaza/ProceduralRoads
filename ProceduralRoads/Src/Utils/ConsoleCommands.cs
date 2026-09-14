@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -57,6 +58,16 @@ public static class ConsoleCommands
             "road_bridges",
             "Bridges prototype: how many bridge pieces are planned and spawned, or road_bridges respawn to destroy every spawned bridge piece and spawn the current plans again into the loaded zones.",
             (args) => BridgesCommand(args),
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
+            "road_bridge_repairs",
+            "DIAGNOSTIC: the pieces the COMPLETE bridge at the crossing nearest a point has and the shipped one does not -- exactly what a player would replace to close it up: road_bridge_repairs <x> <z>. Nothing is placed; this only says where the missing pieces belong.",
+            (args) => BridgeRepairsCommand(args),
             isCheat: true,
             isNetwork: false,
             onlyServer: false,
@@ -594,6 +605,76 @@ public static class ConsoleCommands
         args.Context.AddString(
             $"{sites.Count} crossing site(s), " +
             $"{BridgePlans.TotalPlannedPieces} pieces planned across {BridgePlans.PlannedZoneCount} zone(s), {BridgePlans.SpawnedZones.Count} zone(s) spawned. road_crossings lists them.");
+    }
+
+    /// <summary>
+    /// What is intentionally missing from a bridge, as coordinates.
+    ///
+    /// The bridges ship ruined on purpose -- piers outlive decks, a navigation
+    /// gap stays clear for boats -- and the claim that goes with that is that a
+    /// player can put the missing pieces back with ordinary vanilla ones and
+    /// get a continuous, aligned crossing. This command is how that claim is
+    /// checked in a running game rather than argued about: it prints the
+    /// difference between the completed layout and the shipped one.
+    ///
+    /// Deterministic, and deliberately computed from the PLAN rather than from
+    /// what is standing: two runs on the same world and seed print the same
+    /// list, whether or not anything has since decayed or been built.
+    /// </summary>
+    private static void BridgeRepairsCommand(Terminal.ConsoleEventArgs args)
+    {
+        if (!RoadNetworkGenerator.RoadsAvailable)
+        {
+            args.Context.AddString("Error: No roads available. Run 'road_generate' first.");
+            return;
+        }
+        if (WorldGenerator.instance == null)
+        {
+            args.Context.AddString("Error: no world");
+            return;
+        }
+
+        Vector2 at;
+        if (args.Length >= 3 && float.TryParse(args[1], out float x) && float.TryParse(args[2], out float z))
+            at = new Vector2(x, z);
+        else if (Player.m_localPlayer != null)
+            at = new Vector2(Player.m_localPlayer.transform.position.x, Player.m_localPlayer.transform.position.z);
+        else
+        {
+            args.Context.AddString("Usage: road_bridge_repairs <x> <z>");
+            return;
+        }
+
+        List<RoadCrossing> sites = BridgeLayout.DistinctSites(RoadNetworkGenerator.GetRoadCrossings());
+        if (sites.Count == 0)
+        {
+            args.Context.AddString("No crossings on this network.");
+            return;
+        }
+
+        RoadCrossing site = sites.OrderBy(c => Vector2.Distance(c.Center, at)).First();
+        int seed = WorldGenerator.instance.GetSeed();
+        List<BridgePiece> complete = BridgeLayout.SolveComplete(site, WorldGenerator.instance, seed);
+        List<BridgePiece> shipped = BridgeLayout.Solve(site, WorldGenerator.instance, seed);
+
+        args.Context.AddString(
+            $"Crossing ({site.Center.x:F0},{site.Center.y:F0}) {site.Kind}{(site.Style != FordStyle.None ? " " + site.Style : "")}, " +
+            $"{site.Width:F2} m wide, built {BridgeLayout.BuiltLength(site.Width):F2} m over {BridgeLayout.Bays(site.Width)} bay(s) " +
+            $"from ({site.FromBank.x:F2},{site.FromBank.y:F2}) to ({site.ToBank.x:F2},{site.ToBank.y:F2}).");
+        args.Context.AddString($"Completed: {complete.Count} pieces. Shipped: {shipped.Count}. Missing: {complete.Count - shipped.Count}.");
+
+        int n = 0;
+        foreach (BridgePiece piece in complete)
+        {
+            if (shipped.Any(b => b.Prefab == piece.Prefab && Vector3.Distance(b.Position, piece.Position) < 0.05f))
+                continue;
+            n++;
+            args.Context.AddString(string.Format(CultureInfo.InvariantCulture,
+                "REPAIR {0} {1} {2:F3} {3:F3} {4:F3} yaw={5:F2} pitch={6:F2}",
+                n, piece.Prefab, piece.Position.x, piece.Position.y, piece.Position.z,
+                piece.YawDegrees, piece.PitchDegrees));
+        }
+        args.Context.AddString($"OK: BRIDGE_REPAIRS {n} piece(s) to replace");
     }
 
     private static void RegenerateIslandHere(Terminal.ConsoleEventArgs args)
