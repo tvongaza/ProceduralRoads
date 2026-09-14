@@ -306,6 +306,73 @@ public class CrossingHeadingTests
             "the unplaceable bank-top layout was kept after all");
     }
 
+    /// <summary>
+    /// A candidate is banks AND the path interval it consumes. The fallback
+    /// restored the banks but kept the rejected tops' interval, so the painter
+    /// believed the land in front of the crossing was already spoken for and
+    /// painted no approach. With two crossings on one road the same slip also
+    /// decides where the SECOND one starts painting, so both are checked here.
+    /// </summary>
+    [Fact]
+    public void FallingBackReturnsThePathIntervalTooWithAFollowingCrossingBehindIt()
+    {
+        var world = new TwoBentChannels();
+        WorldGenerator.instance = world;
+        RoadNetworkGenerator.Reset();
+        RoadSpatialGrid.Clear();
+        try
+        {
+            // The first channel is the reviewer's shape -- both its banks bend
+            // up to high ground, so it climbs, comes back unplaceable and must
+            // fall back. The second is approached along the high ground with no
+            // rise to climb, so it never enters that path at all: it is the
+            // crossing BEHIND the fallback, and it must still get its land.
+            var path = new List<Vector2>
+            {
+                new(-16f, -8f), new(-16f, 0f), new(16f, 0f),
+                new(16f, 8f), new(36f, 8f), new(68f, 8f), new(72f, 8f),
+            };
+            var crossings = RoadCrossingDetector.Detect(path, world, bridges: true, fords: false);
+            Assert.Equal(2, crossings.Count);
+            foreach (var c in crossings)
+                Assert.True(BridgeLayout.HeadingIsPlaceable(BridgeLayout.YawDegrees(c.Direction)),
+                    $"crossing at ({c.Center.x:F1},{c.Center.y:F1}) stands at {BridgeLayout.YawDegrees(c.Direction):F3}");
+
+            typeof(RoadNetworkGenerator).GetMethod("AddRoadPathWithCrossings",
+                BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null,
+                new object[] { path, crossings, 4f });
+
+            // The land in front of the first crossing, between the two, and
+            // after the second: all painted.
+            foreach ((float x, float z, string where) in new[]
+                     {
+                         (-16f, -4f, "in front of the first crossing"),
+                         (26f, 8f, "between the two crossings"),
+                         (70f, 8f, "after the second crossing"),
+                     })
+                Assert.True(RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(x, 0f, z), 2.5f).Count > 0,
+                    $"no painted road {where}, at ({x},{z}); intervals " +
+                    string.Join(" ", crossings.Select(c => $"{c.FromIndex}..{c.ToIndex}")));
+        }
+        finally { TearDownGeneration(); }
+    }
+
+    /// <summary>The reviewer's BentHighBanks channel at the origin, plus a
+    /// second channel out along the high ground. The climb needs BOTH banks to
+    /// rise, which only the first channel's do.</summary>
+    private sealed class TwoBentChannels : WorldGenerator
+    {
+        private static bool Water(float x) => Mathf.Abs(x) < 12f || (x > 40f && x < 64f);
+        public override float GetHeight(float x, float z) =>
+            Water(x) ? 26f : Mathf.Abs(z) >= 8f ? 40f : 33f;
+        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Meadows;
+        public override void GetRiverWeight(float x, float z, out float weight, out float width)
+        {
+            weight = Water(x) ? 1f : 0f;
+            width = 24f;
+        }
+    }
+
     /// <summary>The reviewer's fixture: equal-height dry banks at the water's
     /// edge, higher ground along approaches that bend away from the crossing
     /// line.</summary>
