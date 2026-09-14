@@ -119,38 +119,67 @@ public static class BridgeLayout
 
     /// <summary>
     /// Where the stations stand, measured along the crossing from the near
-    /// bank: one every <see cref="DeckSpan"/>, and one on the far bank.
+    /// bank: one every <see cref="DeckSpan"/>, and NOTHING else. The built
+    /// length is therefore always a whole number of spans, which is the only
+    /// spacing a player can repair.
     ///
-    /// The far-bank station is only worth having when it is a station's width
-    /// away from the one before it. A width of 80.05 m used to put a station at
-    /// 80 and another at 80.05: four posts and two crossbeams standing inside
-    /// each other on the bank, plus a deck plate spanning five centimetres --
-    /// EmitDeck lays a fixed DeckSpan plate between any two stations, so a stub
-    /// bay is a plate on top of its neighbour rather than a short one.
+    /// Measured from the prefabs rather than assumed (cli_piece_geometry):
+    /// wood_floor is 2.000 x 2.000 with snap points at its four corners
+    /// (+-1, 0, +-1), and wood_pole2 snaps top to bottom at (0, +-1, 0). Two
+    /// plates whose centres are DeckSpan apart therefore share an edge snap
+    /// exactly. Put the centres 1.95 m apart instead -- which is what dividing
+    /// the width evenly would do -- and the plates still LOOK right, but a
+    /// player replacing a missing one snaps it 2.00 m from its neighbour and
+    /// the error walks down the bridge.
     ///
-    /// So a final bay shorter than half a span is dropped and the deck ends on
-    /// the span grid instead. The bank is then at most half a span beyond the
-    /// last plate, which is the stair's job and already is: EmitSteps marches
-    /// out from the BANK, not from the deck's last station.
+    /// The remainder is deliberately NOT spread over the bays, and NOT given
+    /// its own stub station either: the far end simply stops at the last whole
+    /// span, and <see cref="EmitSteps"/> is anchored THERE rather than at the
+    /// bank, so the stair's top snap still meets the deck edge. The stair's run
+    /// is DeckSpan, so its first step reaches from the deck end across the
+    /// remainder (under 2 m by construction) and lands on the bank.
     ///
-    /// A width that is a whole number of spans is unchanged, which is most of
-    /// the reason this is shaped as a trim rather than as a redistribution:
-    /// every bay stays exactly DeckSpan long, the length EmitDeck assumes.
+    /// Rounding DOWN and never up is what keeps the built bridge inside the
+    /// span the pathfinder priced: a route accepted at one length and built at
+    /// another is the bug this file has already had once.
     /// </summary>
     internal static float[] StationsAlong(float width)
     {
-        int bays = Mathf.Max(1, Mathf.CeilToInt(width / DeckSpan));
-        List<float> alongs = new(bays + 1);
+        int bays = Bays(width);
+        float[] alongs = new float[bays + 1];
         for (int i = 0; i <= bays; i++)
-            alongs.Add(Mathf.Min(i * DeckSpan, width));
-
-        int last = alongs.Count - 1;
-        if (last >= 1 && alongs[last] - alongs[last - 1] < DeckSpan * 0.5f)
-            alongs.RemoveAt(last);
-        return alongs.ToArray();
+            alongs[i] = i * DeckSpan;
+        return alongs;
     }
 
-    public static List<BridgePiece> Solve(RoadCrossing crossing, WorldGenerator world, int worldSeed)
+    /// <summary>Whole spans that fit in the width, at least one. The epsilon
+    /// keeps a width that IS a whole number of spans from losing one to float
+    /// error (80f / 2f can arrive as 39.999998).</summary>
+    internal static int Bays(float width) => Mathf.Max(1, Mathf.FloorToInt(width / DeckSpan + 1e-3f));
+
+    /// <summary>The length actually built, always a whole number of spans and
+    /// never longer than the crossing the pathfinder accepted.</summary>
+    internal static float BuiltLength(float width) => Bays(width) * DeckSpan;
+
+    /// <summary>
+    /// The bridge as it would stand with nothing missing: every station, every
+    /// deck plate and both stairs, the navigation gap filled in too. Diagnostic
+    /// and test-only -- the game always builds the ruined plan -- and the
+    /// reference the repairability checks compare against, since "a player
+    /// replaces the missing pieces" only means anything if the completed thing
+    /// is known.
+    ///
+    /// The fairway gap is included deliberately. It is not ruin: it is left
+    /// open on purpose so boats pass. But it is still a run of bays a player
+    /// COULD fill, and if the grid did not continue across it they could not.
+    /// </summary>
+    internal static List<BridgePiece> SolveComplete(RoadCrossing crossing, WorldGenerator world, int worldSeed) =>
+        Solve(crossing, world, worldSeed, ruin: false);
+
+    public static List<BridgePiece> Solve(RoadCrossing crossing, WorldGenerator world, int worldSeed) =>
+        Solve(crossing, world, worldSeed, ruin: true);
+
+    private static List<BridgePiece> Solve(RoadCrossing crossing, WorldGenerator world, int worldSeed, bool ruin)
     {
         List<BridgePiece> pieces = new();
         if (crossing == null || world == null || crossing.Width < DeckSpan)
@@ -163,7 +192,7 @@ public static class BridgeLayout
             // Wading and raised fords are road, not pieces; a span is a short
             // low footbridge with steps.
             if (crossing.Style == FordStyle.Span)
-                EmitShallowSpan(pieces, crossing, world, rng);
+                EmitShallowSpan(pieces, crossing, world, rng, ruin);
             return pieces;
         }
 
@@ -183,6 +212,12 @@ public static class BridgeLayout
 
         float[] alongs = StationsAlong(crossing.Width);
         int stationCount = alongs.Length;
+        float built = alongs[stationCount - 1];
+        // The deck ends here, a remainder short of the far bank at most. Both
+        // stairs are anchored at a DECK END so their top snap meets the deck
+        // edge; anchoring the far one at the bank instead would leave exactly
+        // the gap the trim was meant to remove.
+        Vector2 deckEnd = from + dir * built;
         bool[] deckAlive = new bool[stationCount];
         Vector2[] stationPos = new Vector2[stationCount];
         float[] stationDeckH = new float[stationCount];
@@ -195,27 +230,30 @@ public static class BridgeLayout
             float t = crossing.Width > 0.01f ? along / crossing.Width : 0f;
             stationDeckH[i] = Mathf.Max(Mathf.Lerp(deckFromH, deckToH, t), minDeck);
 
-            bool inFairway = crossing.FairwayWidth > 0f && Mathf.Abs(along - fairwayMid) <= fairwayHalf;
+            // The navigation gap is intentional and permanent, not ruin -- but
+            // it is still a section a player may fill in, so the complete
+            // layout includes it: "fully repaired" means every bay on the grid.
+            bool inFairway = ruin && crossing.FairwayWidth > 0f && Mathf.Abs(along - fairwayMid) <= fairwayHalf;
             bool isBankStation = i == 0 || i == stationCount - 1;
 
             float midCloseness = mid > 0f ? 1f - Mathf.Abs(i - mid) / mid : 0f;
             float survival = Mathf.Lerp(BankSurvival, MidSurvival, midCloseness);
             float pierSurvival = survival + (1f - survival) * PierPersistence;
-            bool pierAlive = !inFairway && (isBankStation || NextFloat(rng) < pierSurvival);
-            deckAlive[i] = pierAlive && (isBankStation || NextFloat(rng) < survival);
+            bool pierAlive = !inFairway && (!ruin || isBankStation || NextFloat(rng) < pierSurvival);
+            deckAlive[i] = pierAlive && (!ruin || isBankStation || NextFloat(rng) < survival);
 
             float ground = BiomeBlendedHeight.GetBlendedHeight(stationPos[i].x, stationPos[i].y, world);
             if (pierAlive)
             {
                 EmitStation(pieces, world, stationPos[i], side, stationDeckH[i], yaw, rng);
             }
-            else if (!inFairway && NextFloat(rng) < StubChance)
+            else if (ruin && !inFairway && NextFloat(rng) < StubChance)
             {
                 // Rotted stub: a single buried segment poking out near the waterline.
                 EmitColumn(pieces, stationPos[i], ground,
                     Mathf.Min(ground + PostSegment, crossing.WaterLevel + 0.3f), yaw, 0.25f + NextFloat(rng) * 0.15f);
             }
-            else if (!inFairway && NextFloat(rng) < DebrisChance)
+            else if (ruin && !inFairway && NextFloat(rng) < DebrisChance)
             {
                 EmitDebris(pieces, stationPos[i], dir, world, rng);
             }
@@ -233,7 +271,7 @@ public static class BridgeLayout
         // Every end is a stair down from the deck edge into the bank. Last,
         // so the rest of the plan draws the same random sequence either way.
         EmitSteps(pieces, world, from, dir, bankFromH, stationDeckH[0], rng);
-        EmitSteps(pieces, world, to, -dir, bankToH, stationDeckH[stationCount - 1], rng);
+        EmitSteps(pieces, world, deckEnd, -dir, bankToH, stationDeckH[stationCount - 1], rng);
 
         return pieces;
     }
@@ -244,7 +282,7 @@ public static class BridgeLayout
     /// above the water and FordSpanDeckRise above the higher bank, lightly
     /// ruined (it is a footbridge, not a monument), a stair at each end.
     /// </summary>
-    private static void EmitShallowSpan(List<BridgePiece> pieces, RoadCrossing crossing, WorldGenerator world, System.Random rng)
+    private static void EmitShallowSpan(List<BridgePiece> pieces, RoadCrossing crossing, WorldGenerator world, System.Random rng, bool ruin)
     {
         Vector2 from = crossing.FromBank;
         Vector2 to = crossing.ToBank;
@@ -257,15 +295,21 @@ public static class BridgeLayout
         float deckH = Mathf.Max(Mathf.Max(bankFromH, bankToH) + RoadConstants.FordSpanDeckRise,
             crossing.WaterLevel + RoadConstants.FordSpanDeckClearance);
 
-        int stationCount = Mathf.CeilToInt(crossing.Width / DeckSpan) + 1;
+        // The same grid as a bridge, for the same reason: a footbridge a player
+        // cannot repair with an ordinary wood_floor is no better than one they
+        // cannot walk. This used to keep the clamped final station, so a ford
+        // span whose width was not a whole number of spans ended in two
+        // stations inside each other exactly as a bridge did.
+        float[] alongs = StationsAlong(crossing.Width);
+        int stationCount = alongs.Length;
+        Vector2 deckEnd = from + dir * alongs[stationCount - 1];
         bool[] alive = new bool[stationCount];
         Vector2[] pos = new Vector2[stationCount];
         for (int i = 0; i < stationCount; i++)
         {
-            float along = Mathf.Min(i * DeckSpan, crossing.Width);
-            pos[i] = from + dir * along;
+            pos[i] = from + dir * alongs[i];
             bool isEnd = i == 0 || i == stationCount - 1;
-            alive[i] = isEnd || NextFloat(rng) < BankSurvival;
+            alive[i] = !ruin || isEnd || NextFloat(rng) < BankSurvival;
             if (alive[i])
                 EmitStation(pieces, world, pos[i], side, deckH, yaw, rng);
         }
@@ -276,7 +320,7 @@ public static class BridgeLayout
         }
 
         EmitSteps(pieces, world, from, dir, bankFromH, deckH, rng);
-        EmitSteps(pieces, world, to, -dir, bankToH, deckH, rng);
+        EmitSteps(pieces, world, deckEnd, -dir, bankToH, deckH, rng);
     }
 
     private static void EmitDeck(List<BridgePiece> pieces, Vector2 a, Vector2 b, float hA, float hB, float yaw, System.Random rng)
