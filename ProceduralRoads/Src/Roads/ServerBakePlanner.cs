@@ -36,8 +36,9 @@ public static class ServerBakePlanner
         /// <summary>More than one saved compiler: writing either would leave
         /// the other to fight it, so neither is touched.</summary>
         DuplicateCompilers,
-        /// <summary>A connected peer owns the compiler and is in the zone:
-        /// taking it could lose that player's terrain edits. Try again later.</summary>
+        /// <summary>A foreign owner still prevents a write. For a live compiler
+        /// wait for release; for a saved compiler wait while its owner is active
+        /// in the zone. Taking a live compiler could race player edits.</summary>
         WaitForOwner,
         /// <summary>No compiler yet: create the zone's one compiler.</summary>
         CreateCompiler,
@@ -145,13 +146,11 @@ public static class ServerBakePlanner
         Compiler compiler = compilers[0];
         if (compiler.AppliedVersion == networkVersion)
             return Action.AlreadyCurrent;
-        // Another peer's compiler is theirs to write, whether or not the zone
-        // is loaded here. Being loaded is not evidence the roads went in: the
-        // live hook is an Awake postfix and returns without writing when
-        // somebody else owns the compiler, and no ownership transfer makes
-        // Awake run a second time. So the zone waits and is looked at again
-        // rather than being counted as done.
-        if (compiler.Owner != 0 && compiler.Owner != mySession && compiler.OwnerActiveHere)
+        // Match the live writer's conservative rule: it never takes a live
+        // compiler from another owner, even outside that owner's active area.
+        // Saved compilers retain their existing inactive-owner takeover policy.
+        // Neither wait spends a failed-write attempt; the zone stays pending.
+        if (compiler.Owner != 0 && compiler.Owner != mySession && (loadedHere || compiler.OwnerActiveHere))
             return Action.WaitForOwner;
         // Loaded here with a stale compiler of our own: write through the live
         // one. Bringing the saved ZDO alive on a temporary terrain would put a

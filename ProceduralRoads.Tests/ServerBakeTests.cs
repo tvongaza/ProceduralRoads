@@ -63,8 +63,8 @@ public class ServerBakeTests
             Decide(true, true, Compilers(new ServerBakePlanner.Compiler(0, 0, false))));
         Assert.Equal(ServerBakePlanner.Action.WriteLiveCompiler,
             Decide(true, true, Compilers(new ServerBakePlanner.Compiler(Version - 1, Me, ownerActiveHere: true))));
-        // Its owner has gone elsewhere: still ours to write, through the live one.
-        Assert.Equal(ServerBakePlanner.Action.WriteLiveCompiler,
+        // A live compiler still owned by another peer waits for actual release.
+        Assert.Equal(ServerBakePlanner.Action.WaitForOwner,
             Decide(true, true, Compilers(new ServerBakePlanner.Compiler(0, 7, ownerActiveHere: false))));
 
         // Already carrying this network: nothing to do, loaded or not.

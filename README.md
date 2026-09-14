@@ -159,11 +159,19 @@ this; the console commands below are for the operator.
 - A zone whose compiler is already stamped with the current network is left
   alone on every later start, so a restart writes nothing twice and the
   terrain a player has changed there since is not touched.
-- A write that fails (the zone's compiler is momentarily owned by a player
-  who is standing in it) is retried after that player moves on; after three
-  failed writes the zone is given up for the session and reported. `road_bake`
-  prints the counts: written, already current, left to generation, deferred,
-  pending, failed, and the frame time spent.
+- Waiting for an owner is not a failed write and spends no retry attempt.
+  A saved compiler waits while its owner is active in the zone. A compiler
+  live on the server waits until the foreign ownership is released, even if
+  that player has moved away. The mod does not force that live transfer;
+  there is no bounded completion time for this wait. `road_bake zone` reports
+  `WaitForOwner`, and requeueing does not override ownership.
+- An attempted terrain write that reports failure is retried up to three
+  times, then given up and reported. An unexpected exception during a zone's
+  terrain, bridge or vegetation work stops that zone's queued bake work instead;
+  other zones continue. `road_bake` reports the number of zone exceptions and
+  the log names each affected zone. Fix the cause and use `road_bake again`
+  to retry. A queue-wide error pauses the queue with the same recovery
+  instruction; it does not disable generation-time ghost writes.
 
 ### Existing worlds
 
@@ -223,11 +231,13 @@ road_bake vegetation              # road zones holding vegetation on the road, m
 road_bake zone [x z]              # one zone: what is in it and what would happen to it
 ```
 
-Then restart with the switch unset (the default, on). With the bake off the
-server writes no road terrain and clears nothing, in generated and newly
-generating zones alike, so a preview copy is not a playable server. On a
-server already running with the bake on, these commands report what is
-left, not what is coming.
+Then restart with the switch unset (the default, on). The switch disables
+the background queue, its existing-zone vegetation clearing, and ghost
+terrain writes. It does not disable the independent live-zone/terrain-compiler
+hooks or generation-time vegetation exclusions. It is not a read-only mode:
+use a disposable copy and keep players out while previewing. On a server
+already running with the bake on, these commands report what is left, not
+what is coming. `road_bake again` does not override a startup-disabled bake.
 
 ### Looking at what the server did
 
