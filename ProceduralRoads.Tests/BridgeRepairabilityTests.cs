@@ -152,31 +152,75 @@ public class BridgeRepairabilityTests
         AssertRepairable(Crossing(77.51f, headingDegrees: heading));
 
     [Theory]
-    [InlineData(32f, 34f)]      // 2 m over 77.5 m
+    [InlineData(32f, 34f)]      // 2 m of bank delta over 77.5 m
     [InlineData(34f, 32f)]
     [InlineData(31f, 33.5f)]    // the pathfinder's MaxBridgeBankDelta
-    public void APitchedDeckStillMeetsSnapToSnap(float fromBankH, float toBankH)
+    public void UnequalBanksGiveALevelDeckWalkedOffByTheStairs(float fromBankH, float toBankH)
     {
         var site = Crossing(77.51f, fromBankH: fromBankH, toBankH: toBankH);
-        var plan = AssertRepairable(site);
-        float grade = BridgeLayout.Grade(site.crossing, site.world);
-        Assert.True(Mathf.Abs(grade) > 0.02f, "this case is supposed to be pitched");
-        // A materially pitched deck: horizontal station spacing is shorter than
-        // the plate, by exactly the projection.
-        Assert.InRange(BridgeLayout.StationSpacing(grade), BridgeLayout.DeckSpan * 0.99f, BridgeLayout.DeckSpan - 0.0002f);
-        foreach (var deck in Of(plan, BridgePieceKind.Deck))
-            Assert.InRange(Mathf.Abs(deck.PitchDegrees), 0.5f, 10f);
+        var plan = AssertRepairable(site);   // includes the level-rotation check
+
+        // The deck is one height, the higher bank's, whatever the banks do.
+        var decks = Of(plan, BridgePieceKind.Deck);
+        float deckH = BridgeLayout.DeckHeight(site.crossing, site.world);
+        Assert.InRange(deckH, Mathf.Max(fromBankH, toBankH) - Tol, Mathf.Max(fromBankH, toBankH) + Tol);
+        foreach (var d in decks)
+            Assert.InRange(d.Position.y, deckH - Tol, deckH + Tol);
+        Assert.Equal(BridgeLayout.DeckSpan, BridgeLayout.StationSpacing());
+
+        // The difference is walked off: each end's run is at least as many
+        // steps as its own drop needs, at StairRise per step, and both land.
+        // (Not "the lower bank has MORE steps": a deck end that stops short of
+        // the bank spends its first step crossing the remainder, so a run can
+        // be long for a reason that is not the drop.)
+        (float dropFrom, float dropTo) = BridgeLayout.BankDrop(site.crossing, site.world);
+        float built = BridgeLayout.BuiltLength(site.crossing.Width);
+        foreach ((bool near, float drop) in new[] { (true, dropFrom), (false, dropTo) })
+        {
+            int steps = StairSteps(plan, site.crossing, near, built);
+            int needed = Mathf.CeilToInt(drop / BridgeLayout.StairRise - 0.001f);
+            Assert.True(steps >= needed,
+                $"the {(near ? "near" : "far")} end drops {drop:F2} m but its run is {steps} step(s)");
+        }
+        Assert.Equal((true, true), BridgeLayout.StairRunsLand(site.crossing, site.world));
     }
 
     [Fact]
-    public void ASteepShortBridgeIsStillSnapToSnap()
+    public void ASteepShortBridgeIsStillLevelAndStillLands()
     {
-        // 2.5 m over 8 m: the steepest the pathfinder allows, on a short span.
-        // At 2 m horizontal spacing each plate would fall 9 cm short of the
-        // next; along-the-slope spacing keeps them touching.
+        // 2.5 m of bank delta over 8 m: the steepest the pathfinder allows, on
+        // a short span. The deck stays level and the low end takes the steps.
         var site = Crossing(8.3f, fromBankH: 31f, toBankH: 33.5f);
         var plan = AssertRepairable(site);
-        Assert.True(Mathf.Abs(BridgeLayout.Grade(site.crossing, site.world)) > 0.25f);
+        foreach (var d in Of(plan, BridgePieceKind.Deck))
+            Assert.InRange(d.Position.y, 33.5f - Tol, 33.5f + Tol);
+        Assert.Equal((true, true), BridgeLayout.StairRunsLand(site.crossing, site.world));
+    }
+
+    /// <summary>Steps in one end's run, per lane (both lanes carry the same count).</summary>
+    private static int StairSteps(List<BridgePiece> plan, RoadCrossing crossing, bool near, float built) =>
+        Of(plan, BridgePieceKind.Stair).Count(st =>
+            Mathf.Abs(LateralOf(crossing, st.Position) - BridgeLayout.LaneOffset) < 0.1f
+            && (near ? AlongOf(crossing, st.Position) < 0f : AlongOf(crossing, st.Position) > built));
+
+    // ---- P2: a run ends where its FOOT lands, not where its centre sits ----
+
+    [Fact]
+    public void AStairRunLandsOnItsFootEdge_NotItsCentre()
+    {
+        // The shelf reaches exactly 1 m past the bank and then drops 2 m: a
+        // step's centre is over the shelf while its foot edge is over the
+        // drop. Terminating on the centre left the bottom step's foot 1.00 m
+        // in the air (the reviewer's reproduction).
+        AssertRepairable(Crossing(76f, farApproach: past => past <= 1f ? 32f : 30f));
+    }
+
+    [Fact]
+    public void ACrossSlopedBankLandsBothLanesSeparately()
+    {
+        // The bank falls away ACROSS the deck as well as along it, so one
+        // lane's foot corners reach dirt a step before the other's.
+        AssertRepairable(Crossing(64f, farApproach: past => 32f - past * 0.35f));
     }
 
     /// <summary>The whole requirement, asserted on the emitted pieces' snaps.</summary>
@@ -186,10 +230,23 @@ public class BridgeRepairabilityTests
         var plan = BridgeLayout.SolveComplete(crossing, world, 4242);
         Assert.NotEmpty(plan);
 
-        float grade = crossing.Kind == CrossingKind.Bridge ? BridgeLayout.Grade(crossing, world) : 0f;
-        float spacing = BridgeLayout.StationSpacing(grade);
-        int bays = BridgeLayout.Bays(crossing.Width, grade);
-        float built = BridgeLayout.BuiltLength(crossing.Width, grade);
+        float spacing = BridgeLayout.StationSpacing();
+        int bays = BridgeLayout.Bays(crossing.Width);
+        float built = BridgeLayout.BuiltLength(crossing.Width);
+
+        // 0. Every piece a player could be asked to replace is one the vanilla
+        //    hammer can actually produce. Player.UpdatePlacementGhost builds
+        //    the ghost rotation as Quaternion.Euler(0, m_placeRotationDegrees *
+        //    m_placeRotation, 0) and its snap path moves the ghost without
+        //    turning it, so pitch and roll are both always zero: a pitched
+        //    plate is unrepairable no matter how well it fits its neighbours.
+        foreach (var piece in plan.Where(x => x.Kind != BridgePieceKind.Debris))
+        {
+            Assert.True(Mathf.Abs(piece.PitchDegrees) < 1e-4f,
+                $"{piece.Prefab} at along {AlongOf(crossing, piece.Position):F2} is pitched {piece.PitchDegrees:F3} deg; the hammer places level");
+            Assert.True(Mathf.Abs(piece.RollDegrees) < 1e-4f,
+                $"{piece.Prefab} at along {AlongOf(crossing, piece.Position):F2} is rolled {piece.RollDegrees:F3} deg; the hammer places level");
+        }
 
         // 1. Never longer than the crossing the pathfinder priced, and never
         //    more than one stair run short of it.
@@ -361,13 +418,13 @@ public class BridgeRepairabilityTests
             var (crossing, world) = Crossing(60f);
             var plan = BridgeLayout.Solve(crossing, world, seed);
             var complete = BridgeLayout.SolveComplete(crossing, world, seed);
-            int bays = BridgeLayout.Bays(crossing.Width, BridgeLayout.Grade(crossing, world));
+            int bays = BridgeLayout.Bays(crossing.Width);
             var decks = Of(plan, BridgePieceKind.Deck);
             for (int i = 1; i + 1 < bays; i++)
             {
                 // a bay with both stations standing is the only place a lane
                 // decision is made, so ask the complete plan where the bay is
-                float along = (i + 0.5f) * BridgeLayout.StationSpacing(BridgeLayout.Grade(crossing, world));
+                float along = (i + 0.5f) * BridgeLayout.StationSpacing();
                 var l = decks.FirstOrDefault(d => Mathf.Abs(AlongOf(crossing, d.Position) - along) < 0.05f && LateralOf(crossing, d.Position) < 0f);
                 var r = decks.FirstOrDefault(d => Mathf.Abs(AlongOf(crossing, d.Position) - along) < 0.05f && LateralOf(crossing, d.Position) > 0f);
                 bool stationsStand = Of(plan, BridgePieceKind.Beam).Count(b => Mathf.Abs(AlongOf(crossing, b.Position) - i * 2f) < 0.05f || Mathf.Abs(AlongOf(crossing, b.Position) - (i + 1) * 2f) < 0.05f) == 4;
@@ -488,7 +545,7 @@ public class BridgeRepairabilityTests
     [Fact]
     public void ASavedNarrowLayoutIsRecognisedAndItsPiecesReplaced()
     {
-        Assert.Equal(2, BridgeLayout.LayoutVersion);
+        Assert.Equal(3, BridgeLayout.LayoutVersion);
         // The persistence round-trip itself is exercised in SpawnedZonesSurvive...;
         // here the contract that matters: a record without the current layout
         // id must not mark any zone spawned.

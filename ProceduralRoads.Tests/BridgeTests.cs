@@ -441,7 +441,7 @@ public class BridgeTests
     }
 
     [Fact]
-    public void TheDeckStaysAboveTheWaterAndMeetsTheBanks()
+    public void TheDeckStaysAboveTheWaterAndIsLevelAtTheHigherBank()
     {
         var (crossing, world) = WideCrossing(eastRise: 1.5f);
         var plan = BridgeLayout.Solve(crossing, world, 7);
@@ -449,11 +449,16 @@ public class BridgeTests
         Assert.InRange(fromH, world.GetHeight(crossing.FromBank.x, crossing.FromBank.y) - 0.01f, world.GetHeight(crossing.FromBank.x, crossing.FromBank.y) + 0.01f);
         Assert.InRange(toH, world.GetHeight(crossing.ToBank.x, crossing.ToBank.y) - 0.01f, world.GetHeight(crossing.ToBank.x, crossing.ToBank.y) + 0.01f);
 
+        // The deck is LEVEL, at the higher bank: a pitched wood_floor is one
+        // the vanilla hammer cannot place, so it cannot be repaired. The drop
+        // to the lower bank is the stair run's job.
+        float deckLevel = BridgeLayout.DeckHeight(crossing, world);
+        Assert.InRange(deckLevel, Mathf.Max(fromH, toH) - 0.01f, Mathf.Max(fromH, toH) + 0.01f);
         foreach (var deck in plan.Where(p => p.Kind == BridgePieceKind.Deck))
         {
             Assert.True(deck.Position.y >= crossing.WaterLevel + BridgeLayout.DeckFreeboard - 0.01f, "Deck below the freeboard");
-            float t = crossing.Along(new Vector2(deck.Position.x, deck.Position.z)) / crossing.Width;
-            Assert.InRange(deck.Position.y, Mathf.Lerp(fromH, toH, t) - 0.3f, Mathf.Lerp(fromH, toH, t) + 0.3f);
+            Assert.InRange(deck.Position.y, deckLevel - 0.01f, deckLevel + 0.01f);
+            Assert.Equal(0f, deck.PitchDegrees);
         }
 
         // Each END OF DECK carries a station, and is met by a stair down into
@@ -463,7 +468,7 @@ public class BridgeTests
         // beam AT the far bank instead is what the old clamped layout gave, at
         // the price of stacking two stations there.
         Vector2 deckEnd = crossing.FromBank + crossing.Direction * BridgeLayout.BuiltLength(crossing.Width);
-        foreach ((Vector2 end, float deckH) in new[] { (crossing.FromBank, fromH), (deckEnd, toH) })
+        foreach ((Vector2 end, float deckH) in new[] { (crossing.FromBank, deckLevel), (deckEnd, deckLevel) })
         {
             // Two lanes: each end station carries a beam per lane, LaneOffset
             // either side of the crossing line, and the stair comes two abreast.

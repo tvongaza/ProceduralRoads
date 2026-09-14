@@ -694,12 +694,17 @@ public static class ConsoleCommands
         List<BridgePiece> complete = BridgeLayout.SolveComplete(site, WorldGenerator.instance, seed);
         List<BridgePiece> shipped = BridgeLayout.Solve(site, WorldGenerator.instance, seed);
 
-        float grade = BridgeLayout.Grade(site, WorldGenerator.instance);
+        (float dropFrom, float dropTo) = BridgeLayout.BankDrop(site, WorldGenerator.instance);
+        (bool nearLands, bool farLands) = BridgeLayout.StairRunsLand(site, WorldGenerator.instance);
         args.Context.AddString(
             $"Crossing ({site.Center.x:F0},{site.Center.y:F0}) {site.Kind}{(site.Style != FordStyle.None ? " " + site.Style : "")}, " +
-            $"{site.Width:F2} m wide, grade {grade:F4}, built {BridgeLayout.BuiltLength(site.Width, grade):F2} m over {BridgeLayout.Bays(site.Width, grade)} bay(s) " +
-            $"of {BridgeLayout.StationSpacing(grade):F3} m, deck {BridgeLayout.DeckHalfWidth * 2f:F0} m wide, " +
+            $"{site.Width:F2} m wide, level deck, bank drop {dropFrom:F2}/{dropTo:F2} m, " +
+            $"built {BridgeLayout.BuiltLength(site.Width):F2} m over {BridgeLayout.Bays(site.Width)} bay(s) " +
+            $"of {BridgeLayout.StationSpacing():F3} m, deck {BridgeLayout.DeckHalfWidth * 2f:F0} m wide, " +
             $"from ({site.FromBank.x:F2},{site.FromBank.y:F2}) to ({site.ToBank.x:F2},{site.ToBank.y:F2}).");
+        if (!nearLands || !farLands)
+            args.Context.AddString($"STAIRS UNLANDED: near={(nearLands ? "ok" : "above ground")} far={(farLands ? "ok" : "above ground")} " +
+                $"-- the bank falls faster than {BridgeLayout.MaxStairSteps} steps of 1 in 2 can follow.");
         int gap = 0, ruined = 0;
         List<string> lines = new();
         foreach (BridgePiece piece in complete)
