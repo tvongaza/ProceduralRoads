@@ -448,6 +448,83 @@ public class ServerBakeTests
         Assert.True(ledger.HasGivenUp(zone));
     }
 
+    /// <summary>
+    /// Vegetation finishing must not cancel a retry TERRAIN is still owed.
+    ///
+    /// This is the ordinary order, not a corner: ProcessTerrain returns Done
+    /// after a NONTERMINAL failed write -- a live compiler that took nothing,
+    /// terrain the game never built, an ordinary failed write -- and
+    /// ProcessZone runs the vegetation pass immediately afterwards, on the very
+    /// entry that now carries terrain's retry. Retiring it left the zone
+    /// neither held, nor given up, nor counted, so the bake reported
+    /// "0 deferred, 0 pending" with the road unwritten.
+    /// </summary>
+    [Fact]
+    public void VegetationCompletionDoesNotCancelTheFirstTerrainRetry()
+    {
+        var ledger = new GhostRepairLedger();
+        var zone = new Vector2s(3, 4);
+
+        Assert.False(ledger.FailedWrite(zone, 0f, Delay));
+        Assert.Equal(1, ledger.Count);
+
+        // The vegetation pass finds this zone already cleared and retires it.
+        ledger.PendingWorkDone(zone);
+
+        Assert.Equal(1, ledger.Count);
+        Assert.True(ledger.Holds(zone));
+        Assert.False(ledger.HasGivenUp(zone));
+        Assert.Equal(1, ledger.FailedWrites(zone));
+        Assert.Single(ledger.TakeReady(_ => true, Delay * 10f));
+    }
+
+    /// <summary>
+    /// The same on the SECOND failure, and through the other exit -- the one
+    /// where vegetation actually cleared on this pass rather than finding the
+    /// work already done. A zone one attempt from its bound is exactly the one
+    /// that must not lose its last try.
+    /// </summary>
+    [Fact]
+    public void VegetationCompletionDoesNotCancelTheSecondTerrainRetry()
+    {
+        var ledger = new GhostRepairLedger();
+        var zone = new Vector2s(5, 6);
+
+        Assert.False(ledger.FailedWrite(zone, 0f, Delay));
+        Assert.Single(ledger.TakeReady(_ => true, Delay * 2f));
+        Assert.False(ledger.FailedWrite(zone, Delay * 2f, Delay));
+        Assert.Equal(2, ledger.FailedWrites(zone));
+
+        ledger.PendingWorkDone(zone);
+
+        Assert.Equal(1, ledger.Count);
+        Assert.False(ledger.HasGivenUp(zone));
+        Assert.Equal(2, ledger.FailedWrites(zone));
+        Assert.Single(ledger.TakeReady(_ => true, Delay * 10f));
+    }
+
+    /// <summary>
+    /// And the refusal must not over-reach: an entry with no spent attempt is
+    /// vegetation's own deferral, which is precisely what PendingWorkDone
+    /// exists to close. Without this the bake would never report itself
+    /// finished, which is the bug the method was added for.
+    /// </summary>
+    [Fact]
+    public void VegetationsOwnDeferralIsStillRetiredWhenTerrainOwesNothing()
+    {
+        var ledger = new GhostRepairLedger();
+        var zone = new Vector2s(7, 8);
+
+        ledger.Defer(zone, 0f, Delay);
+        Assert.Equal(1, ledger.Count);
+
+        ledger.PendingWorkDone(zone);
+
+        Assert.Equal(0, ledger.Count);
+        Assert.False(ledger.HasGivenUp(zone));
+        Assert.Empty(ledger.TakeReady(_ => true, Delay * 10f));
+    }
+
     [Fact]
     public void ANewNetworkOrAnOutrightResolutionLiftsTheGiveUp()
     {
