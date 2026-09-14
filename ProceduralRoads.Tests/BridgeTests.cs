@@ -1180,6 +1180,15 @@ public class BridgeTests
         float topHeading = BridgeLayout.YawDegrees(crossing.Direction);
         Assert.True(BridgeLayout.HeadingIsPlaceable(topHeading),
             $"the bank-top crossing stands at {topHeading:F3} deg");
+
+        // And it KEEPS the path interval the climb consumed. The water-edge
+        // fallback restores the original interval along with the banks; a
+        // retained high bank must not have its indices reset with it, or the
+        // painter would pave the approach the deck is standing on.
+        Assert.True(world.GetHeight(path![crossing.FromIndex].x, path[crossing.FromIndex].y) >= 35.9f,
+            $"the crossing consumes up to path[{crossing.FromIndex}], which is not on the top");
+        Assert.True(world.GetHeight(path[crossing.ToIndex].x, path[crossing.ToIndex].y) >= 35.9f,
+            $"the crossing resumes at path[{crossing.ToIndex}], which is not on the top");
         Assert.InRange(crossing.Width, 54f, 62f);
 
         var plan = BridgeLayout.Solve(crossing, world, 3);

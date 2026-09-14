@@ -211,10 +211,13 @@ public static class RoadCrossingDetector
         // runs down to the water's edge and the crossing lies on the road.
         Vector2 from = Shore(a, b, world);
         Vector2 to = Shore(b, a, world);
-        // The water's edge is kept: turning the crossing onto a placeable
-        // heading starts from the edge line, and the climb to the bank tops is
-        // then redone along the turned line rather than lost.
+        // The water's edge is kept as a whole CANDIDATE -- banks and the path
+        // interval it consumes -- because the optional climb below changes
+        // both. Restoring the banks without the interval leaves the rejected
+        // tops still eating the land in front of the crossing, and the painter
+        // paints no approach there at all.
         Vector2 edgeFrom = from, edgeTo = to;
+        int edgeFromIndex = fromIndex, edgeToIndex = toIndex;
         bool onTops = false;
 
         // High bridge: when the road climbs a cliff on both sides of the
@@ -342,6 +345,8 @@ public static class RoadCrossingDetector
                 {
                     from = edgeFrom;
                     to = edgeTo;
+                    fromIndex = edgeFromIndex;   // the interval this candidate consumes,
+                    toIndex = edgeToIndex;       // not the one the rejected tops did
                     riverbed = edgeBed;
                     fairwayCenter = edgeCentre;
                     fairwayWidth = edgeFairway;
@@ -367,6 +372,12 @@ public static class RoadCrossingDetector
                     {
                         from = turnedFrom;
                         to = turnedTo;
+                        // This candidate grew out of the water-edge line, and
+                        // any climb on it walked the TURNED line rather than
+                        // the path, so the tops' path interval means nothing
+                        // here either.
+                        fromIndex = edgeFromIndex;
+                        toIndex = edgeToIndex;
                         riverbed = turnedBed;
                         fairwayCenter = turnedCentre;
                         fairwayWidth = turnedFairway;
