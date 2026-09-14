@@ -180,6 +180,59 @@ public static class ServerTerrainBake
     }
 
     /// <summary>
+    /// road_bake server: what the SERVER's own zone machinery is doing, asked
+    /// of the running game instead of inferred from the game's IL.
+    ///
+    /// A recon sweep found `loaded here False` for all 49 zones within three of
+    /// the origin, which contradicted a reading of ZoneSystem.Update: it calls
+    /// CreateLocalZones(ZNet.GetReferencePosition()), GetReferencePosition
+    /// returns m_referencePosition, and ZNet's .ctor pins that at Vector3.zero
+    /// while only local-player code ever moves it. Every link in that chain is
+    /// an inference, and one of them is wrong. This reports the facts.
+    ///
+    /// What turns on it: `loadedHere` is m_zones.ContainsKey(zone), and the
+    /// planner picks WriteLiveCompiler ONLY when that is true. If a dedicated
+    /// server never holds a live zone, WriteLiveCompiler and LeaveToLiveZone
+    /// are unreachable there, which is a fact about the mod worth knowing
+    /// rather than a test that keeps failing to be set up.
+    /// </summary>
+    public static List<string> DescribeServer()
+    {
+        var lines = new List<string>();
+        if (ZNet.instance == null || ZoneSystem.instance == null)
+        {
+            lines.Add("No world loaded");
+            return lines;
+        }
+        lines.Add($"server {ZNet.instance.IsServer()}, connection status {ZNet.GetConnectionStatus()} " +
+                  "(ZoneSystem.Update returns at once unless this is Connected)");
+        lines.Add($"locations generated {ZoneSystem.instance.LocationsGenerated} " +
+                  "(on a server Update returns BEFORE CreateLocalZones while this is false)");
+        Vector3 rp = ZNet.instance.GetReferencePosition();
+        lines.Add($"reference position {rp.x:F1},{rp.y:F1},{rp.z:F1} -> zone {ZoneSystem.GetZone(rp)} " +
+                  "(CreateLocalZones sweeps outwards from here)");
+        lines.Add($"zones live on the server: {ZoneSystem.instance.m_zones.Count}");
+        int shown = 0;
+        foreach (var kv in ZoneSystem.instance.m_zones)
+        {
+            if (shown++ >= 10)
+            {
+                lines.Add("  ... (first 10 shown)");
+                break;
+            }
+            lines.Add($"  live zone {kv.Key}: {RoadSpatialGrid.GetRoadPointsInZone(kv.Key).Count} road points, " +
+                      $"generated {ZoneSystem.instance.IsZoneGenerated(kv.Key)}");
+        }
+        foreach (ZNetPeer peer in ZNet.instance.GetPeers())
+        {
+            Vector3 p = peer.GetRefPos();
+            lines.Add($"peer {peer.m_uid} at {p.x:F1},{p.y:F1},{p.z:F1} -> zone {ZoneSystem.GetZone(p)} " +
+                      "(peers drive CreateGhostZones, NOT CreateLocalZones)");
+        }
+        return lines;
+    }
+
+    /// <summary>
     /// road_bake find: the road zones nobody has generated yet nearest a
     /// point, each with a road point to stand on (DescribeZone).
     /// </summary>
