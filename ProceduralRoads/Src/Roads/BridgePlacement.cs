@@ -197,7 +197,10 @@ public static class BridgePlacement
         {
             if (last.HasValue && Vector3.Distance(last.Value, piece.Position) < 2f)
                 continue;
-            areas.Add(new ZoneSystem.ClearArea(piece.Position, 2.5f));
+            // Wide enough for a two-lane deck: pieces sit up to DeckHalfWidth
+            // either side of the crossing line, and the clearing has to keep
+            // trees out of BOTH lanes, not just the centreline.
+            areas.Add(new ZoneSystem.ClearArea(piece.Position, BridgeLayout.DeckHalfWidth + 1.5f));
             last = piece.Position;
         }
         return areas;

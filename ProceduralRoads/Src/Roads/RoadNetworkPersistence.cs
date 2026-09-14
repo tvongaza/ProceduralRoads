@@ -435,9 +435,17 @@ public static class RoadNetworkPersistence
         return ms.ToArray();
     }
 
+    /// <summary>Set by the loader when the saved spawned-zone record was
+    /// written by an OLDER bridge layout. The zones are then not marked spawned,
+    /// and whoever owns the world (RoadNetworkGenerator.TryLoadGlobalRoadData)
+    /// destroys the old pieces so the current layout can replace them -- never
+    /// a bridge half old and half new.</summary>
+    public static bool BridgeLayoutIsStale { get; private set; }
+
     private static void TryLoadBridgeZones(ZDO metadataZdo, HashSet<Vector2s> bridgeZones)
     {
         bridgeZones.Clear();
+        BridgeLayoutIsStale = false;
         byte[]? data = metadataZdo.GetByteArray(BridgeZonesHash, null);
         if (data == null || data.Length == 0)
             return;
@@ -446,7 +454,19 @@ public static class RoadNetworkPersistence
             using var ms = new MemoryStream(data);
             using var reader = new BinaryReader(ms);
             int version = reader.ReadInt32();
-            if (version != 1)
+            int layout;
+            if (version == 1)
+            {
+                // Written before the record carried a layout id: the narrow,
+                // single-lane bridges. Every zone recorded here holds pieces of
+                // a shape this build no longer makes.
+                layout = 1;
+            }
+            else if (version == 2)
+            {
+                layout = reader.ReadInt32();
+            }
+            else
             {
                 Log.LogWarning($"Unknown bridge zone data version: {version}");
                 return;
@@ -455,6 +475,13 @@ public static class RoadNetworkPersistence
             if (count < 0 || count > 1_000_000)
             {
                 Log.LogWarning($"Invalid bridge zone count: {count}");
+                return;
+            }
+            if (layout != BridgeLayout.LayoutVersion)
+            {
+                BridgeLayoutIsStale = true;
+                Log.LogInfo($"[BRIDGES] the saved bridges were laid out by layout {layout}; this build is layout {BridgeLayout.LayoutVersion}. " +
+                            $"Their {count} zone(s) are not marked spawned and their pieces will be replaced.");
                 return;
             }
             for (int i = 0; i < count; i++)
@@ -469,15 +496,18 @@ public static class RoadNetworkPersistence
     }
 
     /// <summary>
-    /// Format: [version=1][count] then [x][y] per zone, each a 32-bit int.
-    /// Valheim 1.0 made a zone id a pair of shorts; the casts here keep the
-    /// saved bytes as they were, so worlds written before 1.0 still read.
+    /// Format: [version=2][layout][count] then [x][y] per zone, each a 32-bit
+    /// int. Version 1 had no layout id and is read as layout 1, the narrow
+    /// bridges. Valheim 1.0 made a zone id a pair of shorts; the casts here
+    /// keep the saved bytes as they were, so worlds written before 1.0 still
+    /// read.
     /// </summary>
     private static byte[] SerializeBridgeZones(IReadOnlyCollection<Vector2s> zones)
     {
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms);
-        writer.Write(1);
+        writer.Write(2);
+        writer.Write(BridgeLayout.LayoutVersion);
         writer.Write(zones.Count);
         foreach (Vector2s zone in zones)
         {

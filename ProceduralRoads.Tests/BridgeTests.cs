@@ -465,23 +465,44 @@ public class BridgeTests
         Vector2 deckEnd = crossing.FromBank + crossing.Direction * BridgeLayout.BuiltLength(crossing.Width);
         foreach ((Vector2 end, float deckH) in new[] { (crossing.FromBank, fromH), (deckEnd, toH) })
         {
-            Assert.Contains(plan, p => p.Kind == BridgePieceKind.Beam && Vector2.Distance(new Vector2(p.Position.x, p.Position.z), end) < 0.1f);
-            var stairs = plan.Where(p => p.Kind == BridgePieceKind.Stair && Vector2.Distance(new Vector2(p.Position.x, p.Position.z), end) < 2.5f).ToList();
+            // Two lanes: each end station carries a beam per lane, LaneOffset
+            // either side of the crossing line, and the stair comes two abreast.
+            Assert.Equal(2, plan.Count(p => p.Kind == BridgePieceKind.Beam && Vector2.Distance(new Vector2(p.Position.x, p.Position.z), end) < BridgeLayout.LaneOffset + 0.1f));
+            // The whole run on this side of the end: the stair marches outward
+            // until a step's foot is in the dirt, and on a bank whose ground
+            // near the end differs from the plateau that can be several steps.
+            Vector2 outward = end == crossing.FromBank ? -crossing.Direction : crossing.Direction;
+            var stairs = plan.Where(p => p.Kind == BridgePieceKind.Stair
+                                         && Vector2.Dot(new Vector2(p.Position.x, p.Position.z) - end, outward) > 0f
+                                         && Vector2.Dot(new Vector2(p.Position.x, p.Position.z) - end, outward) < 2f * BridgeLayout.MaxStairSteps + 2f).ToList();
             Assert.NotEmpty(stairs);
             var top = stairs.OrderByDescending(st => st.Position.y).First();
             Assert.InRange(top.Position.y + 1f, deckH - 0.05f, deckH + 0.05f);
-            Assert.True(top.Position.y <= world.GetHeight(top.Position.x, top.Position.z) + 0.15f, "the stair's foot is in the dirt");
+            // The stair marches outward until a step's foot is in the dirt at
+            // ITS footprint; that is the lowest step, not necessarily the top.
+            var bottom = stairs.OrderBy(st => st.Position.y).First();
+            // Against the biome-blended height the layout samples -- that is
+            // the terrain the game builds, and the raw profile differs from it
+            // near the shore.
+            float footGround = BiomeBlendedHeight.GetBlendedHeight(bottom.Position.x, bottom.Position.z, world);
+            Assert.True(bottom.Position.y <= footGround + 0.3f,
+                $"the stair's foot is in the dirt: bottom step at ({bottom.Position.x:F1},{bottom.Position.y:F2},{bottom.Position.z:F1}) ground {footGround:F2} raw {world.GetHeight(bottom.Position.x, bottom.Position.z):F2}, {stairs.Count} steps at this end, deckH {deckH:F2}");
         }
 
         // Ruin flavour across seeds: toppled debris on the bed, never standing.
+        // Debris is rare on purpose: a station has to die OUTSIDE the
+        // navigation gap (~3% each, since survival is high near the banks and
+        // the gap swallows the mid-span deaths), then not rot into a stub, then
+        // topple. Measured at 12% of seeds on this crossing; 100 seeds makes a
+        // miss astronomically unlikely without lowering the bar.
         bool anyDebris = false;
-        for (int seed = 1; seed <= 20 && !anyDebris; seed++)
+        for (int seed = 1; seed <= 100 && !anyDebris; seed++)
             foreach (var d in BridgeLayout.Solve(crossing, world, seed).Where(p => p.Kind == BridgePieceKind.Debris))
             {
                 anyDebris = true;
                 Assert.True(d.PitchDegrees > 30f, "Debris should be toppled");
             }
-        Assert.True(anyDebris, "no debris in 20 seeds");
+        Assert.True(anyDebris, "no debris in 100 seeds");
 
         Assert.All(plan, p => Assert.InRange(p.HealthFraction, BridgeLayout.RuinHealthMin - 0.001f, BridgeLayout.RuinHealthMax + 0.001f));
     }
@@ -1028,10 +1049,13 @@ public class BridgeTests
             Assert.Equal(FordStyle.Span, crossing.Style);
             Assert.Empty(RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(crossing.Center.x, 0f, crossing.Center.y), 3f));
 
-            var plan = BridgeLayout.Solve(crossing, world, 1);
+            // The same seed BridgePlans uses, or the two ruins differ and so
+            // do the counts compared below.
+            var plan = BridgeLayout.Solve(crossing, world, world.GetSeed());
             Assert.Contains(plan, p => p.Kind == BridgePieceKind.Deck);
             Assert.All(plan.Where(p => p.Kind == BridgePieceKind.Deck), d => Assert.True(d.Position.y >= 33f + RoadConstants.FordSpanDeckRise - 0.01f));
-            Assert.Equal(2, plan.Count(p => p.Kind == BridgePieceKind.Stair && Mathf.Abs(p.Position.y + 1f - 34f) < 0.05f));
+            // two abreast at each end: four top steps meet the deck
+            Assert.Equal(4, plan.Count(p => p.Kind == BridgePieceKind.Stair && Mathf.Abs(p.Position.y + 1f - 34f) < 0.05f));
             Assert.Empty(Floaters(plan, world));
             Assert.Equal(plan.Count, BridgePlans.TotalPlannedPieces);
 

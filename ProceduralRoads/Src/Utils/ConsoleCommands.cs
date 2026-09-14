@@ -694,23 +694,31 @@ public static class ConsoleCommands
         List<BridgePiece> complete = BridgeLayout.SolveComplete(site, WorldGenerator.instance, seed);
         List<BridgePiece> shipped = BridgeLayout.Solve(site, WorldGenerator.instance, seed);
 
+        float grade = BridgeLayout.Grade(site, WorldGenerator.instance);
         args.Context.AddString(
             $"Crossing ({site.Center.x:F0},{site.Center.y:F0}) {site.Kind}{(site.Style != FordStyle.None ? " " + site.Style : "")}, " +
-            $"{site.Width:F2} m wide, built {BridgeLayout.BuiltLength(site.Width):F2} m over {BridgeLayout.Bays(site.Width)} bay(s) " +
+            $"{site.Width:F2} m wide, grade {grade:F4}, built {BridgeLayout.BuiltLength(site.Width, grade):F2} m over {BridgeLayout.Bays(site.Width, grade)} bay(s) " +
+            $"of {BridgeLayout.StationSpacing(grade):F3} m, deck {BridgeLayout.DeckHalfWidth * 2f:F0} m wide, " +
             $"from ({site.FromBank.x:F2},{site.FromBank.y:F2}) to ({site.ToBank.x:F2},{site.ToBank.y:F2}).");
-        args.Context.AddString($"Completed: {complete.Count} pieces. Shipped: {shipped.Count}. Missing: {complete.Count - shipped.Count}.");
-
-        int n = 0;
+        int gap = 0, ruined = 0;
+        List<string> lines = new();
         foreach (BridgePiece piece in complete)
         {
             if (shipped.Any(b => b.Prefab == piece.Prefab && Vector3.Distance(b.Position, piece.Position) < 0.05f))
                 continue;
-            n++;
-            args.Context.AddString(string.Format(CultureInfo.InvariantCulture,
-                "REPAIR {0} {1} {2:F3} {3:F3} {4:F3} yaw={5:F2} pitch={6:F2}",
-                n, piece.Prefab, piece.Position.x, piece.Position.y, piece.Position.z,
-                piece.YawDegrees, piece.PitchDegrees));
+            // Two reasons a piece is missing, reported apart: the navigation
+            // gap is left open on purpose for boats, the rest is ruin.
+            bool inGap = BridgeLayout.InNavigationGap(site, site.Along(new Vector2(piece.Position.x, piece.Position.z)));
+            if (inGap) gap++; else ruined++;
+            lines.Add(string.Format(CultureInfo.InvariantCulture,
+                "REPAIR {0} {1} {2:F3} {3:F3} {4:F3} yaw={5:F2} pitch={6:F2} why={7}",
+                lines.Count + 1, piece.Prefab, piece.Position.x, piece.Position.y, piece.Position.z,
+                piece.YawDegrees, piece.PitchDegrees, inGap ? "gap" : "ruin"));
         }
+        args.Context.AddString($"Completed: {complete.Count} pieces. Shipped: {shipped.Count}. Missing: {lines.Count} ({gap} in the navigation gap, {ruined} ruin).");
+        foreach (string line in lines)
+            args.Context.AddString(line);
+        int n = lines.Count;
         args.Context.AddString($"OK: BRIDGE_REPAIRS {n} piece(s) to replace");
     }
 
