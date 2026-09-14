@@ -66,8 +66,11 @@ public static class BridgePlacement
 
     /// <summary>
     /// The network was rebuilt in a running world: destroy the pieces of the
-    /// old one everywhere and spawn the new plans into the loaded zones
-    /// (other zones get theirs when they load). Returns (destroyed, zones).
+    /// old one everywhere, and spawn the new plans into the zones this peer
+    /// has loaded AND -- on a server -- into every planned zone the world has
+    /// already generated, which is where a dedicated server's players actually
+    /// are. A zone the world has not generated yet is left alone on purpose:
+    /// it gets its pieces when it is generated. Returns (destroyed, zones).
     /// </summary>
     public static (int destroyed, int zones) RespawnFromPlans()
     {
