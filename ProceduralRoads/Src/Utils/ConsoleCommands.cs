@@ -133,7 +133,7 @@ public static class ConsoleCommands
 
         new Terminal.ConsoleCommand(
             "road_bridges",
-            "Bridges prototype: how many bridge pieces are planned and spawned, or road_bridges respawn to destroy every spawned bridge piece and spawn the current plans again into the loaded zones.",
+            "Bridges prototype: how many bridge pieces are planned and spawned, or road_bridges respawn to destroy every spawned bridge piece and spawn the current plans again -- into the zones this peer has loaded, and, on a server, into every planned zone the world has already generated. Zones not generated yet get theirs when they are.",
             (args) => BridgesCommand(args),
             isCheat: true,
             isNetwork: false,
@@ -629,7 +629,7 @@ public static class ConsoleCommands
         if (result.destroyed > 0)
             args.Context.AddString($"Removed {result.destroyed} bridge pieces of the previous network.");
         if (result.zones > 0)
-            args.Context.AddString($"Spawned bridges into {result.zones} loaded zone(s).");
+            args.Context.AddString($"Spawned bridges into {result.zones} zone(s).");
     }
 
     /// <summary>road_crossings [count] lists the river crossings nearest the player.</summary>
@@ -674,7 +674,7 @@ public static class ConsoleCommands
         if (args.Length > 1 && args[1] == "respawn")
         {
             (int destroyed, int zones) = BridgePlacement.RespawnFromPlans();
-            args.Context.AddString($"Destroyed {destroyed} bridge pieces; spawned the current plans into {zones} loaded zone(s). Other zones get theirs when they load.");
+            args.Context.AddString($"Destroyed {destroyed} bridge pieces; spawned the current plans into {zones} zone(s). Zones the world has not generated yet get theirs when it does.");
             return;
         }
 
