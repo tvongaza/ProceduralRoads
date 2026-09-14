@@ -677,6 +677,53 @@ public static class BridgeLayout
     /// <summary>Unity yaw (degrees about +y) that turns local +z onto a world XZ direction.</summary>
     public static float YawDegrees(Vector2 dir) => Mathf.Atan2(dir.x, dir.y) * 180f / Mathf.PI;
 
+    // ------------------------------------------------- placeable headings
+
+    /// <summary>
+    /// Vanilla's build rotation step (Player.m_placeRotationDegrees): the
+    /// hammer turns a ghost only in these steps, and its copy-the-rotation-of-
+    /// this-piece path rounds an existing piece's yaw to them too. Sixteen
+    /// headings, and nothing between. A piece on any other heading is one no
+    /// player can reproduce, which is why a crossing that carries pieces is
+    /// laid out on one of these lines rather than on the road's own bearing.
+    /// </summary>
+    public const float PlaceableHeadingStep = 22.5f;
+    public const int PlaceableHeadings = 16;
+
+    /// <summary>The unit direction of a heading, inverse of YawDegrees.</summary>
+    public static Vector2 HeadingDirection(float yawDegrees)
+    {
+        float rad = yawDegrees * Mathf.PI / 180f;
+        return new Vector2(Mathf.Sin(rad), Mathf.Cos(rad));
+    }
+
+    public static float SnapHeadingDegrees(float yawDegrees) =>
+        Mathf.Round(yawDegrees / PlaceableHeadingStep) * PlaceableHeadingStep;
+
+    /// <summary>Whether a heading is one the hammer can produce. Rounding to
+    /// the nearest step already puts the difference in +-half a step, so there
+    /// is no wrap to handle.</summary>
+    public static bool HeadingIsPlaceable(float yawDegrees, float toleranceDegrees = 0.05f) =>
+        Mathf.Abs(yawDegrees - SnapHeadingDegrees(yawDegrees)) <= toleranceDegrees;
+
+    /// <summary>The admissible headings for a bearing, NEAREST FIRST: the one
+    /// it rounds to, then its two neighbours, and so on outward. A site whose
+    /// nearest line does not reach land on both banks may still be crossable
+    /// on the next one, which is the whole point of offering more than one --
+    /// but the further the line turns, the further the bridgeheads walk along
+    /// the shore from where routing put them, so the search is bounded by the
+    /// caller and the nearest workable line always wins.</summary>
+    public static IEnumerable<float> NearestPlaceableHeadings(float yawDegrees, int count = 3)
+    {
+        float nearest = SnapHeadingDegrees(yawDegrees);
+        yield return nearest;
+        for (int k = 1; k <= count / 2 && k * 2 + 1 <= PlaceableHeadings; k++)
+        {
+            yield return nearest - k * PlaceableHeadingStep;
+            yield return nearest + k * PlaceableHeadingStep;
+        }
+    }
+
     /// <summary>Per-site seed from the crossing's centre, so a world regenerates with the same ruins.</summary>
     public static int StableSeed(RoadCrossing crossing)
     {

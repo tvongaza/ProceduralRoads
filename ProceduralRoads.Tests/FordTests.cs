@@ -199,6 +199,45 @@ public class FordTests
         Assert.Empty(RoadCrossingDetector.Detect(Pathfinder(dry, true).FindPath(new Vector2(-300f, -100f), new Vector2(200f, 150f))!, dry));
     }
 
+    /// <summary>
+    /// The rule the 22.5 degree build rotation forces on planning: a crossing
+    /// that leaves PIECES behind is turned onto a heading the vanilla hammer
+    /// can build on, and one that is only terrain keeps the road's own line.
+    /// </summary>
+    [Fact]
+    public void PiecesStandOnAPlaceableHeading_WhileTerrainKeepsTheRoadsOwnBearing()
+    {
+        var world = new GullyWorld();
+        // 63.43 degrees: deliberately between two of the sixteen headings.
+        var path = new List<Vector2> { new(-20f, -10f), new(20f, 10f) };
+        float bearing = BridgeLayout.YawDegrees((path[1] - path[0]).normalized);
+        Assert.False(BridgeLayout.HeadingIsPlaceable(bearing), $"the fixture bearing {bearing:F2} is supposed to be off the grid");
+
+        RoadCrossingDetector.SetFordStyleWeights(1f, 0f, 0f);
+        try
+        {
+            // Waded: the road drives through the water, nothing is placed.
+            var ford = Assert.Single(RoadCrossingDetector.Detect(path, world, bridges: false, fords: true));
+            Assert.Equal(FordStyle.Wade, ford.Style);
+            Assert.InRange(BridgeLayout.YawDegrees(ford.Direction), bearing - 0.01f, bearing + 0.01f);
+
+            // The same water with fords off is a bridge, and a bridge is pieces.
+            var bridge = Assert.Single(RoadCrossingDetector.Detect(path, world, bridges: true, fords: false));
+            Assert.Equal(CrossingKind.Bridge, bridge.Kind);
+            float heading = BridgeLayout.YawDegrees(bridge.Direction);
+            Assert.True(BridgeLayout.HeadingIsPlaceable(heading),
+                $"a bridge stands at {heading:F2}, which no hammer can match");
+            Assert.InRange(heading, BridgeLayout.SnapHeadingDegrees(bearing) - 0.01f, BridgeLayout.SnapHeadingDegrees(bearing) + 0.01f);
+
+            // Every piece it lays out inherits that heading.
+            foreach (var piece in BridgeLayout.SolveComplete(bridge, world, 11)
+                         .Where(x => x.Kind != BridgePieceKind.Debris))
+                Assert.True(BridgeLayout.HeadingIsPlaceable(piece.YawDegrees, 0.06f),
+                    $"{piece.Prefab} at yaw {piece.YawDegrees:F2}");
+        }
+        finally { RoadCrossingDetector.SetFordStyleWeights(1f, 1f, 1f); }
+    }
+
     [Theory]
     [InlineData(FordStyle.Wade)]
     [InlineData(FordStyle.Raise)]
