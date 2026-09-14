@@ -91,6 +91,7 @@ public static class ServerTerrainBake
     /// scheduler is how a zone came back after it had been given up.
     /// </summary>
     private static readonly GhostRepairLedger s_ghostRepair = new();
+    private static readonly ServerBakeFaults s_faults = new();
     private static float s_nextProbe;
     private static bool s_finished;
     private static int s_loggedGhost;
@@ -128,6 +129,7 @@ public static class ServerTerrainBake
         s_counts = default;
         s_vegetationPrefabs = null;
         s_ghostRepair.Clear();
+        s_faults.Clear();
     }
 
     /// <summary>
@@ -171,6 +173,10 @@ public static class ServerTerrainBake
         string next = points == 0
             ? "nothing to write (no road terrain)"
             : ServerBakePlanner.Decide(RoadSpatialGrid.RoadNetworkVersion, generated, loadedHere, facts, me).ToString();
+        if (s_faults.IsQuarantined(zone))
+            next = "stopped after a zone exception; fix the cause, then road_bake again";
+        else if (s_faults.IsPaused)
+            next = "queue paused after an error; fix the cause, then road_bake again";
         return $"Zone {zone}: generated {generated}, loaded here {loadedHere}, {points} road points{sample}, " +
                $"{pieces} bridge pieces planned{(BridgePlans.IsSpawned(zone) ? " (spawned)" : "")}; " +
                $"vegetation {(VegetationClearing.IsCleared(zone, RoadSpatialGrid.RoadNetworkVersion) ? "matches the roads" : "not cleared yet")}, " +
@@ -328,7 +334,12 @@ public static class ServerTerrainBake
     }
 
     /// <summary>Go over every road zone of the current network again, from the next frame (road_bake again).</summary>
-    public static void Requeue() => s_version = 0;
+    public static void Requeue()
+    {
+        s_faults.Clear();
+        s_version = 0;
+        // Do not change s_enabled: an operator's startup opt-out still holds.
+    }
 
     /// <summary>Every frame (ZoneSystem.Update postfix): work the queue for a slice of the frame.</summary>
     public static void Tick()
@@ -336,6 +347,8 @@ public static class ServerTerrainBake
         try
         {
             if (!IsServer || ZoneSystem.instance == null || ZDOMan.instance == null || ZNetScene.instance == null)
+                return;
+            if (s_faults.IsPaused)
                 return;
             if (Probe)
                 ProbePeers();
@@ -352,8 +365,9 @@ public static class ServerTerrainBake
         }
         catch (Exception ex)
         {
-            s_enabled = false;
-            Log.LogError($"[BAKE] stopped after an error; no more zones are written this session: {ex}");
+            s_faults.Pause(ex);
+            Log.LogError($"[BAKE] queue paused after an error; ghost generation remains enabled. " +
+                         $"Fix the cause, then road_bake again: {ex}");
         }
     }
 
@@ -370,6 +384,9 @@ public static class ServerTerrainBake
                 !RoadNetworkGenerator.RoadsAvailable || RoadSpatialGrid.RoadNetworkVersion == 0)
                 return;
             if (RoadSpatialGrid.GetRoadPointsInZone(zone).Count == 0)
+                return;
+
+            if (s_faults.IsQuarantined(zone))
                 return;
 
             var clock = Stopwatch.StartNew();
@@ -429,7 +446,11 @@ public static class ServerTerrainBake
                $"vegetation removed from {c.VegetationZones} zones ({c.VegetationRemoved} objects); {c.Bytes / 1024} KiB written; " +
                $"{s_busyMs / 1000.0:F1} s of frame time over {s_wall.Elapsed.TotalSeconds:F1} s. " +
                $"Generated for peers: {c.GhostCreated} compilers created, {c.GhostRewritten} saved ones written, " +
-               $"{c.GhostFailed} failed ({s_ghostRepair.RepairCount} awaiting repair), {c.GhostMs:F0} ms";
+               $"{c.GhostFailed} failed ({s_ghostRepair.RepairCount} awaiting repair), {c.GhostMs:F0} ms; " +
+               $"{s_faults.Count} zone exception(s); queue " +
+               (!Enabled ? "disabled by startup setting" : s_faults.IsPaused
+                   ? $"paused ({s_faults.PauseReason}); fix the cause, then road_bake again"
+                   : s_faults.Count > 0 ? "enabled; stopped zones need road_bake again after fixing the cause" : "enabled");
     }
 
     private static void Enqueue(int version)
@@ -488,7 +509,15 @@ public static class ServerTerrainBake
             while (s_next < s_queue.Count && slice.Elapsed.TotalMilliseconds < FrameBudgetMs)
             {
                 Vector2s zone = s_queue[s_next++];
-                if (ProcessZone(zone) == Outcome.TerrainNotReady)
+                if (!s_faults.TryProcessZone(zone, () => ProcessZone(zone), s_ghostRepair,
+                        out Outcome outcome, out Exception? error))
+                {
+                    if (error != null)
+                        Log.LogError($"[BAKE] zone {zone}: stopped after an exception; other zones continue. " +
+                                     $"Fix the cause, then road_bake again: {error}");
+                    continue;
+                }
+                if (outcome == Outcome.TerrainNotReady)
                 {
                     // Asking started the build; come back to it after the rest.
                     s_queue.Add(zone);
@@ -513,7 +542,7 @@ public static class ServerTerrainBake
             {
                 s_finished = true;
                 s_wall.Stop();
-                Log.LogInfo("[BAKE] done: " + StatusLine());
+                Log.LogInfo((s_faults.Count == 0 ? "[BAKE] done: " : "[BAKE] incomplete: ") + StatusLine());
             }
         }
         else if (now >= s_nextProgress)
