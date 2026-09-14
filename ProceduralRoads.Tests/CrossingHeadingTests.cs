@@ -147,11 +147,19 @@ public class CrossingHeadingTests
             Assert.True(Mathf.Abs(heading - roadBearing) > 0.5f,
                 $"road {roadBearing:F2}, deck {heading:F2}");
 
-            // ... and the road reaches both of the bridgeheads.
-            foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
-                Assert.True(
-                    RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(bank.x, 0f, bank.y), 6f).Count > 0,
-                    $"no road within 6 m of the moved bank at ({bank.x:F2},{bank.y:F2})");
+            // ... and the road actually RUNS to both bridgeheads. A road point
+            // somewhere within 6 m of a bank says nothing about whether a cart
+            // can get there, so walk the painted road itself: flood along it
+            // from each end of the ROUTE and require the walk to arrive at the
+            // bridgehead without ever crossing the water.
+            Assert.True(PaintedRoadReaches(new Vector2(-60f, -30f), crossing.FromBank, crossing),
+                $"the painted road does not run from the start to the near bridgehead at ({crossing.FromBank.x:F2},{crossing.FromBank.y:F2})");
+            Assert.True(PaintedRoadReaches(new Vector2(60f, 30f), crossing.ToBank, crossing),
+                $"the painted road does not run from the end to the far bridgehead at ({crossing.ToBank.x:F2},{crossing.ToBank.y:F2})");
+            // A walk that can only succeed proves nothing: it must also be able
+            // to fail. There is no road out to (300, 300).
+            Assert.False(PaintedRoadReaches(new Vector2(-60f, -30f), new Vector2(300f, 300f), crossing),
+                "the connectivity walk reached open country, so it cannot tell connected from not");
         }
         finally { TearDownGeneration(); }
     }
@@ -190,6 +198,76 @@ public class CrossingHeadingTests
             Assert.True(Mathf.Min(off, 45f - off) < 0.01f,
                 $"the accepted jump runs at {bearing:F3} deg, which is not a multiple of 45");
         }
+    }
+
+    /// <summary>
+    /// Whether the PAINTED road connects one point to another on land: a
+    /// breadth-first walk over 2 m steps, each of which must have road under
+    /// it, and none of which may be over the crossing's own water. Proximity
+    /// to a road point is not connection -- a road that stops 5 m short of a
+    /// bridgehead has a point within 6 m of it and no way to reach it.
+    /// </summary>
+    private static bool PaintedRoadReaches(Vector2 start, Vector2 goal, RoadCrossing crossing)
+    {
+        const float Step = 2f;
+        bool OnRoad(Vector2 p) =>
+            RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(p.x, 0f, p.y), Step).Count > 0;
+        bool OverTheWater(Vector2 p)
+        {
+            float along = crossing.Along(p);
+            return along > 1f && along < crossing.Width - 1f
+                   && Mathf.Abs(Vector2.Dot(p - crossing.FromBank, new Vector2(-crossing.Direction.y, crossing.Direction.x))) < 6f;
+        }
+        (int, int) Key(Vector2 p) => (Mathf.RoundToInt(p.x / Step), Mathf.RoundToInt(p.y / Step));
+
+        var seen = new HashSet<(int, int)>();
+        var queue = new Queue<Vector2>();
+        queue.Enqueue(start);
+        seen.Add(Key(start));
+        while (queue.Count > 0)
+        {
+            Vector2 at = queue.Dequeue();
+            if (Vector2.Distance(at, goal) <= Step * 1.5f)
+                return true;
+            for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                Vector2 next = at + new Vector2(dx, dy) * Step;
+                if (seen.Count > 20000) return false;
+                if (!seen.Add(Key(next))) continue;
+                if (OverTheWater(next) || !OnRoad(next)) continue;
+                queue.Enqueue(next);
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// A crossing whose accepted line is ALREADY on the grid is left exactly
+    /// as the router priced it. Re-finding its banks to satisfy a constraint
+    /// that is already satisfied is how a 32 m jump between two 33 m banks
+    /// became a 52 m one onto a 50 m cliff (ReviewerFinalCrossingTests).
+    /// </summary>
+    [Fact]
+    public void AnAlreadyPlaceableCrossingKeepsTheExactBanksTheRouterPriced()
+    {
+        var world = new GullyWorld();
+        var router = new RoadPathfinder(world) { Bridges = true, Fords = false };
+        var path = router.FindPath(new Vector2(-60f, 0f), new Vector2(60f, 0f));   // due east: 90 deg
+        Assert.NotNull(path);
+
+        var crossing = Assert.Single(RoadCrossingDetector.Detect(path!, world, bridges: true, fords: false));
+        Assert.True(BridgeLayout.HeadingIsPlaceable(BridgeLayout.YawDegrees(crossing.Direction)));
+
+        // The banks are the water's edge on the accepted line: x = +-HalfWidth,
+        // both on the SAME row (whichever row the router chose -- A* may route
+        // a cell off the straight line, and that is its business). Nothing was
+        // re-found on another row, and the span is the channel's own width.
+        Assert.InRange(Mathf.Abs(crossing.FromBank.x), world.HalfWidth - 1.0f, world.HalfWidth + 1.0f);
+        Assert.InRange(Mathf.Abs(crossing.ToBank.x), world.HalfWidth - 1.0f, world.HalfWidth + 1.0f);
+        Assert.InRange(crossing.ToBank.y - crossing.FromBank.y, -0.01f, 0.01f);
+        Assert.InRange(crossing.Width, world.HalfWidth * 2f - 2f, world.HalfWidth * 2f + 2f);
     }
 
     [Fact]
