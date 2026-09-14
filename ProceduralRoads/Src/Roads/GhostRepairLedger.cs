@@ -181,8 +181,28 @@ public sealed class GhostRepairLedger
     /// entry vegetation's own Defer had created sat there marked as queued for
     /// the rest of the session -- so the bake never reported itself finished
     /// even though nothing was left to do.
+    ///
+    /// It retires only work that NOTHING IS STILL TRYING FOR. A zone with a
+    /// spent attempt behind it has terrain's retry scheduled in this same
+    /// entry, and removing it would cancel that retry: the zone would then be
+    /// neither held, nor given up, nor counted, and the bake would report
+    /// itself finished with the road unwritten. That is reachable -- terrain
+    /// returns Done after a NONTERMINAL failed write (a live compiler that took
+    /// nothing, terrain the game never built, an ordinary failed write), and
+    /// ProcessZone runs the vegetation pass immediately after it, so this is
+    /// called with terrain's fresh retry sitting in the entry. Which of two
+    /// concerns happens to finish second must not decide whether a road gets
+    /// written, so the refusal lives here rather than resting on the caller.
     /// </summary>
-    public void PendingWorkDone(Vector2s zone) => m_zones.Remove(zone);
+    public void PendingWorkDone(Vector2s zone)
+    {
+        // A spent attempt means terrain is coming back for this zone; only it
+        // may retire that. Vegetation's own deferral never spends one, so an
+        // entry with no failures is genuinely vegetation's to close.
+        if (m_zones.TryGetValue(zone, out Entry entry) && entry.FailedWrites > 0)
+            return;
+        m_zones.Remove(zone);
+    }
 
     /// <summary>
     /// Nothing here can finish it -- two saved compilers, say. Forget it, and
