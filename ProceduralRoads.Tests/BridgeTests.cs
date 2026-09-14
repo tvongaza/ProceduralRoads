@@ -379,9 +379,12 @@ public class BridgeTests
         // The deck stops on the span grid, never past the crossing the
         // pathfinder priced, and never more than one stair run short of the
         // far bank -- the stair crosses that remainder in a single step.
-        Assert.True(alongs[^1] <= width + 0.001f, $"width {width}: built {alongs[^1]:F3} m, past the accepted span");
-        Assert.True(width - alongs[^1] < BridgeLayout.DeckSpan,
-            $"width {width}: {width - alongs[^1]:F3} m left unbridged, more than one stair run");
+        // net48 is the mod's real target and has no index-from-end operator,
+        // so the suite cannot use one: it compiles on net10.0 and fails there.
+        float end = alongs[alongs.Length - 1];
+        Assert.True(end <= width + 0.001f, $"width {width}: built {end:F3} m, past the accepted span");
+        Assert.True(width - end < BridgeLayout.DeckSpan,
+            $"width {width}: {width - end:F3} m left unbridged, more than one stair run");
     }
 
     [Fact]
