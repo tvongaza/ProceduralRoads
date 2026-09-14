@@ -946,7 +946,18 @@ public static class RoadNetworkGenerator
         var bridgeZones = new HashSet<Vector2s>();
         bool loaded = RoadNetworkPersistence.TryLoadGlobalRoadData(m_roadStartPoints, m_roadCrossings, bridgeZones);
         if (loaded)
+        {
             BridgePlans.MarkSpawned(bridgeZones);
+            // A world whose bridges were laid out by an older build: their
+            // pieces are destroyed everywhere now, and since no zone is marked
+            // spawned, each gets the current layout when it next comes alive.
+            // Never one bridge half old, half new.
+            if (RoadNetworkPersistence.BridgeLayoutIsStale)
+            {
+                int gone = BridgePlacement.ClearSpawnedPieces();
+                Log.LogInfo($"[BRIDGES] replaced an older bridge layout: destroyed {gone} piece(s)");
+            }
+        }
         return loaded;
     }
 
