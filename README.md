@@ -7,12 +7,18 @@ A Valheim mod that generates procedural roads connecting locations across your w
 - Automatically generates roads from spawn to nearby points of interest
 - Terrain-aware pathfinding that follows natural contours
 - Configurable road width, length, and count
+- Fords and ruined wooden bridges where roads meet rivers
+- Server-side: players without the mod see and walk the same roads
 
 ## Installation
 
 1. Install [BepInEx](https://valheim.thunderstore.io/package/denikson/BepInExPack_Valheim/)
 2. Install [Jotunn](https://valheim.thunderstore.io/package/ValheimModding/Jotunn/)
 3. Drop `ProceduralRoads.dll` into `BepInEx/plugins/`
+
+On a dedicated server, install it on the server; players do not need it
+(see [Servers and players without the mod](#servers-and-players-without-the-mod)).
+Players who do install it must use the same version as the server.
 
 ## Configuration
 
@@ -116,39 +122,100 @@ the zones come alive. Player-placed repairs survive that, but they may no
 longer line up with the new layout. Back up a world before loading it with
 a build that changes the layout.
 
-The mod must be installed on the server (or the hosting player) and on
-every client, as for the roads themselves; this feature does not add a
-server-only mode.
+## Servers and players without the mod
 
-### Vegetation on the road (servers, existing worlds)
+Roads and bridges reach every player as ordinary game data, so **only the
+server needs the mod**: install it on the dedicated server, or on the
+hosting player of a listen server. A player joining with no mod at all
+sees and walks the same roads. A player who does install the mod must run
+the same version as the server; a client with a different version is
+turned away at the version check (two builds would disagree about the
+roads they write), and a client without the mod never answers that check
+and is let in.
 
-The game keeps vegetation off a road only while it generates a zone. On a world that
-already existed before its roads, the zones it had already generated keep every tree,
-rock and bush they grew — including the ones now standing in the middle of a road. A
-server running this mod clears those, once per zone for each road network.
+### What reaches a client
+
+- **Road terrain.** The server writes each road's height and paint into the
+  zone's own terrain compiler, the same saved data a player's hoe or pickaxe
+  produces. A client applies that to the terrain it generates for itself,
+  with nothing but the game.
+- **Bridges** are spawned from vanilla building pieces, which every client
+  already has.
+
+No client-side plugin, cheat, asset bundle or console command is part of
+this; the console commands below are for the operator.
+
+### When the server does the work
+
+- A zone that has not been generated yet gets its roads when the game
+  generates it, whether for the server itself or for a joining player, in
+  the same step as the vanilla terrain. Nothing is generated ahead of time:
+  the mod does not pre-generate the world.
+- A zone that was **already generated without its roads** (the world
+  existed before the mod, or before this road network) is queued when the
+  network becomes available at startup and written in small slices of each
+  frame, from the server's saved terrain data, whether or not anyone is near
+  it. Players can join and play while it runs.
+- A zone whose compiler is already stamped with the current network is left
+  alone on every later start, so a restart writes nothing twice and the
+  terrain a player has changed there since is not touched.
+- A write that fails (the zone's compiler is momentarily owned by a player
+  who is standing in it) is retried after that player moves on; after three
+  failed writes the zone is given up for the session and reported. `road_bake`
+  prints the counts: written, already current, left to generation, deferred,
+  pending, failed, and the frame time spent.
+
+### Existing worlds
+
+Roads exist only once a network has been generated for the world: a world
+that already has saved roads loads them, and a world without any generates
+them on the first start. Changing the network afterwards (`road_generate`,
+`road_regen_island`, or a build that changes what is generated) rewrites the
+road zones of the new network, which puts road terrain back over any
+terrain change a player made **on the road line** in those zones. Terrain
+changes off the road, and everything a player built, are not touched.
+`road_bake again` walks every road zone of the current network once more,
+writing only the ones not yet current.
+
+Bridges carry a layout version in the saved network (see above); on a
+dedicated server `road_bridges respawn` rebuilds the current plans into every
+planned zone the world has already generated, and zones not generated yet
+get theirs when they are. Pieces the mod spawned are tagged and only tagged
+pieces are ever removed; a bridge a player has smashed stays smashed until an
+explicit respawn or regeneration.
+
+Back up the world before installing the mod on it and before any operation
+that changes the network.
+
+### Vegetation on the road (existing worlds)
+
+The game keeps vegetation off a road only while it generates a zone. On a
+world that already existed before its roads, the zones it had already
+generated keep every tree, rock and bush they grew, including the ones now
+standing in the middle of a road. The server clears those, once per zone for
+each road network.
 
 Never removed:
 
-- anything a player built — it is not vegetation, road or no road
+- anything a player built: it is not vegetation, road or no road
 - any object carrying a creator, whoever placed it
-- any vegetation within 8 metres of something a player built, planted or wild
+- any vegetation within 8 metres of something a player built, planted or
+  wild, including across a zone border
 - saplings and other growing plants
 - anything standing inside a location's own footprint
 
-One thing **is** still removed, and is worth knowing before installing this on a
-long-played world: a fully grown tree a player planted that stands on the road line
-and more than 8 metres from anything they built. Valheim's save does not record who
-grew a tree — a planted birch and a wild one are the same object, at the same kind of
-position, with nothing to tell them apart — so it is cleared like any other tree the
-world grew there.
+One thing **is** still removed, and is worth knowing before installing this
+on a long-played world: a fully grown tree a player planted that stands on
+the road line and more than 8 metres from anything they built. The save does
+not record who grew a tree; a planted birch and a wild one are the same
+object, so it is cleared like any tree the world grew there.
 
 **To look before anything is cleared, the bake has to be off when the server
-starts.** Clearing begins on its own once the road network is available, which is
-well before anyone can type a command, and these commands only report — they do not
-pause the queue. `PROCEDURALROADS_SERVER_BAKE` is read once at startup and cached, so
-it has to be set in the environment the server launches with, not changed afterwards.
-
-On a copy of the world:
+starts.** Clearing begins on its own once the road network is available,
+well before anyone can type a command, and the commands only report; they
+do not pause the queue. `PROCEDURALROADS_SERVER_BAKE` is read once at startup,
+so it has to be set in the environment the server launches with. On a copy
+of the world:
 
 ```
 PROCEDURALROADS_SERVER_BAKE=off   # in the server's environment, before launching
@@ -156,13 +223,35 @@ road_bake vegetation              # road zones holding vegetation on the road, m
 road_bake zone [x z]              # one zone: what is in it and what would happen to it
 ```
 
-Then restart with the switch unset (the default, on) once the policy above is
-acceptable. On a server already running with the bake on, these commands report what
-is left rather than what is coming.
+Then restart with the switch unset (the default, on). With the bake off the
+server writes no road terrain and clears nothing, in generated and newly
+generating zones alike, so a preview copy is not a playable server. On a
+server already running with the bake on, these commands report what is
+left, not what is coming.
 
-This only happens on a server, only for zones generated before the road network they
-now carry, and only once per zone per network — so a tree planted after a zone has
-been cleared stays until the road network itself changes.
+### Looking at what the server did
+
+- `road_bake`: the running totals of the current network's zones (see
+  above) and what is still pending or deferred.
+- `road_bake zone [x z]`: one zone, what the server knows about it (generated
+  or not, road points, planned bridge pieces, whether its vegetation matches
+  the roads, its terrain compilers with their stamp and owner) and what it
+  would do next.
+- `road_bake server`: the server's own zone machinery, its reference position
+  and each connected player's zone.
+- `road_zone_report [x z]`: what a zone holds because of the roads, read from
+  the saved data: a fingerprint of its terrain compiler, its bridge pieces and
+  its vegetation. The same zone written by a modded client and by the server
+  reports the same thing.
+
+### Removing the mod
+
+Everything the mod writes is ordinary saved game data, and it stays: road
+terrain remains in the zones that carry it, spawned bridge pieces remain as
+building pieces, and vegetation that was cleared does not grow back. Zones
+generated after the mod is removed get no roads, so a network ends where
+generation had reached. Deleting the DLL reverts nothing; restore a backup
+from before the installation if that is what is wanted.
 
 ## API for Mod Authors
 

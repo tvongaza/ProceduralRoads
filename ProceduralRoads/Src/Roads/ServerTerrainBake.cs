@@ -183,8 +183,8 @@ public static class ServerTerrainBake
     /// road_bake server: what the SERVER's own zone machinery is doing, asked
     /// of the running game instead of inferred from the game's IL.
     ///
-    /// A recon sweep found `loaded here False` for all 49 zones within three of
-    /// the origin, which contradicted a reading of ZoneSystem.Update: it calls
+    /// A dedicated server reported `loaded here False` for all 49 zones within
+    /// three of the origin, which contradicted a reading of ZoneSystem.Update: it calls
     /// CreateLocalZones(ZNet.GetReferencePosition()), GetReferencePosition
     /// returns m_referencePosition, and ZNet's .ctor pins that at Vector3.zero
     /// while only local-player code ever moves it. Every link in that chain is
@@ -216,9 +216,8 @@ public static class ServerTerrainBake
         // listing below. Whether ANY live zone carries road points is the only
         // thing that decides whether WriteLiveCompiler can run at all --
         // ProcessTerrain returns at GetRoadPointsInZone(zone).Count == 0 before
-        // the planner is consulted -- and a reader (me) once described all 25
-        // live zones from the ten that printed. A sample cannot carry that
-        // claim, so the count is made here.
+        // the planner is consulted -- and a capped listing cannot carry that
+        // claim, so the count is made over every live zone here.
         int roadBearing = 0;
         int minX = 0, maxX = 0, minY = 0, maxY = 0;
         bool first = true;

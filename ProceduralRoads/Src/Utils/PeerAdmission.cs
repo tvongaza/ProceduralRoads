@@ -33,4 +33,12 @@ public static class PeerAdmission
     }
 
     public static bool Admits(Verdict verdict) => verdict != Verdict.VersionMismatch;
+
+    /// <summary>
+    /// The verdict for a peer whose PeerInfo has arrived, from what the server
+    /// recorded when (and if) the peer answered the version check: it is on
+    /// the validated list, on the refused list, or on neither.
+    /// </summary>
+    public static Verdict DecideFor(bool validated, bool refused) =>
+        Decide(answeredVersionCheck: validated || refused, versionMatched: validated);
 }

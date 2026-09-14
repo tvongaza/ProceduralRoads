@@ -294,8 +294,8 @@ public class ServerBakeTests
     }
 
     /// <summary>
-    /// The reviewer's sequence: three failed live writes, then the clock run
-    /// past every deadline any of them scheduled. Nothing may come back.
+    /// Three failed live writes, then the clock run past every deadline any of
+    /// them scheduled. Nothing may come back.
     /// </summary>
     [Fact]
     public void ThreeFailedLiveWritesStopForGoodEvenAfterEveryOldDeadlinePasses()
@@ -661,6 +661,26 @@ public class ServerBakeTests
         bool answered, bool matched, PeerAdmission.Verdict expected, bool admitted)
     {
         PeerAdmission.Verdict verdict = PeerAdmission.Decide(answered, matched);
+        Assert.Equal(expected, verdict);
+        Assert.Equal(admitted, PeerAdmission.Admits(verdict));
+    }
+
+    /// <summary>
+    /// What the server decides at PeerInfo from the two lists it keeps. A peer
+    /// on neither list never answered: no mod, admitted. A peer on the refused
+    /// list answered with another version and is refused HERE, not only when
+    /// its answer arrived; before this, refusal depended on the client acting
+    /// on the error it was sent, and a mismatched client that did not was let
+    /// in as if it had no mod.
+    /// </summary>
+    [Theory]
+    [InlineData(false, false, PeerAdmission.Verdict.WithoutMod, true)]
+    [InlineData(true, false, PeerAdmission.Verdict.SameVersion, true)]
+    [InlineData(false, true, PeerAdmission.Verdict.VersionMismatch, false)]
+    public void ARecordedMismatchIsRefusedWhenItsPeerInfoArrives(
+        bool validated, bool refused, PeerAdmission.Verdict expected, bool admitted)
+    {
+        PeerAdmission.Verdict verdict = PeerAdmission.DecideFor(validated, refused);
         Assert.Equal(expected, verdict);
         Assert.Equal(admitted, PeerAdmission.Admits(verdict));
     }

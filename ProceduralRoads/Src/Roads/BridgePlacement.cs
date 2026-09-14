@@ -98,9 +98,9 @@ public static class BridgePlacement
     /// destroys on the spot. Nor did the loss heal when the players came back:
     /// ZoneSystem.CreateGhostZones calls SpawnZone only for a zone that is NOT
     /// yet generated, so the hook that spawns pieces never fired again. Only a
-    /// server restart put them back, through the bake. Measured on 14 Sep 2026
-    /// with two clients standing on the bridge: 142 pieces to 0, and still 0
-    /// after both left and rejoined.
+    /// server restart put them back, through the bake. Measured with two
+    /// clients standing on the bridge: 142 pieces to 0, and still 0 after both
+    /// left and rejoined.
     /// </summary>
     private static int SpawnGhostsIntoGeneratedZones(ICollection<ZDOID>? condemned)
     {
