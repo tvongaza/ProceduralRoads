@@ -305,9 +305,9 @@ public static class RoadCrossingDetector
         //
         //   0. The bank-top climb above is an OPTIONAL adjustment and it walks
         //      the ROAD, which bends; it can turn a placeable water-edge
-        //      crossing into an unplaceable one. The water's edge is therefore
-        //      kept as a candidate, and tried before an unplaceable top-to-top
-        //      layout is retained.
+        //      crossing into an unplaceable one. So the line is turned first --
+        //      which keeps a high bridge high -- and only if that fails is the
+        //      water's edge taken instead of an unplaceable top-to-top layout.
         //   1. If the accepted line is ALREADY on the grid, leave it alone.
         //      Re-finding banks to satisfy a constraint that is already
         //      satisfied can only move a crossing the router measured -- and it
@@ -331,13 +331,44 @@ public static class RoadCrossingDetector
         {
             bool settled = false;
 
-            // (a) The bank-top climb is OPTIONAL -- "the crossing is sound
-            //     either way" -- and it walks the ROAD, which bends, so it can
-            //     turn a perfectly placeable water-edge crossing into one at
-            //     63.435 degrees that no hammer can reproduce. The line routing
-            //     actually accepted gets first refusal, and taking it re-finds
-            //     nothing: these are the banks that were priced.
-            if (BridgeLayout.HeadingIsPlaceable(BridgeLayout.YawDegrees((edgeTo - edgeFrom).normalized))
+            // (a) Turn the line this crossing actually has. A bank-top climb
+            //     that came back off the grid is usually still a good bridge --
+            //     it springs from the cliff tops instead of standing in the
+            //     gorge -- and turning it keeps that. The displacement leash
+            //     compares against the geometry the candidate is DERIVED from:
+            //     the tops when the climb happened, the water's edge otherwise.
+            //     Judging a turned top-to-top line against the water's edge
+            //     instead rejects it for the 12 m the climb deliberately walked,
+            //     and quietly demotes a high bridge to a low one.
+            Vector2 turnedFrom = edgeFrom, turnedTo = edgeTo;
+            if (SnapToPlaceableHeading(ref turnedFrom, ref turnedTo, world))
+            {
+                if (onTops)
+                    ClimbToBankTops(ref turnedFrom, ref turnedTo, world);
+                if (TurnedCrossingHoldsUp(from, to, turnedFrom, turnedTo, world,
+                        out float turnedBed, out Vector2 turnedCentre, out float turnedFairway))
+                {
+                    from = turnedFrom;
+                    to = turnedTo;
+                    // Derived from the water-edge line, and any climb on it
+                    // walked the TURNED line rather than the path, so the
+                    // tops' path interval means nothing here.
+                    fromIndex = edgeFromIndex;
+                    toIndex = edgeToIndex;
+                    riverbed = turnedBed;
+                    fairwayCenter = turnedCentre;
+                    fairwayWidth = turnedFairway;
+                    settled = true;
+                }
+            }
+
+            // (b) The turn could not save it. The bank-top climb is OPTIONAL --
+            //     "the crossing is sound either way" -- so rather than keep a
+            //     layout no hammer can reproduce, fall back to the line routing
+            //     accepted and priced. No leash here: this IS that line, and
+            //     taking it re-finds nothing.
+            if (!settled && onTops
+                && BridgeLayout.HeadingIsPlaceable(BridgeLayout.YawDegrees((edgeTo - edgeFrom).normalized))
                 && Vector2.Distance(edgeFrom, edgeTo) >= 1f)
             {
                 (float edgeBed, Vector2 edgeCentre, float edgeFairway) = Profile(edgeFrom, edgeTo, world);
@@ -351,38 +382,6 @@ public static class RoadCrossingDetector
                     fairwayCenter = edgeCentre;
                     fairwayWidth = edgeFairway;
                     settled = true;
-                }
-            }
-
-            // (b) Neither the tops nor the water's edge is on the grid: turn
-            //     the line. Everything is judged against the WATER'S EDGE,
-            //     because that is the geometry routing priced -- the tops are
-            //     an adjustment made here, afterwards, and judging a candidate
-            //     against them let a valid return to the water's edge fail the
-            //     displacement check.
-            if (!settled)
-            {
-                Vector2 turnedFrom = edgeFrom, turnedTo = edgeTo;
-                if (SnapToPlaceableHeading(ref turnedFrom, ref turnedTo, world))
-                {
-                    if (onTops)
-                        ClimbToBankTops(ref turnedFrom, ref turnedTo, world);
-                    if (TurnedCrossingHoldsUp(edgeFrom, edgeTo, turnedFrom, turnedTo, world,
-                            out float turnedBed, out Vector2 turnedCentre, out float turnedFairway))
-                    {
-                        from = turnedFrom;
-                        to = turnedTo;
-                        // This candidate grew out of the water-edge line, and
-                        // any climb on it walked the TURNED line rather than
-                        // the path, so the tops' path interval means nothing
-                        // here either.
-                        fromIndex = edgeFromIndex;
-                        toIndex = edgeToIndex;
-                        riverbed = turnedBed;
-                        fairwayCenter = turnedCentre;
-                        fairwayWidth = turnedFairway;
-                        settled = true;
-                    }
                 }
             }
 
