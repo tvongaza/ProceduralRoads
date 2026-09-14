@@ -29,15 +29,18 @@ public sealed class BridgePiece
 /// Deterministic layout of a ruined wooden bridge at a recorded crossing
 /// (bridges prototype). Pure logic; the game places the returned plan later.
 ///
-/// The bridge is a row of stations every <see cref="DeckSpan"/> metres ALONG
-/// THE DECK from bank to bank -- slope distance, so a pitched plate still
-/// meets its neighbours snap to snap. A station is a pair of poles stacked
-/// down from just under the deck until buried in the riverbed, tied by two
-/// crossbeams; the deck is two lanes of plates, left and right of the
+/// The bridge is a row of stations every <see cref="DeckSpan"/> metres from
+/// bank to bank. THE DECK IS LEVEL: a wood_floor is placed by the vanilla
+/// hammer at Quaternion.Euler(0, yaw, 0) -- yaw only, and the snap path
+/// moves the ghost, never turns it -- so a pitched plate is one no player
+/// could ever put back. The deck therefore sits at ONE height, the higher
+/// bank's (both ends already lifted to the water plus a freeboard), and the
+/// drop to the lower bank is walked off by that end's stair run, which is
+/// as many snapped steps as the bank needs. A station is a pair of poles
+/// stacked down from just under the deck until buried in the riverbed, tied
+/// by two crossbeams; the deck is two lanes of plates, left and right of the
 /// crossing line, four metres wide like the road. Plates exist only where
-/// both end stations survive and pitch to follow the deck, which grades
-/// between the two bank heights and never sits below the water plus a
-/// freeboard. Ruin is deterministic per (crossing, world seed):
+/// both end stations survive. Ruin is deterministic per (crossing, world seed):
 /// survival falls toward mid-span, piers outlive the deck, a removed
 /// station may leave a rotted stub or a toppled pole on the bed, and a
 /// navigation gap around the fairway is always left open so boats still
@@ -60,12 +63,17 @@ public static class BridgeLayout
     public const float DeckHalfWidth = 2f;    // two 2 m plates side by side: a 4 m deck, the road's width
     public const float PostSideOffset = 1.75f; // post pairs under the outer halves of the beams, never in the walkway
     public const int MaxStairSteps = 12;      // a stair marches outward until its foot is in the dirt, at most this far
+    public const float StairRun = 2f;         // one step: 2 m out, 1 m down
+    public const float StairRise = 1f;
+    public const float StairHalfRun = 1f;     // origin at the foot: its LOW snaps are this far OUTWARD
+    public const float StairHalfWidth = 1f;   // ... and this far to either side
+    public const float StairFootTolerance = 0.15f; // a foot this far above the dirt still counts as landed
 
     /// <summary>Bumped whenever the emitted geometry changes shape. Persisted
     /// with the spawned-zone record, so a world built by an older layout is
     /// recognised on load and its pieces are replaced rather than mixed with
     /// new ones (see RoadNetworkPersistence.TryLoadBridgeZones).</summary>
-    public const int LayoutVersion = 2;
+    public const int LayoutVersion = 3;
     public const float DeckFreeboard = 0.5f;  // deck at least this far above the water
     public const float PostTopBelowDeck = 0.2f;
     public const float BeamBelowDeck = 0.13f;
@@ -132,47 +140,53 @@ public static class BridgeLayout
     // ------------------------------------------------------------ geometry
 
     /// <summary>
-    /// The deck's grade: a straight line from the near bank's deck height to
-    /// the far bank's. DeckEndHeights already lifts both ends to the water
-    /// plus freeboard, and a straight line between two points above a level
-    /// stays above it, so there is no kink to handle.
+    /// The deck's single height: the higher of the two bank deck heights.
+    /// DeckEndHeights has already lifted both to the water plus a freeboard,
+    /// so the deck clears the water by construction, and the lower bank's
+    /// stair run walks off the difference.
     /// </summary>
-    public static float Grade(RoadCrossing crossing, WorldGenerator world)
+    public static float DeckHeight(RoadCrossing crossing, WorldGenerator world)
     {
         (float from, float to) = DeckEndHeights(crossing, world);
-        return crossing.Width > 0.01f ? (to - from) / crossing.Width : 0f;
+        return Mathf.Max(from, to);
+    }
+
+    /// <summary>How much bank the stairs have to absorb: the fall from the
+    /// deck to each bank. Reported by the diagnostic; the deck itself is
+    /// level, so this is a property of the CROSSING, not of the deck.</summary>
+    public static (float from, float to) BankDrop(RoadCrossing crossing, WorldGenerator world)
+    {
+        (float from, float to) = DeckEndHeights(crossing, world);
+        float deck = Mathf.Max(from, to);
+        return (deck - from, deck - to);
     }
 
     /// <summary>
-    /// Horizontal distance between stations for a deck at this grade. A
-    /// wood_floor is DeckSpan long along its own surface, so on a slope its
-    /// two ends are DeckSpan apart ALONG THE SLOPE and DeckSpan * cos(theta)
-    /// apart horizontally. Stations placed every 2 m horizontally on a graded
-    /// deck would leave each plate 2 - 2cos(theta) short of the next: 9 cm
-    /// per bay on the steepest crossing the pathfinder allows, and a player's
-    /// replacement -- which snaps to its neighbour's corner, along the slope
-    /// -- would drift off the stations by that much per bay.
+    /// Horizontal distance between stations. The deck is level, so a plate
+    /// spans exactly its own length and its corners land on its neighbours'.
+    /// (A pitched deck would need DeckSpan * cos(theta) here -- and would not
+    /// be repairable at all, since the hammer cannot pitch a floor.)
     /// </summary>
-    public static float StationSpacing(float grade) => DeckSpan / Mathf.Sqrt(1f + grade * grade);
+    public static float StationSpacing() => DeckSpan;
 
-    /// <summary>Whole spans that fit in the width at this grade, at least one.
-    /// The epsilon keeps a width that IS a whole number of spans from losing
-    /// one to float error.</summary>
-    public static int Bays(float width, float grade = 0f) =>
-        Mathf.Max(1, Mathf.FloorToInt(width / StationSpacing(grade) + 1e-3f));
+    /// <summary>Whole spans that fit in the width, at least one. The epsilon
+    /// keeps a width that IS a whole number of spans from losing one to float
+    /// error.</summary>
+    public static int Bays(float width) =>
+        Mathf.Max(1, Mathf.FloorToInt(width / StationSpacing() + 1e-3f));
 
     /// <summary>The horizontal length actually built: whole spans only, and
     /// never longer than the crossing the pathfinder accepted.</summary>
-    public static float BuiltLength(float width, float grade = 0f) => Bays(width, grade) * StationSpacing(grade);
+    public static float BuiltLength(float width) => Bays(width) * StationSpacing();
 
     /// <summary>Where the stations stand, measured horizontally along the
     /// crossing from the near bank. The remainder past the last station is
     /// under one stair run by construction; the far stair, anchored at that
     /// station, crosses it in its first step.</summary>
-    internal static float[] StationsAlong(float width, float grade = 0f)
+    internal static float[] StationsAlong(float width)
     {
-        int bays = Bays(width, grade);
-        float d = StationSpacing(grade);
+        int bays = Bays(width);
+        float d = StationSpacing();
         float[] alongs = new float[bays + 1];
         for (int i = 0; i <= bays; i++)
             alongs[i] = i * d;
@@ -340,10 +354,9 @@ public static class BridgeLayout
         Vector2 dir = crossing.Direction;
         Vector2 side = new(-dir.y, dir.x);
         float yaw = YawDegrees(dir);
-        (float deckFromH, _) = DeckEndHeights(crossing, world);
-        float grade = Grade(crossing, world);
+        float deckH = DeckHeight(crossing, world);
 
-        float[] alongs = StationsAlong(crossing.Width, grade);
+        float[] alongs = StationsAlong(crossing.Width);
         int stationCount = alongs.Length;
         // The deck ends here, a remainder short of the far bank at most. Both
         // stairs are anchored at a DECK END so their top snap meets the deck
@@ -352,14 +365,12 @@ public static class BridgeLayout
         Vector2 deckEnd = from + dir * alongs[stationCount - 1];
         bool[] stationAlive = new bool[stationCount];
         Vector2[] stationPos = new Vector2[stationCount];
-        float[] stationDeckH = new float[stationCount];
         float mid = (stationCount - 1) * 0.5f;
 
         for (int i = 0; i < stationCount; i++)
         {
             float along = alongs[i];
             stationPos[i] = from + dir * along;
-            stationDeckH[i] = deckFromH + grade * along;
 
             // The navigation gap is intentional and permanent, not ruin -- but
             // it is still a section a player may fill in, so the complete
@@ -375,7 +386,7 @@ public static class BridgeLayout
             float ground = BiomeBlendedHeight.GetBlendedHeight(stationPos[i].x, stationPos[i].y, world);
             if (stationAlive[i])
             {
-                EmitStation(pieces, world, stationPos[i], side, stationDeckH[i], yaw, r, i);
+                EmitStation(pieces, world, stationPos[i], side, deckH, yaw, r, i);
             }
             else if (ruin && !inGap && r.Roll(i, Ruin.Centre, Ruin.RoleStub) < StubChance)
             {
@@ -405,15 +416,15 @@ public static class BridgeLayout
             {
                 if (ruin && !endBay && r.Roll(i, lane, Ruin.RoleDeck) >= survival)
                     continue;
-                EmitDeck(pieces, stationPos[i], stationPos[i + 1], stationDeckH[i], stationDeckH[i + 1],
+                EmitDeck(pieces, stationPos[i], stationPos[i + 1], deckH,
                     side * (lane * LaneOffset), yaw, r.Health(i, lane, Ruin.RoleDeckHealth));
             }
         }
 
-        // Every end is a stair down from the deck edge into the bank, two
-        // abreast like the deck.
-        EmitSteps(pieces, world, from, dir, side, stationDeckH[0], r, 0);
-        EmitSteps(pieces, world, deckEnd, -dir, side, stationDeckH[stationCount - 1], r, stationCount);
+        // Every end is a stair down from the level deck into its bank, two
+        // abreast like the deck: as many steps as that bank's drop needs.
+        EmitSteps(pieces, world, from, dir, side, deckH, r, 0);
+        EmitSteps(pieces, world, deckEnd, -dir, side, deckH, r, stationCount);
 
         return pieces;
     }
@@ -434,12 +445,9 @@ public static class BridgeLayout
         Vector2 side = new(-dir.y, dir.x);
         float yaw = YawDegrees(dir);
 
-        float bankFromH = BiomeBlendedHeight.GetBlendedHeight(from.x, from.y, world);
-        float bankToH = BiomeBlendedHeight.GetBlendedHeight(to.x, to.y, world);
-        float deckH = Mathf.Max(Mathf.Max(bankFromH, bankToH) + RoadConstants.FordSpanDeckRise,
-            crossing.WaterLevel + RoadConstants.FordSpanDeckClearance);
+        float deckH = SpanDeckHeight(crossing, world);
 
-        float[] alongs = StationsAlong(crossing.Width);   // flat deck: no grade
+        float[] alongs = StationsAlong(crossing.Width);   // the deck is level
         int stationCount = alongs.Length;
         Vector2 deckEnd = from + dir * alongs[stationCount - 1];
         bool[] alive = new bool[stationCount];
@@ -460,7 +468,7 @@ public static class BridgeLayout
             {
                 if (ruin && r.Roll(i, lane, Ruin.RoleDeck) >= BankSurvival)
                     continue;
-                EmitDeck(pieces, pos[i], pos[i + 1], deckH, deckH, side * (lane * LaneOffset), yaw,
+                EmitDeck(pieces, pos[i], pos[i + 1], deckH, side * (lane * LaneOffset), yaw,
                     r.Health(i, lane, Ruin.RoleDeckHealth));
             }
         }
@@ -471,21 +479,29 @@ public static class BridgeLayout
 
     // ---------------------------------------------------------------- emit
 
+    /// <summary>A ford span's deck height: clear of the higher bank by
+    /// FordSpanDeckRise and of the water by FordSpanDeckClearance.</summary>
+    public static float SpanDeckHeight(RoadCrossing crossing, WorldGenerator world)
+    {
+        float bankFromH = BiomeBlendedHeight.GetBlendedHeight(crossing.FromBank.x, crossing.FromBank.y, world);
+        float bankToH = BiomeBlendedHeight.GetBlendedHeight(crossing.ToBank.x, crossing.ToBank.y, world);
+        return Mathf.Max(Mathf.Max(bankFromH, bankToH) + RoadConstants.FordSpanDeckRise,
+            crossing.WaterLevel + RoadConstants.FordSpanDeckClearance);
+    }
+
     /// <summary>One deck plate between two stations, offset to its lane. Its
-    /// centre is the midpoint and its pitch the grade between the stations;
-    /// because the stations are DeckSpan apart ALONG the slope, the plate's
-    /// two ends land exactly on them.</summary>
-    private static void EmitDeck(List<BridgePiece> pieces, Vector2 a, Vector2 b, float hA, float hB, Vector2 laneOffset, float yaw, float health)
+    /// centre is the midpoint and it is LEVEL -- yaw only, the one orientation
+    /// a player's hammer can reproduce -- so its two ends land on the stations
+    /// that are DeckSpan apart.</summary>
+    private static void EmitDeck(List<BridgePiece> pieces, Vector2 a, Vector2 b, float deckH, Vector2 laneOffset, float yaw, float health)
     {
         Vector2 mid2 = (a + b) * 0.5f + laneOffset;
-        float run = Vector2.Distance(a, b);
         pieces.Add(new BridgePiece
         {
             Kind = BridgePieceKind.Deck,
             Prefab = DeckPrefab,
-            Position = new Vector3(mid2.x, (hA + hB) * 0.5f, mid2.y),
+            Position = new Vector3(mid2.x, deckH, mid2.y),
             YawDegrees = yaw,
-            PitchDegrees = -Mathf.Atan2(hB - hA, run) * 180f / Mathf.PI,
             HealthFraction = health,
         });
     }
@@ -493,24 +509,35 @@ public static class BridgeLayout
     /// <summary>
     /// Steps down from a deck edge into the bank, two abreast: each step's
     /// top edge meets the previous one's foot (or the deck), and the stair
-    /// marches OUTWARD until a step's foot is in the dirt -- sampled at that
-    /// step's own footprint, per lane, not at the bank point the crossing was
-    /// detected at. The far stair is anchored inward of the bank by the
-    /// remainder, so the ground under it is not the ground at the bank; the
-    /// old fixed count from the bank height could stop a step early with its
-    /// foot in the air. A step whose foot is above the ground gets a post
-    /// under it, so every step is grounded by construction.
+    /// marches OUTWARD until its FOOT EDGE is in the dirt.
+    ///
+    /// The foot edge -- the part a walker steps off onto -- is StairHalfRun
+    /// outward of the step's origin and spans StairHalfWidth to either side,
+    /// so it is not where the origin is. Sampling the origin ended a run with
+    /// its centre on a shelf and its exit edge a metre in the air; both of a
+    /// lane's foot corners have to be grounded, and each lane is asked
+    /// separately because the bank falls away across the deck as well as
+    /// along it. A step whose own origin is above the ground gets a post
+    /// under it, so every step is carried by construction.
+    ///
+    /// Returns whether the run LANDED. It may not: MaxStairSteps of 2 m out
+    /// and 1 m down cannot follow ground that falls faster than 1 in 2. The
+    /// steps emitted in that case are still each supported to the ground --
+    /// nothing floats -- but the walk stops above the dirt, and the caller
+    /// is told so rather than the comment claiming every run reaches it.
     /// </summary>
-    private static void EmitSteps(List<BridgePiece> pieces, WorldGenerator world,
+    private static bool EmitSteps(List<BridgePiece> pieces, WorldGenerator world,
         Vector2 anchor, Vector2 inward, Vector2 side, float deckH, Ruin r, int bayKey)
     {
         float stepYaw = YawDegrees(inward) + 180f; // the stair prefab rises toward local -z
         float yaw = YawDegrees(inward);
-        for (int k = 0; k < MaxStairSteps; k++)
+        Vector2 outward = -inward;
+        bool landed = false;
+        for (int k = 0; k < MaxStairSteps && !landed; k++)
         {
-            Vector2 c = anchor - inward * (1f + k * 2f);
-            float foot = deckH - 1f - k * 1f;
-            bool grounded = true;
+            Vector2 c = anchor - inward * (StairHalfRun + k * StairRun);
+            float foot = deckH - StairRise - k * StairRise;
+            bool bothLanded = true;
             foreach (int lane in new[] { Ruin.Left, Ruin.Right })
             {
                 Vector2 p = c + side * (lane * LaneOffset);
@@ -523,16 +550,57 @@ public static class BridgeLayout
                     YawDegrees = stepYaw,
                     HealthFraction = health,
                 });
-                float ground = BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
-                if (foot > ground + 0.15f)
-                {
-                    EmitColumn(pieces, p, ground, foot, yaw, health);
-                    grounded = false;
-                }
+                // Two separate questions. Is the step itself carried? (if not,
+                // a post carries it.) And has the run ARRIVED -- is the edge a
+                // walker steps off onto in the dirt? A run ends only when both
+                // are true of both lanes: the old rule asked the first alone
+                // and stopped with the exit edge in the air.
+                float under = BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
+                bool centreGrounded = foot <= under + StairFootTolerance;
+                if (!centreGrounded)
+                    EmitColumn(pieces, p, under, foot, yaw, health);
+                if (!centreGrounded || !FootEdgeIsGrounded(world, p, outward, side, foot))
+                    bothLanded = false;
             }
-            if (grounded)
-                break;
+            landed = bothLanded;
         }
+        return landed;
+    }
+
+    /// <summary>Both corners of one step's foot edge, in the dirt.</summary>
+    private static bool FootEdgeIsGrounded(WorldGenerator world, Vector2 stepPos, Vector2 outward, Vector2 side, float foot)
+    {
+        foreach (float lat in new[] { -StairHalfWidth, StairHalfWidth })
+        {
+            Vector2 corner = stepPos + outward * StairHalfRun + side * lat;
+            if (foot > BiomeBlendedHeight.GetBlendedHeight(corner.x, corner.y, world) + StairFootTolerance)
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Whether each of a crossing's two stair runs reaches the dirt, near end
+    /// first. The answer is geometry, not ruin -- a missing step is a repair,
+    /// a run that never lands is a crossing this layout cannot walk off --
+    /// so the diagnostic reports it apart from the missing pieces.
+    /// </summary>
+    public static (bool near, bool far) StairRunsLand(RoadCrossing crossing, WorldGenerator world)
+    {
+        if (crossing == null || world == null || crossing.Width < DeckSpan)
+            return (true, true);
+        bool span = crossing.Kind == CrossingKind.Ford && crossing.Style == FordStyle.Span;
+        if (crossing.Kind == CrossingKind.Ford && !span)
+            return (true, true);   // a wading or raised ford is road, not pieces
+
+        Vector2 dir = crossing.Direction;
+        Vector2 side = new(-dir.y, dir.x);
+        float deckH = span ? SpanDeckHeight(crossing, world) : DeckHeight(crossing, world);
+        Vector2 deckEnd = crossing.FromBank + dir * BuiltLength(crossing.Width);
+        Ruin r = new(0, crossing);   // ruin sets health, never a position
+        List<BridgePiece> scratch = new();
+        return (EmitSteps(scratch, world, crossing.FromBank, dir, side, deckH, r, 0),
+                EmitSteps(scratch, world, deckEnd, -dir, side, deckH, r, 1));
     }
 
     /// <summary>One surviving station: two post pairs stacked down into the
