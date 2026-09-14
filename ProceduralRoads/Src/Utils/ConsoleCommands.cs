@@ -35,7 +35,7 @@ public static class ConsoleCommands
 
         new Terminal.ConsoleCommand(
             "road_bake",
-            "Road terrain the server writes for players without the mod: what it has written so far; road_bake again to go over every road zone of the current network once more (zones already carrying it are left alone); road_bake zone [x z] for what the server knows and would do about one zone (default: where you stand); road_bake server for the server's own zone machinery -- reference position, live zone count, and each peer's zone.",
+            "Road terrain the server writes for players without the mod: what it has written so far; road_bake again to go over every road zone of the current network once more (zones already carrying it are left alone); road_bake zone [x z] for what the server knows and would do about one zone (default: where you stand); road_bake vegetation for the road zones still holding vegetation on the road, most first; road_bake find [x z [radius]] for road zones not generated yet near a point; road_bake server for the server's own zone machinery -- reference position, live zone count, and each peer's zone.",
             (args) =>
             {
                 if (args.Length > 1 && args[1] == "zone")
