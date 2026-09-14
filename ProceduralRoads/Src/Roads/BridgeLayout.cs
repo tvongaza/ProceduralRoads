@@ -90,7 +90,7 @@ public static class BridgeLayout
     public const float FairwayClearance = 1f;
 
     /// <summary>A crossing shares a site only when its banks lie within this
-    /// distance of the site's: a deck is 2 m wide, so anything further off
+    /// distance of the site's: a lane is 2 m wide, so anything further off
     /// would leave a road pointing at water. Crossings that were snapped onto
     /// a site (RoadNetworkGenerator) have identical banks.</summary>
     public const float SameSiteRadius = 0.5f;
