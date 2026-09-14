@@ -345,6 +345,71 @@ public class BridgeTests
             "Different seeds should ruin the bridge differently");
     }
 
+    [Theory]
+    [InlineData(80f)]      // a whole number of spans: nothing to trim
+    [InlineData(80.05f)]   // the bank falls 5 cm past a station
+    [InlineData(80.6f)]    // and 60 cm past one
+    [InlineData(81.5f)]    // far enough past to be a station in its own right
+    [InlineData(2f)]       // one bay
+    [InlineData(2.05f)]    // one bay and a stub
+    public void NoTwoStationsStandInsideEachOther(float width)
+    {
+        float[] alongs = BridgeLayout.StationsAlong(width);
+
+        Assert.Equal(0f, alongs[0]);
+        for (int i = 0; i + 1 < alongs.Length; i++)
+        {
+            float bay = alongs[i + 1] - alongs[i];
+            Assert.True(bay >= BridgeLayout.DeckSpan * 0.5f,
+                $"width {width}: bay {i} is {bay:F3} m, so two stations stand inside each other " +
+                $"and EmitDeck lays a {BridgeLayout.DeckSpan} m plate across it");
+            Assert.True(bay <= BridgeLayout.DeckSpan + 0.001f,
+                $"width {width}: bay {i} is {bay:F3} m, longer than a deck plate, so the deck has a hole");
+        }
+        // The deck may stop short of the bank -- the stair covers that -- but
+        // never by more than the half span that was trimmed.
+        Assert.InRange(alongs[^1], width - BridgeLayout.DeckSpan * 0.5f, width);
+    }
+
+    [Fact]
+    public void AWidthOfWholeSpansIsLaidOutExactlyAsBefore()
+    {
+        // The trim must not touch the common case: this is the layout every
+        // in-game bridge measurement to date was taken against.
+        foreach (float width in new[] { 8f, 14f, 40f, 64f, 80f })
+        {
+            float[] alongs = BridgeLayout.StationsAlong(width);
+            Assert.Equal(Mathf.CeilToInt(width / BridgeLayout.DeckSpan) + 1, alongs.Length);
+            for (int i = 0; i < alongs.Length; i++)
+                Assert.Equal(i * BridgeLayout.DeckSpan, alongs[i], 3);
+        }
+    }
+
+    [Fact]
+    public void TheFarBankStationIsNotDoubledInAPlan()
+    {
+        // The same defect seen in game, measured the way the two-client census
+        // measured it: two beams at one place. 80.05 m is the width that put
+        // four posts and two crossbeams inside each other on the bank.
+        var world = new WideRiverWorld();
+        foreach (float width in new[] { 80f, 80.05f, 80.6f, 79.3f })
+        {
+            float half = width / 2f;
+            var crossing = RoadCrossing.Between(
+                new Vector2(-half, 0f), new Vector2(half, 0f), 26f, new Vector2(0f, 0f), 60f,
+                CrossingKind.Bridge);
+            var beams = BridgeLayout.Solve(crossing, world, 4242)
+                .Where(p => p.Kind == BridgePieceKind.Beam)
+                .OrderBy(p => p.Position.x).ToList();
+            for (int i = 0; i + 1 < beams.Count; i++)
+            {
+                float gap = Vector3.Distance(beams[i].Position, beams[i + 1].Position);
+                Assert.True(gap >= BridgeLayout.DeckSpan * 0.5f,
+                    $"width {width}: two crossbeams {gap:F3} m apart at x={beams[i].Position.x:F2}");
+            }
+        }
+    }
+
     [Fact]
     public void TheNavigationGapIsLeftOpen()
     {
