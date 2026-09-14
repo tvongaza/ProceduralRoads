@@ -366,9 +366,12 @@ public class BridgeTests
             Assert.True(bay <= BridgeLayout.DeckSpan + 0.001f,
                 $"width {width}: bay {i} is {bay:F3} m, longer than a deck plate, so the deck has a hole");
         }
-        // The deck may stop short of the bank -- the stair covers that -- but
-        // never by more than the half span that was trimmed.
-        Assert.InRange(alongs[^1], width - BridgeLayout.DeckSpan * 0.5f, width);
+        // The deck stops on the span grid, never past the crossing the
+        // pathfinder priced, and never more than one stair run short of the
+        // far bank -- the stair crosses that remainder in a single step.
+        Assert.True(alongs[^1] <= width + 0.001f, $"width {width}: built {alongs[^1]:F3} m, past the accepted span");
+        Assert.True(width - alongs[^1] < BridgeLayout.DeckSpan,
+            $"width {width}: {width - alongs[^1]:F3} m left unbridged, more than one stair run");
     }
 
     [Fact]
@@ -453,13 +456,17 @@ public class BridgeTests
             Assert.InRange(deck.Position.y, Mathf.Lerp(fromH, toH, t) - 0.3f, Mathf.Lerp(fromH, toH, t) + 0.3f);
         }
 
-        // The bank stations stand on the banks themselves, and each end is a
-        // stair down from the deck edge into the bank: its top meets the
-        // deck, its foot is in the dirt.
-        foreach ((Vector2 bank, float deckH) in new[] { (crossing.FromBank, fromH), (crossing.ToBank, toH) })
+        // Each END OF DECK carries a station, and is met by a stair down into
+        // the bank: the stair's top meets the deck, its foot is in the dirt.
+        // The far end of the deck is the last whole span, which is at or just
+        // inside the far bank -- the stair crosses the remainder. Asking for a
+        // beam AT the far bank instead is what the old clamped layout gave, at
+        // the price of stacking two stations there.
+        Vector2 deckEnd = crossing.FromBank + crossing.Direction * BridgeLayout.BuiltLength(crossing.Width);
+        foreach ((Vector2 end, float deckH) in new[] { (crossing.FromBank, fromH), (deckEnd, toH) })
         {
-            Assert.Contains(plan, p => p.Kind == BridgePieceKind.Beam && Vector2.Distance(new Vector2(p.Position.x, p.Position.z), bank) < 0.1f);
-            var stairs = plan.Where(p => p.Kind == BridgePieceKind.Stair && Vector2.Distance(new Vector2(p.Position.x, p.Position.z), bank) < 2.5f).ToList();
+            Assert.Contains(plan, p => p.Kind == BridgePieceKind.Beam && Vector2.Distance(new Vector2(p.Position.x, p.Position.z), end) < 0.1f);
+            var stairs = plan.Where(p => p.Kind == BridgePieceKind.Stair && Vector2.Distance(new Vector2(p.Position.x, p.Position.z), end) < 2.5f).ToList();
             Assert.NotEmpty(stairs);
             var top = stairs.OrderByDescending(st => st.Position.y).First();
             Assert.InRange(top.Position.y + 1f, deckH - 0.05f, deckH + 0.05f);
