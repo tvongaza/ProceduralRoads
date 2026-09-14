@@ -108,4 +108,26 @@ public class DebugSwitchTests : IDisposable
         Set(value);
         Assert.Equal(4, DebugSwitches.Count("A_TEST_SWITCH", 4));
     }
+
+    [Theory]
+    [InlineData("5,-90", true, 5, -90)]
+    [InlineData(" 12 , 3 ", true, 12, 3)]
+    [InlineData("", false, 0, 0)]
+    [InlineData("5", false, 0, 0)]
+    [InlineData("a,b", false, 0, 0)]
+    public void AZoneSwitchReadsExactlyOnePairOfIndices(string value, bool set, int x, int z)
+    {
+        Environment.SetEnvironmentVariable("PROCEDURALROADS_ZONE_TEST", value);
+        try
+        {
+            bool got = DebugSwitches.Zone("ZONE_TEST", out int gx, out int gz);
+            Assert.Equal(set, got);
+            Assert.Equal(x, gx);
+            Assert.Equal(z, gz);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PROCEDURALROADS_ZONE_TEST", null);
+        }
+    }
 }

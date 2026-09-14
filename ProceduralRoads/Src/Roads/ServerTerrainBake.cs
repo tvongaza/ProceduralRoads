@@ -77,6 +77,29 @@ public static class ServerTerrainBake
     private static int s_ghostWritesFailed;
     private static int s_zoneWritesFailed;
 
+    /// <summary>
+    /// Validation switch: PROCEDURALROADS_FAULT_ZONE_ONCE=x,z throws an
+    /// exception the FIRST time that zone's queued work runs, and never again,
+    /// to prove in a running game that an exception stops one zone, that the
+    /// rest of the queue and generation-time writes carry on, and that
+    /// road_bake again brings the zone back. Unset by default.
+    /// </summary>
+    private static bool? s_faultZoneOnceSet;
+    private static Vector2s s_faultZoneOnce;
+    private static bool s_faultZoneOnceFired;
+    private static bool FaultZoneOnce(Vector2s zone)
+    {
+        if (s_faultZoneOnceSet == null)
+        {
+            s_faultZoneOnceSet = DebugSwitches.Zone("FAULT_ZONE_ONCE", out int x, out int z);
+            s_faultZoneOnce = new Vector2s((short)x, (short)z);
+        }
+        if (s_faultZoneOnceSet != true || s_faultZoneOnceFired || !zone.Equals(s_faultZoneOnce))
+            return false;
+        s_faultZoneOnceFired = true;
+        return true;
+    }
+
     private static int s_version;
     private static readonly List<Vector2s> s_queue = new();
     private static int s_next;
@@ -566,6 +589,8 @@ public static class ServerTerrainBake
 
     private static Outcome ProcessZone(Vector2s zone)
     {
+        if (FaultZoneOnce(zone))
+            throw new InvalidOperationException($"thrown ON PURPOSE in zone {zone} (PROCEDURALROADS_FAULT_ZONE_ONCE)");
         ZoneSystem zs = ZoneSystem.instance;
         bool generated = zs.IsZoneGenerated(zone);
         bool loadedHere = zs.m_zones.ContainsKey(zone);
