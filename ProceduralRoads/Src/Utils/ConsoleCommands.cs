@@ -705,6 +705,15 @@ public static class ConsoleCommands
         if (!nearLands || !farLands)
             args.Context.AddString($"STAIRS UNLANDED: near={(nearLands ? "ok" : "above ground")} far={(farLands ? "ok" : "above ground")} " +
                 $"-- the bank falls faster than {BridgeLayout.MaxStairSteps} steps of 1 in 2 can follow.");
+        // A site with no turnable line keeps the bearing the router priced --
+        // better an off-grid bridge than a road over open water -- but then
+        // NONE of its pieces can be replaced by an ordinary hammer, which is
+        // exactly what this command is for. Say so before listing them.
+        float siteHeading = BridgeLayout.YawDegrees(site.Direction);
+        if (!BridgeLayout.HeadingIsPlaceable(siteHeading))
+            args.Context.AddString($"HEADING NOT PLACEABLE: this crossing stands at {siteHeading:F2} deg, and the vanilla hammer " +
+                $"turns only in {BridgeLayout.PlaceableHeadingStep} deg steps. No admissible line reached land on both banks here, " +
+                "so the crossing kept the bearing the router priced. The pieces below are NOT hand-replaceable at this site.");
         int gap = 0, ruined = 0;
         List<string> lines = new();
         foreach (BridgePiece piece in complete)
