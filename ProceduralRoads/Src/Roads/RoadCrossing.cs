@@ -211,6 +211,11 @@ public static class RoadCrossingDetector
         // runs down to the water's edge and the crossing lies on the road.
         Vector2 from = Shore(a, b, world);
         Vector2 to = Shore(b, a, world);
+        // The water's edge is kept: turning the crossing onto a placeable
+        // heading starts from the edge line, and the climb to the bank tops is
+        // then redone along the turned line rather than lost.
+        Vector2 edgeFrom = from, edgeTo = to;
+        bool onTops = false;
 
         // High bridge: when the road climbs a cliff on both sides of the
         // water, the deck springs from the bank tops instead of the water's
@@ -239,6 +244,7 @@ public static class RoadCrossingDetector
                 to = topTo;
                 fromIndex = topFromIndex;
                 toIndex = topToIndex;
+                onTops = true;
             }
         }
 
@@ -246,8 +252,6 @@ public static class RoadCrossingDetector
         if (width < 1f)
             return null;
 
-        Vector2 direction = to - from;
-        direction.Normalize();
         (float riverbed, Vector2 fairwayCenter, float fairwayWidth) = Profile(from, to, world);
 
         // A crossing needs water under it; a dry river valley is ordinary road.
@@ -285,10 +289,46 @@ public static class RoadCrossingDetector
             if (bridges && width >= RoadConstants.FordSpanMinWidth) eligible.Add(FordStyle.Span);
             style = PickFordStyle(eligible, SiteHash(center));
         }
-        else if (swamp)
+
+        // A crossing that carries PIECES is laid out on a heading the vanilla
+        // hammer can produce, not on the road's own bearing: the ghost turns
+        // in BridgeLayout.PlaceableHeadingStep steps and nothing between, so a
+        // deck on any other line is one no player can ever repair. Turning the
+        // line walks its bridgeheads along the shore -- up to half the span
+        // times sin(11.25 deg) -- and the road simply bends to meet them (the
+        // painter joins path[FromIndex] to FromBank and resumes at ToBank), but
+        // a site where no admissible line reaches land on both banks inside the
+        // bridge cap is NOT a crossing, and the router routes elsewhere. That
+        // is the cost of the constraint and it is paid here, in planning,
+        // rather than by shipping bridges nobody can put back.
+        //
+        // Wading and raising fords are terrain, not pieces: they keep the
+        // road's own line.
+        if (!ford || style == FordStyle.Span)
+        {
+            // Turn the WATER'S EDGE line: the tops were found by walking the
+            // road, which no longer runs where the deck does.
+            if (!SnapToPlaceableHeading(ref edgeFrom, ref edgeTo, world))
+                return null;
+            from = edgeFrom;
+            to = edgeTo;
+            // A cliff on both sides is still a cliff after the turn, so a
+            // crossing that sprang from the bank tops climbs to them again --
+            // along the turned line, which keeps the heading, and under the
+            // same gate. Where the turned line finds no such tops the deck
+            // springs from the water's edge, which is sound either way.
+            if (onTops)
+                ClimbToBankTops(ref from, ref to, world);
+            (riverbed, fairwayCenter, fairwayWidth) = Profile(from, to, world);
+            if (riverbed >= RoadConstants.SeaLevel)
+                return null;   // the turned line no longer has water under it
+        }
+
+        if (!ford && swamp)
         {
             // The profile keeps its riverbed and fairway: the added deck is
-            // over the shelf, which is shallower than both.
+            // over the shelf, which is shallower than both. The extension runs
+            // along the line, so the heading survives it.
             (from, to) = ExtendOverSwampShelf(from, to, world);
         }
 
@@ -445,6 +485,100 @@ public static class RoadCrossingDetector
     /// same geometry, and the side that can still choose a different route is
     /// the one that has to see it first.
     /// </summary>
+    /// <summary>
+    /// Turn a crossing onto the nearest admissible heading and find its banks
+    /// there: from the crossing's centre, which is over water, walk outward
+    /// along the line until the ground is land on both sides. The nearest line
+    /// that reaches land on both banks within the bridge cap wins; if none
+    /// does, this is not a crossing.
+    /// </summary>
+    private static bool SnapToPlaceableHeading(ref Vector2 from, ref Vector2 to, WorldGenerator world)
+    {
+        float cap = RoadConstants.MaxBridgeCrossingCells * RoadPathfinder.CellSize;
+        Vector2 centre = (from + to) * 0.5f;
+        float bearing = BridgeLayout.YawDegrees((to - from).normalized);
+
+        foreach (float heading in BridgeLayout.NearestPlaceableHeadings(bearing))
+        {
+            Vector2 d = BridgeLayout.HeadingDirection(heading);
+            if (!BankOutward(centre, d, world, cap, out Vector2 far)) continue;
+            if (!BankOutward(centre, -d, world, cap, out Vector2 near)) continue;
+            if (Vector2.Distance(near, far) > cap) continue;
+
+            // Keep the crossing pointing the way the road was going, so
+            // FromBank stays the bank the road arrives at.
+            bool flipped = Vector2.Dot(far - near, to - from) < 0f;
+            from = flipped ? far : near;
+            to = flipped ? near : far;
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Spring the deck from the bank tops instead of the water's edge, along
+    /// the crossing's own line: the same gate as the path-walking version --
+    /// the road stands HighBankRise above both banks, the tops are level
+    /// enough for one deck, and the result still fits the bridge cap.
+    /// </summary>
+    private static void ClimbToBankTops(ref Vector2 from, ref Vector2 to, WorldGenerator world)
+    {
+        Vector2 d = (to - from).normalized;
+        float fromH = BiomeBlendedHeight.GetBlendedHeight(from.x, from.y, world);
+        float toH = BiomeBlendedHeight.GetBlendedHeight(to.x, to.y, world);
+        (Vector2 topFrom, float topFromH) = HighestAlong(from, -d, world);
+        (Vector2 topTo, float topToH) = HighestAlong(to, d, world);
+        float cap = RoadConstants.MaxBridgeCrossingCells * RoadPathfinder.CellSize;
+        if (topFromH >= fromH + RoadConstants.HighBankRise && topToH >= toH + RoadConstants.HighBankRise
+            && Mathf.Abs(topFromH - topToH) <= RoadConstants.MaxBridgeBankDelta
+            && Vector2.Distance(topFrom, topTo) <= cap)
+        {
+            from = topFrom;
+            to = topTo;
+        }
+    }
+
+    /// <summary>The highest ground within HighBankReach outward of a bank,
+    /// nearest such point first (the path version's rule, on a line).</summary>
+    private static (Vector2 top, float height) HighestAlong(Vector2 bank, Vector2 outward, WorldGenerator world)
+    {
+        List<Vector2> samples = new() { bank };
+        for (float d = 0.5f; d <= RoadConstants.HighBankReach; d += 0.5f)
+            samples.Add(bank + outward * d);
+
+        float best = float.MinValue;
+        foreach (Vector2 p in samples)
+            best = Mathf.Max(best, BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world));
+        foreach (Vector2 p in samples)
+        {
+            float h = BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
+            if (h >= best - 0.05f)
+                return (p, h);
+        }
+        return (bank, BiomeBlendedHeight.GetBlendedHeight(bank.x, bank.y, world));
+    }
+
+    /// <summary>The first land going outward from a point over the water:
+    /// road ground that is still road ground 1 m and 2 m further on, so a
+    /// sandbar mid-channel is not mistaken for a bank (the mirror of the
+    /// pothole rule in <see cref="Shore"/>).</summary>
+    private static bool BankOutward(Vector2 centre, Vector2 dir, WorldGenerator world, float maxDistance, out Vector2 bank)
+    {
+        bank = centre;
+        for (float d = ShoreStep; d <= maxDistance; d += ShoreStep)
+        {
+            Vector2 p = centre + dir * d;
+            if (!IsRoadGround(p, world))
+                continue;
+            if (IsRoadGround(p + dir * 1f, world) && IsRoadGround(p + dir * 2f, world))
+            {
+                bank = p;
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static (Vector2 from, Vector2 to) ExtendOverSwampShelf(Vector2 from, Vector2 to, WorldGenerator world)
     {
         Vector2 direction = (to - from).normalized;

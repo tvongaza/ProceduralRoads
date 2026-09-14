@@ -143,11 +143,14 @@ public class BridgeRepairabilityTests
     public void ACompletedFordSpanIsOneContinuousAlignedWalk(float width) =>
         AssertRepairable(Crossing(width, kind: CrossingKind.Ford, style: FordStyle.Span));
 
+    // The sixteen headings a crossing that carries pieces may stand on
+    // (RoadCrossing.Build turns it onto one); an off-grid bearing is not a
+    // case the layout has to serve, because no such crossing is built.
     [Theory]
     [InlineData(0f)]
-    [InlineData(37f)]
+    [InlineData(22.5f)]
     [InlineData(90f)]
-    [InlineData(214.5f)]
+    [InlineData(202.5f)]
     public void ARotatedCrossingIsLaidOutTheSameWay(float heading) =>
         AssertRepairable(Crossing(77.51f, headingDegrees: heading));
 
@@ -246,6 +249,9 @@ public class BridgeRepairabilityTests
                 $"{piece.Prefab} at along {AlongOf(crossing, piece.Position):F2} is pitched {piece.PitchDegrees:F3} deg; the hammer places level");
             Assert.True(Mathf.Abs(piece.RollDegrees) < 1e-4f,
                 $"{piece.Prefab} at along {AlongOf(crossing, piece.Position):F2} is rolled {piece.RollDegrees:F3} deg; the hammer places level");
+            // ... and on one of the sixteen headings it can turn to.
+            Assert.True(BridgeLayout.HeadingIsPlaceable(piece.YawDegrees, 0.06f),
+                $"{piece.Prefab} at along {AlongOf(crossing, piece.Position):F2} stands at yaw {piece.YawDegrees:F2}, which is not a multiple of {BridgeLayout.PlaceableHeadingStep}");
         }
 
         // 1. Never longer than the crossing the pathfinder priced, and never

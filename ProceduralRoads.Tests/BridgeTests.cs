@@ -224,8 +224,17 @@ public class BridgeTests
         Assert.Equal(RoadConstants.SeaLevel, crossing.WaterLevel);
         Assert.InRange(crossing.Direction.magnitude, 0.99f, 1.01f);
 
-        // The banks lie on the road: on the jump segment, or on the approach
-        // where the deck springs from a bank top.
+        // The crossing stands on a heading the vanilla hammer can build on,
+        // not on the road's own bearing.
+        Assert.True(BridgeLayout.HeadingIsPlaceable(BridgeLayout.YawDegrees(crossing.Direction)),
+            $"heading {BridgeLayout.YawDegrees(crossing.Direction):F2} is not a multiple of {BridgeLayout.PlaceableHeadingStep}");
+
+        // So the banks no longer lie ON the road: turning the line walks each
+        // bridgehead along the shore, and the painter bends the road out to
+        // meet it. A rigid turn moves a bridgehead half the span times
+        // sin(half a step); the banks are re-found on the turned line, so the
+        // shore's own shape can add to that.
+        float rigidTurn = crossing.Width * 0.5f * Mathf.Sin(BridgeLayout.PlaceableHeadingStep * 0.5f * Mathf.PI / 180f);
         foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
         {
             float nearest = float.MaxValue;
@@ -237,7 +246,8 @@ public class BridgeTests
                 float t = Mathf.Clamp01(Vector2.Dot(bank - a, b - a) / (len * len));
                 nearest = Mathf.Min(nearest, Vector2.Distance(bank, Vector2.Lerp(a, b, t)));
             }
-            Assert.True(nearest < 0.1f, $"Bank {bank} is {nearest:F2} m off the road");
+            Assert.True(nearest <= rigidTurn + 1.5f,
+                $"Bank {bank} is {nearest:F2} m off the road; a {crossing.Width:F1} m crossing turned onto a placeable heading allows {rigidTurn:F2} m");
         }
 
         var again = RoadCrossingDetector.Detect(new List<Vector2>(path), world, true);
