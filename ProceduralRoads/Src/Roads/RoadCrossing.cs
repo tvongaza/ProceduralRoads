@@ -281,47 +281,72 @@ public static class RoadCrossingDetector
         if (!ford && !bridges)
             return null;
         FordStyle style = FordStyle.None;
+        List<FordStyle> eligible = new();
         if (ford)
         {
             float depth = RoadConstants.SeaLevel - riverbed;
-            List<FordStyle> eligible = new() { FordStyle.Raise };
+            eligible.Add(FordStyle.Raise);
             if (swamp || depth <= RoadConstants.FordWadeMaxDepth) eligible.Add(FordStyle.Wade);
             if (bridges && width >= RoadConstants.FordSpanMinWidth) eligible.Add(FordStyle.Span);
             style = PickFordStyle(eligible, SiteHash(center));
         }
 
         // A crossing that carries PIECES is laid out on a heading the vanilla
-        // hammer can produce, not on the road's own bearing: the ghost turns
-        // in BridgeLayout.PlaceableHeadingStep steps and nothing between, so a
-        // deck on any other line is one no player can ever repair. Turning the
-        // line walks its bridgeheads along the shore -- up to half the span
-        // times sin(11.25 deg) -- and the road simply bends to meet them (the
-        // painter joins path[FromIndex] to FromBank and resumes at ToBank), but
-        // a site where no admissible line reaches land on both banks inside the
-        // bridge cap is NOT a crossing, and the router routes elsewhere. That
-        // is the cost of the constraint and it is paid here, in planning,
-        // rather than by shipping bridges nobody can put back.
+        // hammer can produce, not on the road's own bearing: the ghost turns in
+        // BridgeLayout.PlaceableHeadingStep steps and nothing between, so a
+        // deck on any other line is one no player can ever repair.
+        //
+        // But the decision to cross HERE has already been made. This runs in
+        // the detector, after FindPath accepted and priced this jump, and
+        // nothing downstream re-searches: returning null does not send the
+        // router anywhere, it just omits the crossing and leaves the accepted
+        // path painted as ordinary road ACROSS THE WATER. (The pathfinder
+        // already states this rule for the swamp shelf -- decide before the
+        // span is priced, or a route is "accepted at one length and built at
+        // another" -- and turning the line broke it.) So an unturnable heading
+        // never deletes a crossing:
+        //
+        //   * a FORD drops Span from its eligible styles and wades or raises
+        //     instead. Terrain needs no placeable geometry, so nothing is lost.
+        //   * a BRIDGE keeps the line the router accepted and priced, and
+        //     stands at a heading BridgeLayout.HeadingIsPlaceable reports false
+        //     for. An off-grid bridge is worse than a turned one and far better
+        //     than a road over open water; road_bridge_repairs says so, and
+        //     says which pieces cannot be replaced by hand.
         //
         // Wading and raising fords are terrain, not pieces: they keep the
-        // road's own line.
+        // road's own line either way.
         if (!ford || style == FordStyle.Span)
         {
             // Turn the WATER'S EDGE line: the tops were found by walking the
             // road, which no longer runs where the deck does.
-            if (!SnapToPlaceableHeading(ref edgeFrom, ref edgeTo, world))
-                return null;
-            from = edgeFrom;
-            to = edgeTo;
-            // A cliff on both sides is still a cliff after the turn, so a
-            // crossing that sprang from the bank tops climbs to them again --
-            // along the turned line, which keeps the heading, and under the
-            // same gate. Where the turned line finds no such tops the deck
-            // springs from the water's edge, which is sound either way.
-            if (onTops)
-                ClimbToBankTops(ref from, ref to, world);
-            (riverbed, fairwayCenter, fairwayWidth) = Profile(from, to, world);
-            if (riverbed >= RoadConstants.SeaLevel)
-                return null;   // the turned line no longer has water under it
+            Vector2 turnedFrom = edgeFrom, turnedTo = edgeTo;
+            if (SnapToPlaceableHeading(ref turnedFrom, ref turnedTo, world))
+            {
+                // A cliff on both sides is still a cliff after the turn, so a
+                // crossing that sprang from the bank tops climbs to them again
+                // -- along the turned line, which keeps the heading, and under
+                // the same gate. Where the turned line finds no such tops the
+                // deck springs from the water's edge, which is sound either way.
+                if (onTops)
+                    ClimbToBankTops(ref turnedFrom, ref turnedTo, world);
+                (float turnedBed, Vector2 turnedCentre, float turnedFairway) = Profile(turnedFrom, turnedTo, world);
+                if (turnedBed < RoadConstants.SeaLevel)
+                {
+                    from = turnedFrom;
+                    to = turnedTo;
+                    riverbed = turnedBed;
+                    fairwayCenter = turnedCentre;
+                    fairwayWidth = turnedFairway;
+                }
+                // else: the turned line has no water under it, so it is not
+                // this crossing. Keep the one the router priced.
+            }
+            else if (ford)
+            {
+                eligible.Remove(FordStyle.Span);
+                style = PickFordStyle(eligible, SiteHash(center));
+            }
         }
 
         if (!ford && swamp)
