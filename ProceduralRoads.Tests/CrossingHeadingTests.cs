@@ -138,10 +138,10 @@ public class CrossingHeadingTests
 
             // The deck is NOT on the road's own end-to-end bearing: the road
             // runs at 63.43 deg and the crossing does not. That is a bridgehead
-            // the painter has to bend out to, whether the turn or the grid
-            // scan put it there -- and the snap's own turning is proven
-            // separately, on a hand-made path, in FordTests
-            // (PiecesStandOnAPlaceableHeading_WhileTerrainKeepsTheRoadsOwnBearing).
+            // the painter has to bend out to -- but the grid scan put it there,
+            // not the snap: this crossing is validly left at 90 degrees and
+            // must be. The turn WITH its approaches is covered by
+            // ATurnedCrossingsApproachesArePaintedToTheBanksItMovedTo.
             float roadBearing = BridgeLayout.YawDegrees(new Vector2(120f, 60f).normalized);
             Assert.False(BridgeLayout.HeadingIsPlaceable(roadBearing), "the fixture road is supposed to be off-grid");
             Assert.True(Mathf.Abs(heading - roadBearing) > 0.5f,
@@ -206,6 +206,12 @@ public class CrossingHeadingTests
     /// it, and none of which may be over the crossing's own water. Proximity
     /// to a road point is not connection -- a road that stops 5 m short of a
     /// bridgehead has a point within 6 m of it and no way to reach it.
+    ///
+    /// The claim stops at PAINTED CONNECTIVITY. It queries road points only:
+    /// not ground height, not slope, not water anywhere but the rectangle it
+    /// excludes around this crossing. Whether a cart can be pulled along what
+    /// it finds is a question for terrain-aware assertions and, in the end,
+    /// for gameplay.
     /// </summary>
     private static bool PaintedRoadReaches(Vector2 start, Vector2 goal, RoadCrossing crossing)
     {
@@ -268,6 +274,116 @@ public class CrossingHeadingTests
         Assert.InRange(Mathf.Abs(crossing.ToBank.x), world.HalfWidth - 1.0f, world.HalfWidth + 1.0f);
         Assert.InRange(crossing.ToBank.y - crossing.FromBank.y, -0.01f, 0.01f);
         Assert.InRange(crossing.Width, world.HalfWidth * 2f - 2f, world.HalfWidth * 2f + 2f);
+    }
+
+    /// <summary>
+    /// The bank-top climb walks the ROAD, so a bent approach can hand back an
+    /// unplaceable heading for a crossing whose own water line was fine. When
+    /// that happens the accepted water-edge line is taken, UNCHANGED -- these
+    /// are the banks routing priced, and nothing is re-found. (The reviewer's
+    /// ReviewOptionalBankTopTests asserts the heading; this asserts that the
+    /// banks are the accepted ones, which is why the heading is right.)
+    /// </summary>
+    [Fact]
+    public void ABentApproachFallsBackToTheAcceptedWaterEdgeBanks()
+    {
+        var world = new BentHighBanks();
+        var path = new List<Vector2>
+        {
+            new(-16f, -16f), new(-16f, -8f), new(-16f, 0f),
+            new(16f, 0f), new(16f, 8f), new(16f, 16f),
+        };
+        var crossing = Assert.Single(RoadCrossingDetector.Detect(path, world, bridges: true, fords: false));
+
+        // The water's edge on the accepted jump: |x| = 12, on the road's row.
+        Assert.InRange(crossing.FromBank.x, -12.01f, -11.99f);
+        Assert.InRange(crossing.ToBank.x, 11.99f, 12.01f);
+        Assert.InRange(crossing.FromBank.y, -0.01f, 0.01f);
+        Assert.InRange(crossing.ToBank.y, -0.01f, 0.01f);
+        Assert.True(BridgeLayout.HeadingIsPlaceable(BridgeLayout.YawDegrees(crossing.Direction)));
+        // Not the bank tops the climb reached for, which are the 63.435 degree pair.
+        Assert.True(world.GetHeight(crossing.FromBank.x, crossing.FromBank.y) < 39f,
+            "the unplaceable bank-top layout was kept after all");
+    }
+
+    /// <summary>The reviewer's fixture: equal-height dry banks at the water's
+    /// edge, higher ground along approaches that bend away from the crossing
+    /// line.</summary>
+    private sealed class BentHighBanks : WorldGenerator
+    {
+        public override float GetHeight(float x, float z) =>
+            Mathf.Abs(x) < 12f ? 26f : Mathf.Abs(z) >= 8f ? 40f : 33f;
+        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Meadows;
+        public override void GetRiverWeight(float x, float z, out float weight, out float width)
+        {
+            weight = Mathf.Abs(x) < 12f ? 1f : 0f;
+            width = 24f;
+        }
+    }
+
+    /// <summary>
+    /// The combined case the reviewer asked for: a crossing whose heading IS
+    /// changed by the snap, and then the painted approaches to the banks it
+    /// moved to.
+    ///
+    /// (The reviewer's ReviewHeadingCoverageTests is a precondition check that
+    /// the OLD fixture below exercised a changed heading. It did not, and it
+    /// should not -- its crossing is validly left at 90 degrees. That test is
+    /// not carried into the suite as a failing case; the gap it names is
+    /// filled here instead.)
+    ///
+    /// It cannot be driven through the router, and that is a fact about the
+    /// router rather than a gap in the fixture: an accepted jump runs along one
+    /// of eight unit grid directions, so its bearing is a multiple of 45
+    /// degrees and already placeable (see
+    /// ACrossingScanOnlyWalksTheEightGridDirections), and the one way a router
+    /// crossing used to come back off-grid -- the bank-top climb -- is now
+    /// resolved by preferring the water's edge, not by turning. So the path is
+    /// supplied at an off-grid bearing and painted the way the generator paints
+    /// one, which exercises the turn and the painter together.
+    /// </summary>
+    [Fact]
+    public void ATurnedCrossingsApproachesArePaintedToTheBanksItMovedTo()
+    {
+        var world = new GullyWorld();
+        WorldGenerator.instance = world;
+        RoadNetworkGenerator.Reset();
+        RoadSpatialGrid.Clear();
+        try
+        {
+            // 63.43 degrees: between two of the sixteen. The route carries a
+            // waypoint of land either side of the crossing, as a routed one
+            // does -- with the crossing at index 0 the painter has no land
+            // segment in front of it and paints no near approach at all.
+            var path = new List<Vector2>
+            {
+                new(-40f, -20f), new(-20f, -10f), new(20f, 10f), new(40f, 20f),
+            };
+            float bearing = BridgeLayout.YawDegrees((path[2] - path[1]).normalized);
+            Assert.False(BridgeLayout.HeadingIsPlaceable(bearing), $"fixture bearing {bearing:F2}");
+
+            var crossing = Assert.Single(RoadCrossingDetector.Detect(path, world, bridges: true, fords: false));
+            float heading = BridgeLayout.YawDegrees(crossing.Direction);
+
+            // PRECONDITION: this case must actually exercise a changed heading.
+            Assert.True(BridgeLayout.HeadingIsPlaceable(heading), $"final heading {heading:F3}");
+            Assert.True(Mathf.Abs(heading - bearing) > 0.5f,
+                $"fixture does not exercise a changed heading: supplied {bearing:F3} deg, final {heading:F3} deg");
+
+            // Paint it the way the generator does, then walk the painted road
+            // from each end of the supplied route to the bank it moved to.
+            typeof(RoadNetworkGenerator)
+                .GetMethod("AddRoadPathWithCrossings", BindingFlags.NonPublic | BindingFlags.Static)!
+                .Invoke(null, new object[] { path, new List<RoadCrossing> { crossing }, 4f });
+
+            Assert.True(PaintedRoadReaches(path[0], crossing.FromBank, crossing),
+                $"no painted road from {path[0]} to the moved near bank ({crossing.FromBank.x:F2},{crossing.FromBank.y:F2})");
+            Assert.True(PaintedRoadReaches(path[3], crossing.ToBank, crossing),
+                $"no painted road from {path[3]} to the moved far bank ({crossing.ToBank.x:F2},{crossing.ToBank.y:F2})");
+            Assert.False(PaintedRoadReaches(path[0], new Vector2(300f, 300f), crossing),
+                "the walk reached open country, so it cannot tell connected from not");
+        }
+        finally { TearDownGeneration(); }
     }
 
     [Fact]

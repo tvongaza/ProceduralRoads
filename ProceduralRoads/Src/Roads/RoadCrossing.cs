@@ -300,6 +300,11 @@ public static class RoadCrossingDetector
         // accepted and priced this jump, with nothing downstream that
         // re-searches:
         //
+        //   0. The bank-top climb above is an OPTIONAL adjustment and it walks
+        //      the ROAD, which bends; it can turn a placeable water-edge
+        //      crossing into an unplaceable one. The water's edge is therefore
+        //      kept as a candidate, and tried before an unplaceable top-to-top
+        //      layout is retained.
         //   1. If the accepted line is ALREADY on the grid, leave it alone.
         //      Re-finding banks to satisfy a constraint that is already
         //      satisfied can only move a crossing the router measured -- and it
@@ -321,29 +326,56 @@ public static class RoadCrossingDetector
         bool carriesPieces = !ford || style == FordStyle.Span;
         if (carriesPieces && !BridgeLayout.HeadingIsPlaceable(BridgeLayout.YawDegrees((to - from).normalized)))
         {
-            Vector2 turnedFrom = edgeFrom, turnedTo = edgeTo;
-            bool turned = SnapToPlaceableHeading(ref turnedFrom, ref turnedTo, world);
-            if (turned)
+            bool settled = false;
+
+            // (a) The bank-top climb is OPTIONAL -- "the crossing is sound
+            //     either way" -- and it walks the ROAD, which bends, so it can
+            //     turn a perfectly placeable water-edge crossing into one at
+            //     63.435 degrees that no hammer can reproduce. The line routing
+            //     actually accepted gets first refusal, and taking it re-finds
+            //     nothing: these are the banks that were priced.
+            if (BridgeLayout.HeadingIsPlaceable(BridgeLayout.YawDegrees((edgeTo - edgeFrom).normalized))
+                && Vector2.Distance(edgeFrom, edgeTo) >= 1f)
             {
-                // A cliff on both sides is still a cliff after the turn, so a
-                // crossing that sprang from the bank tops climbs to them again,
-                // along the turned line. The result is judged below like any
-                // other turned geometry -- an optional adjustment never earns
-                // the accepted crossing's price.
-                if (onTops)
-                    ClimbToBankTops(ref turnedFrom, ref turnedTo, world);
-                turned = TurnedCrossingHoldsUp(from, to, turnedFrom, turnedTo, world,
-                    out float turnedBed, out Vector2 turnedCentre, out float turnedFairway);
-                if (turned)
+                (float edgeBed, Vector2 edgeCentre, float edgeFairway) = Profile(edgeFrom, edgeTo, world);
+                if (edgeBed < RoadConstants.SeaLevel)
                 {
-                    from = turnedFrom;
-                    to = turnedTo;
-                    riverbed = turnedBed;
-                    fairwayCenter = turnedCentre;
-                    fairwayWidth = turnedFairway;
+                    from = edgeFrom;
+                    to = edgeTo;
+                    riverbed = edgeBed;
+                    fairwayCenter = edgeCentre;
+                    fairwayWidth = edgeFairway;
+                    settled = true;
                 }
             }
-            if (!turned && ford)
+
+            // (b) Neither the tops nor the water's edge is on the grid: turn
+            //     the line. Everything is judged against the WATER'S EDGE,
+            //     because that is the geometry routing priced -- the tops are
+            //     an adjustment made here, afterwards, and judging a candidate
+            //     against them let a valid return to the water's edge fail the
+            //     displacement check.
+            if (!settled)
+            {
+                Vector2 turnedFrom = edgeFrom, turnedTo = edgeTo;
+                if (SnapToPlaceableHeading(ref turnedFrom, ref turnedTo, world))
+                {
+                    if (onTops)
+                        ClimbToBankTops(ref turnedFrom, ref turnedTo, world);
+                    if (TurnedCrossingHoldsUp(edgeFrom, edgeTo, turnedFrom, turnedTo, world,
+                            out float turnedBed, out Vector2 turnedCentre, out float turnedFairway))
+                    {
+                        from = turnedFrom;
+                        to = turnedTo;
+                        riverbed = turnedBed;
+                        fairwayCenter = turnedCentre;
+                        fairwayWidth = turnedFairway;
+                        settled = true;
+                    }
+                }
+            }
+
+            if (!settled && ford)
             {
                 // A span nobody can repair is worse than a ford they can wade.
                 eligible.Remove(FordStyle.Span);
@@ -562,7 +594,10 @@ public static class RoadCrossingDetector
             return false;
         // Still the crossing the router priced: neither bridgehead has walked
         // further than the cell size the route was chosen at. Either end may
-        // pair with either, since turning can reverse the line.
+        // pair with either, since turning can reverse the line. This is a
+        // DISPLACEMENT bound and nothing more -- it says the router looked at
+        // ground this close, not that the ground between there and here can be
+        // walked.
         float leash = RoadPathfinder.CellSize;
         bool sameOrder = Vector2.Distance(acceptedFrom, turnedFrom) <= leash
             && Vector2.Distance(acceptedTo, turnedTo) <= leash;
