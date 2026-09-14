@@ -212,6 +212,40 @@ public static class ServerTerrainBake
         lines.Add($"reference position {rp.x:F1},{rp.y:F1},{rp.z:F1} -> zone {ZoneSystem.GetZone(rp)} " +
                   "(CreateLocalZones sweeps outwards from here)");
         lines.Add($"zones live on the server: {ZoneSystem.instance.m_zones.Count}");
+        // Aggregate over the WHOLE collection, separately from the capped
+        // listing below. Whether ANY live zone carries road points is the only
+        // thing that decides whether WriteLiveCompiler can run at all --
+        // ProcessTerrain returns at GetRoadPointsInZone(zone).Count == 0 before
+        // the planner is consulted -- and a reader (me) once described all 25
+        // live zones from the ten that printed. A sample cannot carry that
+        // claim, so the count is made here.
+        int roadBearing = 0;
+        int minX = 0, maxX = 0, minY = 0, maxY = 0;
+        bool first = true;
+        foreach (var kv in ZoneSystem.instance.m_zones)
+        {
+            if (RoadSpatialGrid.GetRoadPointsInZone(kv.Key).Count > 0)
+                roadBearing++;
+            int zx = kv.Key.x;
+            int zy = kv.Key.y;
+            if (first)
+            {
+                minX = maxX = zx;
+                minY = maxY = zy;
+                first = false;
+            }
+            else
+            {
+                if (zx < minX) minX = zx;
+                if (zx > maxX) maxX = zx;
+                if (zy < minY) minY = zy;
+                if (zy > maxY) maxY = zy;
+            }
+        }
+        lines.Add($"live zones carrying road points: {roadBearing} of {ZoneSystem.instance.m_zones.Count} " +
+                  "(counted over the WHOLE collection, not the sample below)");
+        if (!first)
+            lines.Add($"live zone index bounds: x {minX}..{maxX}, y {minY}..{maxY} (whole collection)");
         int shown = 0;
         foreach (var kv in ZoneSystem.instance.m_zones)
         {
