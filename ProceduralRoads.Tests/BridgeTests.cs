@@ -1170,6 +1170,16 @@ public class BridgeTests
         Assert.Equal(CrossingKind.Bridge, crossing.Kind);
         foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
             Assert.True(world.GetHeight(bank.x, bank.y) >= 35.9f, $"bank {bank} is at {world.GetHeight(bank.x, bank.y):F1}, not on the top");
+
+        // POSITIVE CONTROL for the water-edge fallback in RoadCrossing.Build.
+        // That fallback exists because the bank-top climb walks the ROAD, which
+        // bends, and can hand back a heading no hammer could turn to; when it
+        // does, the water's edge is preferred. It must not become a retreat
+        // from high bridges. Here the tops ARE placeable, so the climb stands
+        // -- asserted just above -- and the heading is on the grid.
+        float topHeading = BridgeLayout.YawDegrees(crossing.Direction);
+        Assert.True(BridgeLayout.HeadingIsPlaceable(topHeading),
+            $"the bank-top crossing stands at {topHeading:F3} deg");
         Assert.InRange(crossing.Width, 54f, 62f);
 
         var plan = BridgeLayout.Solve(crossing, world, 3);
