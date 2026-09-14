@@ -117,6 +117,39 @@ public static class BridgeLayout
                 Mathf.Max(BiomeBlendedHeight.GetBlendedHeight(crossing.ToBank.x, crossing.ToBank.y, world), minDeck));
     }
 
+    /// <summary>
+    /// Where the stations stand, measured along the crossing from the near
+    /// bank: one every <see cref="DeckSpan"/>, and one on the far bank.
+    ///
+    /// The far-bank station is only worth having when it is a station's width
+    /// away from the one before it. A width of 80.05 m used to put a station at
+    /// 80 and another at 80.05: four posts and two crossbeams standing inside
+    /// each other on the bank, plus a deck plate spanning five centimetres --
+    /// EmitDeck lays a fixed DeckSpan plate between any two stations, so a stub
+    /// bay is a plate on top of its neighbour rather than a short one.
+    ///
+    /// So a final bay shorter than half a span is dropped and the deck ends on
+    /// the span grid instead. The bank is then at most half a span beyond the
+    /// last plate, which is the stair's job and already is: EmitSteps marches
+    /// out from the BANK, not from the deck's last station.
+    ///
+    /// A width that is a whole number of spans is unchanged, which is most of
+    /// the reason this is shaped as a trim rather than as a redistribution:
+    /// every bay stays exactly DeckSpan long, the length EmitDeck assumes.
+    /// </summary>
+    internal static float[] StationsAlong(float width)
+    {
+        int bays = Mathf.Max(1, Mathf.CeilToInt(width / DeckSpan));
+        List<float> alongs = new(bays + 1);
+        for (int i = 0; i <= bays; i++)
+            alongs.Add(Mathf.Min(i * DeckSpan, width));
+
+        int last = alongs.Count - 1;
+        if (last >= 1 && alongs[last] - alongs[last - 1] < DeckSpan * 0.5f)
+            alongs.RemoveAt(last);
+        return alongs.ToArray();
+    }
+
     public static List<BridgePiece> Solve(RoadCrossing crossing, WorldGenerator world, int worldSeed)
     {
         List<BridgePiece> pieces = new();
@@ -148,7 +181,8 @@ public static class BridgeLayout
         float fairwayMid = crossing.Along(crossing.FairwayCenter);
         float fairwayHalf = FairwayGap(crossing) * 0.5f + FairwayClearance;
 
-        int stationCount = Mathf.CeilToInt(crossing.Width / DeckSpan) + 1;
+        float[] alongs = StationsAlong(crossing.Width);
+        int stationCount = alongs.Length;
         bool[] deckAlive = new bool[stationCount];
         Vector2[] stationPos = new Vector2[stationCount];
         float[] stationDeckH = new float[stationCount];
@@ -156,7 +190,7 @@ public static class BridgeLayout
 
         for (int i = 0; i < stationCount; i++)
         {
-            float along = Mathf.Min(i * DeckSpan, crossing.Width);
+            float along = alongs[i];
             stationPos[i] = from + dir * along;
             float t = crossing.Width > 0.01f ? along / crossing.Width : 0f;
             stationDeckH[i] = Mathf.Max(Mathf.Lerp(deckFromH, deckToH, t), minDeck);
