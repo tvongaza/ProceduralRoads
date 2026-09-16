@@ -393,13 +393,25 @@ public class RoadPathfinder
     private float GetMoveCost(Vector2i from, Vector2i to, int directionIndex)
     {
         float cost = GetUndiscountedMoveCost(from, to, directionIndex);
-        if (StudyFactors.ExistingRoadCostFraction >= 1f)
+        bool discounting = StudyFactors.ExistingRoadCostFraction < 1f;
+        bool penalising = StudyFactors.AdjacentRoadCostFactor > 1f;
+        if (!discounting && !penalising)
             return cost;
 
         Vector2 toWorld = GridToWorld(to);
-        return RoadSpatialGrid.HasRoadWithin(toWorld, StudyFactors.ExistingRoadReach)
-            ? cost * StudyFactors.ExistingRoadCostFraction
-            : cost;
+        if (!RoadSpatialGrid.HasRoadWithin(toWorld, StudyFactors.ExistingRoadReach))
+            return cost;
+
+        // Inside the band. Whether that is a discount or a penalty depends on
+        // whether the step is ON the road or merely beside it: the point of
+        // the penalty is to stop a route collecting a proximity reward while
+        // running a lane away, so the road itself must be exempt from it.
+        bool onRoad = RoadSpatialGrid.HasRoadWithin(toWorld, StudyFactors.OnRoadReach);
+        if (penalising && !onRoad)
+            cost *= StudyFactors.AdjacentRoadCostFactor;
+        if (discounting)
+            cost *= StudyFactors.ExistingRoadCostFraction;
+        return cost;
     }
 
     private float GetUndiscountedMoveCost(Vector2i from, Vector2i to, int directionIndex)

@@ -200,6 +200,7 @@ internal static class Generate
                 "reverse" => ConnectionPlan.ReverseToNetwork,
                 "hybrid" => ConnectionPlan.RoutedBackboneReverseBranches,
                 "mst-tee" => ConnectionPlan.RoutedMstTee,
+                "mst-reverse" => ConnectionPlan.RoutedMstReverse,
                 "race" => ConnectionPlan.CheapestOfBoth,
                 _ => throw new ArgumentException(
                     $"--plan must be parity, tree, routed-mst, mst-tee, trunk, hub, grow, reverse, hybrid or race, not '{plan}'"),
@@ -270,6 +271,14 @@ internal static class Generate
         string? reach = Options.Value(args, "--road-reach");
         if (reach != null)
             StudyFactors.ExistingRoadReach = float.Parse(reach, CultureInfo.InvariantCulture);
+
+        string? adjacent = Options.Value(args, "--road-adjacent-penalty");
+        if (adjacent != null)
+            StudyFactors.AdjacentRoadCostFactor = float.Parse(adjacent, CultureInfo.InvariantCulture);
+
+        string? onRoad = Options.Value(args, "--on-road-reach");
+        if (onRoad != null)
+            StudyFactors.OnRoadReach = float.Parse(onRoad, CultureInfo.InvariantCulture);
 
         string? filter = Options.Value(args, "--filter-endpoints");
         if (filter != null)

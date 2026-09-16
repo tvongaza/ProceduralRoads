@@ -1070,6 +1070,7 @@ public static partial class RoadNetworkGenerator
                     break;
                 case ConnectionPlan.RoutedMst:
                 case ConnectionPlan.RoutedMstTee:
+                case ConnectionPlan.RoutedMstReverse:
                     GenerateRoutedMstRoads(startPos, startRadius, roadLocations, startName);
                     break;
                 case ConnectionPlan.TrunkAndSpurs:

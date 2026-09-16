@@ -144,6 +144,22 @@ public enum ConnectionPlan
     /// </summary>
     RoutedMstTee,
 
+    /// <summary>
+    /// Study proposal: the routed tree decides WHICH place to connect next, on
+    /// measured cost; the road is then built by the destination-free search
+    /// running outward from that place, as the reverse plan does, with the
+    /// tree's own measured pair kept as the fallback.
+    ///
+    /// The two halves answer different complaints. Prim's pairing is where the
+    /// routed MST's coverage comes from. The destination-free search is why
+    /// the reverse plan has almost no road running alongside other road: it
+    /// stops at the FIRST ground it settles that already carries a road, so it
+    /// can never traverse a corridor that is already served. A fixed-target
+    /// search has no such property - running half a kilometre beside an
+    /// existing road really is the cheapest way to reach a target beyond it.
+    /// </summary>
+    RoutedMstReverse,
+
     /// <summary>Study proposal: one long road along the island's routed axis,
     /// everything else joined to the network where it is nearest.</summary>
     TrunkAndSpurs,
@@ -264,6 +280,25 @@ public static class StudyFactors
     /// this has to be a proximity, not a hit.
     /// </summary>
     public static float ExistingRoadReach = 12f;
+
+    /// <summary>
+    /// What a step that runs NEAR an existing road without joining it costs,
+    /// as a multiple of what it would otherwise cost. One is off.
+    ///
+    /// The inverse of the sharing discount, and aimed at a different thing.
+    /// A discount rewards proximity, which a route can collect while staying
+    /// a lane away - that is a road running alongside another, which is what
+    /// the discount sweep produced. A penalty on the same band, with the road
+    /// itself exempt, leaves a route two honest choices: join, or keep clear.
+    /// </summary>
+    public static float AdjacentRoadCostFactor = 1f;
+
+    /// <summary>
+    /// How near counts as ON the road rather than beside it, for
+    /// <see cref="AdjacentRoadCostFactor"/>. A road is four metres wide, so
+    /// anything inside about half that is on the paint.
+    /// </summary>
+    public static float OnRoadReach = 3f;
 
     /// <summary>PR #16: a place with no reachable ground near it is dropped
     /// before it is ever attempted.</summary>

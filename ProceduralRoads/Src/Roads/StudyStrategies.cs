@@ -160,7 +160,8 @@ public static partial class RoadNetworkGenerator
 
         Dictionary<(int, int), float> costs = RoutedCosts(nodes);
         GrowRoutedTree(nodes, costs, Enumerable.Range(1, nodes.Count - 1), "mst-edge",
-            StudyFactors.Plan == ConnectionPlan.RoutedMstTee);
+            teeToNetwork: StudyFactors.Plan == ConnectionPlan.RoutedMstTee,
+            reverseBranches: StudyFactors.Plan == ConnectionPlan.RoutedMstReverse);
     }
 
     /// <summary>
@@ -171,7 +172,7 @@ public static partial class RoadNetworkGenerator
     /// </summary>
     private static HashSet<int> GrowRoutedTree(
         List<Node> nodes, Dictionary<(int, int), float> costs, IEnumerable<int> members, string role,
-        bool teeToNetwork = false)
+        bool teeToNetwork = false, bool reverseBranches = false)
     {
         HashSet<int> inTree = new() { 0 };
         HashSet<int> remaining = new(members);
@@ -218,7 +219,39 @@ public static partial class RoadNetworkGenerator
             // terms: the pair is known routable, the junction is not, so a
             // junction that fails to route hands the edge back to the pair.
             bool built = false;
-            if (teeToNetwork)
+
+            // The destination-free branch. It stops at the first road it
+            // reaches, so unlike a fixed-target route it cannot run along a
+            // corridor that is already served. The tree's measured pair stays
+            // as the fallback below: the pair is known routable and this
+            // search is not.
+            if (reverseBranches && m_pathfinder != null && RoadRouteRecorder.Routes.Count > 0)
+            {
+                int connection = RoadAttemptLog.OpenConnection(role + "-reverse");
+                RoadAttemptLog.NextRow(role + "-reverse-search", connection);
+                PathfinderTrace? trace = RoadAttemptLog.Begin();
+                Vector2 from = new(nodes[bestTo].Position.x, nodes[bestTo].Position.z);
+                List<Vector2>? path = m_pathfinder.FindPathToNetwork(
+                    from, StudyFactors.ReverseSearchReach, NetworkHints());
+
+                if (path != null && path.Count >= 2)
+                {
+                    RoadAttemptLog.Finish(trace, $"{nodes[bestTo].Name} -> road", from, path[path.Count - 1],
+                        connected: true, "found", 0f, 0);
+                    Vector3 junction = new(path[path.Count - 1].x, 0f, path[path.Count - 1].y);
+                    RoadAttemptLog.NextRow(role + "-reverse-build", connection);
+                    built = GenerateRoad(
+                        nodes[bestTo].Position, nodes[bestTo].Radius, junction, 0f, RoadWidth,
+                        $"{nodes[bestTo].Name} -> road");
+                }
+                else
+                {
+                    RoadAttemptLog.Finish(trace, $"{nodes[bestTo].Name} -> road", from, from,
+                        connected: false, m_pathfinder.LastOutcome, 0f, 0);
+                }
+            }
+
+            if (!built && teeToNetwork)
             {
                 Vector3? junction = NearestPointOnBuiltRoad(nodes[bestTo].Position);
                 if (junction.HasValue &&
