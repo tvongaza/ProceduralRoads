@@ -341,6 +341,35 @@ any routing change below produces. Choosing destinations near one another is
 worth more than choosing cleverly between them. Deliberately spreading them,
 which sounds like what a road network wants, is the worst of the four.
 
+### What is eligible at all, before any quota
+
+Every rule above chooses among the places the priority table already accepts.
+That table is a shorter list than it looks: of the **147 distinct vanilla
+location names** the issue seed places, **39 are road-eligible**. The other 108
+cannot be reached by any selection rule, because no rule can select what is
+never a candidate.
+
+Which matters most for the category a road network is most visibly missing.
+The eligible settlements in the whole vanilla game are `WoodFarm1`,
+`WoodVillage1` and `SwampHut5`. Meanwhile **`WoodHouse1` through
+`WoodHouse13`** stand in the Meadows and are eligible for nothing, as are
+`StoneHouse3`/`4`, `SwampHut1` through `4`, `AbandonedLogCabin02` through `04`,
+`Greydwarf_camp1` and `GoblinCamp2`.
+
+So "roads connect no settlements" is only partly a quota result. Even a rule
+that reserved half the quota for settlements would find three names to choose
+from. The lever that reaches the other twenty-odd is the eligibility list, not
+the quota — and it is the same `CustomLocations` key a mod would use, which
+takes any location name, vanilla ones included.
+
+Two more things the list shows. **The Ashlands has no eligible location at
+all**: 23 names, none of them road-worthy. And the boundary is arbitrary in
+places — `StoneHenge1`, `2` and `3` are eligible and `4`, `5` and `6` are not;
+`SwampHut5` is eligible and `SwampHut1`–`4` are not; `Crypt3` and `Crypt4` are
+eligible and `Crypt2` is not. Whether those are deliberate is a question for
+the table's author, but a reader comparing biomes should know the asymmetry is
+in the table rather than in the world.
+
 ### Who breaks a tie, when priorities are equal
 
 The quota keeps the highest-priority places and drops the rest. Most places
