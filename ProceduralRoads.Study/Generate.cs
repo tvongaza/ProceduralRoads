@@ -251,6 +251,10 @@ internal static class Generate
         if (multiplier != null)
             StudyFactors.QuotaMultiplier = int.Parse(multiplier, CultureInfo.InvariantCulture);
 
+        string? teeFactor = Options.Value(args, "--tee-factor");
+        if (teeFactor != null)
+            StudyFactors.TeeJoinFactor = float.Parse(teeFactor, CultureInfo.InvariantCulture);
+
         string? backbone = Options.Value(args, "--backbone-priority");
         if (backbone != null)
             StudyFactors.BackbonePriority = int.Parse(backbone, CultureInfo.InvariantCulture);

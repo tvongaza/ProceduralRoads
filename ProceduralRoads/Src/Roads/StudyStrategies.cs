@@ -223,7 +223,8 @@ public static partial class RoadNetworkGenerator
                 Vector3? junction = NearestPointOnBuiltRoad(nodes[bestTo].Position);
                 if (junction.HasValue &&
                     Vector3.Distance(junction.Value, nodes[bestTo].Position) <
-                    Vector3.Distance(nodes[bestFrom].Position, nodes[bestTo].Position))
+                    Vector3.Distance(nodes[bestFrom].Position, nodes[bestTo].Position)
+                        * StudyFactors.TeeJoinFactor)
                 {
                     RoadAttemptLog.NextRow(role + "-tee");
                     built = GenerateRoad(

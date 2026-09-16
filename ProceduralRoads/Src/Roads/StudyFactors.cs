@@ -216,6 +216,17 @@ public static class StudyFactors
     /// <summary>How a tie in priority is broken. See <see cref="PriorityTieBreak"/>.</summary>
     public static PriorityTieBreak TieBreak = PriorityTieBreak.ListOrder;
 
+    /// <summary>
+    /// How much further than its chosen partner a junction may be and still be
+    /// preferred, under <see cref="ConnectionPlan.RoutedMstTee"/>.
+    ///
+    /// 1 takes the junction only when it is strictly nearer, which is the
+    /// cautious reading and leaves most joins at places. Larger values buy
+    /// junctions by accepting a longer road to reach one. There is no
+    /// principled value: it is the dial this plan exists to measure.
+    /// </summary>
+    public static float TeeJoinFactor = 1f;
+
     /// <summary>How many places an island may have roads to.</summary>
     public static IslandQuota Quantity = IslandQuota.AreaFormula;
 
