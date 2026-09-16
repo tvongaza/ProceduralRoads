@@ -341,6 +341,58 @@ any routing change below produces. Choosing destinations near one another is
 worth more than choosing cleverly between them. Deliberately spreading them,
 which sounds like what a road network wants, is the worst of the four.
 
+### Who breaks a tie, when priorities are equal
+
+The quota keeps the highest-priority places and drops the rest. Most places
+score the same, so most of the quota is spent on ties — and nothing in the mod
+decides them. `OrderByDescending` is a **stable** sort, so places of equal
+priority keep the order the location list gave them, and the order in which
+Valheim enumerates location prefabs becomes the selector.
+
+It is not a small residue. Breaking the tie by a hash of the place instead of
+its list position changes, at the shipped quota on the issue seed, **78 of 158
+selections — half the destinations in the world**:
+
+| tie broken by | roads | distinct road | served | selections that change |
+|---|---|---|---|---|
+| list position (ships today) | 88 | 54.0 km | 123 | — |
+| a hash of the place | 85 | 63.8 km | 120 | 78 of 158 (49 %) |
+
+Coverage barely moves. What moves is *which* places are served, and the bias
+has a direction. On this seed sunken crypts sit at median index **104** in the
+location list and mountain caves at **7 627**, so wherever the quota has to
+choose between two places of equal priority, the crypt is the one already in
+front:
+
+| tie broken by | sunken crypts selected | mountain caves selected | gap |
+|---|---|---|---|
+| list position (ships today) | 46 of 173 — 26.6 % | 19 of 148 — 12.8 % | **+13.8 pts** |
+| a hash of the place | 24 of 173 — 13.9 % | 30 of 148 — 20.3 % | −6.4 pts |
+
+Raise the quota and the same thing scales: at four times the area formula the
+shipped rule takes 113 of 173 crypts (65 %) against 62 of 148 caves (42 %), a
+23-point gap, and hashing the place closes it to 8 points the other way.
+
+Two alternatives were run, both keeping priority first and deciding only
+between equals:
+
+- **A hash of the place** — of the world seed and the place's own position, so
+  the answer does not depend on what order the places arrived in and is the
+  same for a world every time. This is the correctness fix: it removes prefab
+  enumeration order from the decision without putting a preference in its place.
+- **Farthest-first within the band.** It spreads the selected places out —
+  at four times the quota the 10th percentile of nearest-neighbour distance
+  goes 70 m → 89 m, where the hash leaves it at 75 m — but it costs 34 % more
+  road than the shipped rule and 7 places of coverage, and it swings the biome
+  gap to −21.7 points. That is a design choice, not a fix.
+
+Neither is proposed here. The point is narrower and it is about the shipped
+build: **half of what the generator connects is currently decided by an
+ordering nobody chose**, and a reader comparing two selection rules cannot tell
+a real difference from an artefact of list order until that is settled. It also
+means the rows above, and PR #16's own rule, inherit a tie-break they never
+declared — see "Where this is still wrong".
+
 ### Fords and bridges
 
 | offline | roads | road summed over routes | served |
@@ -950,6 +1002,15 @@ Still true of the numbers here, and not fixed:
 - **One world carries most of the detail.** The three-seed table holds for the
   broad results; the finer ones — clustering, the priority table, the sharing
   sweep — were measured on the issue seed alone.
+
+- **Every selection row inherits an undeclared tie-break.** Until the tie-break
+  was made explicit it lived inside one quota rule, so a comparison between two
+  quota rules was partly a comparison of a flag against itself. The rows above
+  are all measured with the shipped tie-break (list position) so they remain
+  comparable with each other and with the published manifests — but the
+  differences between selection rules are the same size as the effect of list
+  order, so a difference of a few places between two rules is not evidence that
+  one rule is better. See "Who breaks a tie, when priorities are equal".
 
 ## What this cannot tell you
 
