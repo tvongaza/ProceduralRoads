@@ -948,6 +948,64 @@ first search could not reach. The reverse search is that idea done properly:
 rather than trying a second guessed destination after the first guess fails, it
 never guesses.
 
+### Where the roads that run side by side come from
+
+Two roads running a few metres apart, for hundreds of metres, is the thing a
+player without a map notices first: it reads as one wide road that mysteriously
+forks, or as a mistake. The routed tree produces between 0.9 and 2.7 km of it
+per world, and the reverse search produces 0.1 km. That gap turned out to be
+the most instructive number measured here, because **no price on the ground
+closes it**:
+
+| lever, on the routed tree | road running alongside |
+|---|---|
+| nothing (the baseline) | 2.7 km |
+| a quarter-price step on existing road | 3.0 km |
+| a twentieth-price step | 2.3 km |
+| the discount band narrowed to the road's own width | 2.3 km |
+| a 2x penalty for running NEAR a road without joining it | 2.7 km |
+| a 5x penalty | 2.8 km |
+
+The penalty is the inverse of the discount — charge more for collecting
+proximity while staying a lane away — and it moves the number as little as the
+discount does. The reading these support is that at this quota the parallel
+stretches are **terrain-forced**: two roads share a valley because the valley
+is the only way through, and no price changes that, because there is nowhere
+else to send them.
+
+What removes them is not routing around but **stopping**. The reverse plan's
+search has no destination: it runs outward from the place and halts at the
+first ground it settles that already carries road, so a second road never
+enters the corridor at all. A fixed-target search has no such property —
+running half a kilometre beside an existing road really is the cheapest way to
+reach a target beyond it.
+
+So the two halves can be taken apart and recombined. The routed tree decides
+WHICH place to connect next, on measured cost, which is where its coverage
+comes from; the destination-free search decides where the road STOPS, which is
+where the clean junctions come from. Run on all three worlds:
+
+| world | plan | served | junctions | alongside |
+|---|---|---|---|---|
+| issue seed | routed tree | 126 | 0 | 2.7 km |
+| | reverse | 123 | 28 | 0.1 km |
+| | **both** | **130** | 27 | **0.1 km** |
+| second world | routed tree | 136 | 0 | 1.0 km |
+| | reverse | 120 | 20 | 0.1 km |
+| | **both** | **144** | 22 | **0.1 km** |
+| third world | routed tree | 136 | 1 | 0.9 km |
+| | reverse | 133 | 24 | 0.1 km |
+| | **both** | **143** | 22 | **0.2 km** |
+
+It is the best-served plan on all three, and it keeps the reverse search's
+near-zero parallel road. It also costs about three times the routed tree's
+generation time — 23 to 24 seconds against 8 — because most places pay for two
+searches, the destination-free one and, when that misses, the measured pair.
+
+Note what the spread says about every other ranking in this document: the
+reverse plan alone swings from 120 to 133 places served depending on the
+world. A difference of a few places on one seed is not a result.
+
 ## The runs behind these numbers
 
 Every table above comes from a run whose manifest carries a run id, the study
