@@ -155,21 +155,28 @@ public class StrategySwitchTests
             ("Crypt4", new Vector3(10f, 0f, 0f), 20f),
             ("Crypt4", new Vector3(20f, 0f, 0f), 20f),
             ("WoodVillage1", new Vector3(30f, 0f, 0f), 20f),
-            ("Mistlands_Giant1", new Vector3(40f, 0f, 0f), 20f),
+            ("Ruin1", new Vector3(40f, 0f, 0f), 20f),
             ("StoneTowerRuins03", new Vector3(50f, 0f, 0f), 20f),
+            ("Hildir_crypt", new Vector3(60f, 0f, 0f), 20f),
+            ("StoneHenge1", new Vector3(70f, 0f, 0f), 20f),
         };
 
         MethodInfo balanced = typeof(RoadNetworkGenerator).GetMethod(
             "SelectLocationsCategoryBalanced", BindingFlags.NonPublic | BindingFlags.Static)!;
+        // One slot for the boss and one turn of the rotation, so every shared
+        // category is due exactly one place. The quota tracks the taxonomy: a
+        // category the rule can return but the rotation never visits is a
+        // silent drop, so this test fails if the two stop agreeing.
+        int quota = 1 + StudySelection.SharedCategories.Length;
         var selected = (List<(string name, Vector3 position, float radius)>)
-            balanced.Invoke(null, new object[] { candidates, 4 })!;
+            balanced.Invoke(null, new object[] { candidates, quota })!;
 
         // Asserted on CATEGORIES, not on names: which particular ruin or
         // settlement wins is nearest-first and may change with the taxonomy,
         // but the shape of the result must not. An earlier version of this
         // test named the places and broke the moment Mistlands places were
         // reclassified, having proved nothing about the rule.
-        Assert.Equal(4, selected.Count);
+        Assert.Equal(quota, selected.Count);
         Assert.Contains(selected, place => place.name == "Eikthyrnir");
 
         var shares = selected
@@ -178,7 +185,7 @@ public class StrategySwitchTests
             .ToDictionary(group => group.Key, group => group.Count());
 
         Assert.Equal(1, shares["boss"]);
-        // One boss and three turns of the rotation: one of each shared category.
+        // One boss and one turn of the rotation: one of each shared category.
         foreach (string category in StudySelection.SharedCategories)
             Assert.Equal(1, shares[category]);
     }

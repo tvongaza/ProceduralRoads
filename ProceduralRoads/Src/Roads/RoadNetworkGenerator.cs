@@ -20,55 +20,108 @@ public static partial class RoadNetworkGenerator
         "Bonemass",
         "Dragonqueen",
         "GoblinKing",
-        "SeekerQueen",
+        // The Queen's location is Mistlands_DvergrBossEntrance1. "SeekerQueen"
+        // stood here instead and matches nothing Valheim places, so no world
+        // this mod has ever generated had a road to her - and nothing said so,
+        // because a lookup that misses looks exactly like a place that was not
+        // chosen. Checked against the 1.0.12 location definitions.
+        "Mistlands_DvergrBossEntrance1",
     };
 
+    /// <summary>
+    /// Which places are worth a road, and how much. 64 names, decided 16
+    /// September 2026 from a review of the Valheim 1.0.12 location definitions
+    /// (213 resolved names, 142 active in Meadows through Mistlands).
+    ///
+    /// Priority ranks how worth a road a place is. It is NOT what the place is:
+    /// see StudySelection.Category for that. The two were confused once
+    /// already, and a priority band was read as evidence of kind.
+    ///
+    /// Deliberately absent:
+    ///  * Resource sites - tar pits, drake nests, giant remains, geysers. About
+    ///    a thousand instances world-wide; a road may pass one, nothing routes
+    ///    to one.
+    ///  * The four unique-selected sites - Haldor, Hildir, the Bog Witch and
+    ///    the Forge of Potential. Each reserves about ten candidate positions
+    ///    of which one becomes permanent, so adding the name would build ten
+    ///    dead-end spurs. They need a path that resolves the placed instance
+    ///    first.
+    ///  * Ashlands and Deep North, which the review did not cover.
+    /// </summary>
     private static readonly Dictionary<string, int> LocationPriorities = new()
     {
-        { "Eikthyrnir", 100 },
-        { "GDKing", 100 },
         { "Bonemass", 100 },
         { "Dragonqueen", 100 },
+        { "Eikthyrnir", 100 },
+        { "GDKing", 100 },
         { "GoblinKing", 100 },
-        { "SeekerQueen", 100 },
-        
+        { "Mistlands_DvergrBossEntrance1", 100 },
+
+        { "Crypt2", 80 },
+        { "Crypt3", 80 },
         { "Crypt4", 80 },
-        { "SunkenCrypt4", 80 },
+        { "Hildir_cave", 80 },
+        { "Hildir_crypt", 80 },
+        { "Hildir_plainsfortress", 80 },
+        { "Mistlands_DvergrTownEntrance1", 80 },
+        { "Mistlands_DvergrTownEntrance2", 80 },
         { "MountainCave02", 80 },
-        { "TrollCave02", 40 },
-        { "Crypt3", 75 },
-        
-        { "Mistlands_DvergrTownEntrance1", 75 },
-        { "Mistlands_DvergrTownEntrance2", 75 },
+        { "SunkenCrypt4", 80 },
+
         { "Mistlands_Harbour1", 70 },
-        
+
+        { "GoblinCamp2", 60 },
+        { "GoblinCamp2_1", 60 },
         { "WoodVillage1", 60 },
+        { "WoodVillage2", 60 },
+
         { "WoodFarm1", 55 },
-        
+
         { "Mistlands_GuardTower1_new", 50 },
         { "Mistlands_GuardTower2_new", 50 },
         { "Mistlands_GuardTower3_new", 50 },
         { "Mistlands_Lighthouse1_new", 50 },
+
         { "Mistlands_Excavation1", 45 },
         { "Mistlands_Excavation2", 45 },
-        { "Mistlands_Excavation3", 45 },
-        
+
+        { "BearCave", 40 },
         { "StoneTower1", 40 },
         { "StoneTower3", 40 },
-        
+        { "TrollCave02", 40 },
+
+        { "GoblinHut01", 35 },
+        { "GoblinHut02", 35 },
+        { "GoblinHut03", 35 },
+
+        { "AbandonedLogCabin02", 30 },
+        { "AbandonedLogCabin03", 30 },
+        { "AbandonedLogCabin04", 30 },
+        { "Mistlands_Excavation3", 30 },
         { "Mistlands_GuardTower1_ruined_new", 30 },
+        { "Mistlands_GuardTower1_ruined_new2", 30 },
         { "Mistlands_GuardTower3_ruined_new", 30 },
+        { "MountainWell1", 30 },
+        { "Ruin1", 30 },
+        { "Ruin2", 30 },
+        { "Ruin3", 30 },
+        { "StoneHouse3", 30 },
+        { "StoneHouse4", 30 },
         { "StoneTowerRuins03", 30 },
         { "StoneTowerRuins04", 30 },
         { "StoneTowerRuins05", 30 },
+        { "StoneTowerRuins05_leet", 30 },
         { "StoneTowerRuins07", 30 },
         { "StoneTowerRuins08", 30 },
         { "StoneTowerRuins09", 30 },
         { "StoneTowerRuins10", 30 },
+
+        { "CombatRuin01", 25 },
         { "StoneHenge1", 25 },
         { "StoneHenge2", 25 },
         { "StoneHenge3", 25 },
-        { "SwampHut5", 25 },
+        { "StoneHenge4", 25 },
+        { "StoneHenge5", 25 },
         { "SwampRuin1", 25 },
         { "SwampRuin2", 25 },
     };

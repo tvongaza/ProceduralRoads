@@ -18,7 +18,12 @@ internal static class Presets
     private static readonly string[] Bosses =
     {
         "Eikthyrnir", "GDKing", "Bonemass", "Dragonqueen", "GoblinKing",
-        "Mistlands_DvergrBossEntrance",
+        // The trailing 1 was missing, and matching here is exact, so every
+        // "bosses required" run this study has published required FIVE bosses,
+        // not six - the doc's 19 boss altars are 3+4+5+3+4. With the Queen it
+        // is 24. The name was also not road-eligible at all until the priority
+        // table was corrected.
+        "Mistlands_DvergrBossEntrance1",
     };
 
     private static readonly string[] Dungeons =
