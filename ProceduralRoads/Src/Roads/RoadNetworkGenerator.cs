@@ -761,6 +761,10 @@ public static partial class RoadNetworkGenerator
     /// <summary>The generator's own priority for a place, for study tables.</summary>
     public static int PriorityOf(string locationName) => GetLocationPriority(locationName);
 
+    /// <summary>Whether the generator treats this place as a boss location.</summary>
+    public static bool IsBossLocation(string locationName) =>
+        locationName != null && BossLocationNames.Contains(locationName);
+
     private static int GetLocationPriority(string locationName)
     {
         // A study preset may replace the table's answer for a name; nothing
@@ -1005,6 +1009,7 @@ public static partial class RoadNetworkGenerator
                 LocationQuota.PriorityThenNearest => SelectLocationsPriorityThenNearest(candidates, maxCount),
                 LocationQuota.PriorityThenFarthest => SelectLocationsPriorityThenFarthest(candidates, maxCount),
                 LocationQuota.SeededRandom => SelectLocationsAtRandom(candidates, maxCount),
+                LocationQuota.CategoryBalanced => SelectLocationsCategoryBalanced(candidates, maxCount),
                 _ => SelectLocations(candidates, maxCount),
             };
 
@@ -1064,6 +1069,7 @@ public static partial class RoadNetworkGenerator
                     GenerateReachableRoads(startPos, startRadius, roadLocations, startName);
                     break;
                 case ConnectionPlan.RoutedMst:
+                case ConnectionPlan.RoutedMstTee:
                     GenerateRoutedMstRoads(startPos, startRadius, roadLocations, startName);
                     break;
                 case ConnectionPlan.TrunkAndSpurs:

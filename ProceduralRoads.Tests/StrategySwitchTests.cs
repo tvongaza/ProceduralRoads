@@ -111,6 +111,79 @@ public class StrategySwitchTests
     }
 
     [Fact]
+    public void TheBalancedQuotaGivesAScarceCategoryASlotThePriorityRulesNeverReach()
+    {
+        // The point of the rule, stated as the case that separates it: one
+        // settlement against plenty of higher-priority dungeons. Every
+        // priority-ranked rule spends the whole quota on dungeons; the
+        // balanced one owes the settlement a turn.
+        List<(string name, Vector3 position, float radius)> candidates = new()
+        {
+            ("Crypt4", new Vector3(10f, 0f, 0f), 20f),
+            ("Crypt4", new Vector3(20f, 0f, 0f), 20f),
+            ("Crypt4", new Vector3(30f, 0f, 0f), 20f),
+            ("WoodVillage1", new Vector3(2000f, 0f, 0f), 20f),
+        };
+
+        MethodInfo truncated = typeof(RoadNetworkGenerator).GetMethod(
+            "SelectLocations", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var byPriority = (List<(string name, Vector3 position, float radius)>)
+            truncated.Invoke(null, new object[] { candidates, 3 })!;
+        Assert.DoesNotContain(byPriority, place => place.name == "WoodVillage1");
+
+        MethodInfo balanced = typeof(RoadNetworkGenerator).GetMethod(
+            "SelectLocationsCategoryBalanced", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var shared = (List<(string name, Vector3 position, float radius)>)
+            balanced.Invoke(null, new object[] { candidates, 3 })!;
+
+        Assert.Equal(3, shared.Count);
+        Assert.Contains(shared, place => place.name == "WoodVillage1");
+        // and it has not simply become a settlement-only rule
+        Assert.Contains(shared, place => place.name == "Crypt4");
+    }
+
+    [Fact]
+    public void TheBalancedQuotaStillTakesEveryBossAndFillsTheQuotaExactly()
+    {
+        // Two properties the comparison depends on: bosses are required
+        // wherever they occur, and the rule selects the same NUMBER as every
+        // other rule at the same quota, or the served counts are not
+        // comparable.
+        List<(string name, Vector3 position, float radius)> candidates = new()
+        {
+            ("Eikthyrnir", new Vector3(0f, 0f, 0f), 20f),
+            ("Crypt4", new Vector3(10f, 0f, 0f), 20f),
+            ("Crypt4", new Vector3(20f, 0f, 0f), 20f),
+            ("WoodVillage1", new Vector3(30f, 0f, 0f), 20f),
+            ("Mistlands_Giant1", new Vector3(40f, 0f, 0f), 20f),
+            ("StoneTowerRuins03", new Vector3(50f, 0f, 0f), 20f),
+        };
+
+        MethodInfo balanced = typeof(RoadNetworkGenerator).GetMethod(
+            "SelectLocationsCategoryBalanced", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var selected = (List<(string name, Vector3 position, float radius)>)
+            balanced.Invoke(null, new object[] { candidates, 4 })!;
+
+        // Asserted on CATEGORIES, not on names: which particular ruin or
+        // settlement wins is nearest-first and may change with the taxonomy,
+        // but the shape of the result must not. An earlier version of this
+        // test named the places and broke the moment Mistlands places were
+        // reclassified, having proved nothing about the rule.
+        Assert.Equal(4, selected.Count);
+        Assert.Contains(selected, place => place.name == "Eikthyrnir");
+
+        var shares = selected
+            .Select(place => StudySelection.Category(place.name))
+            .GroupBy(category => category)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        Assert.Equal(1, shares["boss"]);
+        // One boss and three turns of the rotation: one of each shared category.
+        foreach (string category in StudySelection.SharedCategories)
+            Assert.Equal(1, shares[category]);
+    }
+
+    [Fact]
     public void Pr16sQuotaPrefersTheNearerPlaceAmongEqualPriorities()
     {
         // Measured behaviour worth reporting: the quota's distance term is a

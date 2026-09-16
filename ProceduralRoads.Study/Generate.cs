@@ -182,8 +182,9 @@ internal static class Generate
                 "nearest" => LocationQuota.PriorityThenNearest,
                 "farthest" => LocationQuota.PriorityThenFarthest,
                 "random" => LocationQuota.SeededRandom,
+                "balanced" => LocationQuota.CategoryBalanced,
                 _ => throw new ArgumentException(
-                    $"--quota must be truncate, nearest, farthest or random, not '{quota}'"),
+                    $"--quota must be truncate, nearest, farthest, random or balanced, not '{quota}'"),
             };
 
         string? plan = Options.Value(args, "--plan");
@@ -198,9 +199,10 @@ internal static class Generate
                 "grow" => ConnectionPlan.GrowFromNetwork,
                 "reverse" => ConnectionPlan.ReverseToNetwork,
                 "hybrid" => ConnectionPlan.RoutedBackboneReverseBranches,
+                "mst-tee" => ConnectionPlan.RoutedMstTee,
                 "race" => ConnectionPlan.CheapestOfBoth,
                 _ => throw new ArgumentException(
-                    $"--plan must be parity, tree, routed-mst, trunk, hub, grow, reverse, hybrid or race, not '{plan}'"),
+                    $"--plan must be parity, tree, routed-mst, mst-tee, trunk, hub, grow, reverse, hybrid or race, not '{plan}'"),
             };
 
         string? fallback = Options.Value(args, "--fallback");

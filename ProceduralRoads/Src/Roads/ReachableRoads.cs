@@ -207,6 +207,84 @@ public static partial class RoadNetworkGenerator
     }
 
     /// <summary>
+    /// Bosses first and always; then the quota shared out across categories, a
+    /// turn each in rotation, taking the NEAREST remaining candidate in that
+    /// category to what has already been chosen.
+    ///
+    /// Two things this deliberately does not do. It does not rank categories
+    /// against each other — that is the behaviour it exists to replace — so a
+    /// world with three settlements and ninety dungeons gives the settlements
+    /// three of the first few slots rather than none. And it does not reorder
+    /// WITHIN a category by priority: inside a category the choice is nearest
+    /// first, which the study measured as the arrangement that serves most
+    /// places for the road spent.
+    ///
+    /// A category that runs out simply stops taking turns, so its slots go to
+    /// the categories that remain rather than being lost. That keeps the total
+    /// selected identical to every other rule at the same quota, which is what
+    /// makes the comparison a comparison.
+    /// </summary>
+    private static List<(string name, Vector3 position, float radius)> SelectLocationsCategoryBalanced(
+        List<(string name, Vector3 position, float radius)> candidates, int maxCount)
+    {
+        if (candidates.Count <= maxCount)
+            return candidates;
+
+        List<(string name, Vector3 position, float radius)> selected = new();
+        var byCategory = new Dictionary<string, List<(string name, Vector3 position, float radius)>>();
+        foreach ((string name, Vector3 position, float radius) candidate in candidates)
+        {
+            string category = StudySelection.Category(candidate.name);
+            if (category == "boss")
+            {
+                selected.Add(candidate);
+                continue;
+            }
+            if (!byCategory.TryGetValue(category, out var list))
+                byCategory[category] = list = new List<(string name, Vector3 position, float radius)>();
+            list.Add(candidate);
+        }
+
+        // Bosses can already exceed a small island's quota; they are required
+        // wherever they occur, exactly as the other rules treat them.
+        int turn = 0;
+        while (selected.Count < maxCount)
+        {
+            bool tookOne = false;
+            for (int i = 0; i < StudySelection.SharedCategories.Length && selected.Count < maxCount; i++)
+            {
+                string category = StudySelection.SharedCategories[(turn + i) % StudySelection.SharedCategories.Length];
+                if (!byCategory.TryGetValue(category, out var pool) || pool.Count == 0)
+                    continue;
+
+                int bestIndex = 0;
+                if (selected.Count > 0)
+                {
+                    float bestDistance = float.MaxValue;
+                    for (int c = 0; c < pool.Count; c++)
+                    {
+                        float distance = selected.Min(chosen => Vector3.Distance(chosen.position, pool[c].position));
+                        if (distance < bestDistance)
+                        {
+                            bestDistance = distance;
+                            bestIndex = c;
+                        }
+                    }
+                }
+
+                selected.Add(pool[bestIndex]);
+                pool.RemoveAt(bestIndex);
+                tookOne = true;
+            }
+            if (!tookOne)
+                break; // every category is empty: the island simply has fewer places than its quota
+            turn++;
+        }
+
+        return selected;
+    }
+
+    /// <summary>
     /// The same quota as PR #16's, with the distance term reversed: each
     /// further place is taken as far as it can be from those already chosen.
     /// It answers whether the arrangement of destinations matters at all,

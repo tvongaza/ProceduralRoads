@@ -28,6 +28,68 @@ namespace ProceduralRoads;
 /// </summary>
 public static class StudySelection
 {
+    /// <summary>
+    /// What a place is, for a rule that shares a quota across categories.
+    ///
+    /// One definition, here, because the study's reporting and the selection
+    /// rule must agree: a category counted in the results that the selector
+    /// never knew about would make a balanced run look unbalanced. The names
+    /// are the generator's own priority-table entries, not a name pattern,
+    /// except Mistlands, which the table itself matches by prefix.
+    /// </summary>
+    public static string Category(string name)
+    {
+        if (RoadNetworkGenerator.IsBossLocation(name)) return "boss";
+        switch (name)
+        {
+            // What a place IS, never which biome it stands in. An earlier
+            // version folded every "Mistlands_" name into one category, which
+            // is a biome, not a kind: it put a dvergr town entrance, a
+            // harbour, a guard tower and a ruined guard tower in the same
+            // bucket while the same four kinds elsewhere were kept apart. A
+            // quota shared across categories then gave the whole Mistlands a
+            // single share and, inside it, no say in which kind it got.
+            //
+            // The generator's own priority table is the evidence for most of
+            // these: DvergrTownEntrance scores 75, exactly Crypt3's; the
+            // ruined guard towers score 30, exactly StoneTowerRuins'.
+            case "Crypt3":
+            case "Crypt4":
+            case "SunkenCrypt4":
+            case "MountainCave02":
+            case "TrollCave02":
+                return "dungeon";
+
+            case "WoodVillage1":
+            case "WoodFarm1":
+            case "SwampHut5":
+            // Dvergr settlements, not dungeons. An earlier version read the
+            // priority table as evidence of KIND - DvergrTownEntrance scores
+            // 75, the same as Crypt3 - which it is not: priority ranks how
+            // worth a road a place is, and says nothing about what stands
+            // there. Corrected on the word of someone who has played it.
+            case "Mistlands_DvergrTownEntrance1":
+            case "Mistlands_DvergrTownEntrance2":
+            case "Mistlands_Harbour1":
+            // Inspected, not derived: a lighthouse and a dvergr excavation are
+            // built, occupied sites rather than ruins, but the table prices
+            // them with the towers (50 and 45). Called settlements here; the
+            // call is worth revisiting with someone who has played Mistlands.
+            case "Mistlands_Lighthouse1_new":
+            case "Mistlands_Excavation1":
+            case "Mistlands_Excavation2":
+            case "Mistlands_Excavation3":
+                return "settlement";
+        }
+        // Everything else the table makes eligible is a tower, ruin or
+        // standing stone - including the Mistlands guard towers, intact (50,
+        // as StoneTower) and ruined (30, as StoneTowerRuins).
+        return "ruin";
+    }
+
+    /// <summary>The categories a quota is shared across, bosses excluded: they are taken first and always.</summary>
+    public static readonly string[] SharedCategories = { "dungeon", "settlement", "ruin" };
+
     /// <summary>Off by default: the shipped rules decide everything.</summary>
     public static bool Enabled;
 

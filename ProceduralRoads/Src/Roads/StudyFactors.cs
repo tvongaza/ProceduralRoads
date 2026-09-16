@@ -66,6 +66,20 @@ public enum LocationQuota
     /// <summary>Study: a fixed draw from the island's places, ignoring
     /// priority. The control for both of the above.</summary>
     SeededRandom,
+
+    /// <summary>
+    /// Study: bosses always, then the quota shared out across the CATEGORIES a
+    /// place can belong to - dungeon, settlement, ruin, mistlands - taking the
+    /// nearest candidate within a category each time its turn comes round.
+    ///
+    /// The other rules here all rank by priority, so a category that scores
+    /// below another never appears until the higher one is exhausted; on a
+    /// world where dungeons outnumber settlements, settlements are never
+    /// reached. This rule asks what the same quota buys when the scarce
+    /// categories are guaranteed a turn instead of having to out-score the
+    /// plentiful ones.
+    /// </summary>
+    CategoryBalanced,
 }
 
 /// <summary>How many places on an island may have roads.</summary>
@@ -117,6 +131,18 @@ public enum ConnectionPlan
     /// <summary>Study proposal: a spanning tree on what the pathfinder charges
     /// to get between places, not on straight-line distance.</summary>
     RoutedMst,
+
+    /// <summary>
+    /// Study proposal: the routed tree, but each road leaves the network at
+    /// the nearest point on a road already built rather than at its partner
+    /// place - a junction instead of two road ends meeting.
+    ///
+    /// The tree decides WHICH places to connect, on measured cost, which is
+    /// where the routed MST's coverage comes from; the junction only changes
+    /// where the road starts. It is the spanning tree's missing degree of
+    /// freedom: a join at a point that is not a place.
+    /// </summary>
+    RoutedMstTee,
 
     /// <summary>Study proposal: one long road along the island's routed axis,
     /// everything else joined to the network where it is nearest.</summary>

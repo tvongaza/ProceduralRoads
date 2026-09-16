@@ -159,7 +159,8 @@ public static partial class RoadNetworkGenerator
             return;
 
         Dictionary<(int, int), float> costs = RoutedCosts(nodes);
-        GrowRoutedTree(nodes, costs, Enumerable.Range(1, nodes.Count - 1), "mst-edge");
+        GrowRoutedTree(nodes, costs, Enumerable.Range(1, nodes.Count - 1), "mst-edge",
+            StudyFactors.Plan == ConnectionPlan.RoutedMstTee);
     }
 
     /// <summary>
@@ -169,7 +170,8 @@ public static partial class RoadNetworkGenerator
     /// by the hybrid, which passes only its backbone.
     /// </summary>
     private static HashSet<int> GrowRoutedTree(
-        List<Node> nodes, Dictionary<(int, int), float> costs, IEnumerable<int> members, string role)
+        List<Node> nodes, Dictionary<(int, int), float> costs, IEnumerable<int> members, string role,
+        bool teeToNetwork = false)
     {
         HashSet<int> inTree = new() { 0 };
         HashSet<int> remaining = new(members);
@@ -204,7 +206,36 @@ public static partial class RoadNetworkGenerator
                 continue;
             }
 
-            if (Build(nodes[bestFrom], nodes[bestTo], role))
+            // The tee. Prim's has chosen WHICH place to connect next, on a
+            // cost it has already measured, and that choice is what keeps this
+            // plan's coverage. All that changes is where the road starts: if
+            // some road already built passes nearer to the destination than
+            // its chosen partner does, the new road leaves the network there
+            // instead, and the join is a junction rather than another pair of
+            // road ends meeting at a place.
+            //
+            // The partner is the fallback, not a second attempt on equal
+            // terms: the pair is known routable, the junction is not, so a
+            // junction that fails to route hands the edge back to the pair.
+            bool built = false;
+            if (teeToNetwork)
+            {
+                Vector3? junction = NearestPointOnBuiltRoad(nodes[bestTo].Position);
+                if (junction.HasValue &&
+                    Vector3.Distance(junction.Value, nodes[bestTo].Position) <
+                    Vector3.Distance(nodes[bestFrom].Position, nodes[bestTo].Position))
+                {
+                    RoadAttemptLog.NextRow(role + "-tee");
+                    built = GenerateRoad(
+                        junction.Value, 0f, nodes[bestTo].Position, nodes[bestTo].Radius, RoadWidth,
+                        $"network -> {nodes[bestTo].Name}");
+                }
+            }
+
+            if (!built)
+                built = Build(nodes[bestFrom], nodes[bestTo], role);
+
+            if (built)
                 inTree.Add(bestTo);
             else
                 costs.Remove(bestFrom < bestTo ? (bestFrom, bestTo) : (bestTo, bestFrom));

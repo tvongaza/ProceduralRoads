@@ -24,23 +24,12 @@ internal static class PlaceOutcomes
     /// </summary>
     public static string Category(string name)
     {
-        if (Eligible.IsBoss(name)) return "boss";
-        switch (name)
-        {
-            case "Crypt3":
-            case "Crypt4":
-            case "SunkenCrypt4":
-            case "MountainCave02":
-            case "TrollCave02":
-                return "dungeon";
-            case "WoodVillage1":
-            case "WoodFarm1":
-            case "SwampHut5":
-                return "settlement";
-        }
-        if (name.StartsWith("Mistlands_")) return "mistlands";
-        if (!Eligible.IsRoadLocation(name)) return "not-eligible";
-        return "ruin";
+        // One definition, in the mod, because the balanced quota selects on it
+        // and this reports on it: two copies would drift and the report would
+        // then describe a different split from the one that was chosen.
+        if (!Eligible.IsBoss(name) && !Eligible.IsRoadLocation(name))
+            return "not-eligible";
+        return StudySelection.Category(name);
     }
 
     public static string ToCsv(
