@@ -211,12 +211,59 @@ public static partial class RoadNetworkGenerator
 
             if (bestFrom < 0)
             {
-                // Nothing left is routable from the tree. Start a new component
-                // at the most important place still waiting rather than stop.
+                // Nothing left has a PRICED edge to the tree - which is not the
+                // same as nothing being reachable, and the old comment here said
+                // it was. A pair is priced only if it survived the neighbour
+                // window, the link-distance cap AND a pathfinding probe, and 196
+                // of 335 probes on this world find no route.
+                //
+                // This used to seed a new component and move on: no road, and no
+                // attempt row, so the place vanished from every failure count.
+                // 88 places in one run, 20 of them places the run had been told
+                // to force. Try the destination-free search first - it needs no
+                // partner, because it stops at the first road it reaches - and
+                // log the outcome either way.
                 int next = remaining.OrderByDescending(i => GetLocationPriority(nodes[i].Name)).First();
+
+                bool joined = false;
+                if (m_pathfinder != null && RoadRouteRecorder.Routes.Count > 0)
+                {
+                    int connection = RoadAttemptLog.OpenConnection(role + "-orphan");
+                    RoadAttemptLog.NextRow(role + "-orphan-search", connection);
+                    PathfinderTrace? trace = RoadAttemptLog.Begin();
+                    // Start where the BUILDER would start. A landing sits at
+                    // the waterline by construction and a crypt's centre can be
+                    // in a bog: a search that starts below the shallow-water
+                    // line never takes a first step, and reports no reachable
+                    // path from 10 m away.
+                    Vector2 from = new(nodes[next].Position.x, nodes[next].Position.z);
+                    if (StudyFactors.SnapEndpointsToPathableGround)
+                        from = GetNearestPathablePoint(from, nodes[next].Radius);
+                    List<Vector2>? path = m_pathfinder.FindPathToNetwork(
+                        from, StudyFactors.ReverseSearchReach, NetworkHints());
+
+                    if (path != null && path.Count >= 2)
+                    {
+                        RoadAttemptLog.Finish(trace, $"{nodes[next].Name} -> road", from, path[path.Count - 1],
+                            connected: true, "found", 0f, 0);
+                        Vector3 junction = new(path[path.Count - 1].x, 0f, path[path.Count - 1].y);
+                        RoadAttemptLog.NextRow(role + "-orphan-build", connection);
+                        joined = GenerateRoad(
+                            nodes[next].Position, nodes[next].Radius, junction, 0f, RoadWidth,
+                            $"{nodes[next].Name} -> road");
+                    }
+                    else
+                    {
+                        RoadAttemptLog.Finish(trace, $"{nodes[next].Name} -> road", from, from,
+                            connected: false, m_pathfinder.LastOutcome, 0f, 0);
+                    }
+                }
+
                 inTree.Add(next);
                 remaining.Remove(next);
-                Log.LogDebug($"Routed tree: no route to the rest; new component at {nodes[next].Name}");
+                Log.LogDebug($"Routed tree: no priced edge to the tree; " +
+                             $"{(joined ? "joined by the destination-free search" : "new component")} " +
+                             $"at {nodes[next].Name}");
                 continue;
             }
 
@@ -244,6 +291,8 @@ public static partial class RoadNetworkGenerator
                 RoadAttemptLog.NextRow(role + "-reverse-search", connection);
                 PathfinderTrace? trace = RoadAttemptLog.Begin();
                 Vector2 from = new(nodes[bestTo].Position.x, nodes[bestTo].Position.z);
+                if (StudyFactors.SnapEndpointsToPathableGround)
+                    from = GetNearestPathablePoint(from, nodes[bestTo].Radius);
                 List<Vector2>? path = m_pathfinder.FindPathToNetwork(
                     from, StudyFactors.ReverseSearchReach, NetworkHints());
 
