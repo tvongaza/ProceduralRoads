@@ -8,11 +8,6 @@ public static class RoadConstants
     public const float ZoneSize = 64f;
     public const float HalfZoneSize = ZoneSize / 2f;
     public const float SeaLevel = 30f;
-
-    /// <summary>How many times the deferred places are retried against the
-    /// island's road once the tree is grown. Each success is more road for the
-    /// next attempt to reach, so a sweep that connects nothing ends it.</summary>
-    public const int MaxDeferredSweeps = 4;
     public const float DeepWaterHeight = 28f;
     public const float ShallowWaterHeight = 30.5f;
     public const float TerrainDeltaMin = -8f;
