@@ -223,6 +223,28 @@ internal static class Generate
         if (!Presets.Apply(preset))
             throw new ArgumentException($"unknown preset '{preset}'");
 
+        // Places that must be selected on any island the run gives roads to,
+        // whatever the quota costs. The forcing lives here rather than inside a
+        // quota rule because it is a statement about the WORLD - these places
+        // are worth a road - not about how the rest are ranked, and every rule
+        // should honour it identically.
+        //
+        // Deliberately NOT for the unique-selected sites (traders, the Forge of
+        // Potential): each reserves about ten candidate positions of which one
+        // becomes permanent, so forcing the name would force ten dead-end
+        // spurs. Those need a rule that resolves the placed instance first.
+        string? require = Options.Value(args, "--require");
+        if (require != null)
+        {
+            StudySelection.Enabled = true;
+            StudySelection.PresetName = preset == "shipped" ? "required" : preset + "+required";
+            // Everything not named still enters the pool exactly as before:
+            // this flag adds a floor, it does not thin anything.
+            StudySelection.DefaultFrequency = 1f;
+            foreach (string name in require.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                StudySelection.Required.Add(name.Trim());
+        }
+
         string? places = Options.Value(args, "--places");
         if (places != null)
         {
