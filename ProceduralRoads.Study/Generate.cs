@@ -277,6 +277,15 @@ internal static class Generate
         // generator, and the generator prices them at CustomLocationPriority
         // (80) unless told otherwise - the band the quota cuts through - so the
         // price is a parameter here rather than an assumption.
+        string? excluded = Options.Value(args, "--exclude-biomes");
+        if (excluded != null)
+        {
+            Heightmap.Biome mask = Heightmap.Biome.None;
+            foreach (string name in excluded.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                mask |= (Heightmap.Biome)Enum.Parse(typeof(Heightmap.Biome), name.Trim(), ignoreCase: true);
+            StudyFactors.ExcludedBiomes = mask;
+        }
+
         string? custom = Options.Value(args, "--custom-locations");
         if (custom != null)
         {

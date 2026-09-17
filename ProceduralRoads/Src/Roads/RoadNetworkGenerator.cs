@@ -686,6 +686,15 @@ public static partial class RoadNetworkGenerator
             if (!island.ContainsPoint(loc.position) || !IsRoadLocation(loc.name))
                 continue;
 
+            // The biome gate is applied to every place alike - a name in the
+            // table, a boss, or a name another mod registered - because it is a
+            // statement about where roads belong, not about whose content it is.
+            if (StudyFactors.ExcludedBiomes != Heightmap.Biome.None &&
+                WorldGenerator.instance != null &&
+                (WorldGenerator.instance.GetBiome(loc.position.x, loc.position.z)
+                 & StudyFactors.ExcludedBiomes) != 0)
+                continue;
+
             // PR #16 drops a place no road could reach before it is ever
             // attempted; the shipped policy attempts it and fails.
             if (StudyFactors.FilterUnreachableEndpoints && !HasNearbyPathablePoint(new Vector2(loc.position.x, loc.position.z), loc.radius))

@@ -284,6 +284,18 @@ public static class StudyFactors
     public static float DistanceScale = 2200f;
 
     /// <summary>
+    /// Biomes no place may be a road destination in, whatever its name or who
+    /// registered it. Empty is the shipped behaviour.
+    ///
+    /// A rule, not a gap in a list. Ashlands and Deep North were absent from
+    /// the vanilla priority table and that read as a deferral - until another
+    /// mod registered names of its own and put five roads in the Ashlands,
+    /// because nothing had ever said the biome was excluded. A scope decision
+    /// that lives only as an absence is not enforced.
+    /// </summary>
+    public static Heightmap.Biome ExcludedBiomes = Heightmap.Biome.None;
+
+    /// <summary>
     /// Square metres of island per FORCED coastal landing, 0 to leave landings
     /// to the ordinary quota. Scaled like the island's own place quota, and for
     /// the same reason: a big island wants more than one way to the sea.
