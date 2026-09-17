@@ -190,6 +190,7 @@ public static partial class RoadNetworkGenerator
         HashSet<int> inTree = new() { 0 };
         HashSet<int> remaining = new(members);
         remaining.Remove(0);
+        List<int> deferred = new();
 
         while (remaining.Count > 0)
         {
@@ -225,45 +226,17 @@ public static partial class RoadNetworkGenerator
                 // log the outcome either way.
                 int next = remaining.OrderByDescending(i => GetLocationPriority(nodes[i].Name)).First();
 
-                bool joined = false;
-                if (m_pathfinder != null && RoadRouteRecorder.Routes.Count > 0)
-                {
-                    int connection = RoadAttemptLog.OpenConnection(role + "-orphan");
-                    RoadAttemptLog.NextRow(role + "-orphan-search", connection);
-                    PathfinderTrace? trace = RoadAttemptLog.Begin();
-                    // Start where the BUILDER would start. A landing sits at
-                    // the waterline by construction and a crypt's centre can be
-                    // in a bog: a search that starts below the shallow-water
-                    // line never takes a first step, and reports no reachable
-                    // path from 10 m away.
-                    Vector2 from = new(nodes[next].Position.x, nodes[next].Position.z);
-                    if (StudyFactors.SnapEndpointsToPathableGround)
-                        from = GetNearestPathablePoint(from, nodes[next].Radius);
-                    List<Vector2>? path = m_pathfinder.FindPathToNetwork(
-                        from, StudyFactors.ReverseSearchReach, NetworkHints());
-
-                    if (path != null && path.Count >= 2)
-                    {
-                        RoadAttemptLog.Finish(trace, $"{nodes[next].Name} -> road", from, path[path.Count - 1],
-                            connected: true, "found", 0f, 0);
-                        Vector3 junction = new(path[path.Count - 1].x, 0f, path[path.Count - 1].y);
-                        RoadAttemptLog.NextRow(role + "-orphan-build", connection);
-                        joined = GenerateRoad(
-                            nodes[next].Position, nodes[next].Radius, junction, 0f, RoadWidth,
-                            $"{nodes[next].Name} -> road");
-                    }
-                    else
-                    {
-                        RoadAttemptLog.Finish(trace, $"{nodes[next].Name} -> road", from, from,
-                            connected: false, m_pathfinder.LastOutcome, 0f, 0);
-                    }
-                }
-
+                // Defer the destination-free retry rather than spending it now.
+                // Measured: every orphan tried at this moment was at least
+                // 388 m from any road that existed YET, median 1673 m, against
+                // a 128 m maximum bridge - so the search was being asked the
+                // question when the answer could only be no. It is the same
+                // place and the same search; what changes is how much road is
+                // on the ground when it runs.
+                deferred.Add(next);
                 inTree.Add(next);
                 remaining.Remove(next);
-                Log.LogDebug($"Routed tree: no priced edge to the tree; " +
-                             $"{(joined ? "joined by the destination-free search" : "new component")} " +
-                             $"at {nodes[next].Name}");
+                Log.LogDebug($"Routed tree: no priced edge to the tree; deferring {nodes[next].Name}");
                 continue;
             }
 
@@ -341,7 +314,65 @@ public static partial class RoadNetworkGenerator
                 Log.LogDebug($"Routed tree: {nodes[bestFrom].Name} -> {nodes[bestTo].Name} planned but not built");
         }
 
+        ConnectDeferred(nodes, deferred, role);
         return inTree;
+    }
+
+    /// <summary>
+    /// The places the tree could not price an edge to, retried once the island's
+    /// road is on the ground. Sweeps until a sweep connects nothing, because
+    /// each road built brings the network nearer to whatever is left.
+    /// </summary>
+    private static void ConnectDeferred(List<Node> nodes, List<int> deferred, string role)
+    {
+        if (deferred.Count == 0 || m_pathfinder == null)
+            return;
+
+        // Nearest to the network first: a short join is likeliest to succeed,
+        // and every success is more road for the next one to reach.
+        for (int sweep = 1; sweep <= RoadConstants.MaxDeferredSweeps && deferred.Count > 0; sweep++)
+        {
+            bool progress = false;
+            foreach (int node in deferred
+                         .OrderBy(i => NearestPointOnBuiltRoad(nodes[i].Position) is Vector3 p
+                             ? Vector3.SqrMagnitude(p - nodes[i].Position) : float.MaxValue)
+                         .ToList())
+            {
+                if (RoadRouteRecorder.Routes.Count == 0)
+                    break;
+
+                int connection = RoadAttemptLog.OpenConnection(role + "-deferred");
+                RoadAttemptLog.NextRow(role + "-deferred-search", connection);
+                PathfinderTrace? trace = RoadAttemptLog.Begin();
+                Vector2 from = new(nodes[node].Position.x, nodes[node].Position.z);
+                if (StudyFactors.SnapEndpointsToPathableGround)
+                    from = GetNearestPathablePoint(from, nodes[node].Radius);
+                List<Vector2>? path = m_pathfinder.FindPathToNetwork(
+                    from, StudyFactors.ReverseSearchReach, NetworkHints());
+
+                if (path == null || path.Count < 2)
+                {
+                    RoadAttemptLog.Finish(trace, $"{nodes[node].Name} -> road", from, from,
+                        connected: false, m_pathfinder.LastOutcome, 0f, 0);
+                    continue;
+                }
+
+                RoadAttemptLog.Finish(trace, $"{nodes[node].Name} -> road", from, path[path.Count - 1],
+                    connected: true, "found", 0f, 0);
+                Vector3 junction = new(path[path.Count - 1].x, 0f, path[path.Count - 1].y);
+                RoadAttemptLog.NextRow(role + "-deferred-build", connection);
+                if (GenerateRoad(nodes[node].Position, nodes[node].Radius, junction, 0f, RoadWidth,
+                        $"{nodes[node].Name} -> road"))
+                {
+                    deferred.Remove(node);
+                    progress = true;
+                }
+            }
+
+            Log.LogDebug($"Routed tree: deferred sweep {sweep} left {deferred.Count} unconnected");
+            if (!progress)
+                break;
+        }
     }
 
     /// <summary>
