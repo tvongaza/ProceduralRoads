@@ -272,6 +272,33 @@ internal static class Generate
         if (forceLandings != null)
             StudyFactors.AreaPerForcedLanding = float.Parse(forceLandings, CultureInfo.InvariantCulture);
 
+        // The study's stand-in for the BepInEx key [Locations] CustomLocations.
+        // Registered names are what another mod's content becomes to this
+        // generator, and the generator prices them at CustomLocationPriority
+        // (80) unless told otherwise - the band the quota cuts through - so the
+        // price is a parameter here rather than an assumption.
+        string? custom = Options.Value(args, "--custom-locations");
+        if (custom != null)
+        {
+            string text = custom.StartsWith("@") ? File.ReadAllText(custom.Substring(1)) : custom;
+            string[] names = text.Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(n => n.Trim()).Where(n => n.Length > 0).ToArray();
+            string? customPriority = Options.Value(args, "--custom-location-priority");
+            foreach (string name in names)
+            {
+                RoadNetworkGenerator.RegisterLocation(name);
+                if (customPriority != null)
+                {
+                    StudySelection.Enabled = true;
+                    StudySelection.DefaultFrequency = 1f;
+                    StudySelection.PriorityOverrides[name] =
+                        int.Parse(customPriority, CultureInfo.InvariantCulture);
+                }
+            }
+            Console.WriteLine($"custom:    {names.Length} registered location name(s) at priority " +
+                              $"{customPriority ?? "80 (the registered default)"}");
+        }
+
         string? require = Options.Value(args, "--require");
         if (require != null)
         {
