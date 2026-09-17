@@ -296,6 +296,24 @@ public static class StudyFactors
     public static Heightmap.Biome ExcludedBiomes = Heightmap.Biome.None;
 
     /// <summary>
+    /// Whether two neighbouring island cells must have land BETWEEN them to
+    /// count as the same island. Off is the shipped behaviour.
+    ///
+    /// The detector samples base height once per 128 m cell, so a cell whose
+    /// centre is dry is land for its whole width and a strait narrower than a
+    /// cell joins the landmasses on either side. Measured on RoadStudy10: the
+    /// mod calls a chain of landmasses one island of 18.45 km2, and a road
+    /// serving 39 places on it leaves one member of the chain with a stub -
+    /// which reads as a coverage failure and is not one.
+    ///
+    /// Base height ignores rivers, which are carved on top of it, so this
+    /// splits on SEA and never on a river. That is the distinction the rest of
+    /// the generator already makes: a bridge crosses a river and nothing
+    /// crosses open water.
+    /// </summary>
+    public static bool ValidateIslandEdges;
+
+    /// <summary>
     /// Square metres of island per FORCED coastal landing, 0 to leave landings
     /// to the ordinary quota. Scaled like the island's own place quota, and for
     /// the same reason: a big island wants more than one way to the sea.

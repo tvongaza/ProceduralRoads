@@ -145,6 +145,40 @@ public static class IslandDetector
         return islands;
     }
     
+    /// <summary>
+    /// Whether there is land BETWEEN two neighbouring cells, not merely at each
+    /// of their centres.
+    ///
+    /// The grid samples once per cell, so a cell whose centre is dry is land
+    /// for its whole 128 m width and a narrower strait joins the landmasses on
+    /// either side of it. Three samples across the edge is enough to find open
+    /// water in the gap.
+    ///
+    /// Base height is deliberate: rivers are carved on top of it, so this
+    /// splits an island on SEA and never on a river - the same line the rest of
+    /// the generator draws, where a bridge crosses a river and nothing crosses
+    /// open water.
+    /// </summary>
+    private static bool LandBetween(Vector2Int from, Vector2Int to, float cellSize, float worldOffset)
+    {
+        if (!StudyFactors.ValidateIslandEdges)
+            return true;
+
+        WorldGenerator world = WorldGenerator.instance;
+        if (world == null)
+            return true;
+
+        Vector2 a = CellToWorld(from, cellSize, worldOffset);
+        Vector2 b = CellToWorld(to, cellSize, worldOffset);
+        for (int i = 1; i <= 3; i++)
+        {
+            Vector2 at = Vector2.Lerp(a, b, i / 4f);
+            if (world.GetBaseHeight(at.x, at.y, false) < WaterThreshold)
+                return false;
+        }
+        return true;
+    }
+
     private static Island FloodFill(bool[,] isLand, bool[,] visited, int startX, int startY, 
         int gridSize, float cellSize, float worldOffset)
     {
@@ -181,7 +215,8 @@ public static class IslandDetector
                 int ny = cell.y + dy[i];
                 
                 if (nx >= 0 && nx < gridSize && ny >= 0 && ny < gridSize &&
-                    isLand[nx, ny] && !visited[nx, ny])
+                    isLand[nx, ny] && !visited[nx, ny] &&
+                    LandBetween(cell, new Vector2Int(nx, ny), cellSize, worldOffset))
                 {
                     visited[nx, ny] = true;
                     queue.Enqueue(new Vector2Int(nx, ny));

@@ -71,6 +71,10 @@ public static class Program
         // The detector's grid and its minimum island size are arguments, so the
         // study can ask what they cost. A dump on the 8 m lattice answers every
         // coarser lattice exactly, because each of them is a subset of it.
+        string? islandEdges = Options.Value(args, "--island-edges");
+        if (islandEdges != null)
+            StudyFactors.ValidateIslandEdges = islandEdges == "on";
+
         float cellSize = float.Parse(Options.Value(args, "--cell-size") ?? "128", CultureInfo.InvariantCulture);
         int minCells = int.Parse(Options.Value(args, "--min-cells") ?? "10", CultureInfo.InvariantCulture);
 
