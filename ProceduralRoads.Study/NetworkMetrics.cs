@@ -300,10 +300,25 @@ internal static class NetworkMetrics
     /// own counts cannot disagree about one place.</summary>
     public static bool Serves(Vector3 point, Vector2 at, float radius) => Near(point, at, radius);
 
+    /// <summary>
+    /// A road END lands EXACTLY on the approach circle: TrimPathToRadii ends
+    /// the path at CalculateRadiusIntersection, a point constructed to be
+    /// `radius` from the centre. Testing d*d &lt;= r*r on that is a knife edge,
+    /// and float rounding in the normalise-and-scale decides it - so a road
+    /// built to a place's door was counted as not serving it, about half the
+    /// time, on exactly the endpoint rule the study asks for.
+    ///
+    /// Measured on RoadStudy10: 14 to 23 places per run, 9-17 % of every served
+    /// count in the study, all of them printing as an exact radius/radius tie.
+    /// The relative epsilon is a precision allowance, not a wider definition:
+    /// at a 32 m radius it forgives 0.5 mm, where served_tolerant forgives
+    /// half a metre.
+    /// </summary>
     private static bool Near(Vector3 point, Vector2 at, float radius)
     {
         float dx = point.x - at.x, dz = point.z - at.y;
-        return dx * dx + dz * dz <= radius * radius;
+        float radiusSq = radius * radius;
+        return dx * dx + dz * dz <= radiusSq + radiusSq * 1e-5f;
     }
 
     /// <summary>
