@@ -69,6 +69,24 @@ internal static class Generate
         WorldGenerator.instance = world;
 
         List<Program.Location> locations = Program.ReadLocations(locationsPath);
+
+        // Coastal landings: pseudo-places the world does not contain, added to
+        // the location list so that every rule already written treats them as
+        // ordinary destinations. They are registered rather than added to the
+        // priority table because they are a study instrument, not content.
+        string? landingsPath = Options.Value(args, "--landings");
+        int landingCount = 0;
+        if (landingsPath != null)
+        {
+            List<Program.Location> landings = Program.ReadLocations(landingsPath);
+            locations.AddRange(landings);
+            landingCount = landings.Count;
+            // Registration and pricing happen in ApplyFactorOverrides, AFTER the
+            // preset runs: Presets.Apply calls StudySelection.Reset(), so
+            // anything set here would be silently wiped and the landings would
+            // fall back to CustomLocationPriority - which is exactly what
+            // happened on the first run of this test.
+        }
         TimeSpan loadElapsed = stage.Elapsed;
         ZoneSystem zones = new();
         foreach (Program.Location location in locations)
@@ -103,6 +121,9 @@ internal static class Generate
                           $"islands={islandPercentage}% iterations={iterations} maxLocations={maxLocations} width={width}");
         Console.WriteLine($"factors:   {StudyFactors.Describe()}");
         Console.WriteLine($"places:    {Presets.Describe()}");
+        if (landingCount > 0)
+            Console.WriteLine($"landings:  {landingCount} coastal pseudo-places from {landingsPath}, " +
+                              $"priority {(StudySelection.PriorityOverrides.TryGetValue("CoastLanding", out int lp) ? lp : -1)}");
 
         stage.Restart();
         try
@@ -234,6 +255,23 @@ internal static class Generate
         // Potential): each reserves about ten candidate positions of which one
         // becomes permanent, so forcing the name would force ten dead-end
         // spurs. Those need a rule that resolves the placed instance first.
+        // Landings are registered here, after Presets.Apply has reset the
+        // selection state, and priced explicitly rather than inheriting the
+        // registered-name default of 80.
+        string? landings = Options.Value(args, "--landings");
+        if (landings != null)
+        {
+            RoadNetworkGenerator.RegisterLocation("CoastLanding");
+            StudySelection.Enabled = true;
+            StudySelection.DefaultFrequency = 1f;
+            StudySelection.PriorityOverrides["CoastLanding"] =
+                int.Parse(Options.Value(args, "--landing-priority") ?? "60", CultureInfo.InvariantCulture);
+        }
+
+        string? forceLandings = Options.Value(args, "--force-landings");
+        if (forceLandings != null)
+            StudyFactors.AreaPerForcedLanding = float.Parse(forceLandings, CultureInfo.InvariantCulture);
+
         string? require = Options.Value(args, "--require");
         if (require != null)
         {

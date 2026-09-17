@@ -283,6 +283,24 @@ public static class StudyFactors
     /// </summary>
     public static float DistanceScale = 2200f;
 
+    /// <summary>
+    /// Square metres of island per FORCED coastal landing, 0 to leave landings
+    /// to the ordinary quota. Scaled like the island's own place quota, and for
+    /// the same reason: a big island wants more than one way to the sea.
+    ///
+    /// Forcing is the only thing that works. Priced instead - even at 90, above
+    /// every dungeon - a landing is chosen 17 times in a world under a weighted
+    /// draw, because a draw turns priority into a 1.27x ticket advantage rather
+    /// than a rank. The coastal share of road ends does not move at all.
+    /// </summary>
+    public static float AreaPerForcedLanding = 0f;
+
+    /// <summary>Landings forced on any island that has a candidate at all.</summary>
+    public static int MinForcedLandings = 1;
+
+    /// <summary>The name the landing pseudo-places carry.</summary>
+    public const string LandingName = "CoastLanding";
+
     /// <summary>How a tie in priority is broken. See <see cref="PriorityTieBreak"/>.</summary>
     public static PriorityTieBreak TieBreak = PriorityTieBreak.ListOrder;
 

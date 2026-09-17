@@ -338,7 +338,8 @@ public static partial class RoadNetworkGenerator
                 IslandQuota.FixedCount => StudyFactors.FixedPlaceCount,
                 _ => GetMaxLocationsForIsland(island),
             };
-            var selected = SelectLocationsForStrategy(islandLocations, maxLocs);
+            var selected = SelectLocationsForStrategy(
+                islandLocations, maxLocs, ForcedLandings(island, islandLocations));
             RoadSelectionLog.Record(island, islandLocations, selected);
             
             Log.LogDebug(
@@ -1014,18 +1015,76 @@ public static partial class RoadNetworkGenerator
     }
 
     /// <summary>The selected strategy's location quota.</summary>
+    /// <summary>
+    /// The landings this island must have: scaled to its area, and spread
+    /// around its coast by taking each next one as far as possible from those
+    /// already taken, so two forced landings are not the same beach.
+    /// </summary>
+    private static List<(string name, Vector3 position, float radius)> ForcedLandings(
+        Island island, List<(string name, Vector3 position, float radius)> candidates)
+    {
+        List<(string name, Vector3 position, float radius)> result = new();
+        if (StudyFactors.AreaPerForcedLanding <= 0f)
+            return result;
+
+        List<(string name, Vector3 position, float radius)> pool =
+            candidates.Where(c => c.name == StudyFactors.LandingName).ToList();
+        if (pool.Count == 0)
+            return result;
+
+        int want = StudyFactors.MinForcedLandings +
+                   (int)(island.ApproxArea / StudyFactors.AreaPerForcedLanding);
+        want = Mathf.Min(want, pool.Count);
+
+        // Farthest-first from the island centre outward: the first landing is
+        // the one nearest the middle of the coast rather than an arbitrary
+        // list entry, and every later one is as far from the rest as possible.
+        int first = 0;
+        float bestToCentre = float.MaxValue;
+        for (int i = 0; i < pool.Count; i++)
+        {
+            float d = Vector2.SqrMagnitude(new Vector2(pool[i].position.x, pool[i].position.z) - island.Center);
+            if (d < bestToCentre) { bestToCentre = d; first = i; }
+        }
+        result.Add(pool[first]);
+        pool.RemoveAt(first);
+
+        while (result.Count < want && pool.Count > 0)
+        {
+            int best = 0;
+            float bestDistance = -1f;
+            for (int i = 0; i < pool.Count; i++)
+            {
+                float nearest = float.MaxValue;
+                foreach ((string name, Vector3 position, float radius) taken in result)
+                    nearest = Mathf.Min(nearest, Vector3.SqrMagnitude(taken.position - pool[i].position));
+                if (nearest > bestDistance) { bestDistance = nearest; best = i; }
+            }
+            result.Add(pool[best]);
+            pool.RemoveAt(best);
+        }
+        return result;
+    }
+
     private static List<(string name, Vector3 position, float radius)> SelectLocationsForStrategy(
-        List<(string name, Vector3 position, float radius)> candidates, int maxCount)
+        List<(string name, Vector3 position, float radius)> candidates, int maxCount,
+        List<(string name, Vector3 position, float radius)>? forced = null)
     {
         // What a preset requires is selected however small the island's quota,
         // and the quota then fills whatever room is left.
         List<(string name, Vector3 position, float radius)> required =
             candidates.Where(c => StudySelection.IsRequired(c.name)).ToList();
+        if (forced != null && forced.Count > 0)
+        {
+            foreach ((string name, Vector3 position, float radius) landing in forced)
+                if (!required.Any(r => SameLocation(r, landing)))
+                    required.Add(landing);
+        }
         if (required.Count == 0)
             return Quota(candidates, maxCount);
 
         List<(string name, Vector3 position, float radius)> optional =
-            candidates.Where(c => !StudySelection.IsRequired(c.name)).ToList();
+            candidates.Where(c => !required.Any(r => SameLocation(r, c))).ToList();
         List<(string name, Vector3 position, float radius)> selected = new(required);
         selected.AddRange(Quota(optional, Mathf.Max(0, maxCount - required.Count)));
         return selected;
