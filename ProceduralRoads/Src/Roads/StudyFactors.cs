@@ -355,6 +355,14 @@ public static class StudyFactors
     /// </summary>
     public static int SpreadCellsPerIsland;
 
+    /// <summary>Reject a pricing probe whose pair the sea separates, instead of
+    /// paying a search to be told so.</summary>
+    public static bool ProbeSeaSkip;
+
+    /// <summary>Iteration budget for a PRICING probe, 0 to use the builder's.
+    /// A probe asks whether a route exists and roughly what it costs.</summary>
+    public static int ProbeIterations;
+
     /// <summary>The sub-area side this island is using, set per island when
     /// <see cref="SpreadCellsPerIsland"/> is on.</summary>
     public static float EffectiveSpreadCellSize;

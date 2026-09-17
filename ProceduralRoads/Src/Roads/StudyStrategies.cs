@@ -100,25 +100,31 @@ public static partial class RoadNetworkGenerator
     /// crossed the long way round. The narrower rule below is the one that
     /// holds.
     /// </summary>
-    private static bool BeyondCrossingReach(Node place, string role)
+    /// <summary>
+    /// Whether open sea wider than a crossing lies on the line between two
+    /// points, so no ford and no bridge could join them there.
+    ///
+    /// Only SEA counts. A gap of river water is left to the pathfinder however
+    /// wide it looks on the straight line, because a detour along the bank may
+    /// find a narrows: tested on run length alone, ignoring what the water was,
+    /// this lost two roads and a genuine connection.
+    ///
+    /// A straight line, so a heuristic, not a proof.
+    /// </summary>
+    private static bool SeaBlocks(Vector2 from, Vector2 to, out float worst, out float reach)
     {
-        Vector3? nearest = NearestPointOnBuiltRoad(place.Position);
-        if (!nearest.HasValue)
-            return false;
+        worst = 0f;
+        reach = (RoadPathfinder.BridgesEnabled
+            ? RoadConstants.MaxBridgeCrossingCells
+            : RoadConstants.MaxRiverCrossingCells) * RoadPathfinder.CellSize;
 
-        Vector2 from = new(place.Position.x, place.Position.z);
-        Vector2 to = new(nearest.Value.x, nearest.Value.z);
         float span = Vector2.Distance(from, to);
         if (span <= RoadPathfinder.CellSize)
             return false;
 
-        float reach = (RoadPathfinder.BridgesEnabled
-            ? RoadConstants.MaxBridgeCrossingCells
-            : RoadConstants.MaxRiverCrossingCells) * RoadPathfinder.CellSize;
-
         int steps = Mathf.CeilToInt(span / RoadPathfinder.CellSize);
         float step = span / steps;
-        float worst = 0f, run = 0f;
+        float run = 0f;
         bool riverInRun = false, worstWasSea = false;
         for (int i = 0; i <= steps; i++)
         {
@@ -144,7 +150,18 @@ public static partial class RoadNetworkGenerator
             }
         }
 
-        if (worst <= reach || !worstWasSea)
+        return worst > reach && worstWasSea;
+    }
+
+    private static bool BeyondCrossingReach(Node place, string role)
+    {
+        Vector3? nearest = NearestPointOnBuiltRoad(place.Position);
+        if (!nearest.HasValue)
+            return false;
+
+        Vector2 from = new(place.Position.x, place.Position.z);
+        Vector2 to = new(nearest.Value.x, nearest.Value.z);
+        if (!SeaBlocks(from, to, out float worst, out float reach))
             return false;
 
         // Recorded, not silent. The defect this whole thread began with was a
@@ -183,8 +200,33 @@ public static partial class RoadNetworkGenerator
             b = GetNearestPathablePoint(b, to.Radius);
         }
 
+        // A pricing probe pays a full search to learn a pair is unroutable, and
+        // most of the ones that fail are separated by open water. Answering
+        // that from the line is far cheaper than answering it from the search.
+        if (StudyFactors.ProbeSeaSkip && SeaBlocks(a, b, out _, out _))
+        {
+            RoutingProbes++;
+            RoutingProbesWithoutRoute++;
+            return null;
+        }
+
         RoutingProbes++;
-        List<Vector2>? path = m_pathfinder.FindPath(a, b);
+        // A probe only needs to know a route exists and roughly what it costs,
+        // not to find the best one, so it need not inherit the builder's whole
+        // budget. The road itself is still built at the full one.
+        int budget = RoadPathfinder.MaxIterations;
+        if (StudyFactors.ProbeIterations > 0)
+            RoadPathfinder.MaxIterations = StudyFactors.ProbeIterations;
+        List<Vector2>? path;
+        try
+        {
+            path = m_pathfinder.FindPath(a, b);
+        }
+        finally
+        {
+            RoadPathfinder.MaxIterations = budget;
+        }
+
         if (path == null || path.Count < 2)
         {
             RoutingProbesWithoutRoute++;

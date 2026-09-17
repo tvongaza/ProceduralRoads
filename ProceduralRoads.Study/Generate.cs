@@ -282,6 +282,14 @@ internal static class Generate
         if (spreadCells != null)
             StudyFactors.SpreadCellSize = float.Parse(spreadCells, CultureInfo.InvariantCulture);
 
+        string? probeSea = Options.Value(args, "--probe-sea-skip");
+        if (probeSea != null)
+            StudyFactors.ProbeSeaSkip = OnOff(probeSea, "--probe-sea-skip");
+
+        string? probeIters = Options.Value(args, "--probe-iterations");
+        if (probeIters != null)
+            StudyFactors.ProbeIterations = int.Parse(probeIters, CultureInfo.InvariantCulture);
+
         string? spreadPer = Options.Value(args, "--spread-cells-per-island");
         if (spreadPer != null)
             StudyFactors.SpreadCellsPerIsland = int.Parse(spreadPer, CultureInfo.InvariantCulture);
