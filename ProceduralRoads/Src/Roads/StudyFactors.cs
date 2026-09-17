@@ -344,6 +344,22 @@ public static class StudyFactors
     public static float SpreadCellSize;
 
     /// <summary>
+    /// Sub-areas per island instead of a fixed cell size, 0 to use
+    /// <see cref="SpreadCellSize"/>. The side becomes sqrt(area / this), so a
+    /// 12 km² island and a 1 km² island are each cut into the same NUMBER of
+    /// pieces rather than into pieces of the same size.
+    ///
+    /// Which is right is not obvious: a fixed grid asks for a road every so
+    /// many metres wherever you are, and a fixed count asks every island to be
+    /// covered to the same standard relative to itself.
+    /// </summary>
+    public static int SpreadCellsPerIsland;
+
+    /// <summary>The sub-area side this island is using, set per island when
+    /// <see cref="SpreadCellsPerIsland"/> is on.</summary>
+    public static float EffectiveSpreadCellSize;
+
+    /// <summary>
     /// Square metres of island per FORCED coastal landing, 0 to leave landings
     /// to the ordinary quota. Scaled like the island's own place quota, and for
     /// the same reason: a big island wants more than one way to the sea.

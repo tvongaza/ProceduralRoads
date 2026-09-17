@@ -282,6 +282,10 @@ internal static class Generate
         if (spreadCells != null)
             StudyFactors.SpreadCellSize = float.Parse(spreadCells, CultureInfo.InvariantCulture);
 
+        string? spreadPer = Options.Value(args, "--spread-cells-per-island");
+        if (spreadPer != null)
+            StudyFactors.SpreadCellsPerIsland = int.Parse(spreadPer, CultureInfo.InvariantCulture);
+
         string? islandEdges = Options.Value(args, "--island-edges");
         if (islandEdges != null)
             StudyFactors.ValidateIslandEdges = OnOff(islandEdges, "--island-edges");

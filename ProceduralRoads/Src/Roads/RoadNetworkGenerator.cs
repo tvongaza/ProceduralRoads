@@ -340,6 +340,11 @@ public static partial class RoadNetworkGenerator
 
         foreach (var island in selectedIslands)
         {
+            // A fixed count of sub-areas means their side depends on the island.
+            StudyFactors.EffectiveSpreadCellSize = StudyFactors.SpreadCellsPerIsland > 0
+                ? Mathf.Sqrt(island.ApproxArea / StudyFactors.SpreadCellsPerIsland)
+                : 0f;
+
             var islandLocations = GetLocationsOnIsland(island, locations.Value.AllLocations);
             // A study preset decides which places are candidates at all, before
             // any quota: everything it requires, plus the optional places that
@@ -1121,8 +1126,11 @@ public static partial class RoadNetworkGenerator
         if (maxCount <= 0)
             return new List<(string name, Vector3 position, float radius)>();
         List<(string name, Vector3 position, float radius)> ordered = Reorder(candidates);
-        return StudyFactors.SpreadCellSize > 0f
-            ? QuotaBySubArea(ordered, maxCount)
+        float side = StudyFactors.EffectiveSpreadCellSize > 0f
+            ? StudyFactors.EffectiveSpreadCellSize
+            : StudyFactors.SpreadCellSize;
+        return side > 0f
+            ? QuotaBySubArea(ordered, maxCount, side)
             : QuotaRule(ordered, maxCount);
     }
 
@@ -1133,12 +1141,10 @@ public static partial class RoadNetworkGenerator
     /// <see cref="StudyFactors.SpreadCellSize"/>.
     /// </summary>
     private static List<(string name, Vector3 position, float radius)> QuotaBySubArea(
-        List<(string name, Vector3 position, float radius)> candidates, int maxCount)
+        List<(string name, Vector3 position, float radius)> candidates, int maxCount, float side)
     {
         if (candidates.Count <= maxCount)
             return candidates;
-
-        float side = StudyFactors.SpreadCellSize;
         Dictionary<(int, int), List<(string name, Vector3 position, float radius)>> cells = new();
         foreach ((string name, Vector3 position, float radius) candidate in candidates)
         {
