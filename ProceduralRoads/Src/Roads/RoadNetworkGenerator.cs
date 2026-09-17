@@ -1064,6 +1064,7 @@ public static partial class RoadNetworkGenerator
                 LocationQuota.SeededRandom => SelectLocationsAtRandom(candidates, maxCount),
                 LocationQuota.CategoryBalanced => SelectLocationsCategoryBalanced(candidates, maxCount),
                 LocationQuota.WeightedByPriority => SelectLocationsWeightedByPriority(candidates, maxCount),
+                LocationQuota.WeightedNearest => SelectLocationsWeightedNearest(candidates, maxCount),
                 _ => SelectLocations(candidates, maxCount),
             };
 

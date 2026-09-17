@@ -266,6 +266,66 @@ public static partial class RoadNetworkGenerator
         return selected;
     }
 
+    /// <summary>
+    /// PR #16's routine with a draw where its argmax was. See
+    /// <see cref="LocationQuota.WeightedNearest"/>.
+    /// </summary>
+    private static List<(string name, Vector3 position, float radius)> SelectLocationsWeightedNearest(
+        List<(string name, Vector3 position, float radius)> candidates, int maxCount)
+    {
+        if (candidates.Count <= maxCount)
+            return candidates;
+
+        List<(string name, Vector3 position, float radius)> selected = new();
+        List<(string name, Vector3 position, float radius)> pool = new();
+        foreach ((string name, Vector3 position, float radius) candidate in candidates)
+        {
+            if (IsBossLocation(candidate.name))
+                selected.Add(candidate);
+            else
+                pool.Add(candidate);
+        }
+
+        int seed = WorldGenerator.instance?.GetSeed() ?? 0;
+        int step = 0;
+        while (selected.Count < maxCount && pool.Count > 0)
+        {
+            int best = 0;
+            float bestKey = float.MinValue;
+            for (int i = 0; i < pool.Count; i++)
+            {
+                float weight = Mathf.Pow(Mathf.Max(1, GetLocationPriority(pool[i].name)), StudyFactors.WeightExponent);
+                if (selected.Count > 0)
+                {
+                    float nearest = float.MaxValue;
+                    foreach ((string name, Vector3 position, float radius) taken in selected)
+                        nearest = Mathf.Min(nearest, Vector3.Distance(taken.position, pool[i].position));
+                    // PR #16's preference, as a positive factor rather than a
+                    // subtraction. The scale is the dial between a mild tilt
+                    // and something close to PR #16's argmax: at 2200 a place
+                    // 2.2 km out keeps 37 % of its weight, at 200 it keeps
+                    // essentially none, and only then does the draw stay as
+                    // spatially tight as taking the nearest outright.
+                    weight *= (float)System.Math.Exp(-nearest / Mathf.Max(1f, StudyFactors.DistanceScale));
+                }
+                // A fresh draw each step, still fixed by the world and the
+                // place: reusing one number per place would make the whole
+                // sequence a single shuffle.
+                float u = Mathf.Clamp(WeightKey(seed + step * 7919, pool[i].position, pool[i].name), 1e-6f, 1f - 1e-6f);
+                float key = Mathf.Pow(u, 1f / weight);
+                if (key > bestKey)
+                {
+                    bestKey = key;
+                    best = i;
+                }
+            }
+            selected.Add(pool[best]);
+            pool.RemoveAt(best);
+            step++;
+        }
+        return selected;
+    }
+
     /// <summary>A number in [0,1) fixed by the world, the place's position and
     /// its name - the same shape as StudySelection's draw, kept separate so the
     /// two never accidentally return the same value for one place.</summary>

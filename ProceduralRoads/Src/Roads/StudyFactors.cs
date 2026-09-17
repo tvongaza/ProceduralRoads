@@ -104,6 +104,23 @@ public enum LocationQuota
     /// form would materialise 186,710 entries for this world.
     /// </summary>
     WeightedByPriority,
+
+    /// <summary>
+    /// Study: PR #16's selection routine with its argmax replaced by a draw.
+    ///
+    /// PR #16 picks, each step, the candidate maximising
+    /// priority * 100 - distance-to-what-is-already-chosen; that is what makes
+    /// its networks compact, and it is a SELECTION effect, not a routing one.
+    /// This keeps the step structure and the distance preference and makes the
+    /// choice a weighted draw instead, so the composition can move the way
+    /// <see cref="WeightedByPriority"/> moves it while the set stays spatially
+    /// tight.
+    ///
+    /// The weight is priority^exponent scaled by 1/(1 + d/2200), so a place
+    /// 2.2 km from everything chosen is worth half a place standing next to it.
+    /// A subtractive penalty cannot be used here: weights must be positive.
+    /// </summary>
+    WeightedNearest,
 }
 
 /// <summary>How many places on an island may have roads.</summary>
@@ -258,6 +275,13 @@ public static class StudyFactors
     /// draws the quota. One makes the draw proportional to priority itself.
     /// </summary>
     public static float WeightExponent = 1f;
+
+    /// <summary>
+    /// How fast a place's weight decays with distance from what is already
+    /// chosen, under <see cref="LocationQuota.WeightedNearest"/>. Metres.
+    /// Large is a mild preference; small approaches PR #16's outright argmax.
+    /// </summary>
+    public static float DistanceScale = 2200f;
 
     /// <summary>How a tie in priority is broken. See <see cref="PriorityTieBreak"/>.</summary>
     public static PriorityTieBreak TieBreak = PriorityTieBreak.ListOrder;

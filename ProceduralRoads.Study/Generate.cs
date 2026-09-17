@@ -184,8 +184,9 @@ internal static class Generate
                 "random" => LocationQuota.SeededRandom,
                 "balanced" => LocationQuota.CategoryBalanced,
                 "weighted" => LocationQuota.WeightedByPriority,
+                "weighted-nearest" => LocationQuota.WeightedNearest,
                 _ => throw new ArgumentException(
-                    $"--quota must be truncate, nearest, farthest, random, balanced or weighted, not '{quota}'"),
+                    $"--quota must be truncate, nearest, farthest, random, balanced, weighted or weighted-nearest, not '{quota}'"),
             };
 
         string? plan = Options.Value(args, "--plan");
@@ -278,6 +279,10 @@ internal static class Generate
         string? weightExponent = Options.Value(args, "--weight-exponent");
         if (weightExponent != null)
             StudyFactors.WeightExponent = float.Parse(weightExponent, CultureInfo.InvariantCulture);
+
+        string? distanceScale = Options.Value(args, "--distance-scale");
+        if (distanceScale != null)
+            StudyFactors.DistanceScale = float.Parse(distanceScale, CultureInfo.InvariantCulture);
 
         string? teeFactor = Options.Value(args, "--tee-factor");
         if (teeFactor != null)
