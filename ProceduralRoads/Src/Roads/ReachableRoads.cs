@@ -224,6 +224,66 @@ public static partial class RoadNetworkGenerator
     /// selected identical to every other rule at the same quota, which is what
     /// makes the comparison a comparison.
     /// </summary>
+    /// <summary>
+    /// The quota as a weighted draw: priority buys tickets instead of a place
+    /// in a queue. See <see cref="LocationQuota.WeightedByPriority"/>.
+    /// </summary>
+    private static List<(string name, Vector3 position, float radius)> SelectLocationsWeightedByPriority(
+        List<(string name, Vector3 position, float radius)> candidates, int maxCount)
+    {
+        if (candidates.Count <= maxCount)
+            return candidates;
+
+        // Bosses first and always, exactly as the balanced rule treats them.
+        // A draw cannot protect them: they are 24 places in 3,796, and no
+        // weight this table uses closes a gap that size.
+        List<(string name, Vector3 position, float radius)> selected = new();
+        List<(string name, Vector3 position, float radius)> pool = new();
+        foreach ((string name, Vector3 position, float radius) candidate in candidates)
+        {
+            if (IsBossLocation(candidate.name))
+                selected.Add(candidate);
+            else
+                pool.Add(candidate);
+        }
+
+        int seed = WorldGenerator.instance?.GetSeed() ?? 0;
+        // Efraimidis-Spirakis: the largest k of u^(1/w) is a weighted sample of
+        // size k without replacement. u comes from the place's own identity, so
+        // the same world draws the same places every time it is generated - a
+        // draw nobody can reproduce would give a different world on every load.
+        List<(float key, int index)> keys = new(pool.Count);
+        for (int i = 0; i < pool.Count; i++)
+        {
+            float weight = Mathf.Pow(Mathf.Max(1, GetLocationPriority(pool[i].name)), StudyFactors.WeightExponent);
+            float u = Mathf.Clamp(WeightKey(seed, pool[i].position, pool[i].name), 1e-6f, 1f - 1e-6f);
+            keys.Add((Mathf.Pow(u, 1f / weight), i));
+        }
+        keys.Sort((a, b) => b.key.CompareTo(a.key));
+
+        for (int i = 0; i < keys.Count && selected.Count < maxCount; i++)
+            selected.Add(pool[keys[i].index]);
+        return selected;
+    }
+
+    /// <summary>A number in [0,1) fixed by the world, the place's position and
+    /// its name - the same shape as StudySelection's draw, kept separate so the
+    /// two never accidentally return the same value for one place.</summary>
+    private static float WeightKey(int seed, Vector3 position, string name)
+    {
+        unchecked
+        {
+            uint hash = 2166136261u;
+            foreach (char c in name)
+                hash = (hash ^ c) * 16777619u;
+            hash = (hash ^ (uint)Mathf.RoundToInt(position.x)) * 16777619u;
+            hash = (hash ^ (uint)Mathf.RoundToInt(position.z)) * 16777619u;
+            hash = (hash ^ (uint)seed) * 16777619u;
+            hash ^= hash >> 15;
+            return (hash % 1000003u) / 1000003f;
+        }
+    }
+
     private static List<(string name, Vector3 position, float radius)> SelectLocationsCategoryBalanced(
         List<(string name, Vector3 position, float radius)> candidates, int maxCount)
     {

@@ -80,6 +80,30 @@ public enum LocationQuota
     /// plentiful ones.
     /// </summary>
     CategoryBalanced,
+
+    /// <summary>
+    /// Study: priority as a WEIGHT rather than a rank. Every place gets
+    /// priority^<see cref="StudyFactors.WeightExponent"/> tickets and the quota
+    /// is a draw from that pool, without replacement, decided by a hash of the
+    /// world seed and the place's own position so the world regenerates
+    /// identically.
+    ///
+    /// Bosses are taken first and always. Weighting alone cannot protect them:
+    /// there are 24 boss candidates against 3,796, so at weight 100 against 30
+    /// a boss draws 1.3 % of the tickets and 91 % of them would get no road.
+    /// The point of the rule is what happens to the rest.
+    ///
+    /// The exponent is the dial between abundance and importance. At 1 the
+    /// outcome is driven mostly by how many of each kind the world happens to
+    /// contain, because a 30:80 weight ratio is small beside a 1664:1273 count
+    /// ratio; raising it restores priority's say.
+    ///
+    /// No list of duplicated entries is built. Drawing k from n with weights is
+    /// exactly the largest k of u^(1/w) per place (Efraimidis and Spirakis),
+    /// which is the same distribution at a fraction of the cost - the naive
+    /// form would materialise 186,710 entries for this world.
+    /// </summary>
+    WeightedByPriority,
 }
 
 /// <summary>How many places on an island may have roads.</summary>
@@ -228,6 +252,12 @@ public static class StudyFactors
     /// sooner at a multiplier above one.
     /// </summary>
     public static int QuotaMultiplier = 1;
+
+    /// <summary>
+    /// The exponent on priority when <see cref="LocationQuota.WeightedByPriority"/>
+    /// draws the quota. One makes the draw proportional to priority itself.
+    /// </summary>
+    public static float WeightExponent = 1f;
 
     /// <summary>How a tie in priority is broken. See <see cref="PriorityTieBreak"/>.</summary>
     public static PriorityTieBreak TieBreak = PriorityTieBreak.ListOrder;

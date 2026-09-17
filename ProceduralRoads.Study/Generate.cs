@@ -183,8 +183,9 @@ internal static class Generate
                 "farthest" => LocationQuota.PriorityThenFarthest,
                 "random" => LocationQuota.SeededRandom,
                 "balanced" => LocationQuota.CategoryBalanced,
+                "weighted" => LocationQuota.WeightedByPriority,
                 _ => throw new ArgumentException(
-                    $"--quota must be truncate, nearest, farthest, random or balanced, not '{quota}'"),
+                    $"--quota must be truncate, nearest, farthest, random, balanced or weighted, not '{quota}'"),
             };
 
         string? plan = Options.Value(args, "--plan");
@@ -251,6 +252,10 @@ internal static class Generate
         string? multiplier = Options.Value(args, "--quota-multiplier");
         if (multiplier != null)
             StudyFactors.QuotaMultiplier = int.Parse(multiplier, CultureInfo.InvariantCulture);
+
+        string? weightExponent = Options.Value(args, "--weight-exponent");
+        if (weightExponent != null)
+            StudyFactors.WeightExponent = float.Parse(weightExponent, CultureInfo.InvariantCulture);
 
         string? teeFactor = Options.Value(args, "--tee-factor");
         if (teeFactor != null)
