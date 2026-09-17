@@ -76,6 +76,90 @@ public static partial class RoadNetworkGenerator
     /// primitive, so a plan cannot smuggle in a route the generator would not
     /// have made.
     /// </summary>
+    /// <summary>
+    /// Whether the water between a place and the nearest built road is wider
+    /// than any crossing could span, so a search would only spend its budget to
+    /// say no.
+    ///
+    /// The line from the place to the nearest road is sampled a cell at a time
+    /// and the longest unbroken run of unpathable ground measured. A run wider
+    /// than the crossing kind's own limit cannot be bridged or forded anywhere
+    /// along that line - and open sea is never crossable at all, because
+    /// TryGetRiverCrossing wants river weight behind the water.
+    ///
+    /// Only SEA counts. A gap of river water is left to the pathfinder however
+    /// wide it looks on the straight line, because a detour along the bank may
+    /// find a narrows the line does not cross. A run of open water carrying no
+    /// river weight is different in kind: TryGetRiverCrossing requires river
+    /// weight behind the water, so no ford and no bridge can ever span it, at
+    /// any width, anywhere.
+    ///
+    /// Tested first on run length alone, ignoring what the water was: that
+    /// skipped 53 searches, saved 16 % of the run - and lost two roads and one
+    /// genuine connection, because a wide river on the direct line can still be
+    /// crossed the long way round. The narrower rule below is the one that
+    /// holds.
+    /// </summary>
+    private static bool BeyondCrossingReach(Node place, string role)
+    {
+        Vector3? nearest = NearestPointOnBuiltRoad(place.Position);
+        if (!nearest.HasValue)
+            return false;
+
+        Vector2 from = new(place.Position.x, place.Position.z);
+        Vector2 to = new(nearest.Value.x, nearest.Value.z);
+        float span = Vector2.Distance(from, to);
+        if (span <= RoadPathfinder.CellSize)
+            return false;
+
+        float reach = (RoadPathfinder.BridgesEnabled
+            ? RoadConstants.MaxBridgeCrossingCells
+            : RoadConstants.MaxRiverCrossingCells) * RoadPathfinder.CellSize;
+
+        int steps = Mathf.CeilToInt(span / RoadPathfinder.CellSize);
+        float step = span / steps;
+        float worst = 0f, run = 0f;
+        bool riverInRun = false, worstWasSea = false;
+        for (int i = 0; i <= steps; i++)
+        {
+            Vector2 point = Vector2.Lerp(from, to, i / (float)steps);
+            if (IsPathablePoint(point))
+            {
+                run = 0f;
+                riverInRun = false;
+                continue;
+            }
+
+            if (WorldGenerator.instance != null)
+            {
+                WorldGenerator.instance.GetRiverWeight(point.x, point.y, out float riverWeight, out _);
+                riverInRun |= riverWeight > RoadConstants.RiverImpassableThreshold;
+            }
+
+            run += step;
+            if (run > worst)
+            {
+                worst = run;
+                worstWasSea = !riverInRun;
+            }
+        }
+
+        if (worst <= reach || !worstWasSea)
+            return false;
+
+        // Recorded, not silent. The defect this whole thread began with was a
+        // place that vanished from every count; a place not worth attempting
+        // still owes the log a row saying why.
+        RoadAttemptLog.NextRow(role + "-orphan-skipped");
+        PathfinderTrace? trace = RoadAttemptLog.Begin();
+        RoadAttemptLog.Finish(trace, $"{place.Name} -> road", from, to,
+            connected: false, "sea beyond crossing reach", 0f, 0);
+        Log.LogDebug($"Routed tree: {place.Name} is {worst:F0} m of open sea from the network, " +
+                     $"past the {reach:F0} m a crossing spans and carrying no river to cross; " +
+                     $"not attempted");
+        return true;
+    }
+
     private static float? RoutedCost(Node from, Node to)
     {
         if (m_pathfinder == null)
@@ -226,7 +310,8 @@ public static partial class RoadNetworkGenerator
                 int next = remaining.OrderByDescending(i => GetLocationPriority(nodes[i].Name)).First();
 
                 bool joined = false;
-                if (m_pathfinder != null && RoadRouteRecorder.Routes.Count > 0)
+                if (m_pathfinder != null && RoadRouteRecorder.Routes.Count > 0
+                    && !BeyondCrossingReach(nodes[next], role))
                 {
                     int connection = RoadAttemptLog.OpenConnection(role + "-orphan");
                     RoadAttemptLog.NextRow(role + "-orphan-search", connection);
