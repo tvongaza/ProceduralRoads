@@ -47,6 +47,19 @@ public enum IslandSelection
 
     /// <summary>PR #16's rule: the quota spread over three world rings.</summary>
     RingBalanced,
+
+    /// <summary>
+    /// Study: by how much there is to connect, not by how big the island is.
+    ///
+    /// The shipped rule sorts on area alone, so an 8 km² island with three
+    /// eligible places beats a 3 km² island with eighty. If the point of the
+    /// network is that the islands carrying it feel lived in, the island's
+    /// content is the thing to rank on.
+    ///
+    /// Eligible places first, area as the tie-break - not places per km², which
+    /// hands the world to specks of land with one ruin on them.
+    /// </summary>
+    ContentFirst,
 }
 
 /// <summary>Which places on an island fill its quota.</summary>

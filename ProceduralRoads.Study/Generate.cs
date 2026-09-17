@@ -192,7 +192,8 @@ internal static class Generate
             {
                 "largest" => IslandSelection.LargestFirst,
                 "rings" => IslandSelection.RingBalanced,
-                _ => throw new ArgumentException($"--island-selection must be largest or rings, not '{islands}'"),
+                "content" => IslandSelection.ContentFirst,
+                _ => throw new ArgumentException($"--island-selection must be largest, rings or content, not '{islands}'"),
             };
 
         string? quota = Options.Value(args, "--quota");

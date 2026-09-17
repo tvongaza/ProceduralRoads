@@ -314,6 +314,22 @@ public static partial class RoadNetworkGenerator
             Log.LogDebug(
                 $"Islands: {islands.Count} total, {candidates.Count} eligible, {selectedIslands.Count} selected ({IslandRoadPercentage}%, ring-balanced)");
         }
+        else if (StudyFactors.Islands == IslandSelection.ContentFirst)
+        {
+            // Rank on what there is to connect. The eligible list is the same
+            // one the per-island quota will draw from, so an island chosen here
+            // is an island with somewhere for a road to go.
+            var ranked = islands
+                .Select(i => (Island: i, Eligible: GetLocationsOnIsland(i, locations.Value.AllLocations).Count))
+                .Where(entry => entry.Eligible >= 2)
+                .OrderByDescending(entry => entry.Eligible)
+                .ThenByDescending(entry => entry.Island.ApproxArea)
+                .ToList();
+            int islandCount = Mathf.Max(1, Mathf.RoundToInt(islands.Count * IslandRoadPercentage / 100f));
+            selectedIslands = ranked.Take(islandCount).Select(entry => entry.Island).ToList();
+            Log.LogDebug($"Islands: {islands.Count} total, {ranked.Count} with two or more eligible places, " +
+                         $"{selectedIslands.Count} selected ({IslandRoadPercentage}%, content-first)");
+        }
         else
         {
             var sortedIslands = islands.OrderByDescending(i => i.ApproxArea).ToList();
