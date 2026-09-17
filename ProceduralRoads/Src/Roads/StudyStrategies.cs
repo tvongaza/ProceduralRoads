@@ -86,6 +86,19 @@ public static partial class RoadNetworkGenerator
         if (Vector2.Distance(a, b) > MaxRoadLinkDistance)
             return null;
 
+        // Price from the SAME points the builder will search from. Without
+        // this the planner asks whether a road can start in the bog at a
+        // crypt's centre, decides it cannot, and drops the place from the tree
+        // without ever attempting it - while GenerateRoad, on the same
+        // settings, would have snapped to dry ground and succeeded. Measured
+        // on RoadStudy10: 196 of 335 pricing probes found no route, and 88
+        // places were absorbed as new components with no road and no attempt.
+        if (StudyFactors.SnapEndpointsToPathableGround)
+        {
+            a = GetNearestPathablePoint(a, from.Radius);
+            b = GetNearestPathablePoint(b, to.Radius);
+        }
+
         RoutingProbes++;
         List<Vector2>? path = m_pathfinder.FindPath(a, b);
         if (path == null || path.Count < 2)
