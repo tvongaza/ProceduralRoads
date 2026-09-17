@@ -327,6 +327,23 @@ public static class StudyFactors
     public static bool ValidateIslandEdges;
 
     /// <summary>
+    /// The side, in metres, of the sub-areas an island's quota is shared across,
+    /// 0 to leave the quota to the island as a whole.
+    ///
+    /// Spread and cheap road pull against each other: taking each next place as
+    /// far as possible from the rest was measured at 101 places served on
+    /// 84.8 km, against 136 on 64.3 km for taking whatever came first. Far
+    /// apart is dear to connect.
+    ///
+    /// A grid splits the difference. Every sub-area holding candidates gets a
+    /// turn before any gets a second, so the selection spreads over the island
+    /// at the scale of the grid - and WITHIN a sub-area the configured rule is
+    /// untouched, so it can still pick a tight, cheap cluster, and a
+    /// category-balanced or weighted draw still does its own job there.
+    /// </summary>
+    public static float SpreadCellSize;
+
+    /// <summary>
     /// Square metres of island per FORCED coastal landing, 0 to leave landings
     /// to the ordinary quota. Scaled like the island's own place quota, and for
     /// the same reason: a big island wants more than one way to the sea.

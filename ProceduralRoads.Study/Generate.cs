@@ -278,6 +278,10 @@ internal static class Generate
         // generator, and the generator prices them at CustomLocationPriority
         // (80) unless told otherwise - the band the quota cuts through - so the
         // price is a parameter here rather than an assumption.
+        string? spreadCells = Options.Value(args, "--spread-cells");
+        if (spreadCells != null)
+            StudyFactors.SpreadCellSize = float.Parse(spreadCells, CultureInfo.InvariantCulture);
+
         string? islandEdges = Options.Value(args, "--island-edges");
         if (islandEdges != null)
             StudyFactors.ValidateIslandEdges = OnOff(islandEdges, "--island-edges");

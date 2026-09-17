@@ -1116,10 +1116,67 @@ public static partial class RoadNetworkGenerator
     }
 
     private static List<(string name, Vector3 position, float radius)> Quota(
-        List<(string name, Vector3 position, float radius)> candidates, int maxCount) =>
-        maxCount <= 0
-            ? new List<(string name, Vector3 position, float radius)>()
-            : QuotaRule(Reorder(candidates), maxCount);
+        List<(string name, Vector3 position, float radius)> candidates, int maxCount)
+    {
+        if (maxCount <= 0)
+            return new List<(string name, Vector3 position, float radius)>();
+        List<(string name, Vector3 position, float radius)> ordered = Reorder(candidates);
+        return StudyFactors.SpreadCellSize > 0f
+            ? QuotaBySubArea(ordered, maxCount)
+            : QuotaRule(ordered, maxCount);
+    }
+
+    /// <summary>
+    /// The island's quota shared across a grid of sub-areas: every sub-area
+    /// holding candidates takes one before any takes a second, and the
+    /// configured rule chooses within each. See
+    /// <see cref="StudyFactors.SpreadCellSize"/>.
+    /// </summary>
+    private static List<(string name, Vector3 position, float radius)> QuotaBySubArea(
+        List<(string name, Vector3 position, float radius)> candidates, int maxCount)
+    {
+        if (candidates.Count <= maxCount)
+            return candidates;
+
+        float side = StudyFactors.SpreadCellSize;
+        Dictionary<(int, int), List<(string name, Vector3 position, float radius)>> cells = new();
+        foreach ((string name, Vector3 position, float radius) candidate in candidates)
+        {
+            (int, int) key = (Mathf.FloorToInt(candidate.position.x / side),
+                              Mathf.FloorToInt(candidate.position.z / side));
+            if (!cells.TryGetValue(key, out var bucket))
+                cells[key] = bucket = new List<(string name, Vector3 position, float radius)>();
+            bucket.Add(candidate);
+        }
+
+        // Densest sub-areas first, so when the quota cannot reach every one the
+        // places it does buy stand where there is most to connect.
+        List<List<(string name, Vector3 position, float radius)>> buckets =
+            cells.Values.OrderByDescending(b => b.Count).ToList();
+
+        int[] allocation = new int[buckets.Count];
+        int given = 0;
+        while (given < maxCount)
+        {
+            bool gave = false;
+            for (int i = 0; i < buckets.Count && given < maxCount; i++)
+            {
+                if (allocation[i] >= buckets[i].Count)
+                    continue;
+                allocation[i]++;
+                given++;
+                gave = true;
+            }
+            if (!gave)
+                break;
+        }
+
+        List<(string name, Vector3 position, float radius)> selected = new();
+        for (int i = 0; i < buckets.Count; i++)
+            if (allocation[i] > 0)
+                selected.AddRange(QuotaRule(buckets[i], allocation[i]));
+        return selected;
+    }
 
     /// <summary>
     /// The tie-break, applied to the CANDIDATE LIST rather than inside one
