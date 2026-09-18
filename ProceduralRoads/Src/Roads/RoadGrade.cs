@@ -78,7 +78,7 @@ public static class RoadGrade
     /// inside the cap too - and it equals the end heights at the ends, because
     /// there the two cones meet.
     /// </summary>
-    public static bool Limit(IReadOnlyList<Vector2> points, IList<float> heights, float maxGrade)
+    public static bool Limit(IReadOnlyList<Vector2> points, IList<float> heights, float maxGrade, IReadOnlyList<float>? edgeGrades = null)
     {
         if (!Capped(maxGrade)) return true;
         int n = Mathf.Min(points.Count, heights.Count);
@@ -87,11 +87,13 @@ public static class RoadGrade
         // refused just the same.
         if (n < 2) return true;
 
+        // Optional per-edge caps shorten the available climb through turn landings.
         // Arc length along the profile, so the cap is metres of rise per metre
         // of road travelled rather than per point.
         float[] s = new float[n];
         for (int i = 1; i < n; i++)
-            s[i] = s[i - 1] + Vector2.Distance(points[i - 1], points[i]);
+            s[i] = s[i - 1] + Vector2.Distance(points[i - 1], points[i]) *
+                (edgeGrades == null ? 1f : Mathf.Min(maxGrade, Mathf.Max(0f, edgeGrades[i])) / maxGrade);
         float length = s[n - 1];
         if (length <= 0f) return true;
 

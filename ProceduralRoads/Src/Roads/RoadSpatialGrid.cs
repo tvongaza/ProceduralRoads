@@ -132,7 +132,29 @@ public static class RoadSpatialGrid
         for (int i = 0; i < path.Count - 1; i++)
             totalLength += Vector2.Distance(path[i], path[i + 1]);
 
-        List<Vector2> densePoints = SplinePath(path, segmentLength);
+        if (!RoadSwitchbacks.Shape(path, width, out var turns, out var landings, p => BiomeBlendedHeight.GetBlendedHeight(p.x,p.y,worldGen)))
+        { Log.LogDebug("Road refused: switchback has no room for a turning landing"); return null; }
+        List<Vector2> densePoints = turns ?? SplinePath(path, segmentLength);
+        if (turns != null)
+        {
+            totalLength = 0f;
+            for (int i=1;i<densePoints.Count;i++)
+            {
+                totalLength += Vector2.Distance(densePoints[i-1],densePoints[i]);
+                if (RoadSiteProtection.BlocksSegment(densePoints[i-1],densePoints[i],width*0.5f+2f,null,null))
+                    return null;
+                worldGen.GetRiverWeight(densePoints[i].x,densePoints[i].y,out float river,out _);
+                if (river>RoadConstants.RiverImpassableThreshold ||
+                    worldGen.GetHeight(densePoints[i].x,densePoints[i].y)<RoadConstants.ShallowWaterHeight) return null;
+            }
+        }
+        float[]? edgeGrades = null;
+        if (landings != null)
+        {
+            edgeGrades = new float[densePoints.Count];
+            for(int i=0;i<edgeGrades.Length;i++) edgeGrades[i] = landings[i] || (i>0 && landings[i-1])
+                ? Mathf.Min(RoadGrade.Configured,RoadSwitchbacks.LandingGrade) : RoadGrade.Configured;
+        }
         List<float> denseHeights = new List<float>(densePoints.Count);
 
         foreach (var point in densePoints)
@@ -175,12 +197,12 @@ public static class RoadSpatialGrid
         // This is where that is caught, and the ends are held: they are the
         // heights the road has to meet.
         float steepestBefore = RoadGrade.SteepestStep(densePoints, finalHeights);
-        if (!RoadGrade.Limit(densePoints, finalHeights, RoadGrade.Configured))
+        if (!RoadGrade.Limit(densePoints, finalHeights, RoadGrade.Configured, edgeGrades))
         {
             Log.LogDebug(
                 $"Road profile refused: ends {finalHeights[0]:F1}m and {finalHeights[finalHeights.Count - 1]:F1}m " +
                 $"are {Mathf.Abs(finalHeights[finalHeights.Count - 1] - finalHeights[0]):F1}m apart over {pathTotal:F0}m, " +
-                $"over the {RoadGrade.Configured:P0} cap");
+                $"over the {RoadGrade.Configured:P0} cap including turn landings");
             return null;
         }
         float steepestAfter = RoadGrade.SteepestStep(densePoints, finalHeights);
@@ -189,6 +211,8 @@ public static class RoadSpatialGrid
         if (steepestAfter < steepestBefore - 0.001f)
             Log.LogDebug($"  Grade limited: steepest step {steepestBefore:P0} -> {steepestAfter:P0}");
 
+        if (turns != null && !RoadSwitchbacks.Separated(densePoints, finalHeights, width))
+        { Log.LogDebug("Road refused: switchback legs blend at different heights"); return null; }
         return new PlannedPath(densePoints, finalHeights, debugInfos, width, totalLength, false);
     }
 

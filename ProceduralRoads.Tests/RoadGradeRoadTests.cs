@@ -96,10 +96,11 @@ public class RoadGradeRoadTests
         try
         {
             // A path the search would have produced under the cap: knight
-            // moves across the slope, climbing at about 16%.
+            // moves across the slope, with enough spacing for turn landings.
+            // The former 8 m spaced V turns are now explicitly refused in SwitchbackTests.
             var path = new List<Vector2>();
             for (int i = 0; i <= 20; i++)
-                path.Add(new Vector2(i * 8f, (i % 2 == 0 ? 1f : -1f) * 16f));
+                path.Add(new Vector2(i * 16f, (i % 2 == 0 ? 1f : -1f) * 64f));
 
             using (GradeCap.At(0.2f))
                 Assert.True(RoadSpatialGrid.AddRoadPath(path, 4f, world));
@@ -179,7 +180,7 @@ public class RoadGradeRoadTests
         {
             var path = new List<Vector2>();
             for (int i = 0; i <= 20; i++)
-                path.Add(new Vector2(i * 8f, (i % 2 == 0 ? 1f : -1f) * 16f));
+                path.Add(new Vector2(i * 16f, (i % 2 == 0 ? 1f : -1f) * 64f));
 
             RoadGrade.SteepestPlanned = 0f;
             using (GradeCap.At(0.2f))
