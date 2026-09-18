@@ -149,6 +149,69 @@ public static class RoadSiteApproach
                 best = candidate;
             }
         }
+        // Geometric arcs can still cut across a ridge. When a site's height
+        // is missed, search the local ground itself for a walkable contour.
+        // One bounded search serves all possible arrival directions; it never
+        // changes the main network search budget or exempts the destination.
+        if (best == null && desiredHeight.HasValue && oldMismatch > 1.5f)
+        {
+            const float step = 4f;
+            var directions = new[] { new Vector2i(1,0), new Vector2i(-1,0), new Vector2i(0,1), new Vector2i(0,-1),
+                new Vector2i(1,1),new Vector2i(1,-1),new Vector2i(-1,1),new Vector2i(-1,-1),
+                new Vector2i(2,1),new Vector2i(2,-1),new Vector2i(-2,1),new Vector2i(-2,-1),
+                new Vector2i(1,2),new Vector2i(1,-2),new Vector2i(-1,2),new Vector2i(-1,-2) };
+            var frontier = new SortedSet<(float cost,int x,int z)>();
+            var costs = new Dictionary<Vector2i,float>();
+            var parents = new Dictionary<Vector2i,Vector2i>();
+            var origin = new Vector2i(0,0);
+            costs[origin]=0f; frontier.Add((0f,0,0));
+            float maxRadius = Mathf.Min(192f, Vector2.Distance(anchor,centre)+Reach);
+            float maxGrade = RoadGrade.Configured > 0f ? RoadGrade.Configured : 0.35f;
+            Vector2 Point(Vector2i node) => anchor + new Vector2(node.x*step,node.y*step);
+            int visited=0, goals=0;
+            while (frontier.Count > 0 && visited++ < 4096 && goals < 8)
+            {
+                var current=frontier.Min; frontier.Remove(current);
+                var key=new Vector2i(current.x,current.z);
+                if (current.cost > costs[key]) continue;
+                Vector2 here=Point(key); float height=Ground(here);
+                float distanceToSite=Vector2.Distance(here,centre);
+                if (parents.ContainsKey(key) && distanceToSite >= radius+1f && distanceToSite <= radius+10f &&
+                    Mathf.Abs(height-desiredHeight.Value) <= 1.5f)
+                {
+                    goals++;
+                    var candidate=new List<Vector2> { here };
+                    var cursor=key;
+                    while (parents.TryGetValue(cursor,out var parent)) { candidate.Add(Point(parent)); cursor=parent; }
+                    candidate.Reverse();
+                    float score=Score(candidate,out float worst);
+                    if (worst <= Mathf.Max(2f,oldWorst+oldMismatch*0.5f) && score < bestScore && score <= oldScore*0.8f)
+                    { best=candidate; bestScore=score; }
+                }
+                foreach (var direction in directions)
+                {
+                    var next=new Vector2i(key.x+direction.x,key.y+direction.y);
+                    Vector2 there=Point(next), delta=there-here;
+                    float nextRadius=Vector2.Distance(there,centre);
+                    if (nextRadius < radius+1f || nextRadius > maxRadius) continue;
+                    float t=Mathf.Clamp01(((centre.x-here.x)*delta.x+(centre.y-here.y)*delta.y)/delta.sqrMagnitude);
+                    if (Vector2.Distance(here+delta*t,centre) < radius+1f ||
+                        RoadSiteProtection.BlocksSegment(here,there,width*0.5f+2f,null,null)) continue;
+                    float nextHeight=Ground(there), middleHeight=Ground((here+there)*0.5f);
+                    if (float.IsNaN(nextHeight) || float.IsInfinity(nextHeight) ||
+                        float.IsNaN(middleHeight) || float.IsInfinity(middleHeight) || nextHeight < RoadConstants.ShallowWaterHeight) continue;
+                    float slope=Mathf.Max(Mathf.Abs(nextHeight-middleHeight),Mathf.Abs(middleHeight-height))*2f/delta.magnitude;
+                    if (slope > maxGrade) continue;
+                    world.GetRiverWeight(there.x,there.y,out float river,out _);
+                    if (river > RoadConstants.RiverImpassableThreshold) continue;
+                    float cost=current.cost+delta.magnitude*(1f+slope*4f);
+                    if (costs.TryGetValue(next,out float previous) && previous <= cost) continue;
+                    costs[next]=cost; parents[next]=key; frontier.Add((cost,next.x,next.y));
+                }
+            }
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(
+                $"Site contour {centre}: {visited} nodes, {goals} arrivals near platform, accepted={best != null}");
+        }
         if (best == null) return path;
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(
             $"Site approach {centre}: end {oldEnd} -> {best[best.Count - 1]}, earthwork score {oldScore:F2} -> {bestScore:F2}");
