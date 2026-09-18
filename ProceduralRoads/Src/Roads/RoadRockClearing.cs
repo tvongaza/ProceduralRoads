@@ -30,8 +30,8 @@ public static class RoadRockClearing
         if(points.Count==0) return;
         var natural=new HashSet<string>();
         foreach(var veg in ZoneSystem.instance.m_vegetation)
-            if(veg.m_enable && veg.m_prefab!=null && (veg.m_biome & Heightmap.Biome.Mountain)!=0 &&
-                RoadRockPolicy.IsMountainRock(veg.m_prefab.name)) natural.Add(veg.m_prefab.name);
+            if(veg.m_enable && veg.m_prefab!=null && (veg.m_biome & RoadRockPolicy.SupportedBiomes)!=0 &&
+                RoadRockPolicy.IsNaturalBoulder(veg.m_prefab.name)) natural.Add(veg.m_prefab.name);
         if(natural.Count==0) return;
         var removed=new HashSet<GameObject>();
         foreach(var point in points)
@@ -54,7 +54,7 @@ public static class RoadRockClearing
                 while(root!=null)
                 {
                     name=Utils.GetPrefabName(root.gameObject);
-                    if(RoadRockPolicy.IsMountainRock(name)) break;
+                    if(RoadRockPolicy.IsNaturalBoulder(name)) break;
                     root=root.parent;
                 }
                 if(root==null || removed.Contains(root.gameObject)) continue;
@@ -69,7 +69,7 @@ public static class RoadRockClearing
                     float radius=new Vector2(bounds.extents.x,bounds.extents.z).magnitude;
                     if(RoadSiteProtection.BlocksSegment(centre,centre,radius,null,null)) {protectedSite=true;break;}
                 }
-                if(!RoadRockPolicy.CanClear(name,natural.Contains(name),protectedSite,
+                if(!RoadRockPolicy.CanClear(name,natural.Contains(name),Heightmap.FindBiome(root.position),protectedSite,
                     root.GetComponentInParent<Piece>()!=null,view!=null,view!=null && view.IsValid(),
                     view!=null && view.IsOwner())) continue;
                 removed.Add(root.gameObject);
@@ -78,6 +78,6 @@ public static class RoadRockClearing
             }
         }
         if(removed.Count>0)
-            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo($"Road rocks: cleared {removed.Count} natural mountain boulder(s) in zone {zone}");
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo($"Road rocks: cleared {removed.Count} natural boulder(s) in zone {zone}");
     }
 }

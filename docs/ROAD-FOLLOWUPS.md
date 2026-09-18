@@ -12,13 +12,14 @@ Manual inspection on 18 September 2026 used a combined integration build carryin
 
 The regenerated island had 9 roads / 6,215 m, compared with 15 / 14,174 m before the turn constraints. Generation took 608.1 s versus 305.9 s at the same retained high-budget settings (100,000 search iterations, 30 locations per island). This is one island on the combined build, not a PR-only benchmark or a default-settings performance claim. Fewer connected sites were accepted; alternative-search cost is a follow-up.
 
-Automated tests cover turn geometry, landing grades, the terrain-height fitter on a synthetic plane, refusal of pinched turns, protected sites, location/road terrain composition and rock eligibility. The PR branch passes 185 tests on each runtime; the combined integration build passes 378. Individual switchback terrain and rock removal/reload behavior are not comprehensively validated in game.
+Automated tests cover turn geometry, landing grades, the terrain-height fitter on a synthetic plane, refusal of pinched turns, protected sites, location/road terrain composition and rock eligibility. The PR branch passes 206 tests on each runtime after the boulder expansion. These include policy coverage for each supported prefab, biome exclusions, ore, fragments, protected sites and ownership. Restoring the old mountain-only list fails 11 of the 30 rock-policy cases; restoring the expanded list passes all 30. Individual switchback terrain and rock removal/reload behavior are not comprehensively validated in game.
 
 ## TODO — natural boulder clearance
 
-The current implementation checks four stock mountain boulder prefabs against the loaded road corridor. It protects ores, player pieces, location footprints and remotely owned objects. It is partial coverage, not complete boulder clearance.
+The implementation now checks known natural boulders in Mountains, Plains and Black Forest against the loaded road corridor. It requires an enabled vegetation registration and checks the actual instance biome, preserving shared prefabs outside the requested biomes. Ores, fragments, player pieces, location footprints and remotely owned objects remain protected. Runtime coverage is still partial: an eligible rock can remain, as noted below.
 
-- Extend coverage to all large natural boulders in Mountains, Plains and Black Forest, using actual vegetation registrations and preserving POI scenery and ore.
+- Implemented the prefab expansion from the installed game's `ZoneSystem.m_vegetation`: `rock1_mountain`, `rock2_mountain`, `rock3_mountain`, `rock2_heath`, `rock4_heath`, `rock4_forest`, `rock4_coast`, `HeathRockPillar`, `Rock_3`, `Rock_4`, and `Rock_4_plains`. The existing `rock3_mountain_1` variant remains eligible only if registered as enabled vegetation. No prefix matching or ore prefabs are included.
+- New prefab/biome policy is tested in the harness and built against game assemblies; it has not yet been deployed or visually checked in game.
 - Diagnose the observed mountain obstruction: a `rock2_mountain`, already eligible by name, remained beside/over the road near X1176.5, Z4323.1. Do not assume adding prefab names fixes this case. Check collider overlap, protection and ownership decisions.
 - Verify a blocking boulder is removed, a nearby nonblocking boulder and protected scenery survive, and behavior persists or repeats correctly after reload.
 

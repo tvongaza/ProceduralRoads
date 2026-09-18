@@ -3,25 +3,60 @@ namespace ProceduralRoads.Tests;
 public class RoadRockPolicyTests
 {
     [Theory]
-    [InlineData("rock1_mountain",true)]
-    [InlineData("rock2_mountain",true)]
-    [InlineData("rock3_mountain",true)]
-    [InlineData("rock3_mountain_1",true)]
-    [InlineData("silvervein",false)]
-    [InlineData("rock1_mountain_frac",false)]
-    [InlineData("rock2_heath",false)]
-    public void OnlyKnownMountainBoulders(string name,bool expected) =>
-        Assert.Equal(expected,RoadRockPolicy.CanClear(name,true,false,false,true,true,true));
-    [Fact] public void ProtectedSitePlayerPieceAndUnregisteredPrefabStay()
+    [InlineData("rock1_mountain")]
+    [InlineData("rock2_mountain")]
+    [InlineData("rock3_mountain")]
+    [InlineData("rock3_mountain_1")]
+    [InlineData("rock2_heath")]
+    [InlineData("rock4_heath")]
+    [InlineData("rock4_forest")]
+    [InlineData("Rock_3")]
+    [InlineData("Rock_4")]
+    [InlineData("Rock_4_plains")]
+    [InlineData("rock4_coast")]
+    [InlineData("HeathRockPillar")]
+    public void NaturalBouldersClearOnlyInRequestedBiomes(string name)
     {
-        Assert.False(RoadRockPolicy.CanClear("rock1_mountain",true,true,false,true,true,true));
-        Assert.False(RoadRockPolicy.CanClear("rock1_mountain",true,false,true,true,true,true));
-        Assert.False(RoadRockPolicy.CanClear("rock1_mountain",false,false,false,true,true,true));
+        foreach (var biome in new[] { Heightmap.Biome.Mountain, Heightmap.Biome.Plains, Heightmap.Biome.BlackForest })
+        {
+            Assert.True(RoadRockPolicy.CanClear(name,true,biome,false,false,true,true,true));
+            Assert.False(RoadRockPolicy.CanClear(name,false,biome,false,false,true,true,true));
+            Assert.False(RoadRockPolicy.CanClear(name,true,biome,true,false,true,true,true));
+            Assert.False(RoadRockPolicy.CanClear(name,true,biome,false,true,true,true,true));
+        }
+        foreach (var biome in new[] { Heightmap.Biome.None, Heightmap.Biome.Meadows,
+            Heightmap.Biome.Swamp, Heightmap.Biome.Ocean, Heightmap.Biome.DeepNorth,
+            Heightmap.Biome.AshLands, Heightmap.Biome.Mistlands })
+            Assert.False(RoadRockPolicy.CanClear(name,true,biome,false,false,true,true,true));
     }
-    [Fact] public void ARemoteOrNotYetValidRockIsLeftForItsOwner()
+
+    [Theory]
+    [InlineData("silvervein")]
+    [InlineData("rock3_silver")]
+    [InlineData("rock4_copper")]
+    [InlineData("MineRock_Obsidian")]
+    [InlineData("MineRock_Tin")]
+    [InlineData("rock1_mountain_frac")]
+    [InlineData("rock2_heath_frac")]
+    [InlineData("rock4_forest_frac")]
+    [InlineData("Rock_3_frac")]
+    [InlineData("Rock_3_deepnorth")]
+    [InlineData("RockDolmen_1")]
+    [InlineData("rock_mistlands1")]
+    [InlineData("rock_3")]
+    [InlineData("wood_floor")]
+    public void OreFragmentsAndUnrecognisedSceneryStay(string name) =>
+        Assert.False(RoadRockPolicy.CanClear(name,true,Heightmap.Biome.BlackForest,false,false,true,true,true));
+
+    [Theory]
+    [InlineData("rock1_mountain")]
+    [InlineData("rock2_heath")]
+    [InlineData("rock4_forest")]
+    [InlineData("Rock_3")]
+    public void ARemoteOrNotYetValidRockIsLeftForItsOwner(string name)
     {
-        Assert.False(RoadRockPolicy.CanClear("rock1_mountain",true,false,false,true,true,false));
-        Assert.False(RoadRockPolicy.CanClear("rock1_mountain",true,false,false,true,false,true));
-        Assert.True(RoadRockPolicy.CanClear("rock1_mountain",true,false,false,false,false,false));
+        Assert.False(RoadRockPolicy.CanClear(name,true,Heightmap.Biome.BlackForest,false,false,true,true,false));
+        Assert.False(RoadRockPolicy.CanClear(name,true,Heightmap.Biome.BlackForest,false,false,true,false,true));
+        Assert.True(RoadRockPolicy.CanClear(name,true,Heightmap.Biome.BlackForest,false,false,false,false,false));
     }
 }
