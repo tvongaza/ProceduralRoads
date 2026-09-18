@@ -26,9 +26,15 @@ A second pass reverses baseline/candidate order. Its later timings overlap verif
 
 ## Limits
 
-This measures local approach evaluation on sampled terrain, not a whole generated network. It does not establish the effect on the 608.1 s island run, pricing/main route searches, terrain baking or arrival in the game. Allocated bytes are cumulative managed allocations, not retained memory or peak process memory. A dump height query is much cheaper than Valheim's procedural terrain query, so neither offline seconds nor their ratio predicts the in-game gain.
+This measures local approach evaluation on sampled terrain, not a whole generated network. It does not establish the effect on pricing/main route searches, terrain baking or arrival in the game. The separate whole-island measurement below did not show a meaningful speedup. Allocated bytes are cumulative managed allocations, not retained memory or peak process memory. A dump height query is much cheaper than Valheim's procedural terrain query, so neither offline seconds nor their ratio predicts the in-game gain.
 
-No game restart or world regeneration was performed for this optimization.
+## In-game whole-island check
+
+A Mac Valheim 1.0.15 run regenerated island 5 from the same RoadSeedE POI fixture at the baseline settings (100,000 search iterations, 30 locations per island, maximum grade 0.35). The candidate was the integration baseline plus only these approach changes; rock-clearing changes were excluded from the comparison.
+
+**608.1 → 606.7 seconds: 1.4 seconds, or 0.23% faster. This is effectively unchanged**, based on one earlier baseline and one candidate run. Both report 9 roads, 6,215 m, network version 1627085781, 6,297 points and 138 cells. Matching summary values and the network version are not a byte-for-byte saved-network comparison.
+
+The approach-only reduction in sampling does not establish an end-to-end performance gain. Further work should measure the remaining route-search cost before promising shorter generation times.
 
 ## Validation
 
