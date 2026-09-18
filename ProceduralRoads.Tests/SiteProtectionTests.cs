@@ -79,6 +79,29 @@ public class SiteProtectionTests : IDisposable
     }
 
     [Fact]
+    public void LateLocationShapingCannotTurnAnOldRoadDeltaIntoARidge()
+    {
+        Pit(8);
+        WorldGenerator.instance = new Flat();
+        var zone = new Vector2s(0,0);
+        var hm = Heightmap.CreateForZone(zone,64); Heightmap.Registered = hm;
+        var points = new List<RoadSpatialGrid.RoadPoint>();
+        for (int x=-24;x<=24;x++) points.Add(new RoadSpatialGrid.RoadPoint(new Vector2(x,0),4,61.2f));
+        RoadTerrainModifier.ApplyRoadTerrainModsWithContext(zone,points,hm,hm.m_terrainComp!);
+        int middle=32*65+32;
+        Assert.Equal(60f,hm.LastRenderedHeights![middle]);
+        // The proxy's authored terrain appears on a later rebuild, after the
+        // compiler already carries the current road stamp. No +1.2 survives
+        // in the protected footprint to become a 70.2 m ridge.
+        hm.AuthoredHeight = (x,z) => x*x+z*z < 64 ? 69f : 60f;
+        hm.RebuildTerrain();
+        Assert.Equal(69f,hm.LastRenderedHeights![middle]);
+        Assert.Equal(0f,hm.m_terrainComp!.m_levelDelta[middle]);
+        Assert.True(hm.m_terrainComp.m_modifiedHeight[32*65+52]);
+        WorldGenerator.instance = null;
+    }
+
+    [Fact]
     public void ResetDropsThePreviousWorldsFootprints()
     {
         Pit(); Assert.True(RoadSiteProtection.Contains(new Vector2(0,0)));
