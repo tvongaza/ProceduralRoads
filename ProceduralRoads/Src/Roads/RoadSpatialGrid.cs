@@ -82,59 +82,83 @@ public static class RoadSpatialGrid
     }
 
     /// <summary>
-    /// Lay a path into the grid as road points.
+    /// A road decided but not yet stored: every dense point and the height it
+    /// will carry, already ramped, already inside the grade cap.
+    ///
+    /// Planning and storing are apart because a road can be refused, and a
+    /// caller that lays one road in several pieces - the land either side of
+    /// a river crossing, say - has to know that every piece is buildable
+    /// before it stores the first. Half a road in the grid is worse than none:
+    /// it is a paved stretch that stops in open ground.
+    /// </summary>
+    public sealed class PlannedPath
+    {
+        public readonly List<Vector2> Points;
+        public readonly List<float> Heights;
+        public readonly List<RoadPointDebugInfo> DebugInfos;
+        public readonly float Width;
+        public readonly float TotalLength;
+        public readonly bool FollowTerrain;
+
+        internal PlannedPath(List<Vector2> points, List<float> heights,
+            List<RoadPointDebugInfo> debugInfos, float width, float totalLength, bool followTerrain)
+        {
+            Points = points; Heights = heights; DebugInfos = debugInfos;
+            Width = width; TotalLength = totalLength; FollowTerrain = followTerrain;
+        }
+    }
+
+    /// <summary>
+    /// Work out what a road would be, without storing any of it.
     ///
     /// startGround and endGround are the heights the road has to MEET at its
     /// two ends - the ground a location stands on - where those are known.
     /// Without them each end meets the natural terrain under it, as before.
     ///
-    /// Returns false, having stored nothing, when the profile cannot be built
-    /// inside the grade cap: the two ends are further apart in height than the
-    /// cap allows over the length between them. That is a road too steep to
-    /// walk, and the caller's business is to drop it, not to lay it anyway.
+    /// Returns null when the profile cannot be built inside the grade cap:
+    /// the two ends are further apart in height than the cap allows over the
+    /// length between them. That is a road too steep to walk, and the
+    /// caller's business is to drop it, not to lay it anyway.
     /// </summary>
-    public static bool AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
+    public static PlannedPath? PlanRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
         float? startGround = null, float? endGround = null)
     {
         if (path == null || path.Count < 2 || worldGen == null)
-            return false;
+            return null;
 
         float segmentLength = width / 4f;
-        
+
         float totalLength = 0f;
         for (int i = 0; i < path.Count - 1; i++)
             totalLength += Vector2.Distance(path[i], path[i + 1]);
-        
+
         List<Vector2> densePoints = SplinePath(path, segmentLength);
         List<float> denseHeights = new List<float>(densePoints.Count);
-        
+
         foreach (var point in densePoints)
             denseHeights.Add(BiomeBlendedHeight.GetBlendedHeight(point.x, point.y, worldGen));
-        
+
         List<float> smoothedHeights = SmoothHeights(denseHeights, RoadConstants.HeightSmoothingWindow, out var debugInfos);
-        
+
         int overlapCount = DetectOverlap(densePoints, width);
         if (overlapCount > densePoints.Count * RoadConstants.OverlapThreshold)
         {
             Log.LogDebug($"Road path overlaps with existing roads ({overlapCount}/{densePoints.Count} points), blending heights");
             BlendWithExistingRoads(densePoints, smoothedHeights, width);
         }
-        
+
         Log.LogDebug($"Road path: {path.Count} waypoints -> {densePoints.Count} dense points");
         Log.LogDebug($"  Path length: {totalLength:F0}m, smoothing window: {RoadConstants.HeightSmoothingWindow} points");
         Log.LogDebug($"  Overlap: {overlapCount}/{densePoints.Count} points overlap existing roads");
 
         // Endpoint ramps: near each end of the road the final height blends
-        // from the natural terrain (raw) toward the smoothed road height, so
-        // roads meet locations and terrain without a smoothed ledge.
+        // from the ground the end has to meet toward the smoothed road
+        // height, so roads meet locations and terrain without a smoothed ledge.
         float[] distanceFromStart = new float[densePoints.Count];
         for (int i = 1; i < densePoints.Count; i++)
             distanceFromStart[i] = distanceFromStart[i - 1] + Vector2.Distance(densePoints[i - 1], densePoints[i]);
         float pathTotal = densePoints.Count > 0 ? distanceFromStart[densePoints.Count - 1] : 0f;
 
-        // The whole profile is decided before a single point is stored: the
-        // grade cap can reject it, and a road half in the grid is worse than
-        // no road at all.
         List<float> finalHeights = new List<float>(densePoints.Count);
         for (int i = 0; i < densePoints.Count; i++)
         {
@@ -157,27 +181,44 @@ public static class RoadSpatialGrid
                 $"Road profile refused: ends {finalHeights[0]:F1}m and {finalHeights[finalHeights.Count - 1]:F1}m " +
                 $"are {Mathf.Abs(finalHeights[finalHeights.Count - 1] - finalHeights[0]):F1}m apart over {pathTotal:F0}m, " +
                 $"over the {RoadGrade.Configured:P0} cap");
-            return false;
+            return null;
         }
         float steepestAfter = RoadGrade.SteepestStep(densePoints, finalHeights);
         if (steepestAfter < steepestBefore - 0.001f)
             Log.LogDebug($"  Grade limited: steepest step {steepestBefore:P0} -> {steepestAfter:P0}");
 
-        Dictionary<Vector2i, List<RoadPoint>> tempPoints = new Dictionary<Vector2i, List<RoadPoint>>();
-        for (int i = 0; i < densePoints.Count; i++)
-        {
-            AddRoadPoint(tempPoints, densePoints[i], width, finalHeights[i]);
+        return new PlannedPath(densePoints, finalHeights, debugInfos, width, totalLength, false);
+    }
 
-            RoadPointDebugInfo debugInfo = debugInfos[i];
-            debugInfo.SmoothedHeight = finalHeights[i];
-            m_debugInfo[densePoints[i]] = debugInfo;
+    /// <summary>Store a planned road. Nothing here can fail; every decision
+    /// was made in PlanRoadPath.</summary>
+    public static void Commit(PlannedPath plan)
+    {
+        Dictionary<Vector2i, List<RoadPoint>> tempPoints = new Dictionary<Vector2i, List<RoadPoint>>();
+        for (int i = 0; i < plan.Points.Count; i++)
+        {
+            AddRoadPoint(tempPoints, plan.Points[i], plan.Width, plan.Heights[i]);
+
+            RoadPointDebugInfo debugInfo = plan.DebugInfos[i];
+            debugInfo.SmoothedHeight = plan.Heights[i];
+            m_debugInfo[plan.Points[i]] = debugInfo;
         }
 
         MergePoints(tempPoints);
-        
-        TotalRoadPoints += densePoints.Count;
-        TotalRoadLength += totalLength;
+
+        TotalRoadPoints += plan.Points.Count;
+        TotalRoadLength += plan.TotalLength;
         m_initialized = true;
+    }
+
+    /// <summary>Plan a road and store it, for the caller that lays one road in
+    /// one piece. False means it was refused and nothing was stored.</summary>
+    public static bool AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
+        float? startGround = null, float? endGround = null)
+    {
+        PlannedPath? plan = PlanRoadPath(path, width, worldGen, startGround, endGround);
+        if (plan == null) return false;
+        Commit(plan);
         return true;
     }
 

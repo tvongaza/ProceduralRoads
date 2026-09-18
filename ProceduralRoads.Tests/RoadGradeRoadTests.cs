@@ -137,6 +137,35 @@ public class RoadGradeRoadTests
     }
 
     [Fact]
+    public void ARefusedPlanStoresNothingEvenWhenItsNeighboursAreFine()
+    {
+        // A road laid in more than one piece must not end up half in the grid.
+        // Planning is apart from storing so the caller can find out that one
+        // piece is unbuildable before it has stored any of the others.
+        var world = new Ramp { Grade = 0.5f };
+        WorldGenerator.instance = world;
+        RoadSpatialGrid.Clear();
+        try
+        {
+            var gentle = new List<Vector2>();
+            for (float y = 0f; y <= 160f; y += 8f) gentle.Add(new Vector2(0f, y)); // across the slope: level
+            var steep = new List<Vector2>();
+            for (float x = 0f; x <= 160f; x += 8f) steep.Add(new Vector2(x, 0f));  // up it: 50%
+
+            using (GradeCap.At(0.2f))
+            {
+                var planA = RoadSpatialGrid.PlanRoadPath(gentle, 4f, world);
+                var planB = RoadSpatialGrid.PlanRoadPath(steep, 4f, world);
+                Assert.NotNull(planA);
+                Assert.Null(planB);
+                // Planning both first is what lets the caller store neither.
+                Assert.Equal(0, RoadSpatialGrid.TotalRoadPoints);
+            }
+        }
+        finally { RoadSpatialGrid.Clear(); WorldGenerator.instance = null; }
+    }
+
+    [Fact]
     public void OnGroundInsideTheCapNothingChanges()
     {
         // The other half of the same claim: where the cap does not bite, every
