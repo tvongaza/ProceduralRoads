@@ -1,0 +1,106 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using Xunit;
+
+namespace ProceduralRoads.Tests;
+
+public class SiteApproachTests
+{
+    private sealed class Hillside : WorldGenerator
+    {
+        // The direct east approach cuts across a ridge; the south side of
+        // the same site has an open contour. Height stays finite and dry.
+        public override float GetHeight(float x, float z) =>
+            60f + 8f * (float)Math.Exp(-Math.Pow((x - 28f) / 16f, 2) - Math.Pow(z / 7f, 2));
+    }
+    private sealed class Flat : WorldGenerator
+    {
+        public override float GetHeight(float x, float z) => 60;
+    }
+    private static List<Vector2> Route()
+    {
+        var path = new List<Vector2>();
+        for (int x = 200; x >= 16; x -= 8) path.Add(new Vector2(x, 0));
+        return path;
+    }
+    private static List<Vector2> Improve(List<Vector2> path, WorldGenerator world, bool start = false) =>
+        RoadSiteApproach.Improve(path, new Vector2(0, 0), 16, 4, world, start,
+            _ => 60f, p => world.GetHeight(p.x, p.y));
+
+    [Fact]
+    public void GoesAroundTheRidgeInsteadOfCuttingThroughIt()
+    {
+        RoadSpatialGrid.Clear();
+        using var grade = GradeCap.At(0.35f);
+        var world = new Hillside(); var original = Route();
+        var better = Improve(original, world);
+        Assert.NotSame(original, better);
+        Assert.True(Mathf.Abs(better[better.Count - 1].y) > 5f);
+        // The upstream road and the site's exterior radius survive.
+        Assert.Equal(original[0], better[0]);
+        Assert.Equal(original[10], better[10]);
+        Assert.InRange(better[better.Count - 1].magnitude, 15.99f, 16.01f);
+        var plan = RoadSpatialGrid.PlanRoadPath(better, 4, world, endGround: 60f)!;
+        Assert.NotNull(plan);
+        Assert.InRange(RoadGrade.SteepestStep(plan.Points, plan.Heights), 0, 0.3501f);
+        Assert.All(plan.Points, p => Assert.True(p.magnitude >= 15.9f));
+    }
+
+    [Fact]
+    public void FlatApproachIsLeftExactlyAlone()
+    {
+        RoadSpatialGrid.Clear();
+        var original = Route();
+        Assert.Same(original, Improve(original, new Flat()));
+    }
+
+    [Fact]
+    public void StartAndEndUseTheSameDecision()
+    {
+        RoadSpatialGrid.Clear();
+        using var grade = GradeCap.At(0.35f);
+        var original = Route(); var world = new Hillside();
+        var end = Improve(original, world);
+        original.Reverse();
+        var start = Improve(original, world, true);
+        start.Reverse();
+        Assert.Equal(end, start);
+    }
+
+    [Fact]
+    public void CannotImproveByCuttingThroughTheSite()
+    {
+        RoadSpatialGrid.Clear();
+        var path = Route();
+        var better = Improve(path, new Hillside());
+        Assert.All(better, p => Assert.True(p.magnitude >= 15.9f));
+    }
+
+    [Fact]
+    public void TrialCandidatesDoNotChangeNetworkGradeStatistics()
+    {
+        RoadSpatialGrid.Clear();
+        RoadGrade.SteepestPlanned = 0.1f;
+        Improve(Route(), new Hillside());
+        Assert.Equal(0.1f, RoadGrade.SteepestPlanned);
+    }
+
+    [Fact]
+    public void InvalidTerrainRetainsTheOldPath()
+    {
+        var path = Route();
+        Assert.Same(path, RoadSiteApproach.Improve(path, new Vector2(), 16, 4, new Flat(), false,
+            _ => float.NaN, _ => float.NaN));
+    }
+
+    [Fact]
+    public void ShortRoadAndUnknownFootprintStayAlone()
+    {
+        var world = new Flat(); var shortPath = new List<Vector2> { new(24, 0), new(16, 0) };
+        Assert.Same(shortPath, Improve(shortPath, world));
+        var path = Route();
+        Assert.Same(path, RoadSiteApproach.Improve(path, new Vector2(), 0, 4, world, false,
+            _ => 60f, _ => 60f));
+    }
+}

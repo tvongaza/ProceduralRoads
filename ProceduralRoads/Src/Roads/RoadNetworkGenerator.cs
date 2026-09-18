@@ -354,6 +354,21 @@ public static class RoadNetworkGenerator
         return levelled.Value < RoadConstants.ShallowWaterHeight ? null : levelled;
     }
 
+    internal static List<Vector2> ImproveSiteApproach(List<Vector2> path, Vector2 centre,
+        float radius, float width, bool atStart)
+    {
+        var world = WorldGenerator.instance;
+        if (world == null || radius <= 0f) return path;
+        var ops = LocationLevelling.OpsAt(centre);
+        // Copy the terrain facts once: scoring must not reload the template
+        // for every vertex. Unknown location shaping retains the old approach.
+        if (ops == null || ops.Count == 0) return path;
+        float centreHeight = BiomeBlendedHeight.GetBlendedHeight(centre.x, centre.y, world);
+        float? Target(Vector2 p) => LocationLevelling.GroundAt(p, centre, centreHeight, ops);
+        float Ground(Vector2 p) => Target(p) ?? BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
+        return RoadSiteApproach.Improve(path, centre, radius, width, world, atStart, Target, Ground);
+    }
+
     /// <summary>
     /// Core primitive: Generates a single road between two points.
     /// Handles pathfinding, radius trimming, and adding to the spatial grid.
@@ -396,6 +411,9 @@ public static class RoadNetworkGenerator
                 Log.LogWarning($"Path too short after trimming: {label}");
             return false;
         }
+
+        path = ImproveSiteApproach(path, startCenter, startRadius, width, true);
+        path = ImproveSiteApproach(path, endCenter, endRadius, width, false);
 
         // The heights to meet are asked for at the road's OWN ends, after
         // trimming - not at the locations' centres. A road stops at the
