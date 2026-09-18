@@ -81,7 +81,15 @@ public static class RoadSpatialGrid
         return m_debugInfo.TryGetValue(position, out debugInfo);
     }
 
-    public static void AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen)
+    /// <summary>
+    /// Lay a path into the grid as road points.
+    ///
+    /// startGround and endGround are the heights the road has to MEET at its
+    /// two ends - the ground a location stands on - where those are known.
+    /// Without them each end meets the natural terrain under it, as before.
+    /// </summary>
+    public static void AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
+        float? startGround = null, float? endGround = null)
     {
         if (path == null || path.Count < 2 || worldGen == null)
             return;
@@ -122,9 +130,13 @@ public static class RoadSpatialGrid
         Dictionary<Vector2i, List<RoadPoint>> tempPoints = new Dictionary<Vector2i, List<RoadPoint>>();
         for (int i = 0; i < densePoints.Count; i++)
         {
-            float distFromNearestEnd = Mathf.Min(distanceFromStart[i], pathTotal - distanceFromStart[i]);
+            float fromStart = distanceFromStart[i];
+            float fromEnd = pathTotal - fromStart;
+            float distFromNearestEnd = Mathf.Min(fromStart, fromEnd);
             float rampBlend = RoadEndpointRamp.Blend(distFromNearestEnd);
-            float finalHeight = Mathf.Lerp(denseHeights[i], smoothedHeights[i], rampBlend);
+            float? target = fromStart <= fromEnd ? startGround : endGround;
+            float rampBase = RoadEndpointRamp.BaseHeight(denseHeights[i], target, distFromNearestEnd);
+            float finalHeight = Mathf.Lerp(rampBase, smoothedHeights[i], rampBlend);
 
             AddRoadPoint(tempPoints, densePoints[i], width, finalHeight);
 

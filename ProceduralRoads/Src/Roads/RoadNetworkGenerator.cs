@@ -317,6 +317,25 @@ public static class RoadNetworkGenerator
     #region Core Road Generation Primitive
 
     /// <summary>
+    /// The height a road has to arrive at for a location: the ground under the
+    /// location's centre, which is what the game reads when it places the
+    /// location and levels its footprint.
+    ///
+    /// Null for an endpoint that is not a location - an island's edge point
+    /// has no footprint and radius zero - and null when that ground is under
+    /// water, where the centre is not somewhere a road can end and
+    /// RoadEndpoint has already moved the path elsewhere. Both fall back to
+    /// the natural terrain under the road's own last point, as before.
+    /// </summary>
+    internal static float? LocationGround(Vector2 center, float radius)
+    {
+        if (radius <= 0f || WorldGenerator.instance == null)
+            return null;
+        float ground = BiomeBlendedHeight.GetBlendedHeight(center.x, center.y, WorldGenerator.instance);
+        return ground < RoadConstants.ShallowWaterHeight ? null : ground;
+    }
+
+    /// <summary>
     /// Core primitive: Generates a single road between two points.
     /// Handles pathfinding, radius trimming, and adding to the spatial grid.
     /// </summary>
@@ -358,7 +377,8 @@ public static class RoadNetworkGenerator
             return false;
         }
 
-        RoadSpatialGrid.AddRoadPath(path, width, WorldGenerator.instance);
+        RoadSpatialGrid.AddRoadPath(path, width, WorldGenerator.instance,
+            LocationGround(startCenter, startRadius), LocationGround(endCenter, endRadius));
         m_roadsGeneratedCount++;
 
         if (path.Count > 0)
