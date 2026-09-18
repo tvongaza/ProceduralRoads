@@ -138,22 +138,65 @@ public class EndpointPoiHeightTests
     }
 
     [Fact]
-    public void OnlyAFootprintAboveWaterOffersAHeight()
+    public void AHeightIsOfferedOnlyWhereTheLocationActuallyLevelsTheGround()
     {
         var world = new Flat();
         WorldGenerator.instance = world;
+        var centre = new Vector2(0f, 0f);
         try
         {
-            // A real location: its ground is the height to meet.
-            Assert.Equal(60f, RoadNetworkGenerator.LocationGround(new Vector2(0f, 0f), 32f)!.Value, 2);
-            // An island edge point has no footprint, so the road keeps meeting
-            // the natural terrain under its own last point, as before.
-            Assert.Null(RoadNetworkGenerator.LocationGround(new Vector2(0f, 0f), 0f));
-            // A centre under water is not somewhere a road can end; the
-            // endpoint search has already moved the path off it.
-            world.Height = 29f;
-            Assert.Null(RoadNetworkGenerator.LocationGround(new Vector2(0f, 0f), 32f));
+            // A cave that cuts its doorstep nine metres into the hillside.
+            LocationLevelling.Source = _ => new List<LevelOp> { new(0f, 0f, -9f, 20f, square: false) };
+
+            // The road ends inside that cut: meet the ground the cave leaves.
+            Assert.Equal(51f, RoadNetworkGenerator.LocationGround(new Vector2(10f, 0f), centre, 32f)!.Value, 2);
+
+            // The road stops at the exterior radius, outside the cut. Nothing
+            // is offered, so the ramp meets the natural terrain under the
+            // road's own end. Aiming at the middle of the place instead is what
+            // built a rim around the doorstep.
+            Assert.Null(RoadNetworkGenerator.LocationGround(new Vector2(32f, 0f), centre, 32f));
+
+            // Not a location at all.
+            Assert.Null(RoadNetworkGenerator.LocationGround(new Vector2(10f, 0f), centre, 0f));
+
+            // Levelled below the waterline is not somewhere a road ends.
+            LocationLevelling.Source = _ => new List<LevelOp> { new(0f, 0f, -31f, 20f, square: false) };
+            Assert.Null(RoadNetworkGenerator.LocationGround(new Vector2(10f, 0f), centre, 32f));
+
+            // A location that levels nothing offers nothing.
+            LocationLevelling.Source = _ => new List<LevelOp>();
+            Assert.Null(RoadNetworkGenerator.LocationGround(new Vector2(10f, 0f), centre, 32f));
         }
-        finally { WorldGenerator.instance = null; }
+        finally { LocationLevelling.Source = null; WorldGenerator.instance = null; }
+    }
+
+    [Fact]
+    public void TheRoadEndIsNotLiftedToTheMiddleOfThePlace()
+    {
+        // The regression this pins: a road arriving on a hillside was given the
+        // ground height from the location's CENTRE, ten metres uphill, and the
+        // terrain pass then built the difference as a raised rim around the
+        // entrance. Measured in game at a MountainCave02: the road end sat
+        // 2.8 m above the ground it met, 3.7 m above the ring around it.
+        var world = new Slope();
+        WorldGenerator.instance = world;
+        try
+        {
+            var centre = new Vector2(0f, 0f);          // ground 60 m
+            var roadEnd = new Vector2(32f, 0f);        // ground 44 m, sixteen metres lower
+            LocationLevelling.Source = _ => new List<LevelOp> { new(0f, 0f, 0f, 10f, square: false) };
+
+            float? target = RoadNetworkGenerator.LocationGround(roadEnd, centre, 32f);
+            Assert.True(!target.HasValue || Mathf.Abs(target.Value - world.GetHeight(roadEnd.x, roadEnd.y)) < 0.01f,
+                $"road end aimed at {target:F1} m, but the ground it meets is {world.GetHeight(roadEnd.x, roadEnd.y):F1} m");
+        }
+        finally { LocationLevelling.Source = null; WorldGenerator.instance = null; }
+    }
+
+    private sealed class Slope : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy) => 60f - 0.5f * wx;
+        public override Heightmap.Biome GetBiome(float wx, float wy) => Heightmap.Biome.Meadows;
     }
 }

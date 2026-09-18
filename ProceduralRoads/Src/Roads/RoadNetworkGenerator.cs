@@ -340,12 +340,18 @@ public static class RoadNetworkGenerator
     /// RoadEndpoint has already moved the path elsewhere. Both fall back to
     /// the natural terrain under the road's own last point, as before.
     /// </summary>
-    internal static float? LocationGround(Vector2 center, float radius)
+    internal static float? LocationGround(Vector2 endPoint, Vector2 center, float radius)
     {
         if (radius <= 0f || WorldGenerator.instance == null)
             return null;
-        float ground = BiomeBlendedHeight.GetBlendedHeight(center.x, center.y, WorldGenerator.instance);
-        return ground < RoadConstants.ShallowWaterHeight ? null : ground;
+        IReadOnlyList<LevelOp>? ops = LocationLevelling.OpsAt(center);
+        if (ops == null)
+            return null;
+        float centreGround = BiomeBlendedHeight.GetBlendedHeight(center.x, center.y, WorldGenerator.instance);
+        float? levelled = LocationLevelling.GroundAt(endPoint, center, centreGround, ops);
+        if (!levelled.HasValue)
+            return null;
+        return levelled.Value < RoadConstants.ShallowWaterHeight ? null : levelled;
     }
 
     /// <summary>
@@ -391,8 +397,14 @@ public static class RoadNetworkGenerator
             return false;
         }
 
+        // The heights to meet are asked for at the road's OWN ends, after
+        // trimming - not at the locations' centres. A road stops at the
+        // exterior radius, which on a hillside is metres below the middle of
+        // the place it is going to, and aiming at the middle builds that
+        // difference as a rim around the doorstep.
         if (!RoadSpatialGrid.AddRoadPath(path, width, WorldGenerator.instance,
-                LocationGround(startCenter, startRadius), LocationGround(endCenter, endRadius)))
+                LocationGround(path[0], startCenter, startRadius),
+                LocationGround(path[path.Count - 1], endCenter, endRadius)))
         {
             if (label != null)
                 Log.LogWarning($"Road too steep to build, destination left unconnected: {label}");

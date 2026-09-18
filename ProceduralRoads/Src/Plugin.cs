@@ -92,6 +92,11 @@ namespace ProceduralRoads
                 "Use this for locations added by Expand World Data or other mods. " +
                 "Example: Runestone_Boars,Runestone_Greydwarfs,MerchantCamp");
 
+            // Locations level the ground under themselves when they are
+            // placed; roads are built before that happens, so the generator
+            // needs a way to ask what that ground will be.
+            LocationPrefabLevelling.Install();
+
             // Apply config to road generator
             ApplyConfiguration();
 
