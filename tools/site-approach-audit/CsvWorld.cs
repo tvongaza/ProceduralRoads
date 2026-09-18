@@ -35,6 +35,8 @@ namespace ProceduralRoads.Tests;
 /// </summary>
 public sealed class CsvWorld : WorldGenerator
 {
+    public long HeightQueries { get; private set; }
+    public long BiomeQueries { get; private set; }
     /// <summary>One dumped grid: evenly spaced samples over a rectangle.</summary>
     private sealed class Layer
     {
@@ -341,6 +343,7 @@ public sealed class CsvWorld : WorldGenerator
 
     public override float GetHeight(float wx, float wy)
     {
+        HeightQueries++;
         Layer layer = LayerAt(wx, wy);
         return Sample(layer, layer.Height, wx, wy);
     }
@@ -349,6 +352,7 @@ public sealed class CsvWorld : WorldGenerator
     /// number, and averaging two of them would invent a third.</summary>
     public override Heightmap.Biome GetBiome(float wx, float wy)
     {
+        BiomeQueries++;
         Layer layer = LayerAt(wx, wy);
         int ix = Mathf.Clamp(Mathf.RoundToInt((wx - layer.X0) / layer.Step), 0, layer.Nx - 1);
         int iz = Mathf.Clamp(Mathf.RoundToInt((wy - layer.Z0) / layer.Step), 0, layer.Nz - 1);

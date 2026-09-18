@@ -36,13 +36,12 @@ public static class RoadSiteApproach
         float arrivalRadius = Vector2.Distance(oldEnd, centre);
         if (arrivalRadius < radius - 0.1f || arrivalRadius > radius + 16f) return path;
         var oldTail = oriented.GetRange(join, oriented.Count - join);
-        // Per-decision cache only; release it when this approach is decided.
-        var samples = new Dictionary<Vector2, float>();
-        float Ground(Vector2 p)
-        {
-            if (!samples.TryGetValue(p, out float h)) samples[p] = h = ground(p);
-            return h;
-        }
+        // Keep authored ground separate from procedural profile heights.
+        // Both caches are bounded and die with this decision, including errors.
+        var groundSamples = new ApproachTerrainSamples(ground);
+        var profileSamples = new ApproachTerrainSamples(
+            p => BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world));
+        float Ground(Vector2 p) => groundSamples.Get(p);
         float anchorHeight = Ground(anchor);
         string lastRejection = "";
         float Reject(string reason) { lastRejection = reason; return float.PositiveInfinity; }
@@ -52,7 +51,7 @@ public static class RoadSiteApproach
             // Trial profiles do not contribute to the network's grade report.
             float previousGrade = RoadGrade.SteepestPlanned;
             RoadSpatialGrid.PlannedPath? plan;
-            try { plan = RoadSpatialGrid.PlanRoadPath(tail, width, world, anchorHeight, target(tail[tail.Count - 1])); }
+            try { plan = RoadSpatialGrid.PlanRoadPath(tail, width, world, anchorHeight, target(tail[tail.Count - 1]), terrainHeight: profileSamples.Get); }
             finally { RoadGrade.SteepestPlanned = previousGrade; }
             if (plan == null) return Reject("profile unavailable");
             double sum = 0;
@@ -143,8 +142,10 @@ public static class RoadSiteApproach
                     candidate.Add(point);
                 }
                 if (length > oldLength + Mathf.PI * radius) continue;
-                float score = Score(candidate, out float worst);
+                // This was already an acceptance rule. Apply it before
+                // smoothing, grading and sampling an unusable trial profile.
                 if (desiredHeight.HasValue && Mathf.Abs(Ground(candidate[candidate.Count - 1]) - desiredHeight.Value) > 1.5f) continue;
+                float score = Score(candidate, out float worst);
                 float limit = oldMismatch > 1.5f ? Mathf.Max(2f, oldWorst + oldMismatch * 0.5f) : oldWorst - 0.5f;
                 if (worst > limit || score >= bestScore || score > oldScore * 0.8f) continue;
                 bestScore = score;

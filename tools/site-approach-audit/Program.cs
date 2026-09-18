@@ -52,8 +52,18 @@ foreach (var c in chosen)
     // Same natural-arrival policy as production, but reference height is only
     // unmodified centre ground: dumps contain no saved root/authored modifiers.
     float? Target(Vector2 p) => Mathf.Abs(Ground(p)-desired)<=1.5f ? Ground(p) : null;
+    long heightQueries = world.HeightQueries, biomeQueries = world.BiomeQueries;
+    long allocated = GC.GetAllocatedBytesForCurrentThread();
     var watch = System.Diagnostics.Stopwatch.StartNew();
     var better = RoadSiteApproach.Improve(path,site.Centre,radius,4,world,false,Target,Ground,desired);
+    watch.Stop();
+    long approachBytes = GC.GetAllocatedBytesForCurrentThread() - allocated;
+    long approachHeights = world.HeightQueries - heightQueries, approachBiomes = world.BiomeQueries - biomeQueries;
+    // Exact control-point identity, not a rounded length or destination count.
+    using var routeBytes = new MemoryStream();
+    using (var writer = new BinaryWriter(routeBytes, System.Text.Encoding.UTF8, true))
+        foreach (var point in better) { writer.Write(point.x); writer.Write(point.y); }
+    string routeHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(routeBytes.ToArray()));
     bool moved = !ReferenceEquals(path,better); if (moved) changed++;
     int originalJoin = path.Count - 1; float tailLength = 0;
     while (originalJoin > 0 && tailLength < RoadSiteApproach.Reach)
@@ -66,7 +76,7 @@ foreach (var c in chosen)
     if (replacementChecksPassed == false) invalid++;
     rows.Add(new {name=site.Name,family=c.Family,x=site.Centre.x,z=site.Centre.y,exteriorRadius=site.Radius,
         referenceHeight=desired,initialDirection=new[]{c.Direction.x,c.Direction.y},changed=moved,replacementChecksPassed,
-        seconds=watch.Elapsed.TotalSeconds,before,after});
+        seconds=watch.Elapsed.TotalSeconds,approachBytes,approachHeights,approachBiomes,routeHash,before,after});
     Console.WriteLine($"{site.Name} ({site.Centre.x},{site.Centre.y}): changed={moved}, mismatch {before.ArrivalMismatch:F2}->{after.ArrivalMismatch:F2}, replacementChecks={replacementChecksPassed}");
 
     Metrics Measure(List<Vector2> points)

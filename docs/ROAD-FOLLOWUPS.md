@@ -23,6 +23,10 @@ Rock clearing is outside #21. Preserve the current candidate on `pr/road-rock-cl
 - Test road-overlap removal, preservation of nearby rocks and protected scenery, ownership transfer, and save/reload behavior. Keep removal free of damage/drop side effects.
 - Bound the loaded-zone work and allocations before broadening to Mistlands' larger formations. Decide which formations should make routing avoid them instead of deleting them.
 
+## Approach evaluation speedup
+
+Early arrival-height rejection and bounded per-decision terrain reuse are implemented without changing candidate order or budgets. All 120 offline cases matched across five worlds, twice. Height queries fell 65%; the initial offline pass spent 31% less time in approach evaluation. This has not been timed in a full island regeneration. See [measurements and limits](APPROACH-PERFORMANCE.md).
+
 ## TODO — approaches and turn coverage
 
 - Compare a route through the col toward the front of Hildir's cave when reliable entrance data is available. Location centre alone does not establish a doorway.

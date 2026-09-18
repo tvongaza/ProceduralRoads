@@ -17,3 +17,9 @@ Compare the original and improved final 64 m from the same anchor. Record endpoi
 These dumps have procedural height at 8 m spacing, not loaded terrain, authored modifier footprints, placed LocationProxy height/rotation, doors, rocks or colliders. The reference height is procedural ground at the centre, **not a measured entrance/platform height**. All listed families are hypothetical approach inputs; runtime only invokes this improvement when it has a usable common authored level. Larger actual modifier footprints can exclude an approach that this screen permits. Tar pits chiefly benefit from protection against through-roads, not necessarily from having their own approach generated.
 
 This identifies broader potential and regression candidates. It cannot establish visual quality, walkability, runtime eligibility, actual connection counts or full-world terrain preservation. Existing-world terrain already modified by older roads is not undone by this tool.
+
+## Comparing approach cost
+
+Each row also records an exact binary control-point SHA-256, elapsed time inside `Improve` only, cumulative managed bytes allocated on that thread, and calls to the dump's height and biome accessors during that decision. Profile measurements happen after the timer and counters are captured. Allocated bytes are not peak or retained process memory, and dump lookup time is not game terrain-generation time.
+
+For a performance comparison, build the baseline and candidate into separate output directories and use the same dumps. Compare route hashes and profile metrics as well as timing and calls; unchanged connection counts alone do not establish unchanged approaches. Reverse run order when repeating timing samples. No game launch is required.

@@ -121,18 +121,24 @@ public static class RoadSpatialGrid
     /// caller's business is to drop it, not to lay it anyway.
     /// </summary>
     public static PlannedPath? PlanRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
-        float? startGround = null, float? endGround = null)
+        float? startGround = null, float? endGround = null,
+        System.Func<Vector2, float>? terrainHeight = null)
     {
         if (path == null || path.Count < 2 || worldGen == null)
             return null;
 
+        // Trial profiles can share exact procedural terrain samples. This
+        // callback must not include authored location levelling; start/end
+        // targets and the approach scorer handle that separately.
+        float SampleTerrain(Vector2 point) => terrainHeight != null ? terrainHeight(point)
+            : BiomeBlendedHeight.GetBlendedHeight(point.x, point.y, worldGen);
         float segmentLength = width / 4f;
 
         float totalLength = 0f;
         for (int i = 0; i < path.Count - 1; i++)
             totalLength += Vector2.Distance(path[i], path[i + 1]);
 
-        if (!RoadSwitchbacks.Shape(path, width, out var turns, out var landings, p => BiomeBlendedHeight.GetBlendedHeight(p.x,p.y,worldGen)))
+        if (!RoadSwitchbacks.Shape(path, width, out var turns, out var landings, SampleTerrain))
         { Log.LogDebug("Road refused: switchback has no room for a turning landing"); return null; }
         List<Vector2> densePoints = turns ?? SplinePath(path, segmentLength);
         if (turns != null)
@@ -158,7 +164,7 @@ public static class RoadSpatialGrid
         List<float> denseHeights = new List<float>(densePoints.Count);
 
         foreach (var point in densePoints)
-            denseHeights.Add(BiomeBlendedHeight.GetBlendedHeight(point.x, point.y, worldGen));
+            denseHeights.Add(SampleTerrain(point));
 
         List<float> smoothedHeights = SmoothHeights(denseHeights, RoadConstants.HeightSmoothingWindow, out var debugInfos);
 

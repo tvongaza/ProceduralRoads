@@ -21,6 +21,7 @@
       here; anything touching Harmony patches or engine runtime cannot.
     -->
     <ItemGroup>
+        <Compile Include="../ProceduralRoads/Src/Roads/ApproachTerrainSamples.cs" Link="ModSrc/ApproachTerrainSamples.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadSwitchbacks.cs" Link="ModSrc/RoadSwitchbacks.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadSiteProtection.cs" Link="ModSrc/RoadSiteProtection.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadSiteApproach.cs" Link="ModSrc/RoadSiteApproach.cs"/>
