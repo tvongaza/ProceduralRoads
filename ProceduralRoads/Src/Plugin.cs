@@ -47,6 +47,7 @@ namespace ProceduralRoads
         public static ConfigEntry<int> IslandRoadPercentage = null!;
         public static ConfigEntry<int> PathfindingMaxIterations = null!;
         public static ConfigEntry<int> MaxLocationsPerIsland = null!;
+        public static ConfigEntry<float> MaxGrade = null!;
 
         public void Awake()
         {
@@ -76,6 +77,15 @@ namespace ProceduralRoads
                 new ConfigDescription("Maximum number of locations that can be connected by roads on a single island. " +
                     "Higher values allow more roads on large islands.",
                     new AcceptableValueRange<int>(2, 30)));
+
+            MaxGrade = Config.Bind("Roads", "MaxGrade", RoadConstants.DefaultMaxRoadGrade,
+                new ConfigDescription("Steepest a road may climb, as rise over run: 0.25 is one metre up " +
+                    "for every four along, about 14 degrees. A road never exceeds it, neither where it " +
+                    "is routed nor in the height it is built at, so a destination reachable only by a " +
+                    "steeper climb is left without a road rather than given one too steep to walk. " +
+                    "Lower values mean gentler roads, longer detours and more destinations left out. " +
+                    "0 removes the cap entirely.",
+                    new AcceptableValueRange<float>(0f, 1f)));
 
             CustomLocations = Config.Bind("Locations", "CustomLocations", "",
                 "Comma-separated list of location names to include in road generation. " +
@@ -128,6 +138,7 @@ namespace ProceduralRoads
             RoadNetworkGenerator.GenerateOnLoad = DebugSwitches.Flag("GENERATE_ROADS_ON_LOAD", true);
             RoadNetworkGenerator.MaxLocationsPerIsland = MaxLocationsPerIsland.Value;
             RoadPathfinder.MaxIterations = PathfindingMaxIterations.Value;
+            RoadGrade.Configured = MaxGrade.Value;
             // CustomLocations is parsed at generation time to preserve API registrations
         }
 

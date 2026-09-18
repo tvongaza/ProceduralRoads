@@ -87,12 +87,17 @@ public static class RoadSpatialGrid
     /// startGround and endGround are the heights the road has to MEET at its
     /// two ends - the ground a location stands on - where those are known.
     /// Without them each end meets the natural terrain under it, as before.
+    ///
+    /// Returns false, having stored nothing, when the profile cannot be built
+    /// inside the grade cap: the two ends are further apart in height than the
+    /// cap allows over the length between them. That is a road too steep to
+    /// walk, and the caller's business is to drop it, not to lay it anyway.
     /// </summary>
-    public static void AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
+    public static bool AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
         float? startGround = null, float? endGround = null)
     {
         if (path == null || path.Count < 2 || worldGen == null)
-            return;
+            return false;
 
         float segmentLength = width / 4f;
         
@@ -127,21 +132,44 @@ public static class RoadSpatialGrid
             distanceFromStart[i] = distanceFromStart[i - 1] + Vector2.Distance(densePoints[i - 1], densePoints[i]);
         float pathTotal = densePoints.Count > 0 ? distanceFromStart[densePoints.Count - 1] : 0f;
 
-        Dictionary<Vector2i, List<RoadPoint>> tempPoints = new Dictionary<Vector2i, List<RoadPoint>>();
+        // The whole profile is decided before a single point is stored: the
+        // grade cap can reject it, and a road half in the grid is worse than
+        // no road at all.
+        List<float> finalHeights = new List<float>(densePoints.Count);
         for (int i = 0; i < densePoints.Count; i++)
         {
             float fromStart = distanceFromStart[i];
             float fromEnd = pathTotal - fromStart;
             float distFromNearestEnd = Mathf.Min(fromStart, fromEnd);
-            float rampBlend = RoadEndpointRamp.Blend(distFromNearestEnd);
             float? target = fromStart <= fromEnd ? startGround : endGround;
             float rampBase = RoadEndpointRamp.BaseHeight(denseHeights[i], target, distFromNearestEnd);
-            float finalHeight = Mathf.Lerp(rampBase, smoothedHeights[i], rampBlend);
+            finalHeights.Add(Mathf.Lerp(rampBase, smoothedHeights[i], RoadEndpointRamp.Blend(distFromNearestEnd)));
+        }
 
-            AddRoadPoint(tempPoints, densePoints[i], width, finalHeight);
+        // Smoothing and the ramp both move heights after the search priced the
+        // ground, so a route the search accepted can still be built too steep.
+        // This is where that is caught, and the ends are held: they are the
+        // heights the road has to meet.
+        float steepestBefore = RoadGrade.SteepestStep(densePoints, finalHeights);
+        if (!RoadGrade.Limit(densePoints, finalHeights, RoadGrade.Configured))
+        {
+            Log.LogDebug(
+                $"Road profile refused: ends {finalHeights[0]:F1}m and {finalHeights[finalHeights.Count - 1]:F1}m " +
+                $"are {Mathf.Abs(finalHeights[finalHeights.Count - 1] - finalHeights[0]):F1}m apart over {pathTotal:F0}m, " +
+                $"over the {RoadGrade.Configured:P0} cap");
+            return false;
+        }
+        float steepestAfter = RoadGrade.SteepestStep(densePoints, finalHeights);
+        if (steepestAfter < steepestBefore - 0.001f)
+            Log.LogDebug($"  Grade limited: steepest step {steepestBefore:P0} -> {steepestAfter:P0}");
+
+        Dictionary<Vector2i, List<RoadPoint>> tempPoints = new Dictionary<Vector2i, List<RoadPoint>>();
+        for (int i = 0; i < densePoints.Count; i++)
+        {
+            AddRoadPoint(tempPoints, densePoints[i], width, finalHeights[i]);
 
             RoadPointDebugInfo debugInfo = debugInfos[i];
-            debugInfo.SmoothedHeight = finalHeight;
+            debugInfo.SmoothedHeight = finalHeights[i];
             m_debugInfo[densePoints[i]] = debugInfo;
         }
 
@@ -150,6 +178,7 @@ public static class RoadSpatialGrid
         TotalRoadPoints += densePoints.Count;
         TotalRoadLength += totalLength;
         m_initialized = true;
+        return true;
     }
 
     /// <summary>

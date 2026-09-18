@@ -248,6 +248,8 @@ public static class RoadNetworkGenerator
         DateTime startTime = DateTime.Now;
         m_pathfinder = new RoadPathfinder(WorldGenerator.instance);
         m_roadsGeneratedCount = 0;
+        m_roadsRefusedForGrade = 0;
+        m_roadsWithNoRoute = 0;
 
         var locations = GatherLocationData();
         if (locations == null)
@@ -316,6 +318,16 @@ public static class RoadNetworkGenerator
 
     #region Core Road Generation Primitive
 
+    /// <summary>How many roads were dropped because no profile inside the
+    /// grade cap joins their two ends. Counted so the cost of the cap is a
+    /// number in the generation summary rather than a matter of opinion.</summary>
+    private static int m_roadsRefusedForGrade;
+
+    /// <summary>How many roads found no route at all. With a grade cap on,
+    /// most of these are a destination the cap put out of reach rather than
+    /// one across water, so the two are counted apart.</summary>
+    private static int m_roadsWithNoRoute;
+
     /// <summary>
     /// The height a road has to arrive at for a location: the ground under the
     /// location's centre, which is what the game reads when it places the
@@ -365,6 +377,7 @@ public static class RoadNetworkGenerator
         {
             if (label != null)
                 Log.LogWarning($"Could not find path: {label}");
+            m_roadsWithNoRoute++;
             return false;
         }
 
@@ -377,8 +390,14 @@ public static class RoadNetworkGenerator
             return false;
         }
 
-        RoadSpatialGrid.AddRoadPath(path, width, WorldGenerator.instance,
-            LocationGround(startCenter, startRadius), LocationGround(endCenter, endRadius));
+        if (!RoadSpatialGrid.AddRoadPath(path, width, WorldGenerator.instance,
+                LocationGround(startCenter, startRadius), LocationGround(endCenter, endRadius)))
+        {
+            if (label != null)
+                Log.LogWarning($"Road too steep to build, destination left unconnected: {label}");
+            m_roadsRefusedForGrade++;
+            return false;
+        }
         m_roadsGeneratedCount++;
 
         if (path.Count > 0)
@@ -701,6 +720,8 @@ public static class RoadNetworkGenerator
         m_locationsReady = locationsWereReady;
         m_pathfinder = new RoadPathfinder(WorldGenerator.instance);
         m_roadsGeneratedCount = 0;
+        m_roadsRefusedForGrade = 0;
+        m_roadsWithNoRoute = 0;
 
         if (island.ContainsPoint(locations.Value.SpawnPoint))
             GenerateIslandRoads(island, selected, locations.Value.SpawnPoint, locations.Value.SpawnRadius);
@@ -729,6 +750,8 @@ public static class RoadNetworkGenerator
         m_roadsLoadedFromZDO = false;
         m_pathfinder = null;
         m_roadsGeneratedCount = 0;
+        m_roadsRefusedForGrade = 0;
+        m_roadsWithNoRoute = 0;
         m_roadStartPoints.Clear();
         RoadNetworkPersistence.Reset();
         RoadSpatialGrid.Clear();
@@ -752,6 +775,8 @@ public static class RoadNetworkGenerator
 
         log.LogDebug($"  Generation time: {elapsed.TotalSeconds:F2}s");
         log.LogDebug($"  Road width: {RoadWidth}m");
+        log.LogDebug($"  Max grade: {(RoadGrade.Capped(RoadGrade.Configured) ? RoadGrade.Configured.ToString("P0") : "uncapped")}");
+        log.LogDebug($"  Destinations dropped: {m_roadsWithNoRoute} with no route, {m_roadsRefusedForGrade} too steep to build");
         log.LogDebug("===============================");
     }
 

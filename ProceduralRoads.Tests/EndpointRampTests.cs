@@ -37,7 +37,10 @@ public class EndpointRampTests
             var path = new System.Collections.Generic.List<Vector2>();
             for (float x = -200f; x <= 200f; x += 8f)
                 path.Add(new Vector2(x, 0f));
-            RoadSpatialGrid.AddRoadPath(path, 4f, world);
+            // Cap off: this plane rises half a metre per metre, so the subject
+            // - smoothing bias at the ends - only exists if the road does.
+            using (GradeCap.Off())
+                Assert.True(RoadSpatialGrid.AddRoadPath(path, 4f, world));
 
             foreach (float end in new[] { -200f, 200f })
             {

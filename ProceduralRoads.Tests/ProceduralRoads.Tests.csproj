@@ -35,6 +35,10 @@
                  Condition="Exists('../ProceduralRoads/Src/Roads/RoadEndReport.cs')"/>
         <Compile Remove="RoadEndReportTests.cs"
                  Condition="!Exists('../ProceduralRoads/Src/Roads/RoadEndReport.cs')"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadGrade.cs" Link="ModSrc/RoadGrade.cs"
+                 Condition="Exists('../ProceduralRoads/Src/Roads/RoadGrade.cs')"/>
+        <Compile Remove="RoadGradeTests.cs"
+                 Condition="!Exists('../ProceduralRoads/Src/Roads/RoadGrade.cs')"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadEndpointRamp.cs" Link="ModSrc/RoadEndpointRamp.cs"
                  Condition="Exists('../ProceduralRoads/Src/Roads/RoadEndpointRamp.cs')"/>
         <Compile Remove="EndpointRampTests.cs"

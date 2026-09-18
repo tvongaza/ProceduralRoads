@@ -26,6 +26,15 @@ public class EndpointTerrainTests
     private const float EastEnd = 200f;
     private const float WestEnd = -200f;
 
+    /// <summary>
+    /// Lays the test road with the grade cap off. The subject here is the
+    /// terrain the ends leave behind, and the reviewer's reproduction is a
+    /// plane rising half a metre per metre - two and a half times the default
+    /// cap - so with the cap on there is no road to leave any terrain at all.
+    /// The cap's own behaviour on this same slope is tested in
+    /// RoadGradeRoadTests; it is not being avoided here, only held out of a
+    /// test about something else.
+    /// </summary>
     private static (SlopeWorld world, List<Vector2> path) SetUp(float across = 0f)
     {
         var world = new SlopeWorld { AcrossZ = across };
@@ -34,7 +43,8 @@ public class EndpointTerrainTests
         var path = new List<Vector2>();
         for (float x = WestEnd; x <= EastEnd; x += 8f)
             path.Add(new Vector2(x, 0f));
-        RoadSpatialGrid.AddRoadPath(path, RoadWidth, world);
+        using (GradeCap.Off())
+            Assert.True(RoadSpatialGrid.AddRoadPath(path, RoadWidth, world));
         RoadSpatialGrid.FinalizeRoadNetwork();
         return (world, path);
     }

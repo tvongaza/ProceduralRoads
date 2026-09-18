@@ -23,6 +23,23 @@ public class RoadPathfinder
     public float TerrainVarianceThreshold = RoadConstants.DefaultTerrainVarianceThreshold;
     public float BaseCost = RoadConstants.DefaultBaseCost;
 
+    /// <summary>
+    /// The steepest ground a road may climb, as rise over run; 0 for no cap.
+    /// A step over it is refused outright rather than priced, so the search
+    /// has to cross the slope - which the 16 directions already allow - or
+    /// fail and leave the destination unconnected. Every other steep case
+    /// here is a large but finite price and so is never a refusal, which is
+    /// why a destination on a cliff got the direct climb: it was the cheapest
+    /// of the expensive lines. Held per instance so a test can pathfind
+    /// without it. The lever is "Roads/MaxGrade".
+    /// </summary>
+    public float MaxGrade = RoadGrade.Configured;
+
+    /// <summary>Returned by GetMoveCost for a step no road may take, as
+    /// against the water and river penalties, which say only that a step is
+    /// dear. Nothing may buy its way past this one.</summary>
+    public const float Impassable = float.PositiveInfinity;
+
     private static readonly Vector2Int[] Directions = new Vector2Int[]
     {
         new Vector2Int(1, 0), new Vector2Int(-1, 0), new Vector2Int(0, 1), new Vector2Int(0, -1),
@@ -95,6 +112,11 @@ public class RoadPathfinder
                     continue;
 
                 float moveCost = GetMoveCost(currentPos, neighborPos, i);
+                // Refused outright, not merely dear: kept apart from the price
+                // test below because the two mean different things to a reader
+                // and, once there are crossings, to the search.
+                if (float.IsPositiveInfinity(moveCost))
+                    continue;
                 if (moveCost >= RiverPenalty)
                     continue;
 
@@ -171,6 +193,12 @@ public class RoadPathfinder
             return WaterPenalty * 2f;
         if (biomeHeight < RoadConstants.ShallowWaterHeight)
             return WaterPenalty;
+
+        // A grade cap is a refusal, not a price: above it there is no road, so
+        // the search crosses the slope or gives the destination up. The slope
+        // terms below still price everything under the cap.
+        if (MaxGrade > 0f && slope > MaxGrade)
+            return Impassable;
 
         if (slope > SteepSlopeThreshold)
             return SteepSlopePenalty;

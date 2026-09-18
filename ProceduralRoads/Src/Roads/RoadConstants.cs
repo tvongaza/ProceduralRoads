@@ -29,6 +29,15 @@ public static class RoadConstants
     public const float DefaultTerrainVariancePenalty = 1000f;
     public const float DefaultTerrainVarianceThreshold = 5f;
 
+    // The steepest a road may climb, as rise over run, or 0 for no cap.
+    // Without a cap every steep step is a large but finite price and never a
+    // refusal, so when a destination sits on a cliff the cheapest expensive
+    // line is the direct climb: RoadPathfinder refuses a step over the cap,
+    // which leaves the search to traverse across the slope or fail, and
+    // RoadGrade holds the stored height profile to it as well, because
+    // smoothing and the endpoint ramp both move heights after the search.
+    public const float DefaultMaxRoadGrade = 0.25f;
+
     // Road cross-section (see RoadProfile): flat core fully leveled and
     // solidly painted; paint fades out strictly inside the leveled footprint
     // so roads keep an unpainted, smoothed verge; leveling eases to natural
