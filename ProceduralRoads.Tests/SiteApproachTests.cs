@@ -70,6 +70,34 @@ public class SiteApproachTests
         Assert.True(RoadGrade.SteepestStep(plan.Points,plan.Heights) <= 0.3501f);
     }
 
+    private sealed class BacksideSlope : WorldGenerator
+    {
+        public override float GetHeight(float x, float z) => 68f + 0.5f * Mathf.Clamp(x, -16f, 16f);
+    }
+
+    [Fact]
+    public void ReachesPlatformOnOtherSideWithoutCrossingProtectedSite()
+    {
+        RoadSpatialGrid.Clear();
+        RoadSiteProtection.Set(new[] { new RoadSiteProtection.Footprint(new Vector2(),12f) });
+        using var grade = GradeCap.At(0.35f);
+        var world = new BacksideSlope(); var original = Route();
+        float Ground(Vector2 p) => world.GetHeight(p.x,p.y);
+        float? Target(Vector2 p) => Mathf.Abs(Ground(p)-60f) <= 1.5f ? 60f : null;
+        try
+        {
+            var better = RoadSiteApproach.Improve(original,new Vector2(),16,4,world,false,Target,Ground,60f);
+            Assert.NotSame(original,better);
+            Assert.InRange(Ground(better[better.Count-1]),58.5f,61.5f);
+            var plan = RoadSpatialGrid.PlanRoadPath(better,4,world,endGround:60f)!;
+            Assert.NotNull(plan);
+            Assert.All(plan.Points,p => Assert.True(p.magnitude >= 15.9f));
+            Assert.True(RoadGrade.SteepestStep(plan.Points,plan.Heights) <= 0.3501f);
+            Assert.Equal(original[0],better[0]);
+        }
+        finally { RoadSiteProtection.Reset(); }
+    }
+
     [Fact]
     public void PlatformTargetDoesNotInventAnEmbankmentOrMergeDifferentStoreys()
     {

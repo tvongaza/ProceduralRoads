@@ -36,7 +36,7 @@ public static class RoadEndReport
         var rows = new List<Entry>();
         foreach (var loc in locations)
         {
-            var near = RoadSpatialGrid.GetRoadPointsNearPosition(loc.position, loc.radius + SearchMargin);
+            var near = RoadSpatialGrid.GetRoadPointsNearPosition(loc.position, RoadSiteProtection.RadiusAt(new Vector2(loc.position.x, loc.position.z), loc.radius) + SearchMargin);
             if (near.Count == 0)
                 continue;
 
