@@ -23,11 +23,14 @@ public static class LocationPrefabLevelling
     private static readonly Dictionary<string, IReadOnlyList<LevelOp>> m_byPrefab = new();
 
     private static readonly Dictionary<string, float> m_terrainRadius = new();
+    private static readonly Dictionary<Vector2, float> m_placedHeights = new();
+    private static bool m_placementsRead;
 
     /// <summary>Wire this up as LocationLevelling's source. Called from the plugin.</summary>
     public static void Install()
     {
         LocationLevelling.Source = OpsAt;
+        LocationLevelling.PlacementHeightSource = PlacementHeightAt;
         RoadSiteProtection.Source = Footprints;
     }
 
@@ -47,7 +50,25 @@ public static class LocationPrefabLevelling
         return result;
     }
 
-    public static void Reset() { m_byPrefab.Clear(); m_terrainRadius.Clear(); RoadSiteProtection.Reset(); }
+    public static void Reset() { m_byPrefab.Clear(); m_terrainRadius.Clear(); m_placedHeights.Clear(); m_placementsRead = false; RoadSiteProtection.Reset(); }
+
+    private static float? PlacementHeightAt(Vector2 centre)
+    {
+        if (!m_placementsRead && ZDOMan.instance != null)
+        {
+            int proxyHash = "LocationProxy".GetStableHashCode();
+            foreach (var entry in ZDOMan.instance.m_objectsByID)
+            {
+                ZDO zdo = entry.Value;
+                if (zdo.GetPrefab() != proxyHash) continue;
+                Vector3 position = zdo.GetPosition();
+                m_placedHeights[new Vector2(position.x, position.z)] = position.y;
+            }
+            m_placementsRead = true;
+        }
+        if (m_placedHeights.TryGetValue(centre, out float height)) return height;
+        return null;
+    }
 
     private static IReadOnlyList<LevelOp>? OpsAt(Vector2 centre)
     {

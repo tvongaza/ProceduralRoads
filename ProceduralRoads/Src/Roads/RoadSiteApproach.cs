@@ -44,36 +44,38 @@ public static class RoadSiteApproach
             return h;
         }
         float anchorHeight = Ground(anchor);
+        string lastRejection = "";
+        float Reject(string reason) { lastRejection = reason; return float.PositiveInfinity; }
         float Score(List<Vector2> tail, out float worst, bool requireClear = true)
         {
-            worst = 0f;
+            worst = 0f; lastRejection = "";
             // Trial profiles do not contribute to the network's grade report.
             float previousGrade = RoadGrade.SteepestPlanned;
             RoadSpatialGrid.PlannedPath? plan;
             try { plan = RoadSpatialGrid.PlanRoadPath(tail, width, world, anchorHeight, target(tail[tail.Count - 1])); }
             finally { RoadGrade.SteepestPlanned = previousGrade; }
-            if (plan == null) return float.PositiveInfinity;
+            if (plan == null) return Reject("profile unavailable");
             double sum = 0;
             for (int i = 0; i < plan.Points.Count; i++)
             {
                 Vector2 point = plan.Points[i];
-                if (float.IsNaN(plan.Heights[i]) || float.IsInfinity(plan.Heights[i])) return float.PositiveInfinity;
+                if (float.IsNaN(plan.Heights[i]) || float.IsInfinity(plan.Heights[i])) return Reject("non-finite profile");
                 // Inspect the spline, not just the control points. Its turn
                 // must not cut through the location or sneak across water.
-                if (requireClear && Vector2.Distance(point, centre) < radius - 0.1f) return float.PositiveInfinity;
+                if (requireClear && Vector2.Distance(point, centre) < radius - 0.1f) return Reject("spline enters footprint");
                 Vector2 previous = plan.Points[Math.Max(0, i - 1)];
                 if (requireClear && RoadSiteProtection.BlocksSegment(previous, point, width * 0.5f + 2f, null, null))
-                    return float.PositiveInfinity;
+                    return Reject("spline enters protected clearance");
                 world.GetRiverWeight(point.x, point.y, out float river, out _);
                 if (river > RoadConstants.RiverImpassableThreshold || Ground(point) < RoadConstants.ShallowWaterHeight)
-                    return float.PositiveInfinity;
+                    return Reject("water or river");
                 Vector2 direction = plan.Points[Math.Min(i + 1, plan.Points.Count - 1)]
                     - plan.Points[Math.Max(i - 1, 0)];
                 Vector2 side = new Vector2(-direction.y, direction.x).normalized * (width * 0.5f);
                 for (int j = -1; j <= 1; j++)
                 {
                     float h = Ground(point + side * j);
-                    if (float.IsNaN(h) || float.IsInfinity(h)) return float.PositiveInfinity;
+                    if (float.IsNaN(h) || float.IsInfinity(h)) return Reject("non-finite ground");
                     float cut = Mathf.Abs(plan.Heights[i] - h);
                     worst = Mathf.Max(worst, cut);
                     sum += cut;
@@ -185,6 +187,8 @@ public static class RoadSiteApproach
                     while (parents.TryGetValue(cursor,out var parent)) { candidate.Add(Point(parent)); cursor=parent; }
                     candidate.Reverse();
                     float score=Score(candidate,out float worst);
+                    ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(
+                        $"Site arrival {centre}: {here} ground {height:F2}, score {score:F2}/{oldScore:F2}, earthwork {worst:F2}/{oldWorst:F2}, {lastRejection}");
                     if (worst <= Mathf.Max(2f,oldWorst+oldMismatch*0.5f) && score < bestScore && score <= oldScore*0.8f)
                     { best=candidate; bestScore=score; }
                 }

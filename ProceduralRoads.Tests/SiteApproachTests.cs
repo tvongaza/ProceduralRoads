@@ -125,6 +125,23 @@ public class SiteApproachTests
     }
 
     [Fact]
+    public void PlacedPlatformUsesSavedRootRatherThanRecomputedGround()
+    {
+        var world=new Flat();
+        LocationLevelling.PlacementHeightSource=_=>66f;
+        try
+        {
+            Assert.Equal(64.8f,LocationLevelling.PlatformHeight(LocationLevelling.CentreHeight(new Vector2(),world),
+                new[] {new LevelOp(2,0,-1.2f,8,false)}));
+            LocationLevelling.PlacementHeightSource=_=>float.NaN;
+            Assert.Equal(60f,LocationLevelling.CentreHeight(new Vector2(),world));
+            LocationLevelling.PlacementHeightSource=_=>null;
+            Assert.Equal(60f,LocationLevelling.CentreHeight(new Vector2(),world));
+        }
+        finally { LocationLevelling.PlacementHeightSource=null; }
+    }
+
+    [Fact]
     public void PlatformTargetDoesNotInventAnEmbankmentOrMergeDifferentStoreys()
     {
         Assert.Equal(58.8f, LocationLevelling.PlatformHeight(60f, new[] { new LevelOp(2,0,-1.2f,8,false) }));

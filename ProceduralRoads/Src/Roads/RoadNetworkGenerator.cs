@@ -348,7 +348,7 @@ public static class RoadNetworkGenerator
         IReadOnlyList<LevelOp>? ops = LocationLevelling.OpsAt(center);
         if (ops == null)
             return null;
-        float centreGround = BiomeBlendedHeight.GetBlendedHeight(center.x, center.y, WorldGenerator.instance);
+        float centreGround = LocationLevelling.CentreHeight(center, WorldGenerator.instance);
         float? levelled = LocationLevelling.GroundAt(endPoint, center, centreGround, ops);
         if (!levelled.HasValue)
             return null;
@@ -364,7 +364,7 @@ public static class RoadNetworkGenerator
         // Copy the terrain facts once: scoring must not reload the template
         // for every vertex. Unknown location shaping retains the old approach.
         if (ops == null || ops.Count == 0) return path;
-        float centreHeight = BiomeBlendedHeight.GetBlendedHeight(centre.x, centre.y, world);
+        float centreHeight = LocationLevelling.CentreHeight(centre, world);
         float? platform = LocationLevelling.PlatformHeight(centreHeight, ops);
         if (platform < RoadConstants.ShallowWaterHeight) platform = null;
         Log.LogDebug($"Site approach {centre}: keep-out edge {radius:F1}m, platform {(platform.HasValue ? platform.Value.ToString("F2") : "unknown")}m");
@@ -380,7 +380,7 @@ public static class RoadNetworkGenerator
         float? local = LocationGround(point, centre, radius);
         if (local.HasValue || radius <= 0f || WorldGenerator.instance == null) return local;
         var world = WorldGenerator.instance;
-        float centreHeight = BiomeBlendedHeight.GetBlendedHeight(centre.x, centre.y, world);
+        float centreHeight = LocationLevelling.CentreHeight(centre, world);
         float? platform = LocationLevelling.PlatformHeight(centreHeight, LocationLevelling.OpsAt(centre));
         // Never make an arbitrary high embankment merely to hit a platform.
         // The approach search must first find naturally nearby elevation.

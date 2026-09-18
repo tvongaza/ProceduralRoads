@@ -72,6 +72,18 @@ public static class LocationLevelling
     /// </summary>
     public static System.Func<Vector2, IReadOnlyList<LevelOp>?>? Source;
 
+    /// <summary>Saved placement, when the location has already spawned.
+    /// Its root can differ from a fresh procedural query (other modifiers or
+    /// a saved world). Copy only the numeric height, never a live component.</summary>
+    public static System.Func<Vector2, float?>? PlacementHeightSource;
+
+    public static float CentreHeight(Vector2 centre, WorldGenerator world)
+    {
+        float? saved = PlacementHeightSource?.Invoke(centre);
+        return saved.HasValue && !float.IsNaN(saved.Value) && !float.IsInfinity(saved.Value)
+            ? saved.Value : BiomeBlendedHeight.GetBlendedHeight(centre.x, centre.y, world);
+    }
+
     /// <summary>The levelling a location at this centre will do, or null.</summary>
     public static IReadOnlyList<LevelOp>? OpsAt(Vector2 centre) => Source?.Invoke(centre);
 
