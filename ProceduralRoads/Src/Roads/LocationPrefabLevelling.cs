@@ -31,6 +31,7 @@ public static class LocationPrefabLevelling
     {
         LocationLevelling.Source = OpsAt;
         LocationLevelling.PlacementHeightSource = PlacementHeightAt;
+        LocationLevelling.ResetPlacements = () => { m_placedHeights.Clear(); m_placementsRead = false; };
         RoadSiteProtection.Source = Footprints;
     }
 
@@ -67,6 +68,9 @@ public static class LocationPrefabLevelling
             m_placementsRead = true;
         }
         if (m_placedHeights.TryGetValue(centre, out float height)) return height;
+        // Stored and generated coordinates can differ below console precision.
+        foreach (var entry in m_placedHeights)
+            if ((entry.Key-centre).sqrMagnitude < 0.25f) return entry.Value;
         return null;
     }
 

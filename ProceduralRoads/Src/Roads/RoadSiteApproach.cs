@@ -155,7 +155,7 @@ public static class RoadSiteApproach
         // is missed, search the local ground itself for a walkable contour.
         // One bounded search serves all possible arrival directions; it never
         // changes the main network search budget or exempts the destination.
-        if (best == null && desiredHeight.HasValue && oldMismatch > 1.5f)
+        for (int margin = 1; best == null && desiredHeight.HasValue && oldMismatch > 1.5f && margin <= 9; margin += 4)
         {
             const float step = 4f;
             var directions = new[] { new Vector2i(1,0), new Vector2i(-1,0), new Vector2i(0,1), new Vector2i(0,-1),
@@ -178,7 +178,7 @@ public static class RoadSiteApproach
                 if (current.cost > costs[key]) continue;
                 Vector2 here=Point(key); float height=Ground(here);
                 float distanceToSite=Vector2.Distance(here,centre);
-                if (parents.ContainsKey(key) && distanceToSite >= radius+1f && distanceToSite <= radius+10f &&
+                if (parents.ContainsKey(key) && distanceToSite >= radius+margin && distanceToSite <= radius+margin+9f &&
                     Mathf.Abs(height-desiredHeight.Value) <= 1.5f)
                 {
                     goals++;
@@ -197,10 +197,10 @@ public static class RoadSiteApproach
                     var next=new Vector2i(key.x+direction.x,key.y+direction.y);
                     Vector2 there=Point(next), delta=there-here;
                     float nextRadius=Vector2.Distance(there,centre);
-                    if (nextRadius < radius+1f || nextRadius > maxRadius) continue;
+                    if (nextRadius < radius+margin || nextRadius > maxRadius) continue;
                     float t=Mathf.Clamp01(((centre.x-here.x)*delta.x+(centre.y-here.y)*delta.y)/delta.sqrMagnitude);
-                    if (Vector2.Distance(here+delta*t,centre) < radius+1f ||
-                        RoadSiteProtection.BlocksSegment(here,there,width*0.5f+2f,null,null)) continue;
+                    if (Vector2.Distance(here+delta*t,centre) < radius+margin ||
+                        RoadSiteProtection.BlocksSegment(here,there,width*0.5f+2f+margin,null,null)) continue;
                     float nextHeight=Ground(there), middleHeight=Ground((here+there)*0.5f);
                     if (float.IsNaN(nextHeight) || float.IsInfinity(nextHeight) ||
                         float.IsNaN(middleHeight) || float.IsInfinity(middleHeight) || nextHeight < RoadConstants.ShallowWaterHeight) continue;
@@ -214,7 +214,7 @@ public static class RoadSiteApproach
                 }
             }
             ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(
-                $"Site contour {centre}: {visited} nodes, {goals} arrivals near platform, accepted={best != null}");
+                $"Site contour {centre}: margin {margin}m, {visited} nodes, {goals} arrivals near platform, accepted={best != null}");
         }
         if (best == null) return path;
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(

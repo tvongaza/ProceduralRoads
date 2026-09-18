@@ -125,6 +125,15 @@ public class SiteApproachTests
     }
 
     [Fact]
+    public void NetworkResetAlsoInvalidatesThePlacementHeightSnapshot()
+    {
+        int resets=0;
+        LocationLevelling.ResetPlacements=()=>resets++;
+        try { RoadNetworkGenerator.Reset(); Assert.Equal(1,resets); }
+        finally { LocationLevelling.ResetPlacements=null; }
+    }
+
+    [Fact]
     public void PlacedPlatformUsesSavedRootRatherThanRecomputedGround()
     {
         var world=new Flat();

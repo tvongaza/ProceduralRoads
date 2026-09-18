@@ -803,6 +803,7 @@ public static class RoadNetworkGenerator
 
     public static void Reset()
     {
+        LocationLevelling.ResetPlacements?.Invoke();
         m_roadsGenerated = false;
         m_locationsReady = false;
         m_roadsLoadedFromZDO = false;

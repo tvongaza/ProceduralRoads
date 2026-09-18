@@ -44,6 +44,11 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_site",
+            "Inspect the closest location at <x> <z>: saved root, platform estimate and protected radius. Read-only.",
+            args => InspectRoadSite(args), isCheat: true);
+
+        new Terminal.ConsoleCommand(
             "road_ends",
             "Compare each location's nearest road point with procedural terrain: road_ends [ring=8] [top=20]. Ring is a radius in metres. CSV also records loaded collision height where available; procedural deltas do not measure the visible rim.",
             (args) => ReportRoadEnds(args),
@@ -300,6 +305,30 @@ public static class ConsoleCommands
         s_modPins.Clear();
 
         args.Context.AddString($"Removed {count} pins.");
+    }
+
+    private static void InspectRoadSite(Terminal.ConsoleEventArgs args)
+    {
+        if (args.Length != 3 || !float.TryParse(args[1], System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out float x) ||
+            !float.TryParse(args[2], System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out float z) ||
+            float.IsNaN(x) || float.IsInfinity(x) || float.IsNaN(z) || float.IsInfinity(z) ||
+            ZoneSystem.instance == null || WorldGenerator.instance == null)
+        { args.Context.AddString("Usage: road_site <x> <z> in a loaded world"); return; }
+        ZoneSystem.LocationInstance? best = null; float distance = 64f;
+        foreach (var site in ZoneSystem.instance.GetLocationList())
+        {
+            float d=Vector2.Distance(new Vector2(x,z),new Vector2(site.m_position.x,site.m_position.z));
+            if (d < distance) { best=site; distance=d; }
+        }
+        if (best == null) { args.Context.AddString("No location within 64m"); return; }
+        var centre=new Vector2(best.Value.m_position.x,best.Value.m_position.z);
+        float? saved=LocationLevelling.PlacementHeightSource?.Invoke(centre);
+        float baseHeight=LocationLevelling.CentreHeight(centre,WorldGenerator.instance);
+        float? platform=LocationLevelling.PlatformHeight(baseHeight,LocationLevelling.OpsAt(centre));
+        float radius=RoadSiteProtection.RadiusAt(centre,best.Value.m_location.m_exteriorRadius);
+        args.Context.AddString($"Site {best.Value.m_location.m_prefab.Name} at {centre}; savedRoot={saved?.ToString("F3") ?? "unknown"}; base={baseHeight:F3}; platform={platform?.ToString("F3") ?? "unknown"}; protectedRadius={radius:F2}");
     }
 
     private static void ReportRoadEnds(Terminal.ConsoleEventArgs args)

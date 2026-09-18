@@ -76,6 +76,7 @@ public static class LocationLevelling
     /// Its root can differ from a fresh procedural query (other modifiers or
     /// a saved world). Copy only the numeric height, never a live component.</summary>
     public static System.Func<Vector2, float?>? PlacementHeightSource;
+    public static System.Action? ResetPlacements;
 
     public static float CentreHeight(Vector2 centre, WorldGenerator world)
     {
