@@ -184,6 +184,8 @@ public static class RoadSpatialGrid
             return null;
         }
         float steepestAfter = RoadGrade.SteepestStep(densePoints, finalHeights);
+        if (steepestAfter > RoadGrade.SteepestPlanned)
+            RoadGrade.SteepestPlanned = steepestAfter;
         if (steepestAfter < steepestBefore - 0.001f)
             Log.LogDebug($"  Grade limited: steepest step {steepestBefore:P0} -> {steepestAfter:P0}");
 

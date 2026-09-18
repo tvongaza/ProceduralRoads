@@ -166,6 +166,39 @@ public class RoadGradeRoadTests
     }
 
     [Fact]
+    public void TheSteepestRoadPlannedIsRecorded()
+    {
+        // The cap's claim about the roads it let through, in one number. It is
+        // recorded at planning time because the spatial grid keeps points as a
+        // set per cell, with no order and no road they belong to: the nearest
+        // neighbour of a stored point can be a different road crossing it.
+        var world = new Ramp { Grade = 0.35f };
+        WorldGenerator.instance = world;
+        RoadSpatialGrid.Clear();
+        try
+        {
+            var path = new List<Vector2>();
+            for (int i = 0; i <= 20; i++)
+                path.Add(new Vector2(i * 8f, (i % 2 == 0 ? 1f : -1f) * 16f));
+
+            RoadGrade.SteepestPlanned = 0f;
+            using (GradeCap.At(0.2f))
+                Assert.True(RoadSpatialGrid.AddRoadPath(path, 4f, world));
+            Assert.InRange(RoadGrade.SteepestPlanned, 0.01f, 0.2f + 0.001f);
+
+            // And it is a high-water mark, not the last road's figure.
+            float afterFirst = RoadGrade.SteepestPlanned;
+            RoadSpatialGrid.Clear();
+            var flat = new List<Vector2>();
+            for (int i = 0; i <= 20; i++) flat.Add(new Vector2(0f, i * 8f)); // across the slope
+            using (GradeCap.At(0.2f))
+                Assert.True(RoadSpatialGrid.AddRoadPath(flat, 4f, world));
+            Assert.Equal(afterFirst, RoadGrade.SteepestPlanned);
+        }
+        finally { RoadSpatialGrid.Clear(); WorldGenerator.instance = null; RoadGrade.SteepestPlanned = 0f; }
+    }
+
+    [Fact]
     public void OnGroundInsideTheCapNothingChanges()
     {
         // The other half of the same claim: where the cap does not bite, every

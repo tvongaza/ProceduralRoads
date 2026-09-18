@@ -250,6 +250,7 @@ public static class RoadNetworkGenerator
         m_roadsGeneratedCount = 0;
         m_roadsRefusedForGrade = 0;
         m_roadsWithNoRoute = 0;
+        RoadGrade.SteepestPlanned = 0f;
 
         var locations = GatherLocationData();
         if (locations == null)
@@ -722,6 +723,7 @@ public static class RoadNetworkGenerator
         m_roadsGeneratedCount = 0;
         m_roadsRefusedForGrade = 0;
         m_roadsWithNoRoute = 0;
+        RoadGrade.SteepestPlanned = 0f;
 
         if (island.ContainsPoint(locations.Value.SpawnPoint))
             GenerateIslandRoads(island, selected, locations.Value.SpawnPoint, locations.Value.SpawnRadius);
@@ -752,6 +754,7 @@ public static class RoadNetworkGenerator
         m_roadsGeneratedCount = 0;
         m_roadsRefusedForGrade = 0;
         m_roadsWithNoRoute = 0;
+        RoadGrade.SteepestPlanned = 0f;
         m_roadStartPoints.Clear();
         RoadNetworkPersistence.Reset();
         RoadSpatialGrid.Clear();
@@ -777,6 +780,7 @@ public static class RoadNetworkGenerator
         log.LogDebug($"  Road width: {RoadWidth}m");
         log.LogDebug($"  Max grade: {(RoadGrade.Capped(RoadGrade.Configured) ? RoadGrade.Configured.ToString("P0") : "uncapped")}");
         log.LogDebug($"  Destinations dropped: {m_roadsWithNoRoute} with no route, {m_roadsRefusedForGrade} too steep to build");
+        log.LogDebug($"  Steepest road built: {RoadGrade.SteepestPlanned:P1}");
         log.LogDebug("===============================");
     }
 

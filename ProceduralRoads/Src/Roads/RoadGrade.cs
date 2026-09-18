@@ -33,6 +33,16 @@ public static class RoadGrade
     /// </summary>
     public static float Configured = RoadConstants.DefaultMaxRoadGrade;
 
+    /// <summary>
+    /// The steepest step of any road planned since the last reset, as rise
+    /// over run. This is the cap's own claim about the roads it let through,
+    /// and it has to be recorded here: once points are in the spatial grid
+    /// they are a set per cell with no order and no road they belong to, so
+    /// the nearest neighbour of a point can be a different road crossing it
+    /// rather than the next metre of its own.
+    /// </summary>
+    public static float SteepestPlanned;
+
     /// <summary>A cap at or below zero is no cap at all.</summary>
     public static bool Capped(float maxGrade) => maxGrade > 0f;
 
