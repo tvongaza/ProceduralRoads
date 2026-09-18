@@ -32,8 +32,6 @@ Roads approach the outside of locations while preserving their authored terrain 
 
 These routing changes apply when generating a network. They do not remove terrain damage already baked by an older network. Test regeneration on a disposable world or copy first.
 
-The loaded-zone clearing pass removes intersecting natural boulders in Mountains, Plains and Black Forest, including shared rock prefabs, forest/coastal boulders and plains pillars. Eligibility requires a known rock prefab, an enabled vegetation registration and a loaded instance in one of those biomes. Ores, fragments, player structures and protected location scenery are excluded. Actual collider intersection is required; nearby rocks are left alone. A previously observed mountain-rock miss remains under investigation.
-
 Diagnostics: `road_site <x> <z>` describes a nearby location; `road_ends` compares locations with nearby road points. Its height differences are diagnostic measurements, not proof that an entrance or turn is walkable. See [validation and follow-ups](docs/ROAD-FOLLOWUPS.md) and the [offline approach audit](docs/SITE-APPROACH-AUDIT.md).
 
 ### Custom Locations via Config

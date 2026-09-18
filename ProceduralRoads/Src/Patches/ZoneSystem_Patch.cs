@@ -58,20 +58,12 @@ public static class ZoneSystem_Patch
         }
     }
 
-    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Update))]
-    public static class ZoneSystem_RoadRocks_Patch
-    {
-        [HarmonyPostfix]
-        public static void Postfix() => RoadRockClearing.Tick();
-    }
-
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.OnDestroy))]
     public static class ZoneSystem_OnDestroy_Patch
     {
         [HarmonyPrefix]
         public static void Prefix(ZoneSystem __instance)
         {
-            RoadRockClearing.Reset();
             RoadLifecycleManager.OnZoneSystemDestroy(__instance);
         }
     }
