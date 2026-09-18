@@ -79,8 +79,8 @@ namespace ProceduralRoads
                     new AcceptableValueRange<int>(2, 30)));
 
             MaxGrade = Config.Bind("Roads", "MaxGrade", RoadConstants.DefaultMaxRoadGrade,
-                new ConfigDescription("Steepest a road may climb, as rise over run: 0.25 is one metre up " +
-                    "for every four along, about 14 degrees. A road never exceeds it, neither where it " +
+                new ConfigDescription("Steepest a road may climb, as rise over run: 0.35 is one metre up " +
+                    "for every three along, about 19 degrees. A road never exceeds it, neither where it " +
                     "is routed nor in the height it is built at, so a destination reachable only by a " +
                     "steeper climb is left without a road rather than given one too steep to walk. " +
                     "Lower values mean gentler roads, longer detours and more destinations left out. " +

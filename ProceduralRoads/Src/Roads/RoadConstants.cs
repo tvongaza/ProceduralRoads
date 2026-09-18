@@ -36,7 +36,14 @@ public static class RoadConstants
     // which leaves the search to traverse across the slope or fail, and
     // RoadGrade holds the stored height profile to it as well, because
     // smoothing and the endpoint ramp both move heights after the search.
-    public const float DefaultMaxRoadGrade = 0.25f;
+    //
+    // 0.35 is one metre up for every three along, about 19 degrees. It is the
+    // knee of a sweep over one real world (RoadSeedE, 296 destinations): the
+    // steepest road built falls from 962% to 35%, and one destination in 296
+    // is lost for it. Below the knee the losses arrive quickly - 25% loses
+    // thirteen, 20% loses twenty-one, 15% loses thirty-nine - while above it
+    // 50% saves nothing more and leaves roads at half again the grade.
+    public const float DefaultMaxRoadGrade = 0.35f;
 
     // Road cross-section (see RoadProfile): flat core fully leveled and
     // solidly painted; paint fades out strictly inside the leveled footprint
