@@ -36,7 +36,9 @@ public static class RoadEndReport
         var rows = new List<Entry>();
         foreach (var loc in locations)
         {
-            var near = RoadSpatialGrid.GetRoadPointsNearPosition(loc.position, RoadSiteProtection.RadiusAt(new Vector2(loc.position.x, loc.position.z), loc.radius) + SearchMargin);
+            // Approaches can finish outside the footprint plus road width,
+            // smoothing clearance and the local arrival band (up to 22 m).
+            var near = RoadSpatialGrid.GetRoadPointsNearPosition(loc.position, RoadSiteProtection.RadiusAt(new Vector2(loc.position.x, loc.position.z), loc.radius) + Mathf.Max(SearchMargin, 24f));
             if (near.Count == 0)
                 continue;
 
