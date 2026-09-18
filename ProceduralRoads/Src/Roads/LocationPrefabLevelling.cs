@@ -22,10 +22,32 @@ public static class LocationPrefabLevelling
 {
     private static readonly Dictionary<string, IReadOnlyList<LevelOp>> m_byPrefab = new();
 
-    /// <summary>Wire this up as LocationLevelling's source. Called from the plugin.</summary>
-    public static void Install() => LocationLevelling.Source = OpsAt;
+    private static readonly Dictionary<string, float> m_terrainRadius = new();
 
-    public static void Reset() => m_byPrefab.Clear();
+    /// <summary>Wire this up as LocationLevelling's source. Called from the plugin.</summary>
+    public static void Install()
+    {
+        LocationLevelling.Source = OpsAt;
+        RoadSiteProtection.Source = Footprints;
+    }
+
+    private static IEnumerable<RoadSiteProtection.Footprint>? Footprints()
+    {
+        if (ZoneSystem.instance == null) return null;
+        var locations = ZoneSystem.instance.GetLocationList();
+        if (locations == null || locations.Count == 0) return null;
+        var result = new List<RoadSiteProtection.Footprint>();
+        foreach (var inst in locations)
+        {
+            ForPrefab(inst.m_location);
+            m_terrainRadius.TryGetValue(inst.m_location.m_prefab.Name, out float terrainRadius);
+            float radius = Mathf.Max(inst.m_location.m_exteriorRadius, terrainRadius);
+            result.Add(new RoadSiteProtection.Footprint(new Vector2(inst.m_position.x, inst.m_position.z), radius));
+        }
+        return result;
+    }
+
+    public static void Reset() { m_byPrefab.Clear(); m_terrainRadius.Clear(); RoadSiteProtection.Reset(); }
 
     private static IReadOnlyList<LevelOp>? OpsAt(Vector2 centre)
     {
@@ -49,6 +71,7 @@ public static class LocationPrefabLevelling
             return cached;
 
         var ops = new List<LevelOp>();
+        float terrainRadius = 0f;
         try
         {
             var reference = location.m_prefab;
@@ -68,8 +91,15 @@ public static class LocationPrefabLevelling
                 Vector3 root = asset.transform.position;
                 foreach (TerrainModifier modifier in asset.GetComponentsInChildren<TerrainModifier>(true))
                 {
-                    if (!modifier.m_level) continue;
                     Vector3 local = modifier.transform.position - root;
+                    float reach = modifier.m_level ? modifier.m_levelRadius : 0f;
+                    if (modifier.m_smooth) reach = Mathf.Max(reach, modifier.m_smoothRadius);
+                    if (modifier.m_paintCleared) reach = Mathf.Max(reach, modifier.m_paintRadius);
+                    // Rotation-independent enclosure, including square corners
+                    // and off-centre smoothing/paint beyond the exterior radius.
+                    if (modifier.m_square) reach *= Mathf.Sqrt(2f);
+                    terrainRadius = Mathf.Max(terrainRadius, new Vector2(local.x, local.z).magnitude + reach);
+                    if (!modifier.m_level) continue;
                     ops.Add(new LevelOp(local.x, local.z, local.y + modifier.m_levelOffset,
                         modifier.m_levelRadius, modifier.m_square));
                 }
@@ -83,6 +113,7 @@ public static class LocationPrefabLevelling
             ops.Clear();
         }
 
+        m_terrainRadius[name] = terrainRadius;
         m_byPrefab[name] = ops;
         return ops;
     }

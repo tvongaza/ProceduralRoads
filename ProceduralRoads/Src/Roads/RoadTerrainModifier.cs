@@ -338,6 +338,7 @@ public static class RoadTerrainModifier
                     0f,
                     context.HeightmapPosition.z + (vz - context.TerrainComp.m_width / 2f) * context.VertexSpacing);
                 Vector2 vertexPos2D = new Vector2(vertexWorldPos.x, vertexWorldPos.z);
+                if (RoadSiteProtection.Contains(vertexPos2D)) continue;
                 
                 BlendResult blendResult = CalculateBlendedHeight(roadPoints, vertexPos2D);
                 if (blendResult.InfluencingPoints == 0)
@@ -541,6 +542,11 @@ public static class RoadTerrainModifier
                     if (vx < 0 || vy < 0 || vx >= gridSize || vy >= gridSize)
                         continue;
                     
+                    Vector2 paintPosition = new Vector2(
+                        terrainPos.x + (vx - halfWidth + 0.5f) * scale,
+                        terrainPos.z + (vy - halfWidth + 0.5f) * scale);
+                    if (RoadSiteProtection.Contains(paintPosition)) continue;
+
                     float dist = Mathf.Sqrt(dx * dx + dy * dy);
                     if (dist > radiusInVertices)
                         continue;

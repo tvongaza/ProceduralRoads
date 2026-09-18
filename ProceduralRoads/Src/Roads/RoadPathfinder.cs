@@ -58,6 +58,8 @@ public class RoadPathfinder
     }
 
     private WorldGenerator m_worldGen;
+    private Vector2? m_searchStart, m_searchEnd;
+    public float SiteClearance = 4f;
 
     public RoadPathfinder(WorldGenerator worldGen)
     {
@@ -66,6 +68,8 @@ public class RoadPathfinder
 
     public List<Vector2>? FindPath(Vector2 start, Vector2 end)
     {
+        m_searchStart = start;
+        m_searchEnd = end;
         Vector2i startGrid = WorldToGrid(start);
         Vector2i endGrid = WorldToGrid(end);
 
@@ -178,6 +182,8 @@ public class RoadPathfinder
     {
         Vector2 fromWorld = GridToWorld(from);
         Vector2 toWorld = GridToWorld(to);
+        if (RoadSiteProtection.BlocksSegment(fromWorld, toWorld, SiteClearance, m_searchStart, m_searchEnd))
+            return Impassable;
 
         float dist = DirectionCosts[directionIndex] * CellSize;
         float h1 = m_worldGen.GetHeight(fromWorld.x, fromWorld.y);

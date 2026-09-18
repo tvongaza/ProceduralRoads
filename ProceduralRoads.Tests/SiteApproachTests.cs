@@ -47,6 +47,44 @@ public class SiteApproachTests
         Assert.All(plan.Points, p => Assert.True(p.magnitude >= 15.9f));
     }
 
+    private sealed class PlatformSlope : WorldGenerator
+    {
+        public override float GetHeight(float x, float z) => 52f + Mathf.Max(0, -z) * 0.5f;
+    }
+
+    [Fact]
+    public void SeeksThePlatformsElevationInsteadOfStoppingBelowIt()
+    {
+        RoadSpatialGrid.Clear();
+        RoadSiteProtection.Reset();
+        using var grade = GradeCap.At(0.35f);
+        var world = new PlatformSlope(); var original = Route();
+        float Ground(Vector2 p) => world.GetHeight(p.x,p.y);
+        float? Target(Vector2 p) => Mathf.Abs(Ground(p)-60f) <= 1.5f ? 60f : null;
+        var better = RoadSiteApproach.Improve(original,new Vector2(),16,4,world,false,Target,Ground,60f);
+        Assert.NotSame(original,better);
+        Assert.InRange(Ground(better[better.Count-1]),58.5f,61.5f);
+        var plan = RoadSpatialGrid.PlanRoadPath(better,4,world,endGround:Target(better[better.Count-1]));
+        Assert.NotNull(plan);
+        Assert.Equal(60f,plan!.Heights[plan.Heights.Count-1]);
+        Assert.True(RoadGrade.SteepestStep(plan.Points,plan.Heights) <= 0.3501f);
+    }
+
+    [Fact]
+    public void PlatformTargetDoesNotInventAnEmbankmentOrMergeDifferentStoreys()
+    {
+        Assert.Equal(58.8f, LocationLevelling.PlatformHeight(60f, new[] { new LevelOp(2,0,-1.2f,8,false) }));
+        Assert.Null(LocationLevelling.PlatformHeight(60f,new[] { new LevelOp(0,0,0,8,false),new LevelOp(10,0,6,4,false) }));
+        var world = new PlatformSlope(); WorldGenerator.instance=world;
+        LocationLevelling.Source = _ => new[] { new LevelOp(0,0,8,4,false) };
+        try
+        {
+            Assert.Null(RoadNetworkGenerator.ApproachGround(new Vector2(16,0),new Vector2(),16));
+            Assert.Equal(60f,RoadNetworkGenerator.ApproachGround(new Vector2(0,-16),new Vector2(),16));
+        }
+        finally { LocationLevelling.Source=null; WorldGenerator.instance=null; }
+    }
+
     [Fact]
     public void FlatApproachIsLeftExactlyAlone()
     {

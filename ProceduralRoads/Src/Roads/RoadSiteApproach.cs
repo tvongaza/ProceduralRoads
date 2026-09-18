@@ -18,7 +18,7 @@ public static class RoadSiteApproach
 
     public static List<Vector2> Improve(List<Vector2> path, Vector2 centre, float radius,
         float width, WorldGenerator world, bool atStart,
-        Func<Vector2, float?> target, Func<Vector2, float> ground)
+        Func<Vector2, float?> target, Func<Vector2, float> ground, float? desiredHeight = null)
     {
         if (radius <= 0f || radius > Reach || path.Count < 3) return path;
         var oriented = new List<Vector2>(path);
@@ -61,6 +61,9 @@ public static class RoadSiteApproach
                 // Inspect the spline, not just the control points. Its turn
                 // must not cut through the location or sneak across water.
                 if (Vector2.Distance(point, centre) < radius - 0.1f) return float.PositiveInfinity;
+                Vector2 previous = plan.Points[Math.Max(0, i - 1)];
+                if (RoadSiteProtection.BlocksSegment(previous, point, width * 0.5f + 2f, null, null))
+                    return float.PositiveInfinity;
                 world.GetRiverWeight(point.x, point.y, out float river, out _);
                 if (river > RoadConstants.RiverImpassableThreshold || Ground(point) < RoadConstants.ShallowWaterHeight)
                     return float.PositiveInfinity;
@@ -76,10 +79,12 @@ public static class RoadSiteApproach
                     sum += cut;
                 }
             }
-            return (float)(sum / (plan.Points.Count * 3)) + worst * 0.5f + plan.TotalLength * 0.015f;
+            float mismatch = desiredHeight.HasValue ? Mathf.Abs(Ground(tail[tail.Count - 1]) - desiredHeight.Value) : 0f;
+            return (float)(sum / (plan.Points.Count * 3)) + worst * 0.5f + plan.TotalLength * 0.015f + mismatch * 2f;
         }
         float oldScore = Score(oldTail, out float oldWorst);
-        if (float.IsInfinity(oldScore) || oldWorst < 2f) return path;
+        float oldMismatch = desiredHeight.HasValue ? Mathf.Abs(Ground(oldEnd) - desiredHeight.Value) : 0f;
+        if (float.IsInfinity(oldScore) || (oldWorst < 2f && oldMismatch <= 1.5f)) return path;
         float bestScore = oldScore;
         List<Vector2>? best = null;
         Vector2 radial = oldEnd - centre;
@@ -105,7 +110,9 @@ public static class RoadSiteApproach
                 }
                 if (length > oldLength * 1.5f) continue;
                 float score = Score(candidate, out float worst);
-                if (worst > oldWorst - 0.5f || score >= bestScore || score > oldScore * 0.8f) continue;
+                if (desiredHeight.HasValue && Mathf.Abs(Ground(end) - desiredHeight.Value) > 1.5f) continue;
+                float limit = oldMismatch > 1.5f ? Mathf.Max(2f, oldWorst + oldMismatch * 0.5f) : oldWorst - 0.5f;
+                if (worst > limit || score >= bestScore || score > oldScore * 0.8f) continue;
                 bestScore = score;
                 best = candidate;
             }

@@ -75,6 +75,24 @@ public static class LocationLevelling
     /// <summary>The levelling a location at this centre will do, or null.</summary>
     public static IReadOnlyList<LevelOp>? OpsAt(Vector2 centre) => Source?.Invoke(centre);
 
+    /// <summary>A single authored platform elevation, when all levelling
+    /// operations agree. Offsets affect its footprint but not its height.
+    /// Multi-level sites deliberately have no guessed common doorstep.</summary>
+    public static float? PlatformHeight(float centreGround, IReadOnlyList<LevelOp>? ops)
+    {
+        float? height = null;
+        if (ops == null) return null;
+        foreach (var op in ops)
+        {
+            if (op.Radius <= 0f) continue;
+            float candidate = centreGround + op.Height;
+            if (float.IsNaN(candidate) || float.IsInfinity(candidate)) return null;
+            if (height.HasValue && Mathf.Abs(candidate - height.Value) > 0.25f) return null;
+            height = candidate;
+        }
+        return height;
+    }
+
     /// <summary>
     /// The height a location will level the ground to at <paramref name="point"/>,
     /// or null when the point is outside every footprint this can place.

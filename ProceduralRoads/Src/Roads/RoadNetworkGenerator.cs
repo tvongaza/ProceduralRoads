@@ -246,11 +246,12 @@ public static class RoadNetworkGenerator
         RegisterConfiguredLocations();
 
         DateTime startTime = DateTime.Now;
-        m_pathfinder = new RoadPathfinder(WorldGenerator.instance);
+        m_pathfinder = new RoadPathfinder(WorldGenerator.instance) { SiteClearance = RoadWidth * 0.5f + 2f };
         m_roadsGeneratedCount = 0;
         m_roadsRefusedForGrade = 0;
         m_roadsWithNoRoute = 0;
         RoadGrade.SteepestPlanned = 0f;
+        RoadSiteProtection.Reset();
 
         var locations = GatherLocationData();
         if (locations == null)
@@ -364,9 +365,29 @@ public static class RoadNetworkGenerator
         // for every vertex. Unknown location shaping retains the old approach.
         if (ops == null || ops.Count == 0) return path;
         float centreHeight = BiomeBlendedHeight.GetBlendedHeight(centre.x, centre.y, world);
-        float? Target(Vector2 p) => LocationLevelling.GroundAt(p, centre, centreHeight, ops);
-        float Ground(Vector2 p) => Target(p) ?? BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
-        return RoadSiteApproach.Improve(path, centre, radius, width, world, atStart, Target, Ground);
+        float? platform = LocationLevelling.PlatformHeight(centreHeight, ops);
+        if (platform < RoadConstants.ShallowWaterHeight) platform = null;
+        Log.LogDebug($"Site approach {centre}: keep-out edge {radius:F1}m, platform {(platform.HasValue ? platform.Value.ToString("F2") : "unknown")}m");
+        float Ground(Vector2 p) => LocationLevelling.GroundAt(p, centre, centreHeight, ops)
+            ?? BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
+        float? Target(Vector2 p) => platform.HasValue && Mathf.Abs(Ground(p) - platform.Value) <= 1.5f
+            ? platform : LocationLevelling.GroundAt(p, centre, centreHeight, ops);
+        return RoadSiteApproach.Improve(path, centre, radius, width, world, atStart, Target, Ground, platform);
+    }
+
+    internal static float? ApproachGround(Vector2 point, Vector2 centre, float radius)
+    {
+        float? local = LocationGround(point, centre, radius);
+        if (local.HasValue || radius <= 0f || WorldGenerator.instance == null) return local;
+        var world = WorldGenerator.instance;
+        float centreHeight = BiomeBlendedHeight.GetBlendedHeight(centre.x, centre.y, world);
+        float? platform = LocationLevelling.PlatformHeight(centreHeight, LocationLevelling.OpsAt(centre));
+        // Never make an arbitrary high embankment merely to hit a platform.
+        // The approach search must first find naturally nearby elevation.
+        if (platform.HasValue && platform.Value >= RoadConstants.ShallowWaterHeight &&
+            Mathf.Abs(BiomeBlendedHeight.GetBlendedHeight(point.x, point.y, world) - platform.Value) <= 1.5f)
+            return platform;
+        return null;
     }
 
     /// <summary>
@@ -403,6 +424,10 @@ public static class RoadNetworkGenerator
             return false;
         }
 
+        // Leave enough space for the entire terrain blend, not just the
+        // centreline. Sites retain their own authored terrain and paint.
+        if (startRadius > 0f) startRadius = RoadSiteProtection.RadiusAt(startCenter, startRadius) + width * 0.5f + 2f;
+        if (endRadius > 0f) endRadius = RoadSiteProtection.RadiusAt(endCenter, endRadius) + width * 0.5f + 2f;
         path = TrimPathToRadii(path, startCenter, startRadius, endCenter, endRadius);
 
         if (path == null || path.Count < 2)
@@ -421,8 +446,8 @@ public static class RoadNetworkGenerator
         // the place it is going to, and aiming at the middle builds that
         // difference as a rim around the doorstep.
         if (!RoadSpatialGrid.AddRoadPath(path, width, WorldGenerator.instance,
-                LocationGround(path[0], startCenter, startRadius),
-                LocationGround(path[path.Count - 1], endCenter, endRadius)))
+                ApproachGround(path[0], startCenter, startRadius),
+                ApproachGround(path[path.Count - 1], endCenter, endRadius)))
         {
             if (label != null)
                 Log.LogWarning($"Road too steep to build, destination left unconnected: {label}");
@@ -749,11 +774,12 @@ public static class RoadNetworkGenerator
         bool locationsWereReady = m_locationsReady;
         Reset();
         m_locationsReady = locationsWereReady;
-        m_pathfinder = new RoadPathfinder(WorldGenerator.instance);
+        m_pathfinder = new RoadPathfinder(WorldGenerator.instance) { SiteClearance = RoadWidth * 0.5f + 2f };
         m_roadsGeneratedCount = 0;
         m_roadsRefusedForGrade = 0;
         m_roadsWithNoRoute = 0;
         RoadGrade.SteepestPlanned = 0f;
+        RoadSiteProtection.Reset();
 
         if (island.ContainsPoint(locations.Value.SpawnPoint))
             GenerateIslandRoads(island, selected, locations.Value.SpawnPoint, locations.Value.SpawnRadius);
@@ -785,6 +811,7 @@ public static class RoadNetworkGenerator
         m_roadsRefusedForGrade = 0;
         m_roadsWithNoRoute = 0;
         RoadGrade.SteepestPlanned = 0f;
+        RoadSiteProtection.Reset();
         m_roadStartPoints.Clear();
         RoadNetworkPersistence.Reset();
         RoadSpatialGrid.Clear();
