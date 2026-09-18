@@ -134,6 +134,17 @@ public class SiteApproachTests
     }
 
     [Fact]
+    public void ExteriorArrivalDoesNotAimIntoAnExcavationButStillReachesARaisedPlatform()
+    {
+        Assert.Equal(60f,LocationLevelling.ApproachHeight(60f,new[] {new LevelOp(2,0,-4,8,false)}));
+        Assert.Equal(68f,LocationLevelling.ApproachHeight(60f,new[] {new LevelOp(2,0,8,8,false)}));
+        var world=new Flat(); WorldGenerator.instance=world;
+        LocationLevelling.Source=_=>new[] {new LevelOp(2,0,0.8f,8,false)};
+        try { Assert.Equal(60f,RoadNetworkGenerator.ApproachGround(new Vector2(20,0),new Vector2(),16)); }
+        finally { WorldGenerator.instance=null; LocationLevelling.Source=null; }
+    }
+
+    [Fact]
     public void PlacedPlatformUsesSavedRootRatherThanRecomputedGround()
     {
         var world=new Flat();

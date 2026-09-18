@@ -106,6 +106,15 @@ public static class LocationLevelling
         return height;
     }
 
+    /// <summary>An exterior arrival should reach the site, not descend into
+    /// its excavation. Raised platforms matter, but a below-root modifier
+    /// (a cave cut, well or pit) is not an instruction to lower its access road.</summary>
+    public static float? ApproachHeight(float rootHeight, IReadOnlyList<LevelOp>? ops)
+    {
+        float? level = PlatformHeight(rootHeight, ops);
+        return level.HasValue ? Mathf.Max(rootHeight, level.Value) : null;
+    }
+
     /// <summary>
     /// The height a location will level the ground to at <paramref name="point"/>,
     /// or null when the point is outside every footprint this can place.

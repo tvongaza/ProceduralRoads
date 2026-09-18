@@ -327,8 +327,9 @@ public static class ConsoleCommands
         float? saved=LocationLevelling.PlacementHeightSource?.Invoke(centre);
         float baseHeight=LocationLevelling.CentreHeight(centre,WorldGenerator.instance);
         float? platform=LocationLevelling.PlatformHeight(baseHeight,LocationLevelling.OpsAt(centre));
+        float? approach=LocationLevelling.ApproachHeight(baseHeight,LocationLevelling.OpsAt(centre));
         float radius=RoadSiteProtection.RadiusAt(centre,best.Value.m_location.m_exteriorRadius);
-        args.Context.AddString($"Site {best.Value.m_location.m_prefab.Name} at {centre}; savedRoot={saved?.ToString("F3") ?? "unknown"}; base={baseHeight:F3}; platform={platform?.ToString("F3") ?? "unknown"}; protectedRadius={radius:F2}");
+        args.Context.AddString($"Site {best.Value.m_location.m_prefab.Name} at {centre}; savedRoot={saved?.ToString("F3") ?? "unknown"}; base={baseHeight:F3}; platform={platform?.ToString("F3") ?? "unknown"}; approach={approach?.ToString("F3") ?? "unknown"}; protectedRadius={radius:F2}");
     }
 
     private static void ReportRoadEnds(Terminal.ConsoleEventArgs args)

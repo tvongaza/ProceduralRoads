@@ -365,13 +365,13 @@ public static class RoadNetworkGenerator
         // for every vertex. Unknown location shaping retains the old approach.
         if (ops == null || ops.Count == 0) return path;
         float centreHeight = LocationLevelling.CentreHeight(centre, world);
-        float? platform = LocationLevelling.PlatformHeight(centreHeight, ops);
+        float? platform = LocationLevelling.ApproachHeight(centreHeight, ops);
         if (platform < RoadConstants.ShallowWaterHeight) platform = null;
-        Log.LogDebug($"Site approach {centre}: keep-out edge {radius:F1}m, platform {(platform.HasValue ? platform.Value.ToString("F2") : "unknown")}m");
+        Log.LogDebug($"Site approach {centre}: keep-out edge {radius:F1}m, approach {(platform.HasValue ? platform.Value.ToString("F2") : "unknown")}m");
         float Ground(Vector2 p) => LocationLevelling.GroundAt(p, centre, centreHeight, ops)
             ?? BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
         float? Target(Vector2 p) => platform.HasValue && Mathf.Abs(Ground(p) - platform.Value) <= 1.5f
-            ? platform : LocationLevelling.GroundAt(p, centre, centreHeight, ops);
+            ? Ground(p) : LocationLevelling.GroundAt(p, centre, centreHeight, ops);
         return RoadSiteApproach.Improve(path, centre, radius, width, world, atStart, Target, Ground, platform);
     }
 
@@ -381,12 +381,12 @@ public static class RoadNetworkGenerator
         if (local.HasValue || radius <= 0f || WorldGenerator.instance == null) return local;
         var world = WorldGenerator.instance;
         float centreHeight = LocationLevelling.CentreHeight(centre, world);
-        float? platform = LocationLevelling.PlatformHeight(centreHeight, LocationLevelling.OpsAt(centre));
+        float? platform = LocationLevelling.ApproachHeight(centreHeight, LocationLevelling.OpsAt(centre));
         // Never make an arbitrary high embankment merely to hit a platform.
         // The approach search must first find naturally nearby elevation.
         if (platform.HasValue && platform.Value >= RoadConstants.ShallowWaterHeight &&
             Mathf.Abs(BiomeBlendedHeight.GetBlendedHeight(point.x, point.y, world) - platform.Value) <= 1.5f)
-            return platform;
+            return BiomeBlendedHeight.GetBlendedHeight(point.x, point.y, world);
         return null;
     }
 
