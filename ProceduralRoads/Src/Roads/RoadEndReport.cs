@@ -4,12 +4,9 @@ using UnityEngine;
 namespace ProceduralRoads;
 
 /// <summary>
-/// Where roads end relative to the ground: for every placed location that has a
-/// road point within its exterior radius (plus a margin), the nearest road
-/// point's height against the natural terrain at that point and against the
-/// mean natural height on a ring around it. A large difference is a road that
-/// arrives at its location on a ledge or a hump. Pure data; the road_ends
-/// console command formats it and writes the CSV.
+/// Procedural-terrain context near a location. The nearest stored road point
+/// is not necessarily a path endpoint. These samples exclude location shaping,
+/// compiler deltas and player edits, so they do not measure a visible rim.
 /// </summary>
 public static class RoadEndReport
 {
@@ -20,6 +17,8 @@ public static class RoadEndReport
     {
         public string Name;
         public Vector2 Point;
+        public Vector2 LocationCentre;
+        public float RingRadius;
         public float RoadHeight;
         public float TerrainAtEnd;
         public float RingMean;
@@ -63,7 +62,8 @@ public static class RoadEndReport
 
             rows.Add(new Entry
             {
-                Name = loc.name, Point = best.p, RoadHeight = best.h, TerrainAtEnd = terrain,
+                Name = loc.name, Point = best.p, LocationCentre = centre, RingRadius = ring,
+                RoadHeight = best.h, TerrainAtEnd = terrain,
                 RingMean = sum / RingSamples, RingMin = min, RingMax = max
             });
         }

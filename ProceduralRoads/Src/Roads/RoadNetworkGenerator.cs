@@ -177,7 +177,7 @@ public static class RoadNetworkGenerator
         // Zones generated during the loading screen (around the login position)
         // exist before the network does; give them their roads now.
         int zones = RoadTerrainModifier.ApplyToLoadedZones();
-        Log.LogDebug($"Applied road terrain to {zones} zone(s) loaded before generation");
+        Log.LogDebug($"Queued road terrain for {zones} zone(s) loaded before generation");
         return true;
     }
 

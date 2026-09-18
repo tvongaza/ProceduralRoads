@@ -45,7 +45,7 @@ public static class ConsoleCommands
 
         new Terminal.ConsoleCommand(
             "road_ends",
-            "For every location with a road end, compare the end's road height with the natural terrain at the end and the mean natural height on a ring: road_ends [ring=8] [top=20]. Writes ProceduralRoads.ends.csv to the config folder; the console shows the worst.",
+            "Compare each location's nearest road point with procedural terrain: road_ends [ring=8] [top=20]. Ring is a radius in metres. CSV also records loaded collision height where available; procedural deltas do not measure the visible rim.",
             (args) => ReportRoadEnds(args),
             isCheat: true,
             isNetwork: false,
@@ -306,8 +306,14 @@ public static class ConsoleCommands
     {
         float ring = 8f;
         int top = 20;
-        if (args.Length > 1) float.TryParse(args[1], out ring);
-        if (args.Length > 2) int.TryParse(args[2], out top);
+        if ((args.Length > 1 && (!float.TryParse(args[1], System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out ring) ||
+                float.IsNaN(ring) || float.IsInfinity(ring) || ring <= 0f)) ||
+            (args.Length > 2 && (!int.TryParse(args[2], out top) || top < 0)))
+        {
+            args.Context.AddString("Usage: road_ends [positive ring radius in metres=8] [top>=0]");
+            return;
+        }
 
         if (ZoneSystem.instance == null || WorldGenerator.instance == null || !RoadSpatialGrid.IsInitialized)
         {
@@ -322,12 +328,18 @@ public static class ConsoleCommands
         var rows = RoadEndReport.Compute(locations, ring, WorldGenerator.instance);
 
         string path = System.IO.Path.Combine(BepInEx.Paths.ConfigPath, "ProceduralRoads.ends.csv");
-        var sb = new System.Text.StringBuilder("name,x,z,roadHeight,terrainAtEnd,ringMean,ringMin,ringMax,deltaEnd,deltaRing\n");
+        var sb = new System.Text.StringBuilder("name,x,z,roadHeight,terrainAtEnd,ringMean,ringMin,ringMax,deltaEnd,deltaRing,sampleKind,ringRadius,locationX,locationZ,loadedGround,roadMinusLoadedGround\n");
         foreach (var r in rows)
-            sb.Append($"{r.Name},{r.Point.x:F1},{r.Point.y:F1},{r.RoadHeight:F2},{r.TerrainAtEnd:F2},{r.RingMean:F2},{r.RingMin:F2},{r.RingMax:F2},{r.DeltaEnd:F2},{r.DeltaRing:F2}\n");
+        {
+            bool loaded = ZoneSystem.instance.GetGroundHeight(new Vector3(r.Point.x, 0f, r.Point.y), out float ground);
+            string liveGround = loaded ? ground.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) : "";
+            string liveDelta = loaded ? (r.RoadHeight - ground).ToString("F3", System.Globalization.CultureInfo.InvariantCulture) : "";
+            sb.Append(System.FormattableString.Invariant($"{r.Name},{r.Point.x:F1},{r.Point.y:F1},{r.RoadHeight:F2},{r.TerrainAtEnd:F2},{r.RingMean:F2},{r.RingMin:F2},{r.RingMax:F2},{r.DeltaEnd:F2},{r.DeltaRing:F2},nearest-road-point/procedural,{r.RingRadius:F2},{r.LocationCentre.x:F1},{r.LocationCentre.y:F1},{liveGround},{liveDelta}\n"));
+        }
         System.IO.File.WriteAllText(path, sb.ToString());
 
-        args.Context.AddString($"{rows.Count} road ends -> {path}; worst {Mathf.Min(top, rows.Count)} by |road - ring mean|:");
+        args.Context.AddString($"{rows.Count} nearest road points -> {path}; worst {Mathf.Min(top, rows.Count)} by |road - ring mean|:");
+        args.Context.AddString($"Ring radius {ring:F1} m. Terrain/ring are procedural samples, not final ground. Loaded collision height is recorded separately in the CSV where available.");
         for (int i = 0; i < Mathf.Min(top, rows.Count); i++)
         {
             var r = rows[i];
@@ -508,9 +520,9 @@ public static class ConsoleCommands
         args.Context.AddString($"  Grid cells with roads: {RoadSpatialGrid.GridCellsWithRoads}");
 
         // Apply roads to currently loaded zones
-        args.Context.AddString("Applying to loaded zones...");
+        args.Context.AddString("Queuing terrain for loaded zones...");
         int zonesWithRoads = RoadTerrainModifier.ApplyToLoadedZones();
-        args.Context.AddString($"Applied roads to {zonesWithRoads} visible zones.");
+        args.Context.AddString($"Queued road terrain for {zonesWithRoads} visible zones.");
     }
 
     private static void RegenerateIslandHere(Terminal.ConsoleEventArgs args)
@@ -539,7 +551,7 @@ public static class ConsoleCommands
 
         int zones = RoadTerrainModifier.ApplyToLoadedZones();
         args.Context.AddString(summary);
-        args.Context.AddString($"Applied to {zones} loaded zone(s).");
+        args.Context.AddString($"Queued terrain for {zones} loaded zone(s).");
     }
 
 

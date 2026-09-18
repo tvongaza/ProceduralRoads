@@ -129,7 +129,39 @@ public class Heightmap
     public TerrainComp GetAndCreateTerrainCompiler() => m_terrainComp ??= new TerrainComp(this, 64);
     /// <summary>Valheim 1.0: the argument selects which late pass rebuilds
     /// (1 = LateUpdate, 2 = CustomLateUpdate), it is not a frame count.</summary>
-    public void Poke(int delayed = 0, bool paintOnly = false) { PokeCount++; LastPokeDelayed = delayed; }
+    // Most existing writer tests advance straight to the requested late pass.
+    // Lifecycle regressions turn this off to exercise the intervening state.
+    public bool AutoRebuild = true;
+    public System.Func<float, float, float>? AuthoredHeight;
+    public System.Collections.Generic.List<float>? LastRenderedHeights;
+    public void Poke(int delayed = 0, bool paintOnly = false)
+    {
+        PokeCount++; LastPokeDelayed = delayed;
+        if (AutoRebuild) RebuildTerrain();
+    }
+    public void RebuildTerrain()
+    {
+        if (m_terrainComp == null) return;
+        int width = m_terrainComp.m_width;
+        var heights = new System.Collections.Generic.List<float>();
+        for (int z = 0; z <= width; z++)
+            for (int x = 0; x <= width; x++)
+            {
+                float wx = transform.position.x + (x - width / 2f) * m_scale;
+                float wz = transform.position.z + (z - width / 2f) * m_scale;
+                float h = AuthoredHeight != null ? AuthoredHeight(wx, wz) :
+                    ProceduralRoads.BiomeBlendedHeight.GetBlendedHeight(wx, wz, WorldGenerator.instance);
+                heights.Add(h - transform.position.y);
+            }
+        var baseline = heights.ToArray();
+        // Same seam as the production Harmony prefix. No compiler deltas have
+        // been added to these location-shaped heights yet.
+        ProceduralRoads.RoadTerrainModifier.ApplyPendingTerrain(m_terrainComp, this, heights);
+        for (int i = 0; i < heights.Count; i++)
+            heights[i] = UnityEngine.Mathf.Clamp(heights[i] + m_terrainComp.m_levelDelta[i] +
+                m_terrainComp.m_smoothDelta[i], baseline[i] - 8f, baseline[i] + 8f);
+        LastRenderedHeights = heights;
+    }
     public int LastPokeDelayed;
 
     public static Heightmap CreateForZone(Vector2s zoneID, int width = 64, bool withCompiler = true)

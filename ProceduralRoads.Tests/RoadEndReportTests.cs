@@ -57,6 +57,9 @@ public class RoadEndReportTests
                 Assert.True(Mathf.Abs(rows[i - 1].DeltaRing) >= Mathf.Abs(rows[i].DeltaRing), "rows are not sorted by |delta ring|");
             foreach (var r in rows)
             {
+                Assert.Equal(8f, r.RingRadius);
+                Assert.Contains(locations, loc => loc.name == r.Name &&
+                    loc.position.x == r.LocationCentre.x && loc.position.z == r.LocationCentre.y);
                 var near = RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(r.Point.x, 0f, r.Point.y), 0.5f);
                 Assert.True(near.Count > 0, $"{r.Name}: reported point is not a road point");
                 Assert.True(Mathf.Abs(r.TerrainAtEnd - world.GetHeight(r.Point.x, r.Point.y)) < 0.5f, $"{r.Name}: terrain height is not the world's");

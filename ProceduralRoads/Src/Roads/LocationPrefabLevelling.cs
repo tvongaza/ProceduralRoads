@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using SoftReferenceableAssets;
 
 namespace ProceduralRoads;
 
@@ -12,8 +13,8 @@ namespace ProceduralRoads;
 /// can stand up. Everything it decides is a fact about the prefab; what that
 /// means for a road is decided in LocationLevelling, which is tested.
 ///
-/// A prefab is read once and kept, because a world has thousands of location
-/// instances and only dozens of distinct prefabs. Anything that goes wrong is
+/// A prefab is read once; only its copied operation values are kept. A world
+/// has thousands of location instances and only dozens of distinct prefabs. Anything that goes wrong is
 /// recorded as "this prefab levels nothing", which puts the road back on the
 /// natural terrain under its own end - the behaviour before any of this.
 /// </summary>
@@ -50,10 +51,17 @@ public static class LocationPrefabLevelling
         var ops = new List<LevelOp>();
         try
         {
-            location.m_prefab.Load();
-            GameObject asset = location.m_prefab.Asset;
-            if (asset != null)
+            var reference = location.m_prefab;
+            var loader = AssetBundleLoader.Instance;
+            int index = loader.m_assetIDToLoaderIndex[reference.m_assetID];
+            TemporaryAssetRead.Read(
+                () => loader.m_assetLoaders[index].ReferenceCount,
+                () => reference.Load(),
+                () => reference.Release(),
+                () =>
             {
+                GameObject asset = reference.Asset;
+                if (asset == null) return false;
                 // Offsets are taken against the prefab's own root rather than
                 // assumed to be zero: a prefab authored off its origin would
                 // otherwise report every operation as concentric.
@@ -65,7 +73,8 @@ public static class LocationPrefabLevelling
                     ops.Add(new LevelOp(local.x, local.z, local.y + modifier.m_levelOffset,
                         modifier.m_levelRadius, modifier.m_square));
                 }
-            }
+                return true;
+            });
         }
         catch (Exception e)
         {
