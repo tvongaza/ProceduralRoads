@@ -34,7 +34,7 @@ public static class RoadTerrainModifier
 
     /// <summary>
     /// The outcome of the last write. ServerTerrainBake reads it straight after
-    /// bringing a compiler to life, whose Awake postfix does the writing.
+    /// completing a compiler's queued terrain rebuild.
     /// </summary>
     public static WriteOutcome LastWriteOutcome = WriteOutcome.None;
 
@@ -300,6 +300,20 @@ public static class RoadTerrainModifier
         FinalizeTerrainMods(request.Zone, request.Points, stats, context);
         // Vanilla now applies our deltas to this very array and rebuilds its
         // collider. Do not Poke again from here: that would queue another rebuild.
+    }
+
+    /// <summary>
+    /// The bake owns a completed zone and must finish its queued write before
+    /// inspecting the stamp or destroying temporary terrain. Rebuild through
+    /// vanilla so ApplyPendingTerrain receives location-shaped, pre-compiler
+    /// heights. Ordinary spawn hooks still defer until placement finishes.
+    /// </summary>
+    internal static void CompletePendingTerrain(TerrainComp compiler, Heightmap heightmap)
+    {
+        if (compiler == null || heightmap == null || compiler.m_hmap != heightmap ||
+            !s_pendingWrites.ContainsKey(compiler))
+            return;
+        heightmap.Regenerate();
     }
 
     private struct TerrainContext

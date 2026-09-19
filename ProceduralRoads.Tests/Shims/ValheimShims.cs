@@ -141,6 +141,7 @@ public class Heightmap
         PokeCount++; LastPokeDelayed = delayed;
         if (AutoRebuild) RebuildTerrain();
     }
+    public void Regenerate() => RebuildTerrain();
     public void RebuildTerrain()
     {
         if (m_terrainComp == null) return;

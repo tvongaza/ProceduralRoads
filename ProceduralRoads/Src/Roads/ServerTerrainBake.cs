@@ -665,6 +665,7 @@ public static class ServerTerrainBake
                 RoadTerrainModifier.LastWriteOutcome = RoadTerrainModifier.WriteOutcome.None;
                 RoadTerrainModifier.ApplyRoadTerrainModsWithContext(
                     zone, RoadSpatialGrid.GetRoadPointsInZone(zone), live.m_hmap, live);
+                RoadTerrainModifier.CompletePendingTerrain(live, live.m_hmap);
                 if (RoadTerrainModifier.CarriesCurrentRoads(live))
                 {
                     s_counts.LiveWritten++;
@@ -1087,6 +1088,7 @@ public static class ServerTerrainBake
             // Made while the zone was being populated (a location's own
             // terrain operation): its Awake postfix already offered it the
             // roads. It is the game's object, not ours to take down.
+            RoadTerrainModifier.CompletePendingTerrain(live, hmap);
             return live.m_hmap == hmap && RoadTerrainModifier.CarriesCurrentRoads(live)
                 ? WriteResult.Written
                 : WriteResult.Failed;
@@ -1140,7 +1142,8 @@ public static class ServerTerrainBake
     /// <summary>
     /// Whether the compiler came alive against this heightmap and now carries
     /// the current roads. Its Awake postfix (RoadTerrainModifier.
-    /// OnTerrainCompilerReady) did the writing, and stamps only what it saved.
+    /// OnTerrainCompilerReady) queued the write; complete the rebuild before
+    /// checking its stamp and releasing the temporary terrain.
     /// </summary>
     private static WriteResult Written(Vector2s zone, GameObject? go, Heightmap hmap, out int bytes)
     {
@@ -1156,6 +1159,7 @@ public static class ServerTerrainBake
             Log.LogWarning($"[BAKE] zone {zone}: the terrain compiler found another heightmap; not written");
             return WriteResult.Failed;
         }
+        RoadTerrainModifier.CompletePendingTerrain(tc, hmap);
         if (!RoadTerrainModifier.CarriesCurrentRoads(tc))
         {
             // Points just outside the zone that reach into it too faintly to
