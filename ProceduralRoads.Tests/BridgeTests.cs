@@ -85,8 +85,17 @@ public class BridgeTests
         public override float GetHeight(float wx, float wy) => Mathf.Abs(wx) < 20f ? 27f : 33f;
     }
 
+    /// <summary>
+    /// A pathfinder with the road grade cap held out. These fixtures are about
+    /// where a road meets water and what it builds there, and they were
+    /// written against the routes an uncapped search takes; with the cap on
+    /// the search crosses the slope instead and meets the river somewhere
+    /// else, which is a true thing about the cap and nothing to do with
+    /// crossings. CrossingsMoveWhenTheGradeIsCapped records that interaction
+    /// on purpose, and the cap's own behaviour is tested in RoadGradeRoadTests.
+    /// </summary>
     private static RoadPathfinder Pathfinder(WorldGenerator world, bool bridges) =>
-        new RoadPathfinder(world) { Fords = bridges, Bridges = bridges };
+        new RoadPathfinder(world) { Fords = bridges, Bridges = bridges, MaxGrade = 0f };
 
     /// <summary>The one long segment of a path whose middle lies over river core.</summary>
     private static (Vector2 a, Vector2 b)? FindJump(List<Vector2> path, WorldGenerator world)
@@ -204,6 +213,31 @@ public class BridgeTests
     }
 
     // ---- crossing detection ----
+
+    [Fact]
+    public void CrossingsMoveWhenTheGradeIsCapped()
+    {
+        // The interaction the crossing fixtures above hold out, stated once
+        // where it can be seen. A capped search cannot take the steep line to
+        // the narrow point, so it meets the river somewhere else and builds a
+        // different crossing there. Both are single crossings with dry banks;
+        // what changes is where, and how wide.
+        var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
+        var from = new Vector2(-300f, 0f);
+        var to = new Vector2(400f, 0f);
+
+        var uncapped = new RoadPathfinder(world) { Fords = true, Bridges = true, MaxGrade = 0f }.FindPath(from, to);
+        var capped = new RoadPathfinder(world) { Fords = true, Bridges = true, MaxGrade = 0.2f }.FindPath(from, to);
+        Assert.NotNull(uncapped);
+        Assert.NotNull(capped);
+
+        var a = Assert.Single(RoadCrossingDetector.Detect(uncapped!, world, true));
+        var b = Assert.Single(RoadCrossingDetector.Detect(capped!, world, true));
+        Assert.True(RoadCrossingDetector.IsRoadGround(b.FromBank, world), "capped crossing FromBank is not road ground");
+        Assert.True(RoadCrossingDetector.IsRoadGround(b.ToBank, world), "capped crossing ToBank is not road ground");
+        Assert.True(Vector2.Distance(a.Center, b.Center) > 1f,
+            $"the cap left the crossing where it was, at ({a.Center.x:F0},{a.Center.y:F0})");
+    }
 
     [Fact]
     public void TheCrossingHasDryBanksOnTheJumpAndASailableFairway()
@@ -626,10 +660,19 @@ public class BridgeTests
         return path;
     }
 
-    private static void PaintWithCrossings(List<Vector2> path, List<RoadCrossing> crossings) =>
-        typeof(RoadNetworkGenerator)
-            .GetMethod("AddRoadPathWithCrossings", BindingFlags.NonPublic | BindingFlags.Static)!
-            .Invoke(null, new object[] { path, crossings, 4f });
+    /// <summary>
+    /// Paints a hand-made route the way the generator does, with the grade cap
+    /// held out: these routes are drawn to put a bridge somewhere particular,
+    /// over cliffs and bank tops no capped road would be routed across, and
+    /// the subject is what gets built at the water, not how the road got there.
+    /// </summary>
+    private static void PaintWithCrossings(List<Vector2> path, List<RoadCrossing> crossings)
+    {
+        using (GradeCap.Off())
+            typeof(RoadNetworkGenerator)
+                .GetMethod("AddRoadPathWithCrossings", BindingFlags.NonPublic | BindingFlags.Static)!
+                .Invoke(null, new object?[] { path, crossings, 4f, null, null });
+    }
 
     private static RoadCrossing BridgeSpanning(float fromBank, float toBank, int fromIndex, int toIndex)
     {

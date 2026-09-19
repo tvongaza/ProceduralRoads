@@ -52,6 +52,7 @@ namespace ProceduralRoads
         public static ConfigEntry<float> FordSpanWeight = null!;
         public static ConfigEntry<float> BridgeCostFixed = null!;
         public static ConfigEntry<float> BridgeCostPerMeter = null!;
+        public static ConfigEntry<float> MaxGrade = null!;
 
         public void Awake()
         {
@@ -107,6 +108,14 @@ namespace ProceduralRoads
                 new ConfigDescription("Pathfinding cost of a bridge per metre of span, on top of CostFixed. " +
                     "Makes long bridges dearer than short ones.",
                     new AcceptableValueRange<float>(0f, 10000f)));
+            MaxGrade = Config.Bind("Roads", "MaxGrade", RoadConstants.DefaultMaxRoadGrade,
+                new ConfigDescription("Steepest a road may climb, as rise over run: 0.35 is one metre up " +
+                    "for every three along, about 19 degrees. A road never exceeds it, neither where it " +
+                    "is routed nor in the height it is built at, so a destination reachable only by a " +
+                    "steeper climb is left without a road rather than given one too steep to walk. " +
+                    "Lower values mean gentler roads, longer detours and more destinations left out. " +
+                    "0 removes the cap entirely.",
+                    new AcceptableValueRange<float>(0f, 1f)));
 
             CustomLocations = Config.Bind("Locations", "CustomLocations", "",
                 "Comma-separated list of location names to include in road generation. " +
@@ -167,6 +176,7 @@ namespace ProceduralRoads
             RoadCrossingDetector.SetFordStyleWeights(FordWadeWeight.Value, FordRaiseWeight.Value, FordSpanWeight.Value);
             RoadPathfinder.ConfiguredBridgeCostFixed = BridgeCostFixed.Value;
             RoadPathfinder.ConfiguredBridgeCostPerMeter = BridgeCostPerMeter.Value;
+            RoadGrade.Configured = MaxGrade.Value;
             // CustomLocations is parsed at generation time to preserve API registrations
         }
 

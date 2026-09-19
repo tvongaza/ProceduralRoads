@@ -37,9 +37,11 @@ public class ReviewFallbackApproachTests
             Assert.InRange(crossing.FromBank.y, -0.01f, 0.01f);
             Assert.InRange(crossing.ToBank.y, -0.01f, 0.01f);
 
-            typeof(RoadNetworkGenerator).GetMethod("AddRoadPathWithCrossings",
-                BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null,
-                new object[] { path, new List<RoadCrossing> { crossing }, 4f });
+            // Cap held out: the fixture is a bank-top climb on purpose.
+            using (GradeCap.Off())
+                typeof(RoadNetworkGenerator).GetMethod("AddRoadPathWithCrossings",
+                    BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null,
+                    new object?[] { path, new List<RoadCrossing> { crossing }, 4f, null, null });
 
             var approach = RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(-16f, 0f, -4f), 2f);
             Assert.True(approach.Count > 0,

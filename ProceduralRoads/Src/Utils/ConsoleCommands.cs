@@ -75,6 +75,11 @@ public static class ConsoleCommands
             allowInDevBuild: true);
 
         new Terminal.ConsoleCommand(
+            "road_site",
+            "Inspect the closest location at <x> <z>: saved root, platform estimate and protected radius. Read-only.",
+            args => InspectRoadSite(args), isCheat: true);
+
+        new Terminal.ConsoleCommand(
             "road_ends",
             "Compare each location's nearest road point with procedural terrain: road_ends [ring=8] [top=20]. Ring is a radius in metres. CSV also records loaded collision height where available; procedural deltas do not measure the visible rim.",
             (args) => ReportRoadEnds(args),
@@ -578,7 +583,7 @@ public static class ConsoleCommands
         // Apply roads to currently loaded zones
         args.Context.AddString("Queuing terrain for loaded zones...");
         int zonesWithRoads = RoadTerrainModifier.ApplyToLoadedZones();
-        args.Context.AddString($"Applied roads to {zonesWithRoads} visible zones.");
+        args.Context.AddString($"Queued road terrain for {zonesWithRoads} visible zones.");
         ReportBridgeRespawn(args, BridgePlacement.RespawnFromPlans());
     }
 
@@ -762,7 +767,7 @@ public static class ConsoleCommands
 
         int zones = RoadTerrainModifier.ApplyToLoadedZones();
         args.Context.AddString(summary);
-        args.Context.AddString($"Applied to {zones} loaded zone(s).");
+        args.Context.AddString($"Queued terrain for {zones} loaded zone(s).");
         ReportBridgeRespawn(args, BridgePlacement.RespawnFromPlans());
     }
 

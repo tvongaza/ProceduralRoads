@@ -338,9 +338,12 @@ public class CrossingHeadingTests
                 Assert.True(BridgeLayout.HeadingIsPlaceable(BridgeLayout.YawDegrees(c.Direction)),
                     $"crossing at ({c.Center.x:F1},{c.Center.y:F1}) stands at {BridgeLayout.YawDegrees(c.Direction):F3}");
 
-            typeof(RoadNetworkGenerator).GetMethod("AddRoadPathWithCrossings",
-                BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null,
-                new object[] { path, crossings, 4f });
+            // Cap held out: this route is drawn to place two bridges, not to
+            // be a road a capped search would have chosen.
+            using (GradeCap.Off())
+                typeof(RoadNetworkGenerator).GetMethod("AddRoadPathWithCrossings",
+                    BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null,
+                    new object?[] { path, crossings, 4f, null, null });
 
             // The land in front of the first crossing, between the two, and
             // after the second: all painted.
@@ -439,9 +442,10 @@ public class CrossingHeadingTests
 
             // Paint it the way the generator does, then walk the painted road
             // from each end of the supplied route to the bank it moved to.
-            typeof(RoadNetworkGenerator)
-                .GetMethod("AddRoadPathWithCrossings", BindingFlags.NonPublic | BindingFlags.Static)!
-                .Invoke(null, new object[] { path, new List<RoadCrossing> { crossing }, 4f });
+            using (GradeCap.Off())
+                typeof(RoadNetworkGenerator)
+                    .GetMethod("AddRoadPathWithCrossings", BindingFlags.NonPublic | BindingFlags.Static)!
+                    .Invoke(null, new object?[] { path, new List<RoadCrossing> { crossing }, 4f, null, null });
 
             Assert.True(PaintedRoadReaches(path[0], crossing.FromBank, crossing),
                 $"no painted road from {path[0]} to the moved near bank ({crossing.FromBank.x:F2},{crossing.FromBank.y:F2})");

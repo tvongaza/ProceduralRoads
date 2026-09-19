@@ -182,7 +182,7 @@ public static class RoadNetworkGenerator
         // Zones generated during the loading screen (around the login position)
         // exist before the network does; give them their roads now.
         int zones = RoadTerrainModifier.ApplyToLoadedZones();
-        Log.LogDebug($"Applied road terrain to {zones} zone(s) loaded before generation");
+        Log.LogDebug($"Queued road terrain for {zones} zone(s) loaded before generation");
         int bridgeZones = BridgePlacement.SpawnInLoadedZones();
         if (bridgeZones > 0)
             Log.LogDebug($"Spawned bridges into {bridgeZones} zone(s) loaded before generation");
@@ -445,6 +445,9 @@ public static class RoadNetworkGenerator
             return false;
         }
 
+        path = ImproveSiteApproach(path, startCenter, startRadius, width, true);
+        path = ImproveSiteApproach(path, endCenter, endRadius, width, false);
+
         // Fords (prototype): where the road jumped a river, the water is
         // crossed in the ford's style, not paved like the land. Record the
         // crossings and paint the land and each crossing on its own; without
@@ -467,7 +470,20 @@ public static class RoadNetworkGenerator
                 }
             }
         }
-        AddRoadPathWithCrossings(path, crossings, width);
+        // The heights to meet are asked for at the road's OWN ends, after
+        // trimming - not at the locations' centres. A road stops at the
+        // exterior radius, which on a hillside is metres below the middle of
+        // the place it is going to, and aiming at the middle builds that
+        // difference as a rim around the doorstep.
+        if (!AddRoadPathWithCrossings(path, crossings, width,
+                ApproachGround(path[0], startCenter, startRadius),
+                ApproachGround(path[path.Count - 1], endCenter, endRadius)))
+        {
+            if (label != null)
+                Log.LogWarning($"Road too steep to build, destination left unconnected: {label}");
+            m_roadsRefusedForGrade++;
+            return false;
+        }
         m_roadCrossings.AddRange(crossings);
         m_roadsGeneratedCount++;
 
@@ -492,61 +508,90 @@ public static class RoadNetworkGenerator
     /// painted in its style: waded at the ground's own height, or raised to
     /// the bank clearance so the leveled road stands above the water.
     /// </summary>
-    private static void AddRoadPathWithCrossings(List<Vector2> path, List<RoadCrossing> crossings, float width)
+    private static bool AddRoadPathWithCrossings(List<Vector2> path, List<RoadCrossing> crossings, float width,
+        float? startGround, float? endGround)
     {
+        // Every piece is worked out before any of it is stored. A piece can be
+        // refused - too steep to build - and a road stored up to the river it
+        // cannot come back from is a paved stretch ending in open ground.
+        var pieces = new List<(List<Vector2> points, bool followTerrain, float minHeight)>();
+
         if (crossings.Count == 0)
         {
-            RoadSpatialGrid.AddRoadPath(path, width, WorldGenerator.instance);
-            return;
+            pieces.Add((path, false, float.NegativeInfinity));
         }
-
-        int cursor = 0;
-        Vector2? resumeAt = null;
-        foreach (RoadCrossing crossing in crossings)
+        else
         {
-            // Two crossings on one road can overlap on the path: a bridge's
-            // banks walk out to the bank tops and a swamp bridge's on to dry
-            // ground, so one crossing's span can reach past the start of the
-            // next. A crossing the previous one already spans has nothing left
-            // to paint, and one that merely starts inside it has no land in
-            // front of it.
-            if (crossing.ToIndex <= cursor)
-                continue;
-
-            List<Vector2> land = crossing.FromIndex > cursor
-                ? path.GetRange(cursor, crossing.FromIndex - cursor + 1)
-                : new List<Vector2>();
-            if (resumeAt.HasValue && (land.Count == 0 || Vector2.Distance(resumeAt.Value, land[0]) > 0.5f))
-                land.Insert(0, resumeAt.Value);
-            if (land.Count > 0 && Vector2.Distance(crossing.FromBank, land[land.Count - 1]) > 0.5f)
-                land.Add(crossing.FromBank);
-            if (land.Count >= 2)
-                RoadSpatialGrid.AddRoadPath(land, width, WorldGenerator.instance);
-
-            // A bridge or a spanned ford is left to its pieces: nothing is
-            // leveled or painted over the water.
-            if (crossing.Kind == CrossingKind.Ford && crossing.Style != FordStyle.Span)
+            int cursor = 0;
+            Vector2? resumeAt = null;
+            foreach (RoadCrossing crossing in crossings)
             {
-                List<Vector2> ford = new() { crossing.FromBank };
-                for (int k = Mathf.Max(crossing.FromIndex + 1, cursor + 1); k < crossing.ToIndex; k++)
-                    ford.Add(path[k]);
-                ford.Add(crossing.ToBank);
-                if (crossing.Style == FordStyle.Wade)
-                    RoadSpatialGrid.AddRoadPath(ford, width, WorldGenerator.instance, followTerrain: true);
-                else
-                    RoadSpatialGrid.AddRoadPath(ford, width, WorldGenerator.instance, minHeight: RoadPathfinder.LandingFloor);
+                // Two crossings on one road can overlap on the path: a bridge's
+                // banks walk out to the bank tops and a swamp bridge's on to dry
+                // ground, so one crossing's span can reach past the start of the
+                // next. A crossing the previous one already spans has nothing left
+                // to paint, and one that merely starts inside it has no land in
+                // front of it.
+                if (crossing.ToIndex <= cursor)
+                    continue;
+
+                List<Vector2> land = crossing.FromIndex > cursor
+                    ? path.GetRange(cursor, crossing.FromIndex - cursor + 1)
+                    : new List<Vector2>();
+                if (resumeAt.HasValue && (land.Count == 0 || Vector2.Distance(resumeAt.Value, land[0]) > 0.5f))
+                    land.Insert(0, resumeAt.Value);
+                if (land.Count > 0 && Vector2.Distance(crossing.FromBank, land[land.Count - 1]) > 0.5f)
+                    land.Add(crossing.FromBank);
+                if (land.Count >= 2)
+                    pieces.Add((land, false, float.NegativeInfinity));
+
+                // A bridge or a spanned ford is left to its pieces: nothing is
+                // leveled or painted over the water.
+                if (crossing.Kind == CrossingKind.Ford && crossing.Style != FordStyle.Span)
+                {
+                    List<Vector2> ford = new() { crossing.FromBank };
+                    for (int k = Mathf.Max(crossing.FromIndex + 1, cursor + 1); k < crossing.ToIndex; k++)
+                        ford.Add(path[k]);
+                    ford.Add(crossing.ToBank);
+                    if (ford.Count >= 2)
+                        pieces.Add(crossing.Style == FordStyle.Wade
+                            ? (ford, true, float.NegativeInfinity)
+                            : (ford, false, RoadPathfinder.LandingFloor));
+                }
+
+                resumeAt = crossing.ToBank;
+                cursor = crossing.ToIndex;
             }
 
-            resumeAt = crossing.ToBank;
-            cursor = crossing.ToIndex;
+            int tailStart = Mathf.Min(cursor, path.Count - 1);
+            List<Vector2> tail = path.GetRange(tailStart, path.Count - tailStart);
+            if (resumeAt.HasValue && Vector2.Distance(resumeAt.Value, tail[0]) > 0.5f)
+                tail.Insert(0, resumeAt.Value);
+            if (tail.Count >= 2)
+                pieces.Add((tail, false, float.NegativeInfinity));
         }
 
-        int tailStart = Mathf.Min(cursor, path.Count - 1);
-        List<Vector2> tail = path.GetRange(tailStart, path.Count - tailStart);
-        if (resumeAt.HasValue && Vector2.Distance(resumeAt.Value, tail[0]) > 0.5f)
-            tail.Insert(0, resumeAt.Value);
-        if (tail.Count >= 2)
-            RoadSpatialGrid.AddRoadPath(tail, width, WorldGenerator.instance);
+        if (pieces.Count == 0)
+            return false;
+
+        // Only the road's own two ends meet a location. Every join in between
+        // is a river bank, which meets the natural ground as it always did.
+        var plans = new List<RoadSpatialGrid.PlannedPath>(pieces.Count);
+        for (int i = 0; i < pieces.Count; i++)
+        {
+            RoadSpatialGrid.PlannedPath? plan = RoadSpatialGrid.PlanRoadPath(
+                pieces[i].points, width, WorldGenerator.instance,
+                i == 0 ? startGround : null,
+                i == pieces.Count - 1 ? endGround : null,
+                pieces[i].followTerrain, pieces[i].minHeight);
+            if (plan == null)
+                return false;
+            plans.Add(plan);
+        }
+
+        foreach (RoadSpatialGrid.PlannedPath plan in plans)
+            RoadSpatialGrid.Commit(plan);
+        return true;
     }
 
     /// <summary>
