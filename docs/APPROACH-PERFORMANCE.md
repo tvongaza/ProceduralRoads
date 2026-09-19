@@ -44,4 +44,4 @@ The full PR suite passes 180 tests on .NET 10 and .NET Framework 4.8 under Mono,
 
 ## Search follow-up
 
-The subsequent [route-search optimization](SEARCH-PERFORMANCE.md) removes repeated terrain queries and improves grid lookup hashing. It measured roughly 3x faster generation offline, with identical serialized roads; an in-game timing remains outstanding. This is separate from the approach-only optimization measured above.
+The subsequent [route-search optimization](SEARCH-PERFORMANCE.md) removes repeated terrain queries and improves grid lookup hashing. It measured roughly 3x faster generation offline with identical serialized roads, and 606.7 → 243.2 seconds (2.49x faster) on the same in-game island fixture. This is separate from the approach-only optimization measured above.

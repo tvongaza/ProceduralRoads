@@ -37,4 +37,10 @@ The preliminary baseline ran alongside build/test work and took 165.4 seconds; i
 
 PR suite: 188 tests on .NET 10 and .NET Framework 4.8/Mono, no failures or skips; Release build has no warnings or errors. Combined candidate: 390 tests on both runtimes, no failures or skips, clean Release build. A negative control bypassing the cache in the real pathfinder makes its regression fail (16 origin reads instead of the allowed 1–4). Other regressions cover cache collisions, reset after failed searches, thrown reads, unused facts, bounded storage and coordinate equality/distribution.
 
-No deployment or game restart was performed for this search optimization. A same-fixture island-5 run in Valheim remains necessary before claiming an in-game gain against the 606.7-second approach-only build. The earlier 608.1 → 606.7-second result measures a different change and remains valid.
+## In-game comparison
+
+The combined candidate was then deployed and hash-verified on the Mac, running Valheim 1.0.15. A fresh copy of the same RoadSeedE POI fixture was used; every non-comment config setting matched the prior run, including the 100,000 iteration budget, 30-location cap and 0.35 grade limit. Automatic generation was suppressed and only island 5 regenerated.
+
+**Road generation: 606.7 → 243.2 seconds — 2.49x faster, 59.9% less time, saving just over six minutes.** Both runs report 9 roads, 6,215 m, network version 1627085781, 6,297 points and 138 cells. This is matching in-game fingerprint/count evidence, not an in-game byte-for-byte network export. The offline comparison separately establishes serialized-byte identity on its input.
+
+Island detection took 13.3 seconds in the candidate run and is outside the quoted road-generation timer. Loaded terrain queues differed (six zones versus five); that work follows the timed generation. This is one measured same-fixture comparison, not a guarantee for other worlds or systems. The earlier 608.1 → 606.7-second result covers the preceding approach-only optimization and remains valid.
