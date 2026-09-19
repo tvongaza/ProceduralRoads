@@ -25,7 +25,7 @@ public static class StringExtensionMethods
 }
 
 /// <summary>Mirror of Valheim's global Vector2i (integer grid coordinate).</summary>
-public struct Vector2i
+public struct Vector2i : System.IEquatable<Vector2i>
 {
     public int x;
     public int y;
@@ -39,7 +39,9 @@ public struct Vector2i
     public override bool Equals(object? other) =>
         other is Vector2i v && v.x == x && v.y == y;
 
-    public override int GetHashCode() => x.GetHashCode() ^ (y.GetHashCode() << 16);
+    public bool Equals(Vector2i other) => x == other.x && y == other.y;
+
+    public override int GetHashCode() => x.GetHashCode() ^ y.GetHashCode();
 
     public static bool operator ==(Vector2i a, Vector2i b) => a.x == b.x && a.y == b.y;
     public static bool operator !=(Vector2i a, Vector2i b) => !(a == b);

@@ -58,16 +58,19 @@ public class RoadPathfinder
     }
 
     private WorldGenerator m_worldGen;
+    private readonly RoadTerrainSamples m_terrain;
     private Vector2? m_searchStart, m_searchEnd;
     public float SiteClearance = 4f;
 
     public RoadPathfinder(WorldGenerator worldGen)
     {
         m_worldGen = worldGen;
+        m_terrain = new RoadTerrainSamples(worldGen);
     }
 
     public List<Vector2>? FindPath(Vector2 start, Vector2 end)
     {
+        m_terrain.Reset();
         m_searchStart = start;
         m_searchEnd = end;
         Vector2i startGrid = WorldToGrid(start);
@@ -86,9 +89,9 @@ public class RoadPathfinder
                 return a.pos.y.CompareTo(b.pos.y);
             }));
 
-        Dictionary<Vector2i, float> gCosts = new Dictionary<Vector2i, float>();
-        Dictionary<Vector2i, Vector2i> cameFrom = new Dictionary<Vector2i, Vector2i>();
-        HashSet<Vector2i> closedSet = new HashSet<Vector2i>();
+        Dictionary<Vector2i, float> gCosts = new Dictionary<Vector2i, float>(RoadGridComparer.Instance);
+        Dictionary<Vector2i, Vector2i> cameFrom = new Dictionary<Vector2i, Vector2i>(RoadGridComparer.Instance);
+        HashSet<Vector2i> closedSet = new HashSet<Vector2i>(RoadGridComparer.Instance);
 
         openSet.Add((Heuristic(startGrid, endGrid), startGrid));
         gCosts[startGrid] = 0;
@@ -159,25 +162,6 @@ public class RoadPathfinder
         return Mathf.Sqrt(dx * dx + dy * dy);
     }
 
-    private float GetTerrainVariance(Vector2 pos)
-    {
-        float centerHeight = m_worldGen.GetHeight(pos.x, pos.y);
-        float minHeight = centerHeight;
-        float maxHeight = centerHeight;
-        
-        for (int i = 0; i < RoadConstants.TerrainVarianceSampleCount; i++)
-        {
-            float angle = i * Mathf.PI * 2f / RoadConstants.TerrainVarianceSampleCount;
-            float h = m_worldGen.GetHeight(
-                pos.x + Mathf.Cos(angle) * RoadConstants.TerrainVarianceSampleRadius,
-                pos.y + Mathf.Sin(angle) * RoadConstants.TerrainVarianceSampleRadius);
-            minHeight = Mathf.Min(minHeight, h);
-            maxHeight = Mathf.Max(maxHeight, h);
-        }
-        
-        return maxHeight - minHeight;
-    }
-
     private float GetMoveCost(Vector2i from, Vector2i to, int directionIndex)
     {
         Vector2 fromWorld = GridToWorld(from);
@@ -186,15 +170,15 @@ public class RoadPathfinder
             return Impassable;
 
         float dist = DirectionCosts[directionIndex] * CellSize;
-        float h1 = m_worldGen.GetHeight(fromWorld.x, fromWorld.y);
-        float h2 = m_worldGen.GetHeight(toWorld.x, toWorld.y);
+        float h1 = m_terrain.Height(from);
+        float h2 = m_terrain.Height(to);
         float slope = Mathf.Abs(h2 - h1) / dist;
 
-        m_worldGen.GetRiverWeight(toWorld.x, toWorld.y, out float riverWeight, out _);
+        float riverWeight = m_terrain.River(to);
         if (riverWeight > RoadConstants.RiverImpassableThreshold)
             return RiverPenalty;
 
-        float biomeHeight = m_worldGen.GetHeight(toWorld.x, toWorld.y);
+        float biomeHeight = h2;
         if (biomeHeight < RoadConstants.DeepWaterHeight)
             return WaterPenalty * 2f;
         if (biomeHeight < RoadConstants.ShallowWaterHeight)
@@ -209,10 +193,10 @@ public class RoadPathfinder
         if (slope > SteepSlopeThreshold)
             return SteepSlopePenalty;
 
-        if (GetTerrainVariance(toWorld) > TerrainVarianceThreshold)
+        if (m_terrain.Variance(to) > TerrainVarianceThreshold)
             return TerrainVariancePenalty;
 
-        Heightmap.Biome biome = m_worldGen.GetBiome(toWorld.x, toWorld.y);
+        Heightmap.Biome biome = m_terrain.Biome(to);
         if (biome == Heightmap.Biome.Mountain && slope > RoadConstants.MountainSlopeThreshold)
             return WaterPenalty;
 

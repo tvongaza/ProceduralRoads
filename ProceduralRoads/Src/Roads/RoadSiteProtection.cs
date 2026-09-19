@@ -17,7 +17,7 @@ public static class RoadSiteProtection
     }
     public static Func<IEnumerable<Footprint>?>? Source;
     private const float Cell = 128f;
-    private static readonly Dictionary<Vector2i, List<Footprint>> cells = new();
+    private static readonly Dictionary<Vector2i, List<Footprint>> cells = new(RoadGridComparer.Instance);
     private static bool ready;
 
     public static void Reset() { cells.Clear(); ready = false; }
