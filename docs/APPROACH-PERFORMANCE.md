@@ -41,3 +41,7 @@ The approach-only reduction in sampling does not establish an end-to-end perform
 The full PR suite passes 180 tests on .NET 10 and .NET Framework 4.8 under Mono, zero failures/skips and real exit 0. Release build is clean. Four new tests cover early height rejection, exact profile reuse, separation and reuse of authored/procedural samples, and bounded cache retention. Restoring the late height check fails its regression; removing the shared profile sampler fails the reuse regression. Each control was run once and the final source restored.
 
 [Per-world aggregate measurements](approach-performance-20260918.json) retain both run orders, including the noisier second-pass timings. Full per-site comparisons were checked by identity and exact route hash, not by totals alone.
+
+## Search follow-up
+
+The subsequent [route-search optimization](SEARCH-PERFORMANCE.md) removes repeated terrain queries and improves grid lookup hashing. It measured roughly 3x faster generation offline, with identical serialized roads; an in-game timing remains outstanding. This is separate from the approach-only optimization measured above.
