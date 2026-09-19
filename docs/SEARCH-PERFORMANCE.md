@@ -33,7 +33,7 @@ Both versions produced exactly the same 178,028 serialized road bytes (SHA-256 `
 
 The preliminary baseline ran alongside build/test work and took 165.4 seconds; it is retained in the private evidence but excluded from the speedup claim. Its deterministic query counts and network bytes match the final baseline.
 
-## Validation and remaining check
+## Validation
 
 PR suite: 188 tests on .NET 10 and .NET Framework 4.8/Mono, no failures or skips; Release build has no warnings or errors. Combined candidate: 390 tests on both runtimes, no failures or skips, clean Release build. A negative control bypassing the cache in the real pathfinder makes its regression fail (16 origin reads instead of the allowed 1–4). Other regressions cover cache collisions, reset after failed searches, thrown reads, unused facts, bounded storage and coordinate equality/distribution.
 
