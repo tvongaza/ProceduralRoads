@@ -62,17 +62,28 @@ public class RoadGradeRoadTests
     [Fact]
     public void CappedTheSearchTraversesInsteadAndTakesTheLongWay()
     {
-        // Same two points, same slope. Every step is inside the cap now, which
-        // it can only manage by crossing the slope, so the road is far longer
-        // than the straight line between its ends. That is the switchback.
+        // Same two points, same slope. The search has to cross the slope to
+        // get there, so the road is far longer than the straight line between
+        // its ends. That is the switchback.
+        //
+        // The steps are held to the cap PLUS RoadConstants.SearchGradeMargin,
+        // not to the cap itself: the ground a route crosses is not the profile
+        // the road is built to, and the finished profile is still held to the
+        // cap by RoadGrade.Limit. Before the margin this read <= 0.2; the
+        // search now takes steps up to 0.3 here, which is the intended change.
         var world = new Ramp();
         var path = Finder(world, 0.2f).FindPath(new Vector2(0f, 0f), new Vector2(160f, 0f));
 
         Assert.NotNull(path);
-        Assert.True(SteepestAlong(path!, world) <= 0.2f + 0.001f,
-            $"a step climbs at {SteepestAlong(path!, world):P1}, over the 20% cap");
-        Assert.True(Length(path!) > 300f,
-            $"expected a traverse well over the 160 m straight line, got {Length(path!):F0} m");
+        float ceiling = 0.2f + RoadConstants.SearchGradeMargin;
+        Assert.True(SteepestAlong(path!, world) <= ceiling + 0.001f,
+            $"a step climbs at {SteepestAlong(path!, world):P1}, over the {ceiling:P0} search ceiling");
+        // Still a traverse, and a shorter one: 226 m here against 160 m straight,
+        // where before the margin it was over 300 m. Needing less zig-zag to
+        // stay inside the ceiling is the point of the margin, so this asserts
+        // that a traverse happened, not that it stayed as long as it was.
+        Assert.True(Length(path!) > 200f,
+            $"expected a traverse over the 160 m straight line, got {Length(path!):F0} m");
     }
 
     [Fact]

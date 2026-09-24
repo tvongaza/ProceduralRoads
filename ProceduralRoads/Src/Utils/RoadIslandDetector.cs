@@ -172,6 +172,11 @@ public static class RoadIslandDetector
 
         islands.Sort(BySizeThenPosition);
         for (int i = 0; i < islands.Count; i++) islands[i].Id = i;
+        if (options?.CoastalLandings == true)
+            foreach (var island in islands)
+                island.CoastalLandings = RoadCoastalLandings.Find(island, height, gridSize,
+                    (x,z) => wg.GetBiome(x,z), options);
+
         Log.LogDebug($"IslandDetector: {landCells} walkable cells, {pieces.Count} pieces, " +
                      $"{joinedFord} ford join(s), {joinedBridge} bridge join(s), " +
                      $"{islands.Count} islands at or above {minArea / 1_000_000f:F2} km²");

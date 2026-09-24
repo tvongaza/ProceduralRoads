@@ -124,6 +124,71 @@ internal sealed class RoadTerrainSamples
         else Hits++;
         return sample.Biome;
     }
+    /// <summary>
+    /// Measure roughness about the best QUADRATIC surface through the ring and
+    /// the centre, so slope and curvature both read as smooth and only broken
+    /// ground reads rough. The raw height spread on a 16 m ring is ~32 x slope,
+    /// so every smooth sidehill past ~0.16 read as rough and paid the variance
+    /// penalty on every step, even one running level along the contour; a
+    /// plane fit fixes slopes but not troughs, since a ring on a valley floor
+    /// crosses both walls. Roads avoided valley floors, the natural way up a
+    /// mountain. Off keeps the raw spread. Settable for tests.
+    /// </summary>
+    internal static bool DefaultQuadVariance = true;
+    internal bool QuadVariance = DefaultQuadVariance;
+
+    /// <summary>
+    /// Spread of the residuals left by the least-squares fit of
+    /// h = a + bx + cy + dx^2 + exy + fy^2 to the centre and the ring samples
+    /// (nine points, six unknowns). A smooth trough, ridge, bowl or slope fits
+    /// exactly; a step, spike or broken ground does not.
+    /// </summary>
+    internal static float QuadraticRoughness(float centre, float[] ring, float radius)
+    {
+        int n = ring.Length + 1;
+        var rows = new double[n][];
+        var h = new double[n];
+        rows[0] = new double[] { 1, 0, 0, 0, 0, 0 }; h[0] = centre;
+        for (int i = 0; i < ring.Length; i++)
+        {
+            double angle = i * Math.PI * 2.0 / ring.Length;
+            double x = Math.Cos(angle), y = Math.Sin(angle);   // in units of the radius
+            rows[i + 1] = new double[] { 1, x, y, x * x, x * y, y * y };
+            h[i + 1] = ring[i];
+        }
+        // Normal equations A^T A c = A^T h, solved by Gaussian elimination.
+        var m = new double[6, 7];
+        for (int r = 0; r < n; r++)
+            for (int i = 0; i < 6; i++)
+            {
+                for (int j = 0; j < 6; j++) m[i, j] += rows[r][i] * rows[r][j];
+                m[i, 6] += rows[r][i] * h[r];
+            }
+        for (int col = 0; col < 6; col++)
+        {
+            int pivot = col;
+            for (int r = col + 1; r < 6; r++) if (Math.Abs(m[r, col]) > Math.Abs(m[pivot, col])) pivot = r;
+            if (Math.Abs(m[pivot, col]) < 1e-9) continue;   // x^2 and y^2 are dependent with the offset on a ring alone; the centre breaks that
+            for (int j = 0; j < 7; j++) { double t = m[col, j]; m[col, j] = m[pivot, j]; m[pivot, j] = t; }
+            for (int r = 0; r < 6; r++)
+            {
+                if (r == col) continue;
+                double f = m[r, col] / m[col, col];
+                for (int j = col; j < 7; j++) m[r, j] -= f * m[col, j];
+            }
+        }
+        var c = new double[6];
+        for (int i = 0; i < 6; i++) c[i] = Math.Abs(m[i, i]) < 1e-9 ? 0 : m[i, 6] / m[i, i];
+        double lo = double.MaxValue, hi = double.MinValue;
+        for (int r = 0; r < n; r++)
+        {
+            double fit = 0; for (int i = 0; i < 6; i++) fit += c[i] * rows[r][i];
+            double res = h[r] - fit;
+            lo = Math.Min(lo, res); hi = Math.Max(hi, res);
+        }
+        return (float)(hi - lo);
+    }
+
     public float Variance(Vector2i position)
     {
         float centerHeight = Height(position);
@@ -132,16 +197,22 @@ internal sealed class RoadTerrainSamples
         {
             Misses++; TerrainCalls += RoadConstants.TerrainVarianceSampleCount;
             var p = World(position);
+            int n = RoadConstants.TerrainVarianceSampleCount;
+            float radius = RoadConstants.TerrainVarianceSampleRadius;
             float min = centerHeight, max = centerHeight;
-            for (int i = 0; i < RoadConstants.TerrainVarianceSampleCount; i++)
+            float[] ring = new float[n];
+            for (int i = 0; i < n; i++)
             {
-                float angle = i * Mathf.PI * 2f / RoadConstants.TerrainVarianceSampleCount;
-                float h = world.GetHeight(p.x + Mathf.Cos(angle) * RoadConstants.TerrainVarianceSampleRadius,
-                    p.y + Mathf.Sin(angle) * RoadConstants.TerrainVarianceSampleRadius);
+                float angle = i * Mathf.PI * 2f / n;
+                float h = world.GetHeight(p.x + Mathf.Cos(angle) * radius, p.y + Mathf.Sin(angle) * radius);
+                ring[i] = h;
                 min = Mathf.Min(min, h);
                 max = Mathf.Max(max, h);
             }
-            sample.Variance = max - min;
+            if (QuadVariance)
+                sample.Variance = QuadraticRoughness(centerHeight, ring, radius);
+            else
+                sample.Variance = max - min;
             sample.Flags |= 8;
         }
         else Hits++;

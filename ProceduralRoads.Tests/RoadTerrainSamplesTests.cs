@@ -108,15 +108,8 @@ public class RoadTerrainSamplesTests
         var finder = new RoadPathfinder(world);
         // Starved of iterations rather than of ground: the ground here is
         // walkable everywhere, so a budget is what makes a search give up.
-        int previous = RoadPathfinder.MaxIterations;
-        try
-        {
-            RoadPathfinder.MaxIterations = 50;
-            Assert.Null(finder.FindPath(new Vector2(0,0), new Vector2(40000,0)));
-            RoadPathfinder.MaxIterations = previous;
-            Assert.NotNull(finder.FindPath(new Vector2(0,0), new Vector2(160,0)));
-        }
-        finally { RoadPathfinder.MaxIterations = previous; }
+        Assert.Null(finder.FindPath(new Vector2(0,0), new Vector2(40000,0), 50));
+        Assert.NotNull(finder.FindPath(new Vector2(0,0), new Vector2(160,0)));
     }
 
     [Fact]

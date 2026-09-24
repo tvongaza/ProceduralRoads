@@ -115,6 +115,48 @@ public static class RoadSiteProtection
         return false;
     }
 
+    /// <summary>How far <paramref name="p"/> is from the edge of the nearest
+    /// footprint within <paramref name="reach"/> of it: negative inside one,
+    /// infinity when none is that close.</summary>
+    public static float EdgeDistance(Vector2 p, float reach)
+    {
+        Ensure();
+        if (InstalledButUnprepared) return float.PositiveInfinity;
+        float best = float.PositiveInfinity;
+        for (int z = Bin(p.y - reach); z <= Bin(p.y + reach); z++)
+            for (int x = Bin(p.x - reach); x <= Bin(p.x + reach); x++)
+            {
+                if (!cells.TryGetValue(new Vector2i(x, z), out var list)) continue;
+                foreach (var f in list)
+                {
+                    float d = (p - f.Centre).magnitude - f.Radius;
+                    if (d < best) best = d;
+                }
+            }
+        return best <= reach ? best : float.PositiveInfinity;
+    }
+
+    /// <summary>The footprint whose edge is nearest <paramref name="p"/>
+    /// within <paramref name="reach"/>; false when none is that close.</summary>
+    public static bool NearestFootprint(Vector2 p, float reach, out Footprint nearest)
+    {
+        nearest = default;
+        Ensure();
+        if (InstalledButUnprepared) return false;
+        float best = float.PositiveInfinity;
+        for (int z = Bin(p.y - reach); z <= Bin(p.y + reach); z++)
+            for (int x = Bin(p.x - reach); x <= Bin(p.x + reach); x++)
+            {
+                if (!cells.TryGetValue(new Vector2i(x, z), out var list)) continue;
+                foreach (var f in list)
+                {
+                    float d = (p - f.Centre).magnitude - f.Radius;
+                    if (d < best) { best = d; nearest = f; }
+                }
+            }
+        return best <= reach;
+    }
+
     public static float RadiusAt(Vector2 centre, float fallback)
     {
         Ensure();
