@@ -141,6 +141,35 @@ public class ManualRoadTests : IDisposable
         int saves=tc.SaveCount; RoadTerrainModifier.OnTerrainCompilerReady(tc); Assert.Equal(saves,tc.SaveCount);
         Assert.True(RoadTerrainModifier.CarriesCurrentRoads(tc));
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ServerBakePreservesOldRoadEditsWhenAnAdditionIsInThisZoneOrElsewhere(bool elsewhere)
+    {
+        BaseRoad(); var zone = new Vector2s(0, 0);
+        var hm = Heightmap.CreateForZone(zone); Heightmap.Registered = hm; var tc = hm.m_terrainComp!;
+        RoadTerrainModifier.OnTerrainCompilerReady(tc);
+        int oldRoad = 16 * 65 + 32, newRoad = 48 * 65 + 32;
+        tc.m_levelDelta[oldRoad] = 3.25f; tc.m_smoothDelta[oldRoad] = .75f;
+        tc.m_levelDelta[newRoad] = -3f;
+        int saves = tc.SaveCount;
+        Add(elsewhere ? 200 : 16);
+        int applied = tc.m_nview.GetZDO().GetInt(RoadTerrainModifier.AppliedVersionHash);
+        var saved = new[] { new ServerBakePlanner.Compiler(applied, 999, true,
+            RoadTerrainModifier.CarriesCurrentRoads(zone, applied)) };
+        Assert.Equal(elsewhere ? ServerBakePlanner.Action.AlreadyCurrent : ServerBakePlanner.Action.WaitForOwner,
+            ServerBakePlanner.Decide(RoadSpatialGrid.RoadNetworkVersion, true, false, saved, 1));
+        hm.AutoRebuild = false;
+        RoadTerrainModifier.BakeRoadTerrain(zone, hm, tc);
+        Assert.Equal(3.25f, tc.m_levelDelta[oldRoad]);
+        Assert.Equal(.75f, tc.m_smoothDelta[oldRoad]);
+        Assert.Equal(elsewhere ? -3f : 0f, tc.m_levelDelta[newRoad], 3);
+        Assert.Equal(saves + (elsewhere ? 0 : 1), tc.SaveCount);
+        Assert.True(RoadTerrainModifier.CarriesCurrentRoads(tc));
+        RoadTerrainModifier.BakeRoadTerrain(zone, hm, tc);
+        Assert.Equal(saves + (elsewhere ? 0 : 1), tc.SaveCount);
+    }
+
     [Fact] public void BlendBoundaryIncludesTheNeighbouringZone()
     {
         int old=BaseRoad(); Add(32); // Zone edge, road influences both sides.

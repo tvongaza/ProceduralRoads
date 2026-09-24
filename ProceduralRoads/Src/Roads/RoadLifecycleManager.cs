@@ -183,7 +183,9 @@ public static class RoadLifecycleManager
             // bridge pieces this session must be remembered.
             RoadNetworkGenerator.SaveBridgeZones();
         }
-        // Either way, the zones generated with this network in place.
+        // Either way, the zones whose vegetation now matches the roads, and
+        // the zones generated with this network in place.
+        RoadNetworkGenerator.SaveClearedZones();
         RoadNetworkGenerator.SaveNetworkCutoff();
     }
 }

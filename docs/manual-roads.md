@@ -67,11 +67,21 @@ manual-route replay in this version.
 
 ## Compatibility and validation boundary
 
-Use this build on the host and modded clients. It sends read-only network snapshots
-to clients that support the new commands; no client can send a route for the host
-to execute. Once a manual road is added, road data uses format 3 (older formats
-remain readable). Older builds cannot load format 3; do not downgrade a world with
-manual roads without restoring its pre-feature save.
+Install this build on the host or dedicated server. Players without the mod receive
+the added road terrain and bridge pieces as ordinary saved world objects. Matching
+modded clients also receive read-only network snapshots; no client can send a
+route for the host to execute. Use the server console with explicit coordinates or
+`player <peer-id>` when marking for a player who does not have the mod.
 
-Server-only terrain baking is a separate feature. This version requires
-ProceduralRoads on the host and clients; it does not provide stock-client support.
+The server bake picks up additions automatically. It waits for a foreign terrain
+owner where necessary; "Road added" does not promise an immediate terrain update
+beneath a connected player. An addition writes its new footprint and preserves
+edits on older roads outside that footprint. Full regeneration remains a separate,
+explicit operation that reapplies the entire network. Vegetation clearing still
+runs once per network version, including additions, with the existing protections
+for player builds and location footprints; isolated grown player-planted trees
+cannot be distinguished from wild ones.
+
+Once a manual road is added, road data uses format 3 (older formats remain
+readable). Older builds cannot load format 3; do not downgrade a world with manual
+roads without restoring its pre-feature save.

@@ -60,6 +60,11 @@ public static class RoadRockCarve
     /// a road that already runs there. The caller has already decided
     /// the rock may be cleared (policy, ownership; parts of a location never).
     /// </summary>
+    /// <summary>Set while carving a zone the server is generating for a remote
+    /// peer (ghost generation): the zone's list of temporary objects, which the
+    /// game destroys once the zone is populated, leaving only their data.</summary>
+    internal static List<GameObject>? GhostSpawned;
+
     public static Result Carve(GameObject root)
     {
         var result = new Result { outcome = Outcome.NotCarvable, note = "" };
@@ -77,7 +82,19 @@ public static class RoadRockCarve
             }
             // The swap Destructible.Destroy makes, without its effects, noise,
             // drops or the first-hit damage it passes on.
-            var copy = Object.Instantiate(fractured, root.transform.position, root.transform.rotation);
+            // In a zone being generated for a remote peer the rock is a ghost,
+            // and so is its copy: made under the game's ghost init, handed to
+            // the zone's own list of temporary objects, and torn down with it.
+            GameObject copy;
+            if (GhostSpawned != null)
+            {
+                ZNetView.StartGhostInit();
+                try { copy = Object.Instantiate(fractured, root.transform.position, root.transform.rotation); }
+                finally { ZNetView.FinishGhostInit(); }
+                GhostSpawned.Add(copy);
+            }
+            else
+                copy = Object.Instantiate(fractured, root.transform.position, root.transform.rotation);
             copy.GetComponent<ZNetView>().SetLocalScale(root.transform.localScale);
             // Out of the way, not yet destroyed: switched off, its colliders
             // leave the physics scene at once (a destroyed object's stay until
@@ -154,9 +171,10 @@ public static class RoadRockCarve
         return result;
     }
 
-    /// <summary>Put the whole rock back: the copy goes, the original is switched on again.</summary>
+    /// <summary>Put the whole rock back: the copy goes (and leaves the ghost list), the original is switched on again.</summary>
     private static void UndoSwap(GameObject copy, GameObject original, Result result)
     {
+        GhostSpawned?.Remove(copy);
         ZNetScene.instance.Destroy(copy);
         original.SetActive(true);
         result.swapped = false;
@@ -219,7 +237,9 @@ public static class RoadRockCarve
         foreach (var point in all)
         {
             if (point.paintOnly || (point.p - new Vector2(box.center.x, box.center.z)).sqrMagnitude > reach * reach) continue;
-            if (ZoneSystem.instance.GetGroundHeight(new Vector3(point.p.x, 0f, point.p.y), out float surface)) at.Add((point, surface));
+            // A zone the server generates for a remote peer may have no ground
+            // to read; the road's own stored height is the surface it levels to.
+            at.Add((point, ZoneSystem.instance.GetGroundHeight(new Vector3(point.p.x, 0f, point.p.y), out float surface) ? surface : point.h));
         }
         return (at, all);
     }

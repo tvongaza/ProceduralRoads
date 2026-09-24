@@ -97,4 +97,25 @@ internal static class DebugSwitches
         return parsed;
     }
 
+    /// <summary>
+    /// A zone switch, "x,z" as zone indices. Anything else is reported and
+    /// treated as unset, so a typo names no zone rather than a wrong one.
+    /// </summary>
+    internal static bool Zone(string name, out int x, out int z)
+    {
+        x = 0; z = 0;
+        string variable = Prefix + name;
+        string? value = Environment.GetEnvironmentVariable(variable);
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+        string[] parts = value.Trim().Split(',');
+        if (parts.Length == 2 && int.TryParse(parts[0].Trim(), out x) && int.TryParse(parts[1].Trim(), out z))
+        {
+            Log.LogInfo($"{variable}={x},{z}");
+            return true;
+        }
+        Log.LogWarning($"{variable} is '{value}', which is not a zone \"x,z\"; ignored");
+        x = 0; z = 0;
+        return false;
+    }
 }

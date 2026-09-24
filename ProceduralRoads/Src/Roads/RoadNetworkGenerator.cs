@@ -1889,6 +1889,7 @@ public static partial class RoadNetworkGenerator
         m_roadStartPoints.Clear();
         m_roadCrossings.Clear();
         BridgePlans.Reset();
+        VegetationClearing.Reset();
         RoadNetworkPersistence.Reset();
         RoadSpatialGrid.Clear();
     }
@@ -2041,6 +2042,9 @@ public static partial class RoadNetworkGenerator
             // Zones whose pieces stand keep them, whatever layout made them
             // (RoadNetworkPersistence.BridgeLayoutIsStale).
             BridgePlans.MarkSpawned(bridgeZones);
+            var cleared = new HashSet<Vector2s>();
+            if (RoadNetworkPersistence.TryLoadClearedZones(out int clearedVersion, cleared))
+                VegetationClearing.Load(clearedVersion, cleared, RoadSpatialGrid.RoadNetworkVersion);
         }
         return loaded;
     }
@@ -2054,6 +2058,18 @@ public static partial class RoadNetworkGenerator
         if (IsGenerating || !RoadsAvailable || ZoneSystem.instance == null) return;
         byte[]? record = NetworkCutoff.Record(RoadSpatialGrid.RoadNetworkVersion, ZoneSystem.instance.m_generatedZones);
         if (record != null) RoadNetworkPersistence.SaveZonesWithNetwork(record);
+    }
+
+    /// <summary>
+    /// Save which zones' vegetation matches the network (VegetationClearing),
+    /// so a zone is cleared once per network and not again on every start.
+    /// </summary>
+    public static void SaveClearedZones()
+    {
+        if (!RoadsAvailable || VegetationClearing.Version == 0 ||
+            VegetationClearing.Version != RoadSpatialGrid.RoadNetworkVersion)
+            return;
+        RoadNetworkPersistence.SaveClearedZones(VegetationClearing.Version, VegetationClearing.ClearedZones);
     }
 
     #endregion
