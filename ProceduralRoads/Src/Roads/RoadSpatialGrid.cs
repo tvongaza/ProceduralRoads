@@ -584,10 +584,17 @@ public static class RoadSpatialGrid
                     {
                         foreach (var rp in points)
                         {
-                            if (rp.p.x >= zonePos.x - RoadConstants.HalfZoneSize - rp.w &&
-                                rp.p.x <= zonePos.x + RoadConstants.HalfZoneSize + rp.w &&
-                                rp.p.y >= zonePos.z - RoadConstants.HalfZoneSize - rp.w &&
-                                rp.p.y <= zonePos.z + RoadConstants.HalfZoneSize + rp.w)
+                            // Pad by how far this point's levelling can REACH,
+                            // not by its width: once the side slope widens with
+                            // the cut or the fill the two diverge, and a point
+                            // left out still pulls on vertices inside this
+                            // zone, which leaves a seam along the zone edge.
+                            // Width stays as a floor for a wide road.
+                            float reach = Mathf.Max(rp.w, RoadTerrainModifier.GatherRadius(rp.w));
+                            if (rp.p.x >= zonePos.x - RoadConstants.HalfZoneSize - reach &&
+                                rp.p.x <= zonePos.x + RoadConstants.HalfZoneSize + reach &&
+                                rp.p.y >= zonePos.z - RoadConstants.HalfZoneSize - reach &&
+                                rp.p.y <= zonePos.z + RoadConstants.HalfZoneSize + reach)
                             {
                                 result.Add(rp);
                             }
