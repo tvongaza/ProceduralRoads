@@ -892,6 +892,9 @@ public static class ConsoleCommands
         sb.AppendLine($"  Top-left:     {debugInfo.Biome01}");
         sb.AppendLine($"  Top-right:    {debugInfo.Biome11}");
         sb.AppendLine($"  At biome boundary: {debugInfo.IsBiomeBoundary}");
+        if (!debugInfo.IsBiomeBoundary && debugInfo.PointBiome != debugInfo.Biome00)
+            sb.AppendLine($"  Point biome {debugInfo.PointBiome} is not the corners' {debugInfo.Biome00}: " +
+                          $"the game renders {debugInfo.Biome00} height here, raw GetHeight uses {debugInfo.PointBiome}");
         sb.AppendLine();
 
         // Get actual rendered terrain height from Heightmap
