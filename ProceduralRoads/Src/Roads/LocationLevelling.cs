@@ -78,6 +78,73 @@ public static class LocationLevelling
     public static System.Func<Vector2, float?>? PlacementHeightSource;
     public static System.Action? ResetPlacements;
 
+    /// <summary>Build every lazy cache behind Source and PlacementHeightSource
+    /// NOW, on the calling thread. Islands are planned on worker threads and
+    /// these caches read Unity assets and the ZDO table, neither of which may
+    /// be touched off the main thread or filled by two threads at once.</summary>
+    public static System.Action? Prime;
+
+    /// <summary>Set once Prime has run, on the main thread, before any island
+    /// worker starts; cleared when they are all finished.
+    ///
+    /// While it is set, preparation is CLOSED. A lookup that misses must not
+    /// load a Unity asset and must not write into a shared dictionary: it says
+    /// what it could not find and gives up. Both of those are what the lazy
+    /// version did, and both are fatal off the main thread -- an AssetBundle
+    /// read on a worker killed the dedicated server the first time islands ran
+    /// in parallel, and two workers filling one Dictionary can leave it in a
+    /// state that never terminates. A named miss in the log is a far better
+    /// outcome than either, and unlike either it can be fixed.</summary>
+    public static volatile bool Sealed;
+
+    /// <summary>Lookups that missed after preparation was closed. Reported at
+    /// the end of a generation: a miss that nothing counts is a miss nobody
+    /// hears about.</summary>
+    public static int MissesAfterSealing;
+
+    private static readonly System.Collections.Generic.HashSet<string> m_reported = new();
+    private static readonly object m_reportGate = new object();
+
+    public static void Seal()
+    {
+        MissesAfterSealing = 0;
+        lock (m_reportGate) m_reported.Clear();
+        Sealed = true;
+    }
+    public static void Unseal() => Sealed = false;
+
+    /// <summary>Record a lookup that arrived too late to be served, naming it.
+    /// Returns true if the caller should give up rather than build anything.
+    ///
+    /// Each subject is named ONCE per generation however often it is asked
+    /// for. A miss is per lookup, not per missing thing, and the first version
+    /// of this wrote twenty-one thousand identical lines in one test run --
+    /// which is how a log stops being read.</summary>
+    /// <summary>Set when a lookup on THIS thread was refused for want of
+    /// preparation. An island worker builds one road at a time, so this says
+    /// "the road being built now is missing something it needed". Logging
+    /// alone would leave the road built anyway -- through a POI it could not
+    /// see, or onto a height it could not read -- and a refused destination is
+    /// the better of those two outcomes.</summary>
+    [System.ThreadStatic] public static bool PreparationMissedHere;
+
+    /// <summary>Called as a road starts, so the flag describes that road.</summary>
+    public static void BeginRoad() => PreparationMissedHere = false;
+
+    public static bool RefuseAfterSealing(string what)
+    {
+        if (!Sealed) return false;
+        PreparationMissedHere = true;
+        System.Threading.Interlocked.Increment(ref MissesAfterSealing);
+        bool first;
+        lock (m_reportGate) first = m_reported.Add(what);
+        if (first)
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError(
+                $"'{what}' was not prepared before road generation started, and cannot be read now: " +
+                "roads near it meet natural terrain. This is a gap in preparation, not in the world.");
+        return true;
+    }
+
     public static float CentreHeight(Vector2 centre, WorldGenerator world)
     {
         float? saved = PlacementHeightSource?.Invoke(centre);

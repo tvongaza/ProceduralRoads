@@ -97,9 +97,11 @@ public class RoadPathfinder
         m_terrain = new RoadTerrainSamples(worldGen);
     }
 
+    internal void FoldTerrainMemoCounters() => m_terrain.FoldIntoTotals();
+
     public List<Vector2>? FindPath(Vector2 start, Vector2 end)
     {
-        m_terrain.Reset();
+        // Cache immutable generator facts for this pathfinder's lifetime.
         m_searchStart = start;
         m_searchEnd = end;
         Vector2i startGrid = WorldToGrid(start);

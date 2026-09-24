@@ -133,7 +133,37 @@ public static class RoadNetworkGenerator
     private static bool m_roadsGenerated = false;
     private static bool m_locationsReady = false;
     private static bool m_roadsLoadedFromZDO = false;
+    public static RoadNetworkOptions NetworkOptions { get; set; } = new();
     private static RoadPathfinder? m_pathfinder;
+    // Islands are isolated networks, so they are built on worker threads. A
+    // pathfinder holds a terrain cache and LastPathCost, so each thread needs
+    // its own; Finder hands out the calling thread's.
+    private static System.Threading.ThreadLocal<RoadPathfinder>? m_threadPathfinders;
+    private static RoadPathfinder? Finder =>
+        m_threadPathfinders != null ? m_threadPathfinders.Value : m_pathfinder;
+    private static readonly object m_recordGate = new object();
+    [System.ThreadStatic] private static int m_islandRoads;
+
+    /// <summary>Read the crossing registry under the same gate used by commits.
+    /// Another island may append while this road looks for shared banks.</summary>
+    internal static void SnapToExistingCrossings(IEnumerable<RoadCrossing> crossings)
+    {
+        lock (m_recordGate)
+        {
+            foreach (RoadCrossing crossing in crossings)
+            {
+                foreach (RoadCrossing existing in m_roadCrossings)
+                {
+                    if (RoadCrossing.SameBanks(existing, crossing))
+                    {
+                        crossing.SnapTo(existing);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     private static int m_roadsGeneratedCount = 0;
     private static List<(Vector2 position, string label)> m_roadStartPoints = new();
     private static readonly List<RoadCrossing> m_roadCrossings = new();
@@ -255,6 +285,10 @@ public static class RoadNetworkGenerator
 
         DateTime startTime = DateTime.Now;
         m_pathfinder = new RoadPathfinder(WorldGenerator.instance) { SiteClearance = RoadWidth * 0.5f + 2f };
+        m_threadPathfinders?.Dispose();
+        m_threadPathfinders = new System.Threading.ThreadLocal<RoadPathfinder>(
+            () => new RoadPathfinder(WorldGenerator.instance) { SiteClearance = RoadWidth * 0.5f + 2f }, true);
+        RoadTerrainSamples.ResetTotals();
         m_roadsGeneratedCount = 0;
         m_roadsRefusedForGrade = 0;
         m_offLandEnds = 0;
@@ -267,7 +301,7 @@ public static class RoadNetworkGenerator
         if (locations == null)
             return;
 
-        var islands = IslandDetector.DetectIslands();
+        var islands = IslandDetector.DetectRoadIslands();
         
         var sortedIslands = islands.OrderByDescending(i => i.ApproxArea).ToList();
         
@@ -276,10 +310,27 @@ public static class RoadNetworkGenerator
         
         Log.LogDebug($"Islands: {islands.Count} total, {islandCount} selected ({IslandRoadPercentage}%)");
 
-        foreach (var island in selectedIslands)
+        var withContent = selectedIslands.Select(island => new {
+            Island = island, Locations = GetLocationsOnIsland(island, locations.Value.AllLocations)
+        }).Where(job => job.Locations.Count > 0).ToList();
+        Log.LogInfo($"Generating roads on {withContent.Count} of {islands.Count} islands ({RoadParallel.IslandWorkers} thread(s)).");
+        if (!PrepareAndSeal())
         {
-            var islandLocations = GetLocationsOnIsland(island, locations.Value.AllLocations);
-            if (islandLocations.Count == 0) continue;
+            m_threadPathfinders?.Dispose();
+            m_threadPathfinders = null;
+            m_pathfinder = null;
+            return;
+        }
+        int finished = 0;
+        try
+        {
+        System.Threading.Tasks.Parallel.ForEach(withContent,
+            new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = RoadParallel.IslandWorkers }, job =>
+        {
+            var island = job.Island;
+            var islandLocations = job.Locations;
+            var islandClock = System.Diagnostics.Stopwatch.StartNew();
+            m_islandRoads = 0;
             
             int maxLocs = GetMaxLocationsForIsland(island);
             var selected = SelectLocations(islandLocations, maxLocs);
@@ -298,15 +349,25 @@ public static class RoadNetworkGenerator
             {
                 GenerateIslandRoads(island, selected);
             }
+            int done = System.Threading.Interlocked.Increment(ref finished);
+            Log.LogInfo($"  {done} of {withContent.Count} done - island {island.Id}: " +
+                $"{m_islandRoads} road(s) in {islandClock.Elapsed.TotalSeconds:F0}s");
+        });
         }
+        finally { LocationLevelling.Unseal(); }
+        ReportMissesAfterSealing();
+        LogTerrainMemoCounters();
 
         TimeSpan elapsed = DateTime.Now - startTime;
+        Log.LogInfo($"Roads done: {m_roadsGeneratedCount} road(s), {RoadSpatialGrid.TotalRoadLength / 1000f:F1} km, in {elapsed.TotalSeconds:F0}s.");
         LogGenerationStats(m_roadsGeneratedCount, elapsed);
 
         RoadSpatialGrid.FinalizeRoadNetwork();
         
         m_roadsGenerated = true;
         m_pathfinder = null;
+        m_threadPathfinders?.Dispose();
+        m_threadPathfinders = null;
         
         RoadNetworkPersistence.EnsureMetadataInstance();
     }
@@ -351,6 +412,23 @@ public static class RoadNetworkGenerator
     /// RoadEndpoint has already moved the path elsewhere. Both fall back to
     /// the natural terrain under the road's own last point, as before.
     /// </summary>
+    /// <summary>What the terrain memo did over a whole generation: how often a
+    /// fact was already held, how often the world had to be asked, and how
+    /// often a slot was evicted by a different position. Evictions are the
+    /// figure that says the memo is too small for the way it is being asked,
+    /// which a hit rate on its own does not.</summary>
+    private static void LogTerrainMemoCounters()
+    {
+        if (m_threadPathfinders != null)
+            foreach (var finder in m_threadPathfinders.Values) finder.FoldTerrainMemoCounters();
+        long hits = RoadTerrainSamples.TotalHits, misses = RoadTerrainSamples.TotalMisses;
+        long asked = hits + misses;
+        if (asked == 0) return;
+        Log.LogDebug($"Terrain memo: {asked} fact(s) asked, {hits} held ({100.0 * hits / asked:F1}%), " +
+                     $"{misses} read from the world ({RoadTerrainSamples.TotalTerrainCalls} generator call(s)), " +
+                     $"{RoadTerrainSamples.TotalReplacements} slot(s) evicted.");
+    }
+
     internal static float? LocationGround(Vector2 endPoint, Vector2 center, float radius)
     {
         if (radius <= 0f || WorldGenerator.instance == null)
@@ -416,21 +494,22 @@ public static class RoadNetworkGenerator
         Vector2 endCenter, float endRadius,
         float width, string? label = null)
     {
-        if (m_pathfinder == null)
+        if (Finder == null)
         {
             Log.LogWarning("GenerateRoad called without active pathfinder");
             return false;
         }
 
-        List<Vector2>? path = m_pathfinder.FindPath(startCenter, endCenter);
+        LocationLevelling.BeginRoad();
+        List<Vector2>? path = Finder.FindPath(startCenter, endCenter);
 
-        UnityEngine.Canvas.ForceUpdateCanvases();
+        // Unity UI calls must not run on an island worker.
 
         if (path == null || path.Count < 2)
         {
             if (label != null)
                 Log.LogWarning($"Could not find path: {label}");
-            m_roadsWithNoRoute++;
+            System.Threading.Interlocked.Increment(ref m_roadsWithNoRoute);
             return false;
         }
 
@@ -455,46 +534,47 @@ public static class RoadNetworkGenerator
         // crossings and paint the land and each crossing on its own; without
         // fords (or on a road that crossed no river) the whole path is one
         // road as before.
-        List<RoadCrossing> crossings = m_pathfinder.Fords || m_pathfinder.Bridges
-            ? RoadCrossingDetector.Detect(path, WorldGenerator.instance, m_pathfinder.Bridges, m_pathfinder.Fords)
+        var finder = Finder!;
+        List<RoadCrossing> crossings = finder.Fords || finder.Bridges
+            ? RoadCrossingDetector.Detect(path, WorldGenerator.instance, finder.Bridges, finder.Fords)
             : new List<RoadCrossing>();
         // A crossing a few metres from one an earlier road made is the same
         // site: it takes that site's banks, so this road is painted up to
         // the one bridge built there instead of pointing at water beside it.
-        foreach (RoadCrossing crossing in crossings)
-        {
-            foreach (RoadCrossing existing in m_roadCrossings)
-            {
-                if (RoadCrossing.SameBanks(existing, crossing))
-                {
-                    crossing.SnapTo(existing);
-                    break;
-                }
-            }
-        }
+        SnapToExistingCrossings(crossings);
         // The heights to meet are asked for at the road's OWN ends, after
         // trimming - not at the locations' centres. A road stops at the
         // exterior radius, which on a hillside is metres below the middle of
         // the place it is going to, and aiming at the middle builds that
         // difference as a rim around the doorstep.
-        if (!PlanAndStoreRoad(path, crossings, width,
-                ApproachGround(path[0], startCenter, startRadius),
-                ApproachGround(path[path.Count - 1], endCenter, endRadius), refuseDangling: true))
+        float? startGround = ApproachGround(path[0], startCenter, startRadius);
+        float? endGround = ApproachGround(path[path.Count - 1], endCenter, endRadius);
+        if (LocationLevelling.PreparationMissedHere)
+        {
+            System.Threading.Interlocked.Increment(ref m_roadsRefusedForGrade);
+            return false;
+        }
+        if (!PlanAndStoreRoad(path, crossings, width, startGround, endGround, refuseDangling: true))
         {
             if (label != null)
                 Log.LogWarning($"Road too steep to build, destination left unconnected: {label}");
-            m_roadsRefusedForGrade++;
+            System.Threading.Interlocked.Increment(ref m_roadsRefusedForGrade);
             return false;
         }
-        m_roadCrossings.AddRange(crossings);
+        m_islandRoads++;
+        int roadNumber;
+        lock (m_recordGate)
+        {
+            m_roadCrossings.AddRange(crossings);
+            roadNumber = ++m_roadsGeneratedCount;
+        }
         foreach (var c in crossings)
             if (c.Shallow && c.ShallowNote != null) Log.LogDebug("  " + c.ShallowNote);
-        m_roadsGeneratedCount++;
 
         if (path.Count > 0)
         {
-            string pinLabel = label ?? $"Road {m_roadsGeneratedCount}";
-            m_roadStartPoints.Add((path[0], pinLabel));
+            string pinLabel = label ?? $"Road {roadNumber}";
+            lock (m_recordGate) m_roadStartPoints.Add((path[0], pinLabel));
         }
         if (crossings.Count > 0 && label != null)
             Log.LogDebug($"Road {label}: {crossings.Count} river crossing(s)");
@@ -1046,6 +1126,35 @@ public static class RoadNetworkGenerator
     /// as the global pass, restricted to one island. A validation loop that
     /// iterates on one site runs in seconds instead of a whole-world generation.
     /// </summary>
+    /// <summary>
+    /// Everything that reads Unity (location prefabs out of AssetBundles, the
+    /// site footprint index, saved placement heights) done here, on the main
+    /// thread, and then preparation sealed, so a worker that misses names the
+    /// miss instead of loading an asset: Unity refuses asset loads off the
+    /// main thread. Returns false, having logged why, when the footprint index
+    /// could not be built. The caller must Unseal() in a finally. Shared by
+    /// whole-world generation and road_regen_island.
+    /// </summary>
+    private static bool PrepareAndSeal()
+    {
+        RoadSiteProtection.Prime();
+        LocationLevelling.Prime?.Invoke();
+        if (RoadSiteProtection.InstalledButUnprepared)
+        {
+            Log.LogError("The site footprint index was not prepared; no roads generated.");
+            return false;
+        }
+        LocationLevelling.Seal();
+        return true;
+    }
+
+    private static void ReportMissesAfterSealing()
+    {
+        if (LocationLevelling.MissesAfterSealing > 0)
+            Log.LogError($"{LocationLevelling.MissesAfterSealing} lookup(s) arrived after preparation closed; " +
+                         "roads near those places meet natural terrain. See the errors above for what was missing.");
+    }
+
     public static bool RegenerateIslandAt(Vector3 worldPos, out string summary)
     {
         if (WorldGenerator.instance == null || ZoneSystem.instance == null)
@@ -1063,7 +1172,7 @@ public static class RoadNetworkGenerator
             return false;
         }
 
-        var islands = IslandDetector.DetectIslands();
+        var islands = IslandDetector.DetectRoadIslands();
         Island? island = islands.FirstOrDefault(i => i.ContainsPoint(worldPos));
         if (island == null)
         {
@@ -1085,6 +1194,10 @@ public static class RoadNetworkGenerator
         Reset();
         m_locationsReady = locationsWereReady;
         m_pathfinder = new RoadPathfinder(WorldGenerator.instance) { SiteClearance = RoadWidth * 0.5f + 2f };
+        m_threadPathfinders?.Dispose();
+        m_threadPathfinders = new System.Threading.ThreadLocal<RoadPathfinder>(
+            () => new RoadPathfinder(WorldGenerator.instance) { SiteClearance = RoadWidth * 0.5f + 2f }, true);
+        RoadTerrainSamples.ResetTotals();
         m_roadsGeneratedCount = 0;
         m_roadsRefusedForGrade = 0;
         m_offLandEnds = 0;
@@ -1092,14 +1205,30 @@ public static class RoadNetworkGenerator
         RoadGrade.SteepestPlanned = 0f;
         RoadSiteProtection.Reset();
 
-        if (island.ContainsPoint(locations.Value.SpawnPoint))
-            GenerateIslandRoads(island, selected, locations.Value.SpawnPoint, locations.Value.SpawnRadius);
-        else
-            GenerateIslandRoads(island, selected);
+        // The same main-thread preparation and seal as a whole-world generation.
+        if (!PrepareAndSeal())
+        {
+            m_pathfinder = null;
+            m_threadPathfinders?.Dispose();
+            m_threadPathfinders = null;
+            summary = "Preparation failed: the site footprint index could not be built (see the log)";
+            return false;
+        }
+        try
+        {
+            if (island.ContainsPoint(locations.Value.SpawnPoint))
+                GenerateIslandRoads(island, selected, locations.Value.SpawnPoint, locations.Value.SpawnRadius);
+            else
+                GenerateIslandRoads(island, selected);
+        }
+        finally { LocationLevelling.Unseal(); }
+        ReportMissesAfterSealing();
 
         RoadSpatialGrid.FinalizeRoadNetwork();
         m_roadsGenerated = true;
         m_pathfinder = null;
+        m_threadPathfinders?.Dispose();
+        m_threadPathfinders = null;
         // Same as after global generation: without the metadata object the
         // save path has nowhere to put the network and logs an error instead.
         RoadNetworkPersistence.EnsureMetadataInstance();
@@ -1109,6 +1238,9 @@ public static class RoadNetworkGenerator
             $"Island {island.Id} ({island.ApproxArea / 1_000_000f:F1}km²): " +
             $"{selected.Count} locations, {m_roadsGeneratedCount} roads, " +
             $"{RoadSpatialGrid.TotalRoadLength:F0}m in {elapsed.TotalSeconds:F1}s";
+        // Also to the log: a console answer is lost when the command outlives
+        // the caller's timeout, and a check needs a line to wait for.
+        Log.LogInfo($"Island regenerated: {summary}");
         return true;
     }
 
@@ -1119,6 +1251,8 @@ public static class RoadNetworkGenerator
         m_locationsReady = false;
         m_roadsLoadedFromZDO = false;
         m_pathfinder = null;
+        m_threadPathfinders?.Dispose();
+        m_threadPathfinders = null;
         m_roadsGeneratedCount = 0;
         m_roadsRefusedForGrade = 0;
         m_offLandEnds = 0;
@@ -1157,8 +1291,9 @@ public static class RoadNetworkGenerator
         if (RoadCrossingDetector.Shallows)
         {
             int sr = 0, sw = 0, ss = 0;
-            foreach (var c in m_roadCrossings)
-                if (c.Shallow) { if (c.Style == FordStyle.Raise) sr++; else if (c.Style == FordStyle.Wade) sw++; else ss++; }
+            lock (m_recordGate)
+                foreach (var c in m_roadCrossings)
+                    if (c.Shallow) { if (c.Style == FordStyle.Raise) sr++; else if (c.Style == FordStyle.Wade) sw++; else ss++; }
             log.LogInfo($"  Shallow-water fords (pools the road walks): {sr} raised, {sw} waded, {ss} spanned; {m_shallowFordsWalked} road plan(s) walked their pools instead (a ford made them unbuildable); {m_shallowInvalid} refused as shallow water too long or deep to cross");
         }
         log.LogDebug($"  Steepest road built: {RoadGrade.SteepestPlanned:P1}");

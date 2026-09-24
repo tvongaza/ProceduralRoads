@@ -35,12 +35,11 @@ public static class RoadSpatialGrid
     public const float DefaultRoadWidth = RoadConstants.DefaultRoadWidth;
 
     private static Dictionary<Vector2i, RoadPoint[]> m_roadPoints = new Dictionary<Vector2i, RoadPoint[]>();
-    private static RoadPoint[]? m_cachedRoadPoints;
-    private static Vector2i m_cachedRoadGrid = new Vector2i(-999999, -999999);
     private static ReaderWriterLockSlim m_roadCacheLock = new ReaderWriterLockSlim();
     private static bool m_initialized = false;
     
     private static Dictionary<Vector2, RoadPointDebugInfo> m_debugInfo = new Dictionary<Vector2, RoadPointDebugInfo>();
+    private static readonly object m_recordGate = new object();
     
     public static int TotalRoadPoints { get; private set; } = 0;
     public static int GridCellsWithRoads { get; private set; } = 0;
@@ -62,8 +61,6 @@ public static class RoadSpatialGrid
         try
         {
             m_roadPoints.Clear();
-            m_cachedRoadPoints = null;
-            m_cachedRoadGrid = new Vector2i(-999999, -999999);
             m_initialized = false;
             TotalRoadPoints = 0;
             GridCellsWithRoads = 0;
@@ -228,8 +225,7 @@ public static class RoadSpatialGrid
                 return null;
             }
             float steepestAfter = RoadGrade.SteepestStep(densePoints, finalHeights);
-            if (steepestAfter > RoadGrade.SteepestPlanned)
-                RoadGrade.SteepestPlanned = steepestAfter;
+            RoadGrade.RecordSteepest(steepestAfter);
             if (steepestAfter < steepestBefore - 0.001f)
                 Log.LogDebug($"  Grade limited: steepest step {steepestBefore:P0} -> {steepestAfter:P0}");
 
@@ -257,14 +253,19 @@ public static class RoadSpatialGrid
 
             RoadPointDebugInfo debugInfo = plan.DebugInfos[i];
             debugInfo.SmoothedHeight = plan.Heights[i];
-            m_debugInfo[plan.Points[i]] = debugInfo;
+            lock (m_recordGate) m_debugInfo[plan.Points[i]] = debugInfo;
         }
 
         MergePoints(tempPoints);
 
-        TotalRoadPoints += plan.Points.Count;
-        TotalRoadLength += plan.TotalLength;
-        m_initialized = true;
+        // Read-modify-write from several islands at once: without the gate
+        // these silently lose updates.
+        lock (m_recordGate)
+        {
+            TotalRoadPoints += plan.Points.Count;
+            TotalRoadLength += plan.TotalLength;
+            m_initialized = true;
+        }
     }
 
     /// <summary>Road points levelled to the given heights and painted, stored
@@ -651,8 +652,6 @@ public static class RoadSpatialGrid
             }
             
             GridCellsWithRoads = m_roadPoints.Count;
-            m_cachedRoadGrid = new Vector2i(-999999, -999999);
-            m_cachedRoadPoints = null;
         }
         finally
         {
@@ -667,61 +666,40 @@ public static class RoadSpatialGrid
         return new Vector2i(x, y);
     }
 
+    /// <summary>The road weight at a point: how much of a road covers it and
+    /// how wide that road is.
+    ///
+    /// There is no cache in front of this. There used to be a single shared
+    /// one-entry cache of the last cell looked at, which worked when one
+    /// thread walked the world in order and became a liability the moment
+    /// several islands were built at once: each worker is somewhere else
+    /// entirely, so every call missed, and installing the new entry took an
+    /// EXCLUSIVE lock that every other worker had to wait behind. It was also
+    /// a way to publish a stale answer -- a thread could read a cell's array,
+    /// be overtaken by a commit that replaced it, and then install the array
+    /// it had read as the cache for everyone.
+    ///
+    /// What is left is one short read lock around the dictionary, because
+    /// other islands are committing into it. The array it hands back is never
+    /// modified in place -- a commit replaces a cell's array with a new one --
+    /// so the arithmetic runs outside the lock, on an array that cannot change
+    /// underneath it.</summary>
     public static void GetRoadWeight(float wx, float wy, out float weight, out float width)
     {
         Vector2i grid = GetRoadGrid(wx, wy);
 
+        RoadPoint[]? points;
         m_roadCacheLock.EnterReadLock();
-        try
-        {
-            if (grid == m_cachedRoadGrid)
-            {
-                if (m_cachedRoadPoints != null)
-                {
-                    GetWeight(m_cachedRoadPoints, wx, wy, out weight, out width);
-                    return;
-                }
-                weight = 0f;
-                width = 0f;
-                return;
-            }
-        }
-        finally
-        {
-            m_roadCacheLock.ExitReadLock();
-        }
+        try { m_roadPoints.TryGetValue(grid, out points); }
+        finally { m_roadCacheLock.ExitReadLock(); }
 
-        if (m_roadPoints.TryGetValue(grid, out var points))
+        if (points == null)
         {
-            GetWeight(points, wx, wy, out weight, out width);
-            
-            m_roadCacheLock.EnterWriteLock();
-            try
-            {
-                m_cachedRoadGrid = grid;
-                m_cachedRoadPoints = points;
-            }
-            finally
-            {
-                m_roadCacheLock.ExitWriteLock();
-            }
-        }
-        else
-        {
-            m_roadCacheLock.EnterWriteLock();
-            try
-            {
-                m_cachedRoadGrid = grid;
-                m_cachedRoadPoints = null;
-            }
-            finally
-            {
-                m_roadCacheLock.ExitWriteLock();
-            }
-            
             weight = 0f;
             width = 0f;
+            return;
         }
+        GetWeight(points, wx, wy, out weight, out width);
     }
 
     private static void GetWeight(RoadPoint[] points, float wx, float wy, out float weight, out float width)
@@ -975,8 +953,6 @@ public static class RoadSpatialGrid
             GridCellsWithRoads = m_roadPoints.Count;
             m_initialized = true;
             
-            m_cachedRoadGrid = new Vector2i(-999999, -999999);
-            m_cachedRoadPoints = null;
         }
         finally
         {
@@ -1089,8 +1065,6 @@ public static class RoadSpatialGrid
             try
             {
                 m_roadPoints = loadedPoints;
-                m_cachedRoadGrid = new Vector2i(-999999, -999999);
-                m_cachedRoadPoints = null;
                 m_initialized = true;
                 GridCellsWithRoads = loadedPoints.Count;
                 TotalRoadPoints = totalPoints;

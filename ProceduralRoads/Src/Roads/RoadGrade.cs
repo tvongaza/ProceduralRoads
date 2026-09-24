@@ -43,6 +43,17 @@ public static class RoadGrade
     /// </summary>
     public static float SteepestPlanned;
 
+    private static readonly object m_steepestGate = new object();
+
+    /// <summary>Keep the steepest of everything planned. Islands are planned on
+    /// worker threads, so this is a guarded read-modify-write rather than a
+    /// compare and assign.</summary>
+    public static void RecordSteepest(float grade)
+    {
+        lock (m_steepestGate)
+            if (grade > SteepestPlanned) SteepestPlanned = grade;
+    }
+
     /// <summary>A cap at or below zero is no cap at all.</summary>
     public static bool Capped(float maxGrade) => maxGrade > 0f;
 

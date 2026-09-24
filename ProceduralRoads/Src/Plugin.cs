@@ -18,7 +18,7 @@ namespace ProceduralRoads
     public class ProceduralRoadsPlugin : BaseUnityPlugin
     {
         internal const string ModName = "ProceduralRoads";
-        internal const string ModVersion = "1.5.0";
+        internal const string ModVersion = "1.7.0";
         internal const string Author = "warpalicious";
         private const string ModGUID = Author + "." + ModName;
         private static string ConfigFileName = ModGUID + ".cfg";
@@ -42,6 +42,7 @@ namespace ProceduralRoads
         }
 
         // Configuration entries
+        public static ConfigEntry<bool> WalkableIslands = null!;
         public static ConfigEntry<float> RoadWidth = null!;
         public static ConfigEntry<string> CustomLocations = null!;
         public static ConfigEntry<int> IslandRoadPercentage = null!;
@@ -72,11 +73,15 @@ namespace ProceduralRoads
                     "Islands are selected by size (largest first).",
                     new AcceptableValueRange<int>(0, 100)));
 
-            PathfindingMaxIterations = Config.Bind("Roads", "PathfindingMaxIterations", 10000,
+            PathfindingMaxIterations = Config.Bind("Roads", "PathfindingMaxIterations", RoadConstants.PathfindingMaxIterations,
                 new ConfigDescription("Maximum number of iterations for each road segment's pathfinding algorithm. " +
                     "Higher values will generate more roads but increase generation time. " +
                     "Lower values will speed up generation time but cause less roads to generate.",
                     new AcceptableValueRange<int>(1000, 100000)));
+
+            WalkableIslands = Config.Bind("Roads", "WalkableIslands", true,
+                "Group walkable land and nearby crossable water instead of using coarse base-height islands. " +
+                "This is a grouping approximation, not a guarantee that a road can cross.");
 
             MaxLocationsPerIsland = Config.Bind("Roads", "MaxLocationsPerIsland", 12,
                 new ConfigDescription("Maximum number of locations that can be connected by roads on a single island. " +
@@ -179,6 +184,16 @@ namespace ProceduralRoads
             RoadNetworkGenerator.IslandRoadPercentage = IslandRoadPercentage.Value;
             // A validation switch, not a setting: see DebugSwitches.
             RoadNetworkGenerator.GenerateOnLoad = DebugSwitches.Flag("GENERATE_ROADS_ON_LOAD", true);
+            // How many islands may be built at once. Unset is what the mod
+            // does on its own -- one fewer than the machine reports -- and 1
+            // is the fully serial path. A validation switch for measuring
+            // worker counts against each other, not a setting: the right
+            // number is a property of the machine, not of the player's taste.
+            RoadParallel.Configured = DebugSwitches.Count("ISLAND_WORKERS", 0, 0, 256);
+            RoadNetworkGenerator.NetworkOptions = new RoadNetworkOptions
+            {
+                WalkableIslands = WalkableIslands.Value
+            };
             RoadNetworkGenerator.MaxLocationsPerIsland = MaxLocationsPerIsland.Value;
             RoadPathfinder.MaxIterations = PathfindingMaxIterations.Value;
             RoadCrossingDetector.SetFordStyleWeights(FordWadeWeight.Value, FordRaiseWeight.Value, FordSpanWeight.Value);

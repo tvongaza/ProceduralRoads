@@ -18,9 +18,24 @@ public static class RoadSiteProtection
     public static Func<IEnumerable<Footprint>?>? Source;
     private const float Cell = 128f;
     private static readonly Dictionary<Vector2i, List<Footprint>> cells = new(RoadGridComparer.Instance);
-    private static bool ready;
+    private static volatile bool ready;
+    // Ensure() builds `cells` on first use. Pricing now runs on several threads
+    // and every move cost asks this, so first use can arrive on many threads at
+    // once; without the gate they all rebuild the same dictionary together.
+    private static readonly object gate = new object();
 
-    public static void Reset() { cells.Clear(); ready = false; }
+    public static void Reset()
+    {
+        // Clearing the index while island workers are reading it is the same
+        // corruption as filling it while they read, so it waits for them.
+        if (LocationLevelling.Sealed)
+        {
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError(
+                "the site index was asked to clear while roads were being generated; refused");
+            return;
+        }
+        cells.Clear(); ready = false;
+    }
     public static void Set(IEnumerable<Footprint> footprints)
     {
         cells.Clear();
@@ -43,9 +58,32 @@ public static class RoadSiteProtection
     private static void Ensure()
     {
         if (ready) return;
-        var source = Source?.Invoke();
-        if (source != null) Set(source);
+        // No source at all is an ordinary state, not a gap in preparation:
+        // there is nothing to build, nothing to corrupt and nothing to report.
+        // It has always meant "no footprints", and it still does.
+        if (Source == null) return;
+        // Source reads the world's location list and its prefabs. Prime()
+        // calls this on the main thread before any island starts; arriving
+        // here afterwards means preparation missed something, and building it
+        // now would mean several workers writing one dictionary at once.
+        if (LocationLevelling.RefuseAfterSealing("the site footprint index")) return;
+        lock (gate)
+        {
+            if (ready) return;
+            var source = Source?.Invoke();
+            if (source != null) Set(source);
+        }
     }
+
+    /// <summary>Build the index now, on this thread, so that a parallel pass
+    /// finds it ready and never contends for the gate. Safe to call when there
+    /// is no source: it simply does nothing.</summary>
+    public static void Prime() => Ensure();
+    /// <summary>A source is installed but its index was never built. Having
+    /// no source at all is an ordinary "there are no footprints"; this is a
+    /// gap in preparation, and the answers it would give are wrong.</summary>
+    public static bool InstalledButUnprepared => Source != null && !ready;
+
     public static bool Contains(Vector2 point) => BlocksSegment(point, point, 0f, null, null);
 
     // An endpoint's own footprint is exempt during the centre-to-centre
@@ -54,6 +92,12 @@ public static class RoadSiteProtection
         Vector2? start, Vector2? end)
     {
         Ensure();
+        // Footprints exist and cannot be consulted. Answering "nothing is in
+        // the way" would run roads through every POI on the world, so this
+        // answers that everything is, which refuses the routes concerned. An
+        // unreached destination is recoverable; a road through the middle of
+        // a place is not.
+        if (InstalledButUnprepared) return true;
         for (int z = Bin(Mathf.Min(a.y, b.y) - clearance); z <= Bin(Mathf.Max(a.y, b.y) + clearance); z++)
             for (int x = Bin(Mathf.Min(a.x, b.x) - clearance); x <= Bin(Mathf.Max(a.x, b.x) + clearance); x++)
             {

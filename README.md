@@ -184,3 +184,26 @@ private static void RegisterRoadLocation(string locationName)
 ## License
 
 MIT License - see LICENSE.md
+
+### Island generation and performance
+
+New networks use an 8 m walkable-and-crossable island scan by default. This
+separates open straits while allowing suitable river crossings to join land.
+It changes island grouping relative to the old coarse detector, and can therefore
+change which islands and roads are selected. It does not guarantee a route.
+The scan uses a fixed 8 m spacing. `WalkableIslands=false` retains the legacy
+coarse scan. `road_islands` without arguments uses the generation settings.
+
+Islands are built concurrently after location assets and saved heights have been
+prepared on the main thread. Each worker owns its pathfinder. Terrain samples
+are cached across its searches in a fixed 65,536-entry buffer (about 1.75 MiB per
+pathfinder) and released with the generation. Shared road records are guarded.
+
+The default worker count is logical processors minus one, with a minimum of one.
+`PROCEDURALROADS_ISLAND_WORKERS=1` selects a serial comparison; an unset variable
+uses the automatic count. This is a diagnostic environment setting.
+
+Fresh configs use a 30,000-iteration search budget. Existing configured values
+are retained. Island selection still favours size, location selection still uses
+priority, and the existing chain/MST strategies are retained in this release.
+The broader destination and connection changes are a separate follow-up.

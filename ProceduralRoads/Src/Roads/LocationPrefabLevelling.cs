@@ -23,15 +23,18 @@ public static class LocationPrefabLevelling
     private static readonly Dictionary<string, IReadOnlyList<LevelOp>> m_byPrefab = new();
 
     private static readonly Dictionary<string, float> m_terrainRadius = new();
-    private static readonly Dictionary<Vector2, float> m_placedHeights = new();
-    private static bool m_placementsRead;
 
     /// <summary>Wire this up as LocationLevelling's source. Called from the plugin.</summary>
     public static void Install()
     {
         LocationLevelling.Source = OpsAt;
         LocationLevelling.PlacementHeightSource = PlacementHeightAt;
-        LocationLevelling.ResetPlacements = () => { m_placedHeights.Clear(); m_placementsRead = false; };
+        // The SAME guarded door as Reset() uses. This was a lambda that
+        // cleared the dictionary directly, so guarding Reset() left the
+        // callback free to empty it under the island workers.
+        LocationLevelling.ResetPlacements = LocationPlacementHeights.Clear;
+        LocationPlacementHeights.Source = SavedPlacements;
+        LocationLevelling.Prime = () => { LocationPlacementHeights.Read(); RoadSiteProtection.Prime(); };
         RoadSiteProtection.Source = Footprints;
     }
 
@@ -51,28 +54,38 @@ public static class LocationPrefabLevelling
         return result;
     }
 
-    public static void Reset() { m_byPrefab.Clear(); m_terrainRadius.Clear(); m_placedHeights.Clear(); m_placementsRead = false; RoadSiteProtection.Reset(); }
-
-    private static float? PlacementHeightAt(Vector2 centre)
+    public static void Reset()
     {
-        if (!m_placementsRead && ZDOMan.instance != null)
+        if (LocationLevelling.Sealed)
         {
-            int proxyHash = "LocationProxy".GetStableHashCode();
-            foreach (var entry in ZDOMan.instance.m_objectsByID)
-            {
-                ZDO zdo = entry.Value;
-                if (zdo.GetPrefab() != proxyHash) continue;
-                Vector3 position = zdo.GetPosition();
-                m_placedHeights[new Vector2(position.x, position.z)] = position.y;
-            }
-            m_placementsRead = true;
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError(
+                "levelling data was asked to clear while roads were being generated; refused");
+            return;
         }
-        if (m_placedHeights.TryGetValue(centre, out float height)) return height;
-        // Stored and generated coordinates can differ below console precision.
-        foreach (var entry in m_placedHeights)
-            if ((entry.Key-centre).sqrMagnitude < 0.25f) return entry.Value;
-        return null;
+        m_byPrefab.Clear(); m_terrainRadius.Clear();
+        LocationPlacementHeights.Clear();
+        RoadSiteProtection.Reset();
     }
+
+    /// <summary>Every LocationProxy in the saved world, as a centre and the
+    /// height it stands at. One pass over the ZDO table; the store decides
+    /// when, and holds the result.</summary>
+    private static IEnumerable<(Vector2 centre, float height)>? SavedPlacements()
+    {
+        if (ZDOMan.instance == null) return null;
+        var found = new List<(Vector2, float)>();
+        int proxyHash = "LocationProxy".GetStableHashCode();
+        foreach (var entry in ZDOMan.instance.m_objectsByID)
+        {
+            ZDO zdo = entry.Value;
+            if (zdo.GetPrefab() != proxyHash) continue;
+            Vector3 position = zdo.GetPosition();
+            found.Add((new Vector2(position.x, position.z), position.y));
+        }
+        return found;
+    }
+
+    private static float? PlacementHeightAt(Vector2 centre) => LocationPlacementHeights.At(centre);
 
     private static IReadOnlyList<LevelOp>? OpsAt(Vector2 centre)
     {
@@ -94,6 +107,12 @@ public static class LocationPrefabLevelling
         string name = location.m_prefab.Name;
         if (m_byPrefab.TryGetValue(name, out IReadOnlyList<LevelOp> cached))
             return cached;
+        // Past this point lies an AssetBundle read and two writes into shared
+        // dictionaries. Neither may happen on an island worker. A prefab that
+        // could not be read is remembered as an EMPTY list by the catch below,
+        // so a miss here means the prefab was never offered to preparation at
+        // all -- not that reading it failed.
+        if (LocationLevelling.RefuseAfterSealing(name)) return System.Array.Empty<LevelOp>();
 
         var ops = new List<LevelOp>();
         float terrainRadius = 0f;

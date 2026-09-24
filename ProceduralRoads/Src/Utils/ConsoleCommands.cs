@@ -233,10 +233,12 @@ public static class ConsoleCommands
             return;
         }
         
-        args.Context.AddString($"Detecting islands (cellSize={cellSize}m, minCells={minCells})...");
+        args.Context.AddString(args.Length <= 1 ? "Detecting islands with the road generation settings..."
+            : $"Detecting legacy base-height islands (cellSize={cellSize}m, minCells={minCells})...");
         
         // Run detection
-        var islands = IslandDetector.DetectIslands(cellSize, minCells);
+        var islands = args.Length <= 1 ? IslandDetector.DetectRoadIslands()
+            : IslandDetector.DetectIslands(cellSize, minCells);
         
         if (islands.Count == 0)
         {

@@ -22,6 +22,10 @@
     -->
     <ItemGroup>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadGridComparer.cs" Link="ModSrc/RoadGridComparer.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/LocationPlacementHeights.cs" Link="ModSrc/LocationPlacementHeights.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadParallel.cs" Link="ModSrc/RoadParallel.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadNetworkOptions.cs" Link="ModSrc/RoadNetworkOptions.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Utils/RoadIslandDetector.cs" Link="ModSrc/RoadIslandDetector.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadTerrainSamples.cs" Link="ModSrc/RoadTerrainSamples.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/ApproachTerrainSamples.cs" Link="ModSrc/ApproachTerrainSamples.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadSwitchbacks.cs" Link="ModSrc/RoadSwitchbacks.cs"/>
