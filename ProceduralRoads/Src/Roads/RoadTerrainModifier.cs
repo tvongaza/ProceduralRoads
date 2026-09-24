@@ -398,8 +398,9 @@ public static class RoadTerrainModifier
         {
             fillExtra = new float[roadPoints.Count];
             for (int k = 0; k < roadPoints.Count; k++)
-                fillExtra[k] = RoadEarthworkNoise.FillExtra(roadPoints[k].p, roadPoints[k].h,
-                    (x, z) => BiomeBlendedHeight.GetBlendedHeight(x, z, world));
+                if (!roadPoints[k].paintOnly)
+                    fillExtra[k] = RoadEarthworkNoise.FillExtra(roadPoints[k].p, roadPoints[k].h,
+                        (x, z) => BiomeBlendedHeight.GetBlendedHeight(x, z, world));
         }
 
         for (int vz = 0; vz < context.GridSize; vz++)
@@ -454,18 +455,20 @@ public static class RoadTerrainModifier
 
     /// <summary>
     /// The road surface height at a vertex, from the road points within reach.
-    /// The points sit on the centreline, so the surface is fitted as a plane
-    /// through them (weighted least squares, the same blend weights as
+    /// The points sit on the centreline, so the surface is fitted as a LINE
+    /// along the road (weighted least squares, the same blend weights as
     /// before) and read at the vertex. A weighted mean would do mid-road,
     /// where the points lie on both sides of the vertex, but at a road end
     /// every point lies on one side: on a slope the mean of their heights is
     /// the height some way back along the road, and the terrain at the end,
-    /// and for the blend margin beyond it, came out on a shelf. The plane
+    /// and for the blend margin beyond it, came out on a shelf. The fit
     /// follows the road's own gradient through the end instead.
     ///
-    /// Across the road the points give no gradient at all (they are
-    /// collinear), and a small ridge term settles that gradient at zero, so
-    /// the surface is level across the road as before.
+    /// The sums gathered below are the ones a plane fit would need, but they
+    /// are used to find the road's direction, not to fit a plane: the height
+    /// is regressed along that direction alone and the gradient across the
+    /// road is zero by construction. See FitHeightAtVertex, which explains why
+    /// a free plane fit was tried and abandoned.
     /// </summary>
     /// <summary>How far the batter widens the release per metre of cut past
     /// <see cref="BatterThreshold"/>; fill gets nothing, see
@@ -531,6 +534,9 @@ public static class RoadTerrainModifier
         for (int k = 0; k < roadPoints.Count; k++)
         {
             RoadSpatialGrid.RoadPoint rp = roadPoints[k];
+            // A paint-only point (a waded ford) leaves the ground as it is.
+            if (rp.paintOnly)
+                continue;
             float distSq = (rp.p - vertexPos).sqrMagnitude;
             // A road point standing well below the ground gets a wider
             // release, so the cut is walked out on a slope instead of ending
@@ -578,15 +584,23 @@ public static class RoadTerrainModifier
     }
 
     /// <summary>
-    /// The fitted road surface height at the vertex. The points are the
-    /// road's centreline, so the surface is a line along the road: the
-    /// points' principal direction (weighted) is the road direction, the
-    /// height is regressed on the offset along it, and the gradient across
-    /// the road is zero by construction, which keeps the cross-section level
-    /// (a free plane fit let a road's slight curvature turn its height change
-    /// into a steep tilt across the road). The ridge (a prior spread of
-    /// HeightFitRidgeMetres) keeps the gradient defined for a single point
-    /// or two nearly coincident ones, and the clamp bounds it.
+    /// The fitted road surface height at the vertex.
+    ///
+    /// This is a LINE fit along the road, not a plane fit. The points are the
+    /// road's centreline, so the surface is one-dimensional: the second-moment
+    /// sums (sxx, sxy, syy) are here only to find the points' principal
+    /// direction, which is the road direction; the height is then regressed on
+    /// the offset along that direction alone, and the gradient ACROSS the road
+    /// is zero by construction, which keeps the cross-section level.
+    ///
+    /// A free plane fit was tried and abandoned: on a bend the lateral offset
+    /// of the centreline grows with distance in the same way the ramp's lift
+    /// does, and the plane attributed the one to the other, tilting the road
+    /// sideways by as much as the clamp allows. Nothing below fits a plane.
+    ///
+    /// The ridge (a prior spread of HeightFitRidgeMetres) keeps the gradient
+    /// defined for a single point or two nearly coincident ones, and the clamp
+    /// bounds it.
     /// </summary>
     private static float FitHeightAtVertex(double sw, double sx, double sy, double sxx, double sxy, double syy,
         double sh, double sxh, double syh)
