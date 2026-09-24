@@ -177,6 +177,12 @@ public static class RoadLifecycleManager
         {
             RoadNetworkGenerator.SaveGlobalRoadData();
         }
+        else
+        {
+            // A loaded network is unchanged, but the zones that got their
+            // bridge pieces this session must be remembered.
+            RoadNetworkGenerator.SaveBridgeZones();
+        }
         // Either way, the zones generated with this network in place.
         RoadNetworkGenerator.SaveNetworkCutoff();
     }

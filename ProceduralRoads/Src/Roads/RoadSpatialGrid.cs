@@ -17,13 +17,17 @@ public static class RoadSpatialGrid
         public float w;
         public float w2;
         public float h;
+        /// <summary>Paint only: the terrain is not leveled toward this point
+        /// (a waded ford keeps the riverbed as it is).</summary>
+        public bool paintOnly;
 
-        public RoadPoint(Vector2 position, float width, float height)
+        public RoadPoint(Vector2 position, float width, float height, bool paintOnly = false)
         {
             p = position;
             w = width;
             w2 = width * width;
             h = height;
+            this.paintOnly = paintOnly;
         }
     }
 
@@ -115,6 +119,12 @@ public static class RoadSpatialGrid
     /// two ends - the ground a location stands on - where those are known.
     /// Without them each end meets the natural terrain under it, as before.
     ///
+    /// followTerrain: paint only; every point keeps the raw terrain height and
+    /// the terrain is not leveled toward it at all (a WADED ford). Such a road
+    /// is the ground, so there is nothing for the grade cap to hold: it is the
+    /// water's bed, and it is crossed, not climbed.
+    /// minHeight: no stored point below it (a RAISED ford's surface).
+    ///
     /// Returns null when the profile cannot be built inside the grade cap:
     /// the two ends are further apart in height than the cap allows over the
     /// length between them. That is a road too steep to walk, and the
@@ -122,14 +132,13 @@ public static class RoadSpatialGrid
     /// </summary>
     public static PlannedPath? PlanRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
         float? startGround = null, float? endGround = null,
+        bool followTerrain = false, float minHeight = float.NegativeInfinity,
         System.Func<Vector2, float>? terrainHeight = null)
     {
         if (path == null || path.Count < 2 || worldGen == null)
             return null;
 
-        // Trial profiles can share exact procedural terrain samples. This
-        // callback must not include authored location levelling; start/end
-        // targets and the approach scorer handle that separately.
+        // Trial profiles share procedural samples, never authored location ground.
         float SampleTerrain(Vector2 point) => terrainHeight != null ? terrainHeight(point)
             : BiomeBlendedHeight.GetBlendedHeight(point.x, point.y, worldGen);
         float segmentLength = width / 4f;
@@ -138,7 +147,8 @@ public static class RoadSpatialGrid
         for (int i = 0; i < path.Count - 1; i++)
             totalLength += Vector2.Distance(path[i], path[i + 1]);
 
-        if (!RoadSwitchbacks.Shape(path, width, out var turns, out var landings, SampleTerrain))
+        List<Vector2>? turns = null; List<bool>? landings = null;
+        if (!followTerrain && !RoadSwitchbacks.Shape(path, width, out turns, out landings, SampleTerrain))
         { Log.LogDebug("Road refused: switchback has no room for a turning landing"); return null; }
         List<Vector2> densePoints = turns ?? SplinePath(path, segmentLength);
         if (turns != null)
@@ -195,31 +205,45 @@ public static class RoadSpatialGrid
             float distFromNearestEnd = Mathf.Min(fromStart, fromEnd);
             float? target = fromStart <= fromEnd ? startGround : endGround;
             float rampBase = RoadEndpointRamp.BaseHeight(denseHeights[i], target, distFromNearestEnd);
-            finalHeights.Add(Mathf.Lerp(rampBase, smoothedHeights[i], RoadEndpointRamp.Blend(distFromNearestEnd)));
+            finalHeights.Add(followTerrain
+                ? denseHeights[i]
+                : Mathf.Max(Mathf.Lerp(rampBase, smoothedHeights[i], RoadEndpointRamp.Blend(distFromNearestEnd)), minHeight));
         }
 
         // Smoothing and the ramp both move heights after the search priced the
         // ground, so a route the search accepted can still be built too steep.
         // This is where that is caught, and the ends are held: they are the
-        // heights the road has to meet.
-        float steepestBefore = RoadGrade.SteepestStep(densePoints, finalHeights);
-        if (!RoadGrade.Limit(densePoints, finalHeights, RoadGrade.Configured, edgeGrades))
+        // heights the road has to meet. A waded ford is exempt: it is painted
+        // on the ground rather than built, so its profile is the river bed's
+        // and holding it to a road's grade would mean levelling the river.
+        if (!followTerrain)
         {
-            Log.LogDebug(
-                $"Road profile refused: ends {finalHeights[0]:F1}m and {finalHeights[finalHeights.Count - 1]:F1}m " +
-                $"are {Mathf.Abs(finalHeights[finalHeights.Count - 1] - finalHeights[0]):F1}m apart over {pathTotal:F0}m, " +
-                $"over the {RoadGrade.Configured:P0} cap including turn landings");
-            return null;
-        }
-        float steepestAfter = RoadGrade.SteepestStep(densePoints, finalHeights);
-        if (steepestAfter > RoadGrade.SteepestPlanned)
-            RoadGrade.SteepestPlanned = steepestAfter;
-        if (steepestAfter < steepestBefore - 0.001f)
-            Log.LogDebug($"  Grade limited: steepest step {steepestBefore:P0} -> {steepestAfter:P0}");
+            float steepestBefore = RoadGrade.SteepestStep(densePoints, finalHeights);
+            if (!RoadGrade.Limit(densePoints, finalHeights, RoadGrade.Configured, edgeGrades))
+            {
+                Log.LogDebug(
+                    $"Road profile refused: ends {finalHeights[0]:F1}m and {finalHeights[finalHeights.Count - 1]:F1}m " +
+                    $"are {Mathf.Abs(finalHeights[finalHeights.Count - 1] - finalHeights[0]):F1}m apart over {pathTotal:F0}m, " +
+                    $"over the {RoadGrade.Configured:P0} cap including turn landings");
+                return null;
+            }
+            float steepestAfter = RoadGrade.SteepestStep(densePoints, finalHeights);
+            if (steepestAfter > RoadGrade.SteepestPlanned)
+                RoadGrade.SteepestPlanned = steepestAfter;
+            if (steepestAfter < steepestBefore - 0.001f)
+                Log.LogDebug($"  Grade limited: steepest step {steepestBefore:P0} -> {steepestAfter:P0}");
 
-        if (turns != null && !RoadSwitchbacks.Separated(densePoints, finalHeights, width))
+            // The limiter may cut a point below a raised ford's surface; the
+            // floor is a constant, so putting it back leaves the profile
+            // inside the cap.
+            if (minHeight > float.NegativeInfinity)
+                for (int k = 0; k < finalHeights.Count; k++)
+                    finalHeights[k] = Mathf.Max(finalHeights[k], minHeight);
+        }
+
+        if (!followTerrain && turns != null && !RoadSwitchbacks.Separated(densePoints, finalHeights, width))
         { Log.LogDebug("Road refused: switchback legs blend at different heights"); return null; }
-        return new PlannedPath(densePoints, finalHeights, debugInfos, width, totalLength, false);
+        return new PlannedPath(densePoints, finalHeights, debugInfos, width, totalLength, followTerrain);
     }
 
     /// <summary>Store a planned road. Nothing here can fail; every decision
@@ -229,7 +253,7 @@ public static class RoadSpatialGrid
         Dictionary<Vector2i, List<RoadPoint>> tempPoints = new Dictionary<Vector2i, List<RoadPoint>>();
         for (int i = 0; i < plan.Points.Count; i++)
         {
-            AddRoadPoint(tempPoints, plan.Points[i], plan.Width, plan.Heights[i]);
+            AddRoadPoint(tempPoints, plan.Points[i], plan.Width, plan.Heights[i], plan.FollowTerrain);
 
             RoadPointDebugInfo debugInfo = plan.DebugInfos[i];
             debugInfo.SmoothedHeight = plan.Heights[i];
@@ -243,12 +267,23 @@ public static class RoadSpatialGrid
         m_initialized = true;
     }
 
+    /// <summary>Road points levelled to the given heights and painted, stored
+    /// without planning (the ground under a bridge deck's ends).</summary>
+    public static void CommitLevelled(IList<Vector2> points, IList<float> heights, float width)
+    {
+        var temp = new Dictionary<Vector2i, List<RoadPoint>>();
+        for (int i = 0; i < points.Count; i++)
+            AddRoadPoint(temp, points[i], width, heights[i], false);
+        MergePoints(temp);
+    }
+
     /// <summary>Plan a road and store it, for the caller that lays one road in
     /// one piece. False means it was refused and nothing was stored.</summary>
     public static bool AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
-        float? startGround = null, float? endGround = null)
+        float? startGround = null, float? endGround = null,
+        bool followTerrain = false, float minHeight = float.NegativeInfinity)
     {
-        PlannedPath? plan = PlanRoadPath(path, width, worldGen, startGround, endGround);
+        PlannedPath? plan = PlanRoadPath(path, width, worldGen, startGround, endGround, followTerrain, minHeight);
         if (plan == null) return false;
         Commit(plan);
         return true;
@@ -257,8 +292,9 @@ public static class RoadSpatialGrid
     /// <summary>
     /// Called after all roads are generated, and after a network is loaded from
     /// the save, to compute the network version: a hash of the world seed and
-    /// every stored road point (position, width, height) in canonical order
-    /// (cells by coordinate, points by position, width, height), each record
+    /// every stored road point (position, width, height, paint-only flag)
+    /// in canonical order (cells by coordinate, points by position, width,
+    /// height, flag), each record
     /// mixed into the running value, so it is the same after generation and
     /// after a save/load round trip (which carries exactly the stored points)
     /// and changes whenever any road moves or changes height. A sum of
@@ -296,6 +332,7 @@ public static class RoadSpatialGrid
                     Mix(ref hash, rp.p.y.GetHashCode());
                     Mix(ref hash, rp.w.GetHashCode());
                     Mix(ref hash, rp.h.GetHashCode());
+                    Mix(ref hash, rp.paintOnly ? 1 : 0);
                 }
             }
         }
@@ -322,7 +359,9 @@ public static class RoadSpatialGrid
         c = a.p.y.CompareTo(b.p.y);
         if (c != 0) return c;
         c = a.w.CompareTo(b.w);
-        return c != 0 ? c : a.h.CompareTo(b.h);
+        if (c != 0) return c;
+        c = a.h.CompareTo(b.h);
+        return c != 0 ? c : a.paintOnly.CompareTo(b.paintOnly);
     }
 
     /// <summary>FNV-1a step over the four bytes of value, then an avalanche so neighbouring records do not cancel.</summary>
@@ -561,7 +600,7 @@ public static class RoadSpatialGrid
         }
     }
 
-    private static void AddRoadPoint(Dictionary<Vector2i, List<RoadPoint>> roadPoints, Vector2 p, float width, float height)
+    private static void AddRoadPoint(Dictionary<Vector2i, List<RoadPoint>> roadPoints, Vector2 p, float width, float height, bool paintOnly)
     {
         Vector2i grid = GetRoadGrid(p.x, p.y);
         int radius = Mathf.CeilToInt(width / GridSize);
@@ -578,7 +617,7 @@ public static class RoadSpatialGrid
                         list = new List<RoadPoint>();
                         roadPoints.Add(cellGrid, list);
                     }
-                    list.Add(new RoadPoint(p, width, height));
+                    list.Add(new RoadPoint(p, width, height, paintOnly));
                 }
             }
         }
@@ -959,7 +998,8 @@ public static class RoadSpatialGrid
             using var ms = new MemoryStream();
             using var writer = new BinaryWriter(ms);
             
-            writer.Write(1);
+            // Version 2 adds the paint-only flag per point (waded fords).
+            writer.Write(2);
             
             writer.Write(m_roadPoints.Count);
             
@@ -975,6 +1015,7 @@ public static class RoadSpatialGrid
                     writer.Write(rp.p.y);
                     writer.Write(rp.w);
                     writer.Write(rp.h);
+                    writer.Write(rp.paintOnly);
                 }
             }
             
@@ -1001,7 +1042,7 @@ public static class RoadSpatialGrid
             using var reader = new BinaryReader(ms);
             
             int version = reader.ReadInt32();
-            if (version != 1)
+            if (version != 1 && version != 2)
             {
                 Log.LogWarning($"Unknown road data version: {version}");
                 return false;
@@ -1036,7 +1077,8 @@ public static class RoadSpatialGrid
                     float py = reader.ReadSingle();
                     float w = reader.ReadSingle();
                     float h = reader.ReadSingle();
-                    points[i] = new RoadPoint(new Vector2(px, py), w, h);
+                    bool paintOnly = version >= 2 && reader.ReadBoolean();
+                    points[i] = new RoadPoint(new Vector2(px, py), w, h, paintOnly);
                 }
                 
                 loadedPoints[new Vector2i(gridX, gridY)] = points;
