@@ -45,6 +45,18 @@ public static class RoadTerrainModifier
 
     public static void OnTerrainCompilerDestroyed(TerrainComp terrainComp) => s_pendingWrites.Remove(terrainComp);
 
+    /// <summary>
+    /// Whether a loaded zone's road terrain is in place: its terrain compiler
+    /// is alive (the roads are queued or written when it comes alive) and no
+    /// write is still pending for it. Before that the ground under a road is
+    /// the ungraded ground, so anything judged against it is judged wrongly.
+    /// </summary>
+    internal static bool TerrainSettled(Vector3 zonePos)
+    {
+        TerrainComp? terrainComp = TerrainComp.FindTerrainCompiler(zonePos);
+        return terrainComp != null && !s_pendingWrites.ContainsKey(terrainComp);
+    }
+
     public static void ResetDebugCounters()
     {
         s_coordLogCount = 0;

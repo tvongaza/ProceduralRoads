@@ -43,6 +43,7 @@ namespace ProceduralRoads
 
         // Configuration entries
         public static ConfigEntry<float> RoadWidth = null!;
+        public static ConfigEntry<RockClearingMode> RockClearing = null!;
         public static ConfigEntry<string> CustomLocations = null!;
         public static ConfigEntry<int> CustomLocationPriority = null!;
         public static ConfigEntry<Heightmap.Biome> ExcludedRoadBiomes = null!;
@@ -158,6 +159,13 @@ namespace ProceduralRoads
                 "Prefer islands with more eligible destinations; false prefers larger islands.");
             WeightedDestinations = Config.Bind("Roads", "WeightedDestinations", true,
                 "Choose a seeded mix of destinations by importance and distance. False uses priority ranking.");
+            RockClearing = Config.Bind("Roads", "RockClearing", RockClearingMode.Carve,
+                "Natural rocks that clip a road's surface. Off leaves them; Remove takes away a rock that blocks " +
+                "at least half the road's width; Carve takes only the pieces of a rock that stand in the road, as a " +
+                "pickaxe would, and drops no stone. Helps mountain and Mistlands roads most, where boulders otherwise " +
+                "make them hard to use. Location parts and player pieces are never touched.");
+            RoadRockClearing.Mode = RockClearing.Value;
+            RockClearing.SettingChanged += (_, _) => RoadRockClearing.Mode = RockClearing.Value;
             TargetSubAreas = Config.Bind("Roads", "TargetSubAreas", 9,
                 new ConfigDescription("Approximate number of sub-areas used to spread destinations over an island. " +
                     "Zero disables spreading. The actual number depends on island shape.",
@@ -275,6 +283,12 @@ namespace ProceduralRoads
             m_nextTerrainSweep = Time.time + 3f;
             if (RoadNetworkGenerator.RoadsAvailable && ZNet.instance != null)
                 RoadTerrainModifier.SweepUnstamped();
+        }
+
+        // Rocks clipping the roads, on their own half-second cadence (RoadRockClearing).
+        private void LateUpdate()
+        {
+            RoadRockClearing.Tick();
         }
 
         private void OnDestroy()
