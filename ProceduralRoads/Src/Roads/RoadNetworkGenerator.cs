@@ -784,7 +784,7 @@ public static partial class RoadNetworkGenerator
         }
 
         RoadSpatialGrid.LastRefusal = null;
-        var plans = PlanRoadPieces(path, crossings, width, startGround, endGround);
+        var plans = PlanRoadPathWithCrossings(path, crossings, width, startGround, endGround);
         if (plans == null && !ReferenceEquals(withStubs, path))
         {
             // Dropping the stubs is cosmetic: a road refused without them is
@@ -800,7 +800,7 @@ public static partial class RoadNetworkGenerator
             startGround = ApproachGround(path[0], startCenter, startRadius);
             endGround = ApproachGround(path[path.Count - 1], endCenter, endRadius);
             RoadSpatialGrid.LastRefusal = null;
-            plans = PlanRoadPieces(path, crossings, width, startGround, endGround);
+            plans = PlanRoadPathWithCrossings(path, crossings, width, startGround, endGround);
         }
         if (plans != null && EarthworkCap > 0f)
         {
@@ -1287,7 +1287,7 @@ public static partial class RoadNetworkGenerator
         SnapToExistingCrossings(crossings);
         float? startGround = startAtPlace ? ApproachGround(path[0], startCenter, startRadius) : null;
         float? endGround = endAtPlace ? ApproachGround(path[path.Count - 1], endCenter, endRadius) : null;
-        var plans = PlanRoadPieces(path, crossings, width, startGround, endGround);
+        var plans = PlanRoadPathWithCrossings(path, crossings, width, startGround, endGround);
         return plans == null ? null : (path, crossings, plans);
     }
 
@@ -1296,21 +1296,24 @@ public static partial class RoadNetworkGenerator
     private static bool AddRoadPathWithCrossings(List<Vector2> path, List<RoadCrossing> crossings, float width,
         float? startGround, float? endGround)
     {
-        var plans = PlanRoadPieces(path, crossings, width, startGround, endGround);
+        var plans = PlanRoadPathWithCrossings(path, crossings, width, startGround, endGround);
         if (plans == null) return false;
-        foreach (RoadSpatialGrid.PlannedPath plan in plans)
-            RoadSpatialGrid.Commit(plan);
+        foreach (var plan in plans) RoadSpatialGrid.Commit(plan);
         return true;
     }
 
-    private static List<RoadSpatialGrid.PlannedPath>? PlanRoadPieces(List<Vector2> path, List<RoadCrossing> crossings, float width,
-        float? startGround, float? endGround)
+    /// <summary>Land pieces stand no lower than <see cref="RoadConstants.DryRoadFloor"/>. Settable for tests.</summary>
+    internal static bool DryFloor = true;
+
+    internal static List<RoadSpatialGrid.PlannedPath>? PlanRoadPathWithCrossings(
+        List<Vector2> path, List<RoadCrossing> crossings, float width, float? startGround, float? endGround)
     {
         var plans = PlanPieces(path, crossings, width, startGround, endGround);
         // A shallow ford is a style, never a reason a road cannot be built: its banks hold their
         // natural heights and split the road, and a short piece between two held ends can be too
-        // steep for the cap. Plan again with the valid pools walked (the dry-land floor raises
-        // them); the crossings list is updated in place for the caller.
+        // steep for the cap (measured: a road refused at a 17 m piece 7 m high between a pool's
+        // bank and a turn). Plan again with the valid pools walked;
+        // the dry-land floor raises them. The crossings list is updated in place for the caller.
         if (plans == null && crossings.Exists(c => c.Shallow && !c.Invalid))
         {
             var walked = crossings.FindAll(c => !(c.Shallow && !c.Invalid));
@@ -1326,18 +1329,16 @@ public static partial class RoadNetworkGenerator
     }
 
     private static int m_shallowFordsWalked;
-    /// <summary>Land pieces stand no lower than <see cref="RoadConstants.DryRoadFloor"/>. Settable for tests.</summary>
-    internal static bool DryFloor = true;
 
-    private static List<RoadSpatialGrid.PlannedPath>? PlanPieces(List<Vector2> path, List<RoadCrossing> crossings, float width,
-        float? startGround, float? endGround)
+    private static List<RoadSpatialGrid.PlannedPath>? PlanPieces(
+        List<Vector2> path, List<RoadCrossing> crossings, float width, float? startGround, float? endGround)
     {
         // Every piece is worked out before any of it is stored. A piece can be
         // refused - too steep to build - and a road stored up to the river it
         // cannot come back from is a paved stretch ending in open ground.
         var pieces = new List<(List<Vector2> points, bool followTerrain, float minHeight)>();
-        float landFloor = DryFloor ? RoadConstants.DryRoadFloor : float.NegativeInfinity;
 
+        float landFloor = DryFloor ? RoadConstants.DryRoadFloor : float.NegativeInfinity;
         if (crossings.Count == 0)
         {
             pieces.Add((path, false, landFloor));
@@ -1422,6 +1423,7 @@ public static partial class RoadNetworkGenerator
                 return null;
             plans.Add(plan);
         }
+
         return plans;
     }
 
@@ -1851,6 +1853,7 @@ public static partial class RoadNetworkGenerator
 
     public static void Reset()
     {
+        ManualRoads.Reset();
         LocationLevelling.ResetPlacements?.Invoke();
         m_roadsGenerated = false;
         m_locationsReady = false;

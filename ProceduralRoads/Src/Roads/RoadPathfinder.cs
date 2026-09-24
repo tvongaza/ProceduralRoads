@@ -240,7 +240,7 @@ public class RoadPathfinder
 
     /// <summary>Search from a destination towards any existing road. Sampled hints
     /// guide the search; they do not promise a globally cheapest junction.</summary>
-    public List<Vector2>? FindPathToNetwork(Vector2 start, float reach, IReadOnlyList<Vector2>? hints = null)
+    public List<Vector2>? FindPathToNetwork(Vector2 start, float reach, IReadOnlyList<Vector2>? hints = null, System.Func<Vector2, bool>? targetAllowed = null)
     {
         LastPathCost = 0;
         // Kept between searches, for the reason given in FindPath.
@@ -263,7 +263,7 @@ public class RoadPathfinder
             return Mathf.Max(0f, Mathf.Sqrt(best) - reach);
         }
 
-        bool AtNetwork(Vector2i cell) => RoadSpatialGrid.TryGetRoadWithin(GridToWorld(cell), reach, out _);
+        bool AtNetwork(Vector2i cell) => RoadSpatialGrid.TryGetRoadWithin(GridToWorld(cell), reach, out _, targetAllowed);
 
         if (AtNetwork(startGrid))
         {
@@ -303,7 +303,7 @@ public class RoadPathfinder
             if (AtNetwork(currentPos))
             {
                 LastPathCost = gCosts.TryGetValue(currentPos, out float cost) ? cost : 0f;
-                RoadSpatialGrid.TryGetRoadWithin(GridToWorld(currentPos), reach, out Vector2 junction);
+                RoadSpatialGrid.TryGetRoadWithin(GridToWorld(currentPos), reach, out Vector2 junction, targetAllowed);
                 return ReconstructPath(cameFrom, currentPos, start, junction);
             }
 

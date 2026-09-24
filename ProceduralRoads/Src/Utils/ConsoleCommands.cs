@@ -33,6 +33,8 @@ public static class ConsoleCommands
         if (s_commandsRegistered)
             return;
 
+        ManualRoadCommands.Register();
+
         // road_debug - Show detailed road info at player position
         new Terminal.ConsoleCommand(
             "road_regen_island",

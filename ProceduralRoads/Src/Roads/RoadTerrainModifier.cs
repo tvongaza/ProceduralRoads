@@ -197,7 +197,11 @@ public static class RoadTerrainModifier
         if (version == 0)
             return false;
         ZDO? zdo = terrainComp.m_nview?.GetZDO();
-        return zdo != null && zdo.GetInt(AppliedVersionHash, 0) == version;
+        if (zdo == null) return false;
+        int applied = zdo.GetInt(AppliedVersionHash, 0);
+        if (applied == version) return true;
+        var zone = ZoneSystem.GetZone(terrainComp.m_hmap.transform.position);
+        return applied != 0 && RoadSpatialGrid.PendingPoints(RoadSpatialGrid.GetRoadPointsInZone(zone), applied).Count == 0;
     }
 
     /// <summary>
@@ -211,6 +215,22 @@ public static class RoadTerrainModifier
     /// paint is blended toward the paved colour each time, so the road edges
     /// come out a shade more solid on every explicit reapplication.
     /// </summary>
+    public static void ApplyAdditionsToLoadedZones()
+    {
+        foreach (var heightmap in Heightmap.GetAllHeightmaps())
+        {
+            if (heightmap == null) continue;
+            var zone = ZoneSystem.GetZone(heightmap.transform.position);
+            var points = RoadSpatialGrid.GetRoadPointsInZone(zone);
+            if (points.Count > 0)
+            {
+                var compiler = TerrainComp.FindTerrainCompiler(heightmap.transform.position);
+                if (compiler != null) OnTerrainCompilerReady(compiler);
+                else OnZoneSpawned(zone, points);
+            }
+        }
+    }
+
     public static int ApplyToLoadedZones()
     {
         var heightmaps = Heightmap.GetAllHeightmaps();
@@ -340,8 +360,12 @@ public static class RoadTerrainModifier
             GridSize = gridSize, VertexSpacing = RoadConstants.ZoneSize / terrainComp.m_width,
             PreCompilerHeights = heights
         };
-        ModificationStats stats = ModifyVertexHeights(request.Zone, request.Points, context);
-        ApplyRoadPaint(request.Points, terrainComp, stats.PaintedCells, context);
+        // A compiler carrying an ancestor needs only the new road footprint.
+        // Old roads in this same zone may contain player edits: never replay them.
+        var pending = request.Force ? request.Points : RoadSpatialGrid.PendingPoints(
+            request.Points, terrainComp.m_nview.GetZDO().GetInt(AppliedVersionHash, 0));
+        ModificationStats stats = ModifyVertexHeights(request.Zone, pending, context);
+        ApplyRoadPaint(pending, terrainComp, stats.PaintedCells, context);
         FinalizeTerrainMods(request.Zone, request.Points.Count, stats, context);
         // Vanilla now applies our deltas to this very array and rebuilds its
         // collider. Do not Poke again from here: that would queue another rebuild.

@@ -44,6 +44,8 @@ public static class RoadNetworkPersistence
     /// <summary>
     /// Hash key for storing global road network data on the ZDO.
     /// </summary>
+    private static readonly int AppendBridgesHash = "ProceduralRoads_AppendBridges".GetStableHashCode();
+
     private static readonly int GlobalRoadDataHash = "ProceduralRoads_GlobalData".GetStableHashCode();
 
     /// <summary>
@@ -159,6 +161,7 @@ public static class RoadNetworkPersistence
         metadataZdo.Set(RoadCrossingsHash, crossingsData);
         Log.LogDebug($"[SAVE] Saved {roadCrossings.Count} river crossings ({crossingsData.Length} bytes)");
         WriteBridgeZones(metadataZdo, bridgeZones);
+        metadataZdo.Set(AppendBridgesHash, BridgeAppendQueue.Serialize());
     }
 
     /// <summary>
@@ -176,6 +179,7 @@ public static class RoadNetworkPersistence
         if (!metadataZdo.IsOwner())
             metadataZdo.SetOwner(ZDOMan.instance.m_sessionID);
         WriteBridgeZones(metadataZdo, bridgeZones);
+        metadataZdo.Set(AppendBridgesHash, BridgeAppendQueue.Serialize());
     }
 
     private static void WriteBridgeZones(ZDO metadataZdo, IReadOnlyCollection<Vector2s> bridgeZones)
@@ -228,6 +232,7 @@ public static class RoadNetworkPersistence
             TryLoadRoadMetadata(roadStartPoints);
             TryLoadRoadCrossings(metadataZdo, roadCrossings);
             TryLoadBridgeZones(metadataZdo, bridgeZones);
+            BridgeAppendQueue.Load(metadataZdo.GetByteArray(AppendBridgesHash, null));
 
             return true;
         }
@@ -333,7 +338,7 @@ public static class RoadNetworkPersistence
     /// Serialize road start points to binary format.
     /// Format: [count][x1][y1][labelLen1][labelBytes1]...
     /// </summary>
-    private static byte[] SerializeRoadStartPoints(IReadOnlyList<(Vector2 position, string label)> roadStartPoints)
+    internal static byte[] SerializeRoadStartPoints(IReadOnlyList<(Vector2 position, string label)> roadStartPoints)
     {
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms);
@@ -356,7 +361,7 @@ public static class RoadNetworkPersistence
     /// <summary>
     /// Deserialize road start points from binary format.
     /// </summary>
-    private static bool DeserializeRoadStartPoints(byte[] data, List<(Vector2 position, string label)> roadStartPoints)
+    internal static bool DeserializeRoadStartPoints(byte[] data, List<(Vector2 position, string label)> roadStartPoints)
     {
         try
         {
@@ -419,7 +424,7 @@ public static class RoadNetworkPersistence
     /// Format: [version=1][count] then per crossing [fromX][fromY][toX][toY][riverbed][fairwayX][fairwayY][fairwayWidth][kind][style].
     /// The rest of a crossing is derived from its banks on load.
     /// </summary>
-    private static byte[] SerializeRoadCrossings(IReadOnlyList<RoadCrossing> roadCrossings)
+    internal static byte[] SerializeRoadCrossings(IReadOnlyList<RoadCrossing> roadCrossings)
     {
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms);
@@ -525,7 +530,7 @@ public static class RoadNetworkPersistence
         return ms.ToArray();
     }
 
-    private static bool DeserializeRoadCrossings(byte[] data, List<RoadCrossing> roadCrossings)
+    internal static bool DeserializeRoadCrossings(byte[] data, List<RoadCrossing> roadCrossings)
     {
         try
         {

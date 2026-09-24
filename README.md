@@ -238,3 +238,9 @@ island engine and its walkable-and-crossable detector. All pipeline settings
 use that same performance machinery; selecting the older chain/MST strategy
 does not turn off the terrain cache or worker safety. The separate performance
 release is 1.7.0; the full pipeline update is 1.8.0.
+## Player-defined roads
+
+Use `road_connect` to join the network on your island, `road_path` to route through
+X,Z coordinates, or `road_mark add/list/undo/build/clear` to collect waypoints while
+exploring. Host/admin only. See [manual-road commands](docs/manual-roads.md) for
+examples, persistence and compatibility requirements.

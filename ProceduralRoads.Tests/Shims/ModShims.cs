@@ -14,6 +14,7 @@ namespace ProceduralRoads;
 public static class BridgePlacement
 {
     public static int SpawnInLoadedZones() => 0;
+    public static void ApplyPendingAppends() { }
     public static int ClearedByTests;
     public static int ClearSpawnedPieces() { ClearedByTests++; return 0; }
 }

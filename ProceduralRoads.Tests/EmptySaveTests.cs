@@ -6,7 +6,7 @@ public class EmptySaveTests : System.IDisposable
 {
     public void Dispose()
     {
-        RoadNetworkPersistence.Reset(); RoadSpatialGrid.Clear();
+        RoadNetworkPersistence.Reset(); RoadSpatialGrid.Clear(); BridgeAppendQueue.Reset();
         ZDOMan.instance = null;
     }
     static void Save() => RoadNetworkPersistence.SaveGlobalRoadData(new List<(Vector2, string)>(), new List<RoadCrossing>(), new HashSet<Vector2s>());
@@ -14,7 +14,7 @@ public class EmptySaveTests : System.IDisposable
     static void Begin()
     {
         ZDOMan.instance = new ZDOMan();
-        RoadNetworkPersistence.Reset(); RoadSpatialGrid.Clear();
+        RoadNetworkPersistence.Reset(); RoadSpatialGrid.Clear(); BridgeAppendQueue.Reset();
         RoadNetworkPersistence.EnsureMetadataInstance();
     }
     static void AddRoad()
