@@ -30,10 +30,76 @@ public static class RoadTerrainModifier
     /// </summary>
     private static readonly HashSet<Vector2s> s_pendingForcedZones = new HashSet<Vector2s>();
 
+    // Borrow the height array only during ApplyToHeightmap; never keep a second
+    // terrain cache. Requests live until the compiler rebuilds or is destroyed.
+    private sealed class PendingWrite
+    {
+        public Vector2s Zone;
+        public List<RoadSpatialGrid.RoadPoint> Points = null!;
+        public int Version;
+        public bool Force;
+    }
+
+    private static readonly Dictionary<TerrainComp, PendingWrite> s_pendingWrites = new();
+    internal static int PendingWriteCount => s_pendingWrites.Count;
+
+    public static void OnTerrainCompilerDestroyed(TerrainComp terrainComp) => s_pendingWrites.Remove(terrainComp);
+
     public static void ResetDebugCounters()
     {
         s_coordLogCount = 0;
         s_pendingForcedZones.Clear();
+        s_pendingWrites.Clear();
+        s_swept.Clear();
+    }
+
+    /// <summary>
+    /// Safety net for zones the spawn path never wrote: a zone can have a
+    /// location placed in the same spawn and then no road terrain at all while
+    /// its neighbours are written, which leaves a cliff at the zone edge.
+    /// Called every few seconds: a loaded zone with road points whose compiler
+    /// does not carry the current network, and has no write pending, gets one
+    /// queued. A compiler the game released is claimed, as
+    /// OnTerrainCompilerReady does; another peer's is left for that peer. Each
+    /// zone is swept at most once per network version, so a zone whose write
+    /// changes nothing (and is never stamped) does not loop.
+    /// </summary>
+    private static readonly HashSet<(Vector2s zone, int version)> s_swept = new();
+
+    public static int SweepUnstamped()
+    {
+        int version = RoadSpatialGrid.RoadNetworkVersion;
+        if (version == 0) return 0;
+        var heightmaps = Heightmap.GetAllHeightmaps();
+        if (heightmaps == null) return 0;
+        int queued = 0;
+        foreach (var heightmap in heightmaps)
+        {
+            if (heightmap == null) continue;
+            Vector2s zoneID = ZoneSystem.GetZone(heightmap.transform.position);
+            if (s_swept.Contains((zoneID, version))) continue;
+            var roadPoints = RoadSpatialGrid.GetRoadPointsInZone(zoneID);
+            if (roadPoints.Count == 0) { s_swept.Add((zoneID, version)); continue; }
+            TerrainComp? terrainComp = TerrainComp.FindTerrainCompiler(heightmap.transform.position);
+            if (terrainComp == null)
+            {
+                if (HasSavedTerrainCompiler(zoneID)) continue;   // its Awake writes it; look again next sweep
+                terrainComp = heightmap.GetAndCreateTerrainCompiler();
+                if (terrainComp == null) continue;
+            }
+            if (terrainComp.m_nview == null || !terrainComp.m_nview.IsValid()) continue;
+            if (!terrainComp.m_nview.IsOwner())
+            {
+                if (terrainComp.m_nview.HasOwner()) continue;   // another peer's; look again next sweep
+                terrainComp.m_nview.ClaimOwnership();           // released by the game: ours to write
+            }
+            s_swept.Add((zoneID, version));
+            if (CarriesCurrentRoads(terrainComp) || s_pendingWrites.ContainsKey(terrainComp)) continue;
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo($"Zone {zoneID}: road terrain missing after spawn, queued by the sweep");
+            QueueWrite(zoneID, roadPoints, heightmap, terrainComp, force: false);
+            queued++;
+        }
+        return queued;
     }
 
     /// <summary>
@@ -82,7 +148,7 @@ public static class RoadTerrainModifier
             terrainComp.m_nview.ClaimOwnership();
         }
 
-        ApplyRoadTerrainModsWithContext(zoneID, roadPoints, terrainComp.m_hmap, terrainComp);
+        QueueWrite(zoneID, roadPoints, terrainComp.m_hmap, terrainComp, forced);
     }
 
     /// <summary>Whether the zone's saved objects include a terrain compiler.</summary>
@@ -118,9 +184,7 @@ public static class RoadTerrainModifier
             return;
         }
 
-        ModificationStats stats = ModifyVertexHeights(zoneID, roadPoints, context.Value);
-        ApplyRoadPaint(roadPoints, context.Value.TerrainComp, stats.PaintedCells, context.Value);
-        FinalizeTerrainMods(zoneID, roadPoints.Count, stats, context.Value);
+        QueueWrite(zoneID, roadPoints, context.Value.Heightmap, context.Value.TerrainComp, force);
     }
 
     /// <summary>
@@ -137,13 +201,13 @@ public static class RoadTerrainModifier
     }
 
     /// <summary>
-    /// Apply the current network's terrain mods to every loaded zone that has
+    /// Queue the current network's terrain mods for every loaded zone that has
     /// road points, whether or not the zone already carries them. Zones
     /// generated before the network existed (the zones around the player's
     /// login position on a fresh world, or around a teleport target that landed
     /// mid-generation) get their roads here; zones generated afterwards get
     /// them from the ZoneSystem.SpawnZone hook. Height deltas are computed from
-    /// the world generator height, so writing them again does not accumulate;
+    /// the pre-compiler location-shaped height, so writing them again does not accumulate;
     /// paint is blended toward the paved colour each time, so the road edges
     /// come out a shade more solid on every explicit reapplication.
     /// </summary>
@@ -176,7 +240,8 @@ public static class RoadTerrainModifier
             TerrainComp terrainComp = heightmap.GetAndCreateTerrainCompiler();
             if (terrainComp == null || !terrainComp.m_nview.IsOwner()) continue;
 
-            // A compiler created just now was written by OnTerrainCompilerReady.
+            // OnTerrainCompilerReady can already have handled a newly created
+            // compiler (a queued request otherwise coalesces below).
             if (!existed && CarriesCurrentRoads(terrainComp))
             {
                 zonesWithRoads++;
@@ -191,34 +256,95 @@ public static class RoadTerrainModifier
 
     /// <summary>
     /// Public entry point for applying road terrain mods to a specific zone.
-    /// Always writes (the explicit path): used by ApplyToLoadedZones and the
-    /// console commands to force-update loaded zones.
+    /// Explicit reapplication: queues a write on the next terrain rebuild,
+    /// even for an already-stamped zone.
     /// </summary>
     public static void ApplyRoadTerrainModsWithContext(Vector2s zoneID, List<RoadSpatialGrid.RoadPoint> roadPoints,
         Heightmap heightmap, TerrainComp terrainComp)
     {
-        if (roadPoints == null || roadPoints.Count == 0)
+        QueueWrite(zoneID, roadPoints, heightmap, terrainComp, force: true);
+    }
+
+    private static void QueueWrite(Vector2s zoneID, List<RoadSpatialGrid.RoadPoint> roadPoints,
+        Heightmap heightmap, TerrainComp terrainComp, bool force)
+    {
+        if (roadPoints == null || roadPoints.Count == 0 || heightmap == null || terrainComp == null ||
+            terrainComp.m_nview == null || !terrainComp.m_nview.IsValid() || !terrainComp.m_nview.IsOwner())
+            return;
+
+        // Multiple requests before the late pass coalesce, preserving an explicit
+        // reapplication even if a normal zone-load request follows it.
+        if (s_pendingWrites.TryGetValue(terrainComp, out var previous) &&
+            previous.Version == RoadSpatialGrid.RoadNetworkVersion)
+            force |= previous.Force;
+        s_pendingWrites[terrainComp] = new PendingWrite
+        {
+            Zone = zoneID, Points = roadPoints, Version = RoadSpatialGrid.RoadNetworkVersion, Force = force
+        };
+        // Rebuild after this spawn finishes placing its location modifiers. An
+        // immediate rebuild from TerrainComp.Awake can be too early in a spawn.
+        heightmap.Poke(1);
+    }
+
+    /// <summary>
+    /// Prefix of vanilla TerrainComp.ApplyToHeightmap. These heights already
+    /// include location modifiers but not this compiler's deltas. Computing
+    /// against WorldGenerator here would apply the location's shaping twice.
+    /// </summary>
+    public static void ApplyPendingTerrain(TerrainComp terrainComp, Heightmap heightmap, List<float> heights)
+    {
+        if (!s_pendingWrites.TryGetValue(terrainComp, out var request))
+            return;
+        s_pendingWrites.Remove(terrainComp);
+        // Ownership can change between queueing and rebuilding: the game
+        // releases objects outside the player's active area, and a zone at the
+        // ring's edge (or just after a teleport) can be released before its
+        // heightmap rebuilds. OnTerrainCompilerReady fires once, so a write
+        // dropped here as "not owner" was never asked for again and the road
+        // ended in a cliff at the zone edge. A released (unowned) compiler is
+        // claimed, as OnTerrainCompilerReady does. Another peer's is still
+        // left alone and the request dropped: that peer writes its own zones,
+        // and if the compiler comes back to us unwritten the sweep queues it.
+        if (request.Version == RoadSpatialGrid.RoadNetworkVersion && terrainComp.m_hmap == heightmap &&
+            terrainComp.m_nview != null && terrainComp.m_nview.IsValid() &&
+            !terrainComp.m_nview.IsOwner() && !terrainComp.m_nview.HasOwner())
+            terrainComp.m_nview.ClaimOwnership();
+        // The network can change between requesting and rebuilding.
+        if (request.Version != RoadSpatialGrid.RoadNetworkVersion ||
+            terrainComp.m_hmap != heightmap || terrainComp.m_nview == null ||
+            !terrainComp.m_nview.IsValid() || !terrainComp.m_nview.IsOwner() ||
+            (!request.Force && CarriesCurrentRoads(terrainComp)))
             return;
 
         int gridSize = terrainComp.m_width + 1;
-        if (terrainComp.m_levelDelta == null || terrainComp.m_levelDelta.Length < gridSize * gridSize)
+        int count = gridSize * gridSize;
+        if (heights == null || heights.Count != count || terrainComp.m_levelDelta == null ||
+            terrainComp.m_levelDelta.Length != count)
         {
-            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug($"Zone {zoneID}: TerrainComp arrays not initialized");
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogWarning(
+                $"Zone {request.Zone}: road terrain not written: height arrays do not match the compiler grid");
             return;
         }
+        for (int i = 0; i < count; i++)
+            if (float.IsNaN(heights[i]) || float.IsInfinity(heights[i]))
+            {
+                ProceduralRoadsPlugin.ProceduralRoadsLogger.LogWarning(
+                    $"Zone {request.Zone}: road terrain not written: non-finite baseline height");
+                return;
+            }
 
-        TerrainContext context = new TerrainContext
+        var context = new TerrainContext
         {
-            Heightmap = heightmap,
-            TerrainComp = terrainComp,
+            Heightmap = heightmap, TerrainComp = terrainComp,
             HeightmapPosition = heightmap.transform.position,
-            GridSize = gridSize,
-            VertexSpacing = RoadConstants.ZoneSize / terrainComp.m_width
+            GridSize = gridSize, VertexSpacing = RoadConstants.ZoneSize / terrainComp.m_width,
+            PreCompilerHeights = heights
         };
-
-        ModificationStats stats = ModifyVertexHeights(zoneID, roadPoints, context);
-        ApplyRoadPaint(roadPoints, context.TerrainComp, stats.PaintedCells, context);
-        FinalizeTerrainMods(zoneID, roadPoints.Count, stats, context);
+        ModificationStats stats = ModifyVertexHeights(request.Zone, request.Points, context);
+        ApplyRoadPaint(request.Points, terrainComp, stats.PaintedCells, context);
+        FinalizeTerrainMods(request.Zone, request.Points.Count, stats, context);
+        // Vanilla now applies our deltas to this very array and rebuilds its
+        // collider. Do not Poke again from here: that would queue another rebuild.
     }
 
     private struct TerrainContext
@@ -228,11 +354,12 @@ public static class RoadTerrainModifier
         public Vector3 HeightmapPosition;
         public int GridSize;
         public float VertexSpacing;
+        public IReadOnlyList<float> PreCompilerHeights;
     }
 
     private static TerrainContext? GetTerrainContext(Vector2s zoneID)
     {
-        Heightmap heightmap = Heightmap.FindHeightmap(ZoneSystem.GetZonePos(zoneID));
+        Heightmap? heightmap = Heightmap.FindHeightmap(ZoneSystem.GetZonePos(zoneID));
         TerrainComp? terrainComp = heightmap?.GetAndCreateTerrainCompiler();
         int gridSize = (terrainComp?.m_width ?? 0) + 1;
 
@@ -286,10 +413,10 @@ public static class RoadTerrainModifier
                     0f,
                     context.HeightmapPosition.z + (vz - context.TerrainComp.m_width / 2f) * context.VertexSpacing);
                 Vector2 vertexPos2D = new Vector2(vertexWorldPos.x, vertexWorldPos.z);
-                if (!WithinReach(roadPoints, vertexPos2D))
-                    continue;
-
-                float baseHeight = BiomeBlendedHeight.GetBlendedHeight(vertexWorldPos.x, vertexWorldPos.z, WorldGenerator.instance);
+                if (RoadSiteProtection.Contains(vertexPos2D)) continue;
+                
+                int index = vz * context.GridSize + vx;
+                float baseHeight = context.PreCompilerHeights[index] + context.HeightmapPosition.y;
                 BlendResult blendResult = CalculateBlendedHeight(roadPoints, vertexPos2D, baseHeight, fillExtra);
                 if (blendResult.InfluencingPoints == 0)
                     continue;
@@ -300,7 +427,6 @@ public static class RoadTerrainModifier
 
                 if (Mathf.Abs(delta) > RoadConstants.MinHeightDeltaThreshold || blendResult.MaxBlend > RoadConstants.MinBlendForModification)
                 {
-                    int index = vz * context.GridSize + vx;
                     context.TerrainComp.m_levelDelta[index] = delta;
                     context.TerrainComp.m_smoothDelta[index] = 0f;
                     context.TerrainComp.m_modifiedHeight[index] = true;
@@ -326,6 +452,21 @@ public static class RoadTerrainModifier
         public int InfluencingPoints;
     }
 
+    /// <summary>
+    /// The road surface height at a vertex, from the road points within reach.
+    /// The points sit on the centreline, so the surface is fitted as a plane
+    /// through them (weighted least squares, the same blend weights as
+    /// before) and read at the vertex. A weighted mean would do mid-road,
+    /// where the points lie on both sides of the vertex, but at a road end
+    /// every point lies on one side: on a slope the mean of their heights is
+    /// the height some way back along the road, and the terrain at the end,
+    /// and for the blend margin beyond it, came out on a shelf. The plane
+    /// follows the road's own gradient through the end instead.
+    ///
+    /// Across the road the points give no gradient at all (they are
+    /// collinear), and a small ridge term settles that gradient at zero, so
+    /// the surface is level across the road as before.
+    /// </summary>
     /// <summary>How far the batter widens the release per metre of cut past
     /// <see cref="BatterThreshold"/>; fill gets nothing, see
     /// <see cref="BatterDivergence"/>. Settable for tests.</summary>
@@ -378,24 +519,12 @@ public static class RoadTerrainModifier
     internal static float GatherRadius(float roadWidth) =>
         MaxInfluenceRadius(roadWidth) + RoadEarthworkNoise.MaxExtraReach;
 
-    /// <summary>Whether any road point could reach the vertex, before the
-    /// ground under it is sampled.</summary>
-    private static bool WithinReach(List<RoadSpatialGrid.RoadPoint> roadPoints, Vector2 vertexPos)
-    {
-        foreach (RoadSpatialGrid.RoadPoint rp in roadPoints)
-        {
-            float reach = GatherRadius(rp.w);
-            if ((rp.p - vertexPos).sqrMagnitude < reach * reach)
-                return true;
-        }
-        return false;
-    }
-
     private static BlendResult CalculateBlendedHeight(List<RoadSpatialGrid.RoadPoint> roadPoints, Vector2 vertexPos,
         float groundHere, float[]? fillExtra = null)
     {
-        float weightedHeightSum = 0f;
-        float totalWeight = 0f;
+        // Weighted sums for the fit h = a + b*dx + c*dy, (dx, dy) relative to
+        // the vertex, so a is the surface height at the vertex.
+        double sw = 0, sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0, sh = 0, sxh = 0, syh = 0;
         float maxBlend = 0f;
         int influencingPoints = 0;
 
@@ -419,10 +548,20 @@ public static class RoadTerrainModifier
                 float pointBlend = RoadProfile.LevelBlend(dist, rp.w, margin);
                 if (pointBlend <= 0f)
                     continue;
-                float weight = pointBlend * pointBlend;
+                double weight = pointBlend * pointBlend;
+                double dx = rp.p.x - vertexPos.x;
+                double dy = rp.p.y - vertexPos.y;
+                double h = rp.h;
 
-                weightedHeightSum += rp.h * weight;
-                totalWeight += weight;
+                sw += weight;
+                sx += weight * dx;
+                sy += weight * dy;
+                sxx += weight * dx * dx;
+                sxy += weight * dx * dy;
+                syy += weight * dy * dy;
+                sh += weight * h;
+                sxh += weight * dx * h;
+                syh += weight * dy * h;
                 influencingPoints++;
 
                 if (pointBlend > maxBlend)
@@ -432,10 +571,62 @@ public static class RoadTerrainModifier
 
         return new BlendResult
         {
-            TargetHeight = influencingPoints > 0 && totalWeight > 0f ? weightedHeightSum / totalWeight : 0f,
+            TargetHeight = influencingPoints > 0 && sw > 0 ? FitHeightAtVertex(sw, sx, sy, sxx, sxy, syy, sh, sxh, syh) : 0f,
             MaxBlend = maxBlend,
             InfluencingPoints = influencingPoints
         };
+    }
+
+    /// <summary>
+    /// The fitted road surface height at the vertex. The points are the
+    /// road's centreline, so the surface is a line along the road: the
+    /// points' principal direction (weighted) is the road direction, the
+    /// height is regressed on the offset along it, and the gradient across
+    /// the road is zero by construction, which keeps the cross-section level
+    /// (a free plane fit let a road's slight curvature turn its height change
+    /// into a steep tilt across the road). The ridge (a prior spread of
+    /// HeightFitRidgeMetres) keeps the gradient defined for a single point
+    /// or two nearly coincident ones, and the clamp bounds it.
+    /// </summary>
+    private static float FitHeightAtVertex(double sw, double sx, double sy, double sxx, double sxy, double syy,
+        double sh, double sxh, double syh)
+    {
+        double mx = sx / sw, my = sy / sw, mh = sh / sw;
+        double cxx = sxx - sw * mx * mx;
+        double cxy = sxy - sw * mx * my;
+        double cyy = syy - sw * my * my;
+        double cxh = sxh - sw * mx * mh;
+        double cyh = syh - sw * my * mh;
+
+        // Principal direction of the 2x2 weighted covariance (largest eigenvalue).
+        double half = 0.5 * (cxx + cyy);
+        double diff = 0.5 * (cxx - cyy);
+        double root = System.Math.Sqrt(diff * diff + cxy * cxy);
+        double ux, uy;
+        if (root < 1e-12)
+        {
+            ux = 1; uy = 0; // isotropic or a single point: any direction
+        }
+        else
+        {
+            // Eigenvector of the largest eigenvalue half + root.
+            ux = cxy;
+            uy = (half + root) - cxx;
+            if (System.Math.Abs(ux) + System.Math.Abs(uy) < 1e-12) { ux = 1; uy = 0; }
+            double len = System.Math.Sqrt(ux * ux + uy * uy);
+            ux /= len; uy /= len;
+        }
+
+        // Regress height on the offset s along that direction (centred sums project linearly).
+        double css = ux * ux * cxx + 2 * ux * uy * cxy + uy * uy * cyy;
+        double csh = ux * cxh + uy * cyh;
+        double ridge = sw * RoadConstants.HeightFitRidgeMetres * RoadConstants.HeightFitRidgeMetres;
+        double b = csh / (css + ridge);
+        double limit = RoadConstants.HeightFitMaxGradient;
+        if (b > limit) b = limit; else if (b < -limit) b = -limit;
+
+        double ms = ux * mx + uy * my; // mean offset along the road, from the vertex
+        return (float)(mh - b * ms);
     }
 
     /// <summary>
@@ -469,15 +660,12 @@ public static class RoadTerrainModifier
     {
         float sum = 0f; int n = 0;
         int reach = PaintExact ? 0 : 1;
-        var world = WorldGenerator.instance;
         for (int z = vy; z <= vy + reach; z++)
             for (int x = vx; x <= vx + reach; x++)
             {
                 if (x >= context.GridSize || z >= context.GridSize) continue;
                 int i = z * context.GridSize + x;
-                float wx = context.HeightmapPosition.x + (x - context.TerrainComp.m_width / 2f) * context.VertexSpacing;
-                float wz = context.HeightmapPosition.z + (z - context.TerrainComp.m_width / 2f) * context.VertexSpacing;
-                sum += BiomeBlendedHeight.GetBlendedHeight(wx, wz, world)
+                sum += context.PreCompilerHeights[i] + context.HeightmapPosition.y
                      + context.TerrainComp.m_levelDelta[i] + context.TerrainComp.m_smoothDelta[i];
                 n++;
             }
@@ -548,6 +736,8 @@ public static class RoadTerrainModifier
                     Vector2 paintPosition = new Vector2(
                         terrainPos.x + (vx - halfWidth + cellShift) * scale,
                         terrainPos.z + (vy - halfWidth + cellShift) * scale);
+                    if (RoadSiteProtection.Contains(paintPosition)) continue;
+
                     float distMetres = PaintDistance(paintPosition, roadPoint.p, dx, dy, scale, PaintExact);
                     if (distMetres > radius)
                         continue;
@@ -584,14 +774,6 @@ public static class RoadTerrainModifier
         {
             context.TerrainComp.m_nview?.GetZDO()?.Set(AppliedVersionHash, RoadSpatialGrid.RoadNetworkVersion);
             context.TerrainComp.Save();
-            // Valheim 1.0 turned Poke's bool into a selector for WHICH late
-            // pass rebuilds the mesh, not a count: LateUpdate acts on 1,
-            // CustomLateUpdate on 2, and any other positive value is never
-            // consumed, so the heightmap would stay dirty. 1 is what the
-            // game's own TerrainComp modification path now passes after
-            // editing terrain, which is exactly what this is. paintOnly stays
-            // false because this changed heights as well as paint.
-            context.Heightmap.Poke(1);
             ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(
                 $"Zone {zoneID}: {stats.VerticesModified}/{stats.VerticesChecked} vertices modified, {paintOps} paint cells");
         }
