@@ -806,7 +806,7 @@ public static class RoadTerrainModifier
                     
                     Color currentColor = terrainComp.m_paintMask[index];
                     float alpha = currentColor.a;
-                    Color newColor = Color.Lerp(currentColor, Heightmap.m_paintMaskPaved, blendFactor);
+                    Color newColor = Color.Lerp(currentColor, RoadSurface.MaskAt(paintPosition.x, paintPosition.y), blendFactor);
                     newColor.a = alpha;
                     
                     terrainComp.m_modifiedPaint[index] = true;

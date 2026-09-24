@@ -17,26 +17,29 @@ public class TerrainModifierTests
     private const float Lift = 1.5f;              // road height above natural terrain
 
     /// <summary>A straight east-west road through the zone centre, one point per metre.</summary>
-    private static (Heightmap hm, TerrainComp tc, float natural) BuildZone(SyntheticWorld world)
+    private static (Heightmap hm, TerrainComp tc, float natural) BuildZone(SyntheticWorld world) =>
+        BuildZone(world, new Vector2s(0, 0));
+
+    private static (Heightmap hm, TerrainComp tc, float natural) BuildZone(SyntheticWorld world, Vector2s zone)
     {
         PlainEarthworks.Begin();
-        var zone = new Vector2s(0, 0);
+        Vector3 centre = ZoneSystem.GetZonePos(zone);
         Heightmap hm = Heightmap.CreateForZone(zone, Width);
         Heightmap.Registered = hm;
         TerrainComp tc = hm.m_terrainComp!;
         for (int i = 0; i < tc.m_paintMask.Length; i++)
             tc.m_paintMask[i] = new Color(0f, 0f, 0f, 0.25f);   // alpha must survive painting
 
-        float natural = BiomeBlendedHeight.GetBlendedHeight(0f, 0f, world);
+        float natural = BiomeBlendedHeight.GetBlendedHeight(centre.x, centre.z, world);
         var points = new List<RoadSpatialGrid.RoadPoint>();
         for (float x = -40f; x <= 40f; x += 1f)
-            points.Add(new RoadSpatialGrid.RoadPoint(new Vector2(x, 0f), RoadWidth, natural + Lift));
+            points.Add(new RoadSpatialGrid.RoadPoint(new Vector2(centre.x + x, centre.z), RoadWidth, natural + Lift));
 
         RoadTerrainModifier.ApplyRoadTerrainModsWithContext(zone, points, hm, tc);
         return (hm, tc, natural);
     }
 
-    /// <summary>Vertex index for world (x, z) on the zone grid (zone centred on the origin).</summary>
+    /// <summary>Vertex index for (x, z) metres from the zone centre on the zone grid.</summary>
     private static int Index(int x, int z) => (z + Width / 2) * (Width + 1) + (x + Width / 2);
 
     private static SyntheticWorld FlatWorld()
@@ -81,11 +84,11 @@ public class TerrainModifierTests
             Assert.True(tc.m_levelDelta[verge] > 0f, "verge vertex has no positive delta");
             Assert.False(tc.m_modifiedPaint[verge], "verge vertex was painted");
 
-            // Inside the solid core the mask is fully paved.
+            // Inside the solid core the mask is fully the surface: at the
+            // world centre that is dirt.
             int core = Index(0, 1);
             Assert.True(tc.m_modifiedPaint[core], "core vertex not painted");
-            Assert.True(Mathf.Abs(tc.m_paintMask[core].b - Heightmap.m_paintMaskPaved.b) < 1e-4f,
-                $"core paint {tc.m_paintMask[core].b:F2} is not solid");
+            AssertMask(Heightmap.m_paintMaskDirt, tc.m_paintMask[core], "core paint at the world centre");
         }
         finally { Cleanup(); }
     }
@@ -130,6 +133,28 @@ public class TerrainModifierTests
         }
         finally { Cleanup(); }
     }
+
+    [Fact]
+    public void RoadPastTheSwampRingIsPavedLikeTheHoe()
+    {
+        try
+        {
+            // Zone (40, 0) is centred 2560 m out: past the 2000 m ring the
+            // road is the game's own paving, exactly what the painter wrote
+            // before surfaces existed.
+            var (_, tc, _) = BuildZone(FlatWorld(), new Vector2s(40, 0));
+            int core = Index(0, 1);
+            Assert.True(tc.m_modifiedPaint[core], "core vertex not painted");
+            AssertMask(Heightmap.m_paintMaskPaved, tc.m_paintMask[core], "core paint at 2560 m");
+            Assert.True(Mathf.Abs(tc.m_paintMask[core].a - 0.25f) < 1e-5f, "paint alpha changed");
+        }
+        finally { Cleanup(); }
+    }
+
+    private static void AssertMask(Color expected, Color actual, string what) =>
+        Assert.True(Mathf.Abs(actual.r - expected.r) < 1e-4f && Mathf.Abs(actual.g - expected.g) < 1e-4f
+                    && Mathf.Abs(actual.b - expected.b) < 1e-4f,
+            $"{what} is ({actual.r:F2}, {actual.g:F2}, {actual.b:F2}), expected ({expected.r:F2}, {expected.g:F2}, {expected.b:F2})");
 
     private static void Cleanup()
     {

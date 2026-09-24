@@ -116,6 +116,7 @@ public class Heightmap
     // per vertex, centred on transform.position. Tests build one per zone
     // with a TerrainComp whose arrays start zeroed, exactly like a fresh
     // _TerrainCompiler in the game.
+    public static UnityEngine.Color m_paintMaskDirt = new(1f, 0f, 0f, 1f);
     public static UnityEngine.Color m_paintMaskPaved = new(0f, 0f, 1f, 1f);
     public static Heightmap? Registered;
 
@@ -352,6 +353,10 @@ public class TerrainComp
 public class WorldGenerator
 {
     public static WorldGenerator? instance;
+
+    /// <summary>The game's own formula (1.0): the 20-lobed wobble on the biome rings.</summary>
+    public static float WorldAngle(float wx, float wy) =>
+        (float)System.Math.Sin((float)((double)(float)System.Math.Atan2(wx, wy) * 20.0));
 
     public virtual float GetHeight(float wx, float wy) => 0f;
 
