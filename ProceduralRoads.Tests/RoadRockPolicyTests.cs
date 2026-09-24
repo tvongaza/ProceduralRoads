@@ -204,4 +204,92 @@ public class RoadRockPolicyTests
         Assert.Equal(clears, RoadRockPolicy.Clears(mode));
         Assert.Equal(carves, RoadRockPolicy.Carves(mode));
     }
+
+    [Fact]
+    public void AZoneBeingGeneratedProbesTheRoadNextDoorAtTheRoadsHeight()
+    {
+        // Loaded zones: no ground means the terrain is not built yet; skip, look again.
+        Assert.False(RoadRockPolicy.ClearanceSurface(false, 0f, 139.7f, false, out _));
+        // A zone generated for a peer has only its own terrain and is never looked
+        // at again: a point next door stands on the road's stored height.
+        Assert.True(RoadRockPolicy.ClearanceSurface(false, 0f, 139.7f, true, out float surface));
+        Assert.Equal(139.7f, surface);
+        // Ground, where there is any, always wins.
+        Assert.True(RoadRockPolicy.ClearanceSurface(true, 141f, 139.7f, true, out surface));
+        Assert.Equal(141f, surface);
+        Assert.True(RoadRockPolicy.ClearanceSurface(true, 141f, 139.7f, false, out surface));
+        Assert.Equal(141f, surface);
+    }
+
+    private static UnityEngine.Vector2 V(float x, float z) => new UnityEngine.Vector2(x, z);
+
+    [Fact]
+    public void ARockReachingOutOfItsZoneWidensTheProbe()
+    {
+        // Measured on a server-generated world: rock1_mountain rooted at
+        // (9374.75, 1452.07), zone (146,23), collider x 9363.25-9394.85,
+        // z 1440.77-1463.87, over the road centre at (9376.53, 1442.44) ..
+        // (9383.27, 1458.90), which lie in zone (147,23): outside the terrain
+        // its zone is generated with. It was never judged.
+        var rockZone = ZoneSystem.GetZone(new UnityEngine.Vector3(9374.75f, 0f, 1452.07f));
+        Assert.Equal(new Vector2s(146, 23), rockZone);
+        var c3 = ZoneSystem.GetZonePos(rockZone);
+        var centre = V(c3.x, c3.z);
+        foreach (var p in new[] { V(9376.53f, 1442.44f), V(9383.27f, 1458.90f) })
+            Assert.NotEqual(rockZone, ZoneSystem.GetZone(new UnityEngine.Vector3(p.x, 0f, p.y)));
+        float reach = RoadRockPolicy.OwnObjectsReach(centre, new[] { (V(9363.25f, 1440.77f), V(9394.85f, 1463.87f)) }, 46f, 4f);
+        Assert.True(reach > 60f && reach < 66f, $"reach {reach}");
+        // A zone whose rocks all stand well inside keeps the corner radius.
+        Assert.Equal(46f, RoadRockPolicy.OwnObjectsReach(centre, new[] { (V(9330f, 1460f), V(9350f, 1480f)) }, 46f, 4f));
+        Assert.Equal(46f, RoadRockPolicy.OwnObjectsReach(centre, new (UnityEngine.Vector2, UnityEngine.Vector2)[0], 46f, 4f));
+    }
+
+    [Fact]
+    public void TheRoadUnderARockBeyondTheCornerRadiusIsReached()
+    {
+        // The second measured rock: rooted at (9062.70, 1189.81), zone (142,19),
+        // over the road at (9066.65, 1174.68) and (9058.61, 1178.70), zone
+        // (142,18): 46.5 and 47.5 m from its zone's centre, beyond the 46 m the
+        // pass looked. Its collider holds at least its root and reaches those
+        // points (the smallest bounds that can be).
+        var rockZone = ZoneSystem.GetZone(new UnityEngine.Vector3(9062.70f, 0f, 1189.81f));
+        Assert.Equal(new Vector2s(142, 19), rockZone);
+        var c3 = ZoneSystem.GetZonePos(rockZone);
+        var centre = V(c3.x, c3.z);
+        var road = new[] { V(9066.65f, 1174.68f), V(9058.61f, 1178.70f) };
+        foreach (var p in road) Assert.True((p - centre).magnitude > 46f);
+        float reach = RoadRockPolicy.OwnObjectsReach(centre, new[] { (V(9058.61f, 1174.68f), V(9066.65f, 1189.81f)) }, 46f, 4f);
+        foreach (var p in road) Assert.True((p - centre).magnitude <= reach, $"{p.x},{p.y} beyond {reach}");
+    }
+
+    [Fact]
+    public void EveryRoadPointWhoseClearanceMeetsTheBoundsIsWithinReach()
+    {
+        // The clearance is paint-wide (0.85 of the width) and 1.2 m long: for
+        // roads up to 8 m it lies within 4 m of its point, so a point whose
+        // clearance can touch the bounds is within 4 m of them.
+        var rng = new System.Random(7);
+        var centre = V(0f, 0f);
+        for (int n = 0; n < 2000; n++)
+        {
+            float x0 = (float)(rng.NextDouble() * 64 - 32), z0 = (float)(rng.NextDouble() * 64 - 32);
+            float x1 = x0 + (float)(rng.NextDouble() * 35), z1 = z0 + (float)(rng.NextDouble() * 35);
+            float reach = RoadRockPolicy.OwnObjectsReach(centre, new[] { (V(x0, z0), V(x1, z1)) }, 46f, 4f);
+            float w = (float)(1 + rng.NextDouble() * 7);
+            float corner = (float)System.Math.Sqrt(System.Math.Pow(w * 0.5f * RoadConstants.RoadPaintOuterRatio, 2) + 0.36);
+            Assert.True(corner <= 4f);
+            // A point just touching the bounds from outside, anywhere round them.
+            float px = (float)(x0 - corner + rng.NextDouble() * (x1 - x0 + 2 * corner));
+            float pz = (float)(z0 - corner + rng.NextDouble() * (z1 - z0 + 2 * corner));
+            Assert.True(V(px, pz).magnitude <= reach + 1e-3f, $"({px},{pz}) beyond {reach}");
+        }
+    }
+
+    [Fact]
+    public void EveryKnownRockWidensTheProbeAndNothingElse()
+    {
+        foreach (string name in RoadRockPolicy.KnownRocks) Assert.True(RoadRockPolicy.IsClearableRock(name), name);
+        foreach (string name in new[] { "rock1_mountain_frac", "rock4_copper", "silvervein", "Beech1", "cliff_mistlands1_creep" })
+            Assert.False(RoadRockPolicy.IsClearableRock(name), name);
+    }
 }

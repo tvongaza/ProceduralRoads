@@ -85,19 +85,36 @@ public static class RoadRockProbe
 
     /// <summary>Road points the last pass skipped because no ground answered there (a terrain collider not built yet).</summary>
     internal static int LastGroundMisses;
+    /// <summary>Road points the last pass probed at the road's stored height: generating a zone, outside its terrain.</summary>
+    internal static int LastRoadHeightPoints;
+    /// <summary>Objects the last pass found in the road but passed over: generating a zone, they belong to another.</summary>
+    internal static int LastOtherZoneObjects;
+
+    /// <summary>Kept rocks and rocks left untouched, already logged: the pass over loaded zones revisits a zone.</summary>
+    private static readonly HashSet<string> s_reported = new HashSet<string>();
+
+    /// <summary>A rock the pass judged and left: logged once, so a rock in the road is never silent.</summary>
+    private static void LogOnce(string line)
+    {
+        if (s_reported.Count > 4096) s_reported.Clear();
+        if (s_reported.Add(line)) Log(line);
+    }
 
     private static List<string> RunTimed(Vector3 centre, float radius, bool apply, bool sites, bool mist, bool cliffs,
         bool partial, bool carve, out int clearedCount)
     {
         clearedCount = 0;
         LastGroundMisses = 0;
+        LastRoadHeightPoints = 0;
+        LastOtherZoneObjects = 0;
         var lines = new List<string>();
         if (!RoadSpatialGrid.IsInitialized || ZoneSystem.instance == null || ZNetScene.instance == null)
         { lines.Add("Error: world or road network not available"); return lines; }
 
         var natural = NaturalRocks(mist, cliffs);
 
-        var hits = new Dictionary<GameObject, (string name, string verdict, float size)>();
+        var hits = new Dictionary<GameObject, (string name, string verdict, float size, bool listed)>();
+        var otherZone = new HashSet<GameObject>();
         var touched = new Dictionary<GameObject, List<(RoadSpatialGrid.RoadPoint point, float surface)>>();
         long lookup = RoadRockStats.Now;
         var points = RoadSpatialGrid.GetRoadPointsNearPosition(centre, radius);
@@ -113,7 +130,9 @@ public static class RoadRockProbe
         foreach (var point in points)
         {
             if (point.paintOnly) continue;
-            if (!ZoneSystem.instance.GetGroundHeight(new Vector3(point.p.x, 0f, point.p.y), out float surface)) { LastGroundMisses++; continue; }
+            bool ground = ZoneSystem.instance.GetGroundHeight(new Vector3(point.p.x, 0f, point.p.y), out float surface);
+            if (!RoadRockPolicy.ClearanceSurface(ground, surface, point.h, RoadRockCarve.GhostSpawned != null, out surface)) { LastGroundMisses++; continue; }
+            if (!ground) LastRoadHeightPoints++;
             all.Add((point, surface, false));
         }
         foreach (var (point, deckHeight) in decks) all.Add((point, deckHeight - DeckBelow, true));
@@ -146,6 +165,11 @@ public static class RoadRockProbe
                 var view = collider.GetComponentInParent<ZNetView>();
                 GameObject root = view != null ? view.gameObject : collider.transform.root.gameObject;
                 if (root.GetComponent<Player>() != null) continue;
+                // Generating a zone for a remote peer: only that zone's own
+                // objects. Several zones can be generated in one frame, and
+                // the previous one's are only destroyed at the end of it, so
+                // they are still here, and were found and cleared twice.
+                if (RoadRockCarve.GhostSpawned != null && !RoadRockCarve.GhostSpawned.Contains(root)) { otherZone.Add(root); continue; }
                 if (deck) onDeck.Add(root);
                 if (partial)
                 {
@@ -194,7 +218,7 @@ public static class RoadRockProbe
                     locationChild ? "keep: part of a location" :
                     protectedSite ? "keep: protected site area (add 'sites' to include)" : piece ? "keep: player piece" :
                     view != null && !view.IsOwner() ? "keep: not owner" : "keep: biome or vegetation rule";
-                hits[root] = (name, verdict, size);
+                hits[root] = (name, verdict, size, listed);
                 RoadRockStats.JudgeTicks += RoadRockStats.Now - judging;
             }
         }
@@ -216,7 +240,7 @@ public static class RoadRockProbe
                 foreach (var (point, surface) in at)
                     worst = Mathf.Max(worst, BlockedSlots(root, point, surface, points));
                 if (RoadRockPolicy.KeepPartial(worst, Slots))
-                    hits[root] = (h.name, $"keep: blocks under half the road ({worst} of {Slots} slots at worst)", h.size);
+                    hits[root] = (h.name, $"keep: blocks under half the road ({worst} of {Slots} slots at worst)", h.size, h.listed);
             }
 
         int cleared = 0, carved = 0;
@@ -246,10 +270,12 @@ public static class RoadRockProbe
                             $"; carve: {r.outcome}, {r.onRoad} of {r.chunks} chunks in the road (mean {r.chunkSize:F1} m) + {r.hanging} hanging + {r.unsupported} unsupported{(r.swapped ? ", swapped for the fractured copy" : "")}{(r.note.Length > 0 ? " (" + r.note + ")" : "")}");
                         if (r.outcome == RoadRockCarve.Outcome.Carved && r.rock != null) carvedRocks.Add((r.rock, lines.Count));
                         lines.Add(line);
-                        // A rock the pass looked at and left alone is not news: the
+                        // A rock the pass looked at and left alone is logged once: the
                         // automatic pass revisits every loaded zone, and logging it
-                        // wrote the same line every cycle.
+                        // wrote the same line every cycle; never logging it left a
+                        // rock in the road with no trace of why.
                         if (r.outcome != RoadRockCarve.Outcome.Untouched) Log("Road rocks:" + line);
+                        else LogOnce("Road rocks:" + line);
                         if (r.outcome != RoadRockCarve.Outcome.Untouched) { carved++; RoadRockStats.Carved++; }
                         continue;
                     }
@@ -265,6 +291,9 @@ public static class RoadRockProbe
                 RoadRockStats.Removed++;
                 Log("Road rocks:" + line + "; removed whole");
             }
+            // A listed rock kept in the road (location part, owner, biome, a
+            // partial block) says why, once.
+            else if (apply && kv.Value.listed) LogOnce("Road rocks:" + line);
             lines.Add(line);
         }
         // Neighbours removed whole no longer hold anything up: test the carved rocks again.
@@ -290,8 +319,12 @@ public static class RoadRockProbe
                 ProceduralRoadsPlugin.ProceduralRoadsLogger.LogWarning(System.FormattableString.Invariant(
                     $"Road rocks: item drops near ({centre.x:F0},{centre.z:F0}) rose {dropsBefore} -> {dropsAfter} after clearing"));
         }
+        LastOtherZoneObjects = otherZone.Count;
+        string reach = (LastRoadHeightPoints > 0 ? $", {LastRoadHeightPoints} at the road's own height (outside the zone's terrain)" : "") +
+            (LastGroundMisses > 0 ? $", {LastGroundMisses} without ground skipped" : "") +
+            (otherZone.Count > 0 ? $"; {otherZone.Count} object(s) of other zones passed over" : "");
         lines.Insert(0, System.FormattableString.Invariant(
-            $"Road rocks: {probed} road points probed within {radius:F0} m, {hits.Count} object(s) clip the road surface{outcome}"));
+            $"Road rocks: {probed} road points probed within {radius:F0} m{reach}, {hits.Count} object(s) clip the road surface{outcome}"));
         return lines;
     }
 

@@ -42,6 +42,11 @@ public static class RoadNetworkPersistence
     private static readonly int BridgeZonesHash = "ProceduralRoads_BridgeZones".GetStableHashCode();
 
     /// <summary>
+    /// Hash key for the zones whose vegetation matches the network (see VegetationClearing).
+    /// </summary>
+    private static readonly int ClearedZonesHash = "ProceduralRoads_ClearedZones".GetStableHashCode();
+
+    /// <summary>
     /// Hash key for storing global road network data on the ZDO.
     /// </summary>
     private static readonly int AppendBridgesHash = "ProceduralRoads_AppendBridges".GetStableHashCode();
@@ -180,6 +185,74 @@ public static class RoadNetworkPersistence
             metadataZdo.SetOwner(ZDOMan.instance.m_sessionID);
         WriteBridgeZones(metadataZdo, bridgeZones);
         metadataZdo.Set(AppendBridgesHash, BridgeAppendQueue.Serialize());
+    }
+
+    /// <summary>
+    /// Save the zones whose vegetation matches the network (VegetationClearing),
+    /// with the network version they belong to.
+    /// Format: [format=1][network version][count] then [x][y] per zone, 32-bit ints.
+    /// </summary>
+    public static void SaveClearedZones(int networkVersion, IReadOnlyCollection<Vector2s> zones)
+    {
+        ZDO? metadataZdo = GetMetadataZDO();
+        if (metadataZdo == null)
+        {
+            Log.LogWarning("[SAVE] No metadata ZDO: cleared zones not saved");
+            return;
+        }
+        if (!metadataZdo.IsOwner())
+            metadataZdo.SetOwner(ZDOMan.instance.m_sessionID);
+
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms);
+        writer.Write(1);
+        writer.Write(networkVersion);
+        writer.Write(zones.Count);
+        foreach (Vector2s zone in zones)
+        {
+            writer.Write((int)zone.x);
+            writer.Write((int)zone.y);
+        }
+        metadataZdo.Set(ClearedZonesHash, ms.ToArray());
+        Log.LogDebug($"[SAVE] Saved {zones.Count} zones cleared of vegetation for network {networkVersion}");
+    }
+
+    /// <summary>The saved cleared-zone record, if there is a readable one.</summary>
+    public static bool TryLoadClearedZones(out int networkVersion, HashSet<Vector2s> zones)
+    {
+        networkVersion = 0;
+        zones.Clear();
+        byte[]? data = GetMetadataZDO()?.GetByteArray(ClearedZonesHash, null);
+        if (data == null || data.Length == 0)
+            return false;
+        try
+        {
+            using var ms = new MemoryStream(data);
+            using var reader = new BinaryReader(ms);
+            int format = reader.ReadInt32();
+            if (format != 1)
+            {
+                Log.LogWarning($"Unknown cleared zone data format: {format}");
+                return false;
+            }
+            int version = reader.ReadInt32();
+            int count = reader.ReadInt32();
+            if (count < 0 || count > 1_000_000)
+            {
+                Log.LogWarning($"Invalid cleared zone count: {count}");
+                return false;
+            }
+            for (int i = 0; i < count; i++)
+                zones.Add(new Vector2s((short)reader.ReadInt32(), (short)reader.ReadInt32()));
+            networkVersion = version;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning($"Failed to deserialize cleared zones: {ex.Message}");
+            zones.Clear();
+            return false;
+        }
     }
 
     private static void WriteBridgeZones(ZDO metadataZdo, IReadOnlyCollection<Vector2s> bridgeZones)

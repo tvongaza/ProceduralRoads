@@ -34,6 +34,82 @@ public static class ConsoleCommands
             return;
 
         ManualRoadCommands.Register();
+        new Terminal.ConsoleCommand(
+            "road_bake",
+            "Road terrain the server writes for players without the mod: what it has written so far; road_bake again to go over every road zone of the current network once more (zones already carrying it are left alone); road_bake zone [x z] for what the server knows and would do about one zone (default: where you stand); road_bake vegetation for the road zones still holding vegetation on the road, most first; road_bake find [x z [radius]] for road zones not generated yet near a point; road_bake server for the server's own zone machinery -- reference position, live zone count, and each peer's zone.",
+            (args) =>
+            {
+                if (args.Length > 1 && args[1] == "zone")
+                {
+                    Vector3 point = Player.m_localPlayer != null ? Player.m_localPlayer.transform.position : Vector3.zero;
+                    if (args.Length > 3 &&
+                        float.TryParse(args[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float x) &&
+                        float.TryParse(args[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float z))
+                        point = new Vector3(x, 0f, z);
+                    args.Context.AddString(ServerTerrainBake.DescribeZone(point));
+                    return;
+                }
+                if (args.Length > 1 && args[1] == "vegetation")
+                {
+                    int max = 5;
+                    if (args.Length > 2 && int.TryParse(args[2], out int n))
+                        max = n;
+                    foreach (string line in ServerTerrainBake.FindVegetationOnRoads(max))
+                        args.Context.AddString(line);
+                    return;
+                }
+                if (args.Length > 1 && args[1] == "find")
+                {
+                    Vector3 from = Player.m_localPlayer != null ? Player.m_localPlayer.transform.position : Vector3.zero;
+                    float radius = 1000f;
+                    if (args.Length > 3 &&
+                        float.TryParse(args[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float fx) &&
+                        float.TryParse(args[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float fz))
+                        from = new Vector3(fx, 0f, fz);
+                    if (args.Length > 4 &&
+                        float.TryParse(args[4], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float r))
+                        radius = r;
+                    foreach (string line in ServerTerrainBake.FindUngenerated(from, radius, 5))
+                        args.Context.AddString(line);
+                    return;
+                }
+                if (args.Length > 1 && args[1] == "server")
+                {
+                    foreach (string line in ServerTerrainBake.DescribeServer())
+                        args.Context.AddString(line);
+                    return;
+                }
+                if (args.Length > 1 && args[1] == "again")
+                {
+                    ServerTerrainBake.Requeue();
+                    args.Context.AddString("Road zones queued again for the current network");
+                }
+                args.Context.AddString(ServerTerrainBake.StatusLine());
+            },
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
+
+        new Terminal.ConsoleCommand(
+            "road_zone_report",
+            "What one zone holds because of the roads, read from the saved data: its terrain compiler's fingerprint, its bridge pieces and its vegetation. road_zone_report [x z] (default: where you stand). The same zone written by a modded client and by the server should report the same thing.",
+            (args) =>
+            {
+                Vector3 point = Player.m_localPlayer != null ? Player.m_localPlayer.transform.position : Vector3.zero;
+                if (args.Length > 2 &&
+                    float.TryParse(args[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float x) &&
+                    float.TryParse(args[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float z))
+                    point = new Vector3(x, 0f, z);
+                foreach (string line in ZoneReport.Describe(point))
+                    args.Context.AddString(line);
+            },
+            isCheat: true,
+            isNetwork: false,
+            onlyServer: false,
+            isSecret: false,
+            allowInDevBuild: true);
 
         // road_debug - Show detailed road info at player position
         new Terminal.ConsoleCommand(
@@ -58,7 +134,7 @@ public static class ConsoleCommands
 
         new Terminal.ConsoleCommand(
             "road_bridges",
-            "Bridges prototype: how many bridge pieces are planned and spawned, or road_bridges respawn to destroy every spawned bridge piece and spawn the current plans again into the loaded zones.",
+            "Bridges prototype: how many bridge pieces are planned and spawned, or road_bridges respawn to destroy every spawned bridge piece and spawn the current plans again -- into the zones this peer has loaded, and, on a server, into every planned zone the world has already generated. Zones not generated yet get theirs when they are.",
             (args) => BridgesCommand(args),
             isCheat: true,
             isNetwork: false,
@@ -598,7 +674,7 @@ public static class ConsoleCommands
         if (result.destroyed > 0)
             args.Context.AddString($"Removed {result.destroyed} bridge pieces of the previous network.");
         if (result.zones > 0)
-            args.Context.AddString($"Spawned bridges into {result.zones} loaded zone(s).");
+            args.Context.AddString($"Spawned bridges into {result.zones} zone(s).");
     }
 
     /// <summary>road_crossings [count] lists the river crossings nearest the player.</summary>
@@ -648,7 +724,7 @@ public static class ConsoleCommands
         if (args.Length > 1 && args[1] == "respawn")
         {
             (int destroyed, int zones) = BridgePlacement.RespawnFromPlans();
-            args.Context.AddString($"Destroyed {destroyed} bridge pieces; spawned the current plans into {zones} loaded zone(s). Other zones get theirs when they load.");
+            args.Context.AddString($"Destroyed {destroyed} bridge pieces; spawned the current plans into {zones} zone(s). Zones the world has not generated yet get theirs when it does.");
             return;
         }
 

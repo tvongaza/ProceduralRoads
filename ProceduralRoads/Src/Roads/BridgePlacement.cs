@@ -36,6 +36,13 @@ public static class BridgePlacement
         SpawnInZone(zoneID, mode == ZoneSystem.SpawnMode.Ghost);
 
     /// <summary>
+    /// Spawn a zone's plans as ZDOs only, for a zone the server has generated
+    /// but does not have loaded: one generated before the network existed,
+    /// which no zone spawn will offer again. See ServerTerrainBake.
+    /// </summary>
+    public static int SpawnGhostInZone(Vector2s zoneID) => SpawnInZone(zoneID, ghost: true);
+
+    /// <summary>
     /// Spawn the plans into every zone that is already loaded: zones generated
     /// before the network existed (around the login position, or on a world
     /// the mod was added to) never spawn again while they stay loaded, so
@@ -59,8 +66,11 @@ public static class BridgePlacement
 
     /// <summary>
     /// The network was rebuilt in a running world: destroy the pieces of the
-    /// old one everywhere and spawn the new plans into the loaded zones
-    /// (other zones get theirs when they load). Returns (destroyed, zones).
+    /// old one everywhere, and spawn the new plans into the zones this peer
+    /// has loaded AND -- on a server -- into every planned zone the world has
+    /// already generated, which is where a dedicated server's players actually
+    /// are. A zone the world has not generated yet is left alone on purpose:
+    /// it gets its pieces when it is generated. Returns (destroyed, zones).
     /// </summary>
     public static (int destroyed, int zones) RespawnFromPlans()
     {
@@ -70,7 +80,40 @@ public static class BridgePlacement
         // already standing and skip every zone it was asked to rebuild.
         var condemned = new HashSet<ZDOID>();
         int destroyed = ClearSpawnedPieces(condemned);
-        return (destroyed, SpawnInLoadedZones(condemned));
+        int zones = SpawnInLoadedZones(condemned);
+        zones += SpawnGhostsIntoGeneratedZones(condemned);
+        return (destroyed, zones);
+    }
+
+    /// <summary>
+    /// Put the plans back into every zone the world has already generated,
+    /// as ZDOs -- the route the server bake uses for a zone it does not have
+    /// loaded. Zones already handled above are recorded as spawned and skipped.
+    ///
+    /// Without this a respawn on a dedicated server destroyed everywhere and
+    /// rebuilt nowhere. ClearSpawnedPieces walks every marked ZDO in the world,
+    /// while SpawnInLoadedZones can only reach zones that still have a
+    /// Heightmap -- and a dedicated server has none where its players are,
+    /// because their surroundings are ghost zones whose root ZoneSystem
+    /// destroys on the spot. Nor did the loss heal when the players came back:
+    /// ZoneSystem.CreateGhostZones calls SpawnZone only for a zone that is NOT
+    /// yet generated, so the hook that spawns pieces never fired again. Only a
+    /// server restart put them back, through the bake. Measured with two
+    /// clients standing on the bridge: 142 pieces to 0, and still 0 after both
+    /// left and rejoined.
+    /// </summary>
+    private static int SpawnGhostsIntoGeneratedZones(ICollection<ZDOID>? condemned)
+    {
+        if (!IsServer || ZoneSystem.instance == null)
+            return 0;
+
+        int zones = 0;
+        foreach (Vector2s zone in BridgePlans.ZonesNeedingPieces(ZoneSystem.instance.IsZoneGenerated))
+        {
+            if (SpawnInZone(zone, ghost: true, condemned) > 0)
+                zones++;
+        }
+        return zones;
     }
 
     private static int SpawnInZone(Vector2s zoneID, bool ghost, ICollection<ZDOID>? condemned = null)

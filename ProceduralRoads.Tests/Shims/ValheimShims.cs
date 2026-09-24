@@ -142,6 +142,7 @@ public class Heightmap
         PokeCount++; LastPokeDelayed = delayed;
         if (AutoRebuild) RebuildTerrain();
     }
+    public void Regenerate() => RebuildTerrain();
     public void RebuildTerrain()
     {
         if (m_terrainComp == null) return;
@@ -219,6 +220,7 @@ public class ZDO
     private long m_owner;
     private UnityEngine.Vector3 m_position;
     private readonly System.Collections.Generic.Dictionary<int, int> m_ints = new();
+    private readonly System.Collections.Generic.Dictionary<int, long> m_longs = new();
     private readonly System.Collections.Generic.Dictionary<int, byte[]> m_byteArrays = new();
 
     public ZDO(UnityEngine.Vector3 position, int prefab)
@@ -240,6 +242,8 @@ public class ZDO
 
     public void Set(int hash, int value) => m_ints[hash] = value;
     public int GetInt(int hash, int defaultValue = 0) => m_ints.TryGetValue(hash, out int v) ? v : defaultValue;
+    public void Set(int hash, long value) => m_longs[hash] = value;
+    public long GetLong(int hash, long defaultValue = 0L) => m_longs.TryGetValue(hash, out long v) ? v : defaultValue;
     public void Set(int hash, byte[] value) => m_byteArrays[hash] = value;
     public byte[]? GetByteArray(int hash, byte[]? defaultValue = null) =>
         m_byteArrays.TryGetValue(hash, out var v) ? v : defaultValue;
@@ -343,7 +347,22 @@ public class TerrainComp
         m_modifiedPaint = new bool[n];
     }
 
-    public void Save() => SaveCount++;
+    /// <summary>Like the game: only the owner's compiler saves, into the ZDO's TCData.</summary>
+    public void Save()
+    {
+        if (m_nview == null || !m_nview.IsValid() || !m_nview.IsOwner())
+            return;
+        SaveCount++;
+        m_nview.GetZDO().Set(ZDOVars.s_TCData, new byte[] { 1 });
+    }
+}
+
+/// <summary>Shim for ZDOVars: the ZDO keys the road code reads.</summary>
+public static class ZDOVars
+{
+    public static readonly int s_TCData = "TCData".GetStableHashCode();
+    /// <summary>The player who made an object; vanilla sets it on what a player builds.</summary>
+    public static readonly int s_creator = "creator".GetStableHashCode();
 }
 
 /// <summary>

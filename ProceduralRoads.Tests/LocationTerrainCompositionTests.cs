@@ -179,6 +179,44 @@ public class LocationTerrainCompositionTests : IDisposable
         Assert.False(tc.m_modifiedHeight[Centre]);
     }
 
+    [Fact]
+    public void BakeCompletesQueuedWriteBeforeTemporaryTerrainIsReleased()
+    {
+        hm.AutoRebuild = false;
+        Apply(65f);
+        Assert.Equal(0, tc.SaveCount);
+        hm.AuthoredHeight = (_, _) => 64f;
+        RoadTerrainModifier.CompletePendingTerrain(tc, hm);
+        Assert.Equal(1, tc.SaveCount);
+        Assert.Equal(RoadTerrainModifier.WriteOutcome.Written, RoadTerrainModifier.LastWriteOutcome);
+        Assert.Equal(0, RoadTerrainModifier.PendingWriteCount);
+        Assert.Equal(1f, tc.m_levelDelta[Centre], 4);
+        Assert.Equal(65f, hm.LastRenderedHeights![Centre], 4);
+        RoadTerrainModifier.CompletePendingTerrain(tc, hm);
+        Assert.Equal(1, tc.SaveCount);
+    }
+
+    [Fact]
+    public void BakeCompletionCannotUseAnotherHeightmap()
+    {
+        hm.AutoRebuild = false;
+        Apply(65f);
+        RoadTerrainModifier.CompletePendingTerrain(tc, Heightmap.CreateForZone(new Vector2s(1, 0)));
+        Assert.Equal(0, tc.SaveCount);
+        Assert.Equal(1, RoadTerrainModifier.PendingWriteCount);
+    }
+
+    [Fact]
+    public void BakeCompletionStillChecksOwnershipAtWriteTime()
+    {
+        hm.AutoRebuild = false;
+        Apply(65f);
+        tc.m_nview.GetZDO().SetOwner(2);
+        RoadTerrainModifier.CompletePendingTerrain(tc, hm);
+        Assert.Equal(0, tc.SaveCount);
+        Assert.Equal(0, RoadTerrainModifier.PendingWriteCount);
+    }
+
     public void Dispose()
     {
         RoadTerrainModifier.ResetDebugCounters();

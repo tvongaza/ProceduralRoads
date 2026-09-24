@@ -120,6 +120,46 @@ public static class RoadRockPolicy
         return dir;
     }
 
+    /// <summary>
+    /// The surface a road point's clearance stands on, and whether the point is
+    /// probed at all. A pass over loaded zones skips a point with no ground
+    /// under it (the terrain collider is not built yet) and looks again later.
+    /// A zone the server generates for a remote peer has only its own terrain,
+    /// and nothing looks at its objects again: a rock of that zone reaching over
+    /// the road in the zone next door is judged then or never, so the clearance
+    /// stands on the road's own stored height, the surface it levels to (as the
+    /// carve already does in RoadRockCarve.PointsNear).
+    /// </summary>
+    public static bool ClearanceSurface(bool haveGround, float ground, float roadHeight, bool generating, out float surface)
+    {
+        surface = haveGround ? ground : roadHeight;
+        return haveGround || generating;
+    }
+
+    /// <summary>
+    /// How far round a zone's centre a pass over that zone's own objects must
+    /// look for road points: <paramref name="zoneReach"/> (its corners), or
+    /// further when one of its rocks reaches out of it. A clearance can meet a
+    /// rock only at a road point within <paramref name="roadReach"/> of the
+    /// rock's horizontal bounds, and the farthest point of the bounds from the
+    /// centre is a corner. Bounds are (min, max) in x and z.
+    /// </summary>
+    public static float OwnObjectsReach(UnityEngine.Vector2 centre,
+        IEnumerable<(UnityEngine.Vector2 min, UnityEngine.Vector2 max)> bounds, float zoneReach, float roadReach)
+    {
+        float reach = zoneReach;
+        foreach (var (min, max) in bounds)
+        {
+            float dx = System.Math.Max(System.Math.Abs(min.x - centre.x), System.Math.Abs(max.x - centre.x));
+            float dz = System.Math.Max(System.Math.Abs(min.y - centre.y), System.Math.Abs(max.y - centre.y));
+            reach = System.Math.Max(reach, (float)System.Math.Sqrt(dx * dx + dz * dz) + roadReach);
+        }
+        return reach;
+    }
+
+    /// <summary>Whether any clearing rule could take this prefab (every rock in <see cref="KnownRocks"/>).</summary>
+    public static bool IsClearableRock(string name) => IsNaturalBoulder(name) || IsMistlandsRock(name, true, true);
+
     public static bool CanClear(string name, bool registeredVegetation, Heightmap.Biome biome,
         bool protectedSite, bool playerPiece, bool hasNetworkView, bool validView, bool owned) =>
         IsNaturalBoulder(name) && registeredVegetation && (biome & SupportedBiomes) != 0 &&
