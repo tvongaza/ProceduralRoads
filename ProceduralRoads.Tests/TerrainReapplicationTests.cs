@@ -157,4 +157,34 @@ public class TerrainReapplicationTests
         }
         finally { TearDown(); }
     }
+
+    [Fact]
+    public void TheSweepWritesAZoneTheSpawnPathMissedOnceAndLeavesWrittenZonesAlone()
+    {
+        var (_, hm, tc, points) = SetUp();
+        try
+        {
+            RoadTerrainModifier.ResetDebugCounters();
+            // The spawn path never ran for this zone.
+            Assert.Equal(0, tc.SaveCount);
+            Assert.Equal(1, RoadTerrainModifier.SweepUnstamped());
+            Assert.Equal(1, tc.SaveCount);
+            Assert.True(RoadTerrainModifier.CarriesCurrentRoads(tc));
+            // Swept once per network version.
+            Assert.Equal(0, RoadTerrainModifier.SweepUnstamped());
+            Assert.Equal(1, tc.SaveCount);
+        }
+        finally { RoadTerrainModifier.ResetDebugCounters(); TearDown(); }
+
+        var (_, hm2, tc2, points2) = SetUp();
+        try
+        {
+            RoadTerrainModifier.ResetDebugCounters();
+            RoadTerrainModifier.ApplyRoadTerrainMods(Zone, points2);
+            Assert.Equal(1, tc2.SaveCount);
+            Assert.Equal(0, RoadTerrainModifier.SweepUnstamped());   // already carries the roads
+            Assert.Equal(1, tc2.SaveCount);
+        }
+        finally { RoadTerrainModifier.ResetDebugCounters(); TearDown(); }
+    }
 }
