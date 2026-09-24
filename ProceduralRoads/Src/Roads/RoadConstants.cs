@@ -26,7 +26,7 @@ public static class RoadConstants
     public const float RiverImpassableThreshold = 0.5f;
     
     public const float DefaultBaseCost = 1f;
-    public const float DefaultSlopeMultiplier = 10f;
+    public const float DefaultSlopeMultiplier = 150f;
     public const float DefaultRiverPenalty = 100000f;
     public const float DefaultWaterPenalty = 100000f;
     public const float DefaultSteepSlopePenalty = 2000f;
@@ -111,6 +111,7 @@ public static class RoadConstants
     // reach is declined and the water's-edge deck stands instead. Lower deck,
     // longer approach, a bridge that is still there next week.
     public static float MaxBridgePierHeight => BridgeSupport.MaxPierHeight();
+
     // The steepest a road may climb, as rise over run, or 0 for no cap.
     // Without a cap every steep step is a large but finite price and never a
     // refusal, so when a destination sits on a cliff the cheapest expensive
@@ -126,6 +127,21 @@ public static class RoadConstants
     // thirteen, 20% loses twenty-one, 15% loses thirty-nine - while above it
     // 50% saves nothing more and leaves roads at half again the grade.
     public const float DefaultMaxRoadGrade = 0.35f;
+
+    /// <summary>
+    /// How far above the finished grade cap the SEARCH may cross raw ground,
+    /// at the ordinary slope price.
+    ///
+    /// The ground a route crosses is not the profile the road is built to: the
+    /// road is smoothed, ramped at its ends and finally held to the cap, so
+    /// refusing every raw step over the cap turns down routes whose finished
+    /// profile would have been inside it. Measured over six worlds, this margin
+    /// gains 175 destinations and loses 33, gains 8 required and loses 1, and
+    /// does 6.5-18% less search work, with the finished cap unchanged.
+    ///
+    /// This widens what may be FOUND, never what may be BUILT.
+    /// </summary>
+    public const float SearchGradeMargin = 0.10f;
 
     // Road cross-section (see RoadProfile): flat core fully leveled and
     // solidly painted; paint fades out strictly inside the leveled footprint

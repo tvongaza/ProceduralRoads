@@ -133,6 +133,14 @@ public static class RoadNetworkPersistence
             metadataZdo.Set(GlobalRoadDataHash, data);
             Log.LogDebug($"[SAVE] Saved global road data: {data.Length} bytes, {RoadSpatialGrid.GridCellsWithRoads} cells, {RoadSpatialGrid.TotalRoadPoints} points");
         }
+        else if (RoadSpatialGrid.GridCellsWithRoads == 0)
+        {
+            // A world with no roads is a legitimate state - IslandRoadPercentage
+            // is documented as disabling generation at zero - and it is saved on
+            // the same schedule as any other, so warning here fired on every
+            // autosave for the rest of the session.
+            Log.LogDebug("[SAVE] No roads to save; the network is empty.");
+        }
         else
         {
             Log.LogWarning("[SAVE] SerializeAllRoadPoints returned null or empty data!");

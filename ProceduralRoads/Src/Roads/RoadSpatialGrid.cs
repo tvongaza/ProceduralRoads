@@ -98,6 +98,9 @@ public static class RoadSpatialGrid
         public readonly List<float> Heights;
         public readonly List<RoadPointDebugInfo> DebugInfos;
         public readonly float Width;
+        /// <summary>Per-point widths where a tight switchback narrowed the
+        /// road; null when every point is <see cref="Width"/>.</summary>
+        public List<float>? Widths;
         public readonly float TotalLength;
         public readonly bool FollowTerrain;
 
@@ -127,13 +130,136 @@ public static class RoadSpatialGrid
     /// length between them. That is a road too steep to walk, and the
     /// caller's business is to drop it, not to lay it anyway.
     /// </summary>
+    /// <summary>Why the last PlanRoadPath on this thread returned null. The
+    /// generation summary counts these, so "could not be built" says which
+    /// rule refused.</summary>
+    [System.ThreadStatic] public static string? LastRefusal;
+
+    /// <summary>
+    /// Metres the road's heights are smoothed over. The road follows the
+    /// ground: averaged over a long window every hollow shorter than it was
+    /// filled and every bump cut (11.7 % of a measured network stood over 1 m
+    /// off the ground at 41 m). At 9 m the road keeps the hill's own shape,
+    /// short dips included, and the grade limiter only moves ground where the
+    /// rules require; the pitches put their eases on the flattest natural
+    /// ground. Settable for tests.
+    /// </summary>
+    internal static int SmoothWindow = 9;
+    /// <summary>Off, the heights are smoothed over the long window the road
+    /// always had. Settable for tests.</summary>
+    internal static bool FollowGround = true;
+
+    /// <summary>The smoothing window in points.</summary>
+    internal static int SmoothingWindow(float width) =>
+        FollowGround ? Mathf.Max(1, Mathf.RoundToInt(SmoothWindow / Mathf.Max(0.25f, width / 4f)) | 1) : RoadConstants.HeightSmoothingWindow;
+
+    /// <summary>A joining road aims its end at the height of the road it
+    /// joins. Settable for tests.</summary>
+    internal static bool JunctionMatch = true;
+
+    /// <summary>A shaped road has only its curves and landings tested for
+    /// water and sites (the legs are the route the search already judged).
+    /// Off, every dense point of a road with switchbacks is tested. Settable
+    /// for tests.</summary>
+    internal static bool CurveChecks = true;
+
     public static PlannedPath? PlanRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
         float? startGround = null, float? endGround = null,
         bool followTerrain = false, float minHeight = float.NegativeInfinity,
         System.Func<Vector2, float>? terrainHeight = null)
     {
+        var plan = PlanRoadPathShaped(path, width, worldGen, startGround, endGround, followTerrain, minHeight, terrainHeight);
+        // The sway is cosmetic: the road is planned without it too, and the
+        // swayed plan is kept only if it was built and moves no more earth.
+        // Measured: swaying the approach to a bridge put it on higher ground
+        // and doubled the points cut past 8 m.
+        if (RoadWiggle.Enabled && !followTerrain && !SuppressWiggle)
+        {
+            string? why = LastRefusal;
+            PlannedPath? plain;
+            SuppressWiggle = true;
+            try { plain = PlanRoadPathShaped(path, width, worldGen, startGround, endGround, followTerrain, minHeight, terrainHeight); }
+            finally { SuppressWiggle = false; }
+            float Ground(Vector2 q) => terrainHeight != null ? terrainHeight(q) : BiomeBlendedHeight.GetBlendedHeight(q.x, q.y, worldGen);
+            if (plan == null) { System.Threading.Interlocked.Increment(ref SwayRefused); plan = plain; }
+            else if (plain != null && !RoadWiggle.NoMoreEarth(plan.Points, plan.Heights, plain.Points, plain.Heights, Ground))
+            { System.Threading.Interlocked.Increment(ref SwayMoreEarth); plan = plain; }
+            else { System.Threading.Interlocked.Increment(ref SwayKept); LastRefusal = why; }
+        }
+        return plan;
+    }
+
+    [System.ThreadStatic] internal static bool SuppressWiggle;
+    /// <summary>Sway outcomes per planned road piece this generation (candidates included):
+    /// kept, dropped because the swayed plan was refused, dropped for moving more earth.</summary>
+    internal static int SwayKept, SwayRefused, SwayMoreEarth;
+
+    private static PlannedPath? PlanRoadPathShaped(List<Vector2> path, float width, WorldGenerator worldGen,
+        float? startGround, float? endGround, bool followTerrain, float minHeight,
+        System.Func<Vector2, float>? terrainHeight)
+    {
+        // A tight staircase switchback that cannot keep its legs off each
+        // other's surface falls back to the ordinary turn, so the road is
+        // not lost to the tighter geometry.
+        bool tight = RoadSwitchbacks.TightSwitchbacks && !followTerrain;
+        var plan = PlanRoadPathCore(path, width, worldGen, tight, startGround, endGround, followTerrain, minHeight, terrainHeight);
+        if (plan == null && tight && LastRefusal == "switchback: legs too close at different heights")
+            plan = PlanRoadPathCore(path, width, worldGen, false, startGround, endGround, followTerrain, minHeight, terrainHeight);
+        // Rounded bends are cosmetic: a road whose arcs fail a water, site or
+        // turn-room check keeps its corners rather than being lost. Measured:
+        // rounding every bend with no fallback built 171 roads to 266 (572
+        // refused for a curve in water, from 152).
+        if (plan == null && RoadSwitchbacks.Fallback && !followTerrain &&
+            (LastRefusal == "switchback: a turn's curve runs into water" || LastRefusal == "switchback: a turn's curve crosses a site"))
+        {
+            // Plain corners: no switchback and no bend arcs either -- an arc
+            // rounding the same U fails the same water check.
+            string why = LastRefusal;
+            RoadSwitchbacks.SuppressSwitchbacks = true;
+            RoadSwitchbacks.SuppressBends = true;
+            try
+            {
+                plan = PlanRoadPathCore(path, width, worldGen, false, startGround, endGround, followTerrain, minHeight, terrainHeight);
+                if (plan != null && !RoadSwitchbacks.Separated(plan.Points, plan.Heights, width))
+                { plan = null; LastRefusal = why; }
+                else if (plan == null) LastRefusal = why;
+            }
+            finally { RoadSwitchbacks.SuppressSwitchbacks = false; RoadSwitchbacks.SuppressBends = false; }
+        }
+        if (plan == null && RoadSwitchbacks.BendRadius > 0f && !followTerrain)
+        {
+            RoadSwitchbacks.SuppressBends = true;
+            try
+            {
+                plan = PlanRoadPathCore(path, width, worldGen, tight, startGround, endGround, followTerrain, minHeight, terrainHeight);
+                if (plan == null && tight && LastRefusal == "switchback: legs too close at different heights")
+                    plan = PlanRoadPathCore(path, width, worldGen, false, startGround, endGround, followTerrain, minHeight, terrainHeight);
+            }
+            finally { RoadSwitchbacks.SuppressBends = false; }
+        }
+        return plan;
+    }
+
+    private static PlannedPath? PlanRoadPathCore(List<Vector2> path, float width, WorldGenerator worldGen, bool tightTurns,
+        float? startGround, float? endGround, bool followTerrain, float minHeight,
+        System.Func<Vector2, float>? terrainHeight)
+    {
+        LastRefusal = null;
         if (path == null || path.Count < 2 || worldGen == null)
-            return null;
+        { LastRefusal = "no path"; return null; }
+
+        // A road joining another aims its end at the height of the road it
+        // joins, not at the natural ground: blending with existing roads only
+        // happens when most of the new road overlaps them, so a road joining
+        // another on fill arrived metres low and the terrain blend built a
+        // step between them.
+        bool joinedStart = false, joinedEnd = false;
+        if (JunctionMatch && !followTerrain && path.Count >= 2)
+        {
+            float reach = width * 0.75f;
+            if (TryGetRoadHeightWithin(path[0], reach, out float joinStart)) { startGround = joinStart; joinedStart = true; }
+            if (TryGetRoadHeightWithin(path[path.Count - 1], reach, out float joinEnd)) { endGround = joinEnd; joinedEnd = true; }
+        }
 
         // Trial profiles share procedural samples, never authored location ground.
         float SampleTerrain(Vector2 point) => terrainHeight != null ? terrainHeight(point)
@@ -144,21 +270,63 @@ public static class RoadSpatialGrid
         for (int i = 0; i < path.Count - 1; i++)
             totalLength += Vector2.Distance(path[i], path[i + 1]);
 
-        List<Vector2>? turns = null; List<bool>? landings = null;
-        if (!followTerrain && !RoadSwitchbacks.Shape(path, width, out turns, out landings, SampleTerrain))
-        { Log.LogDebug("Road refused: switchback has no room for a turning landing"); return null; }
+        if (!followTerrain && RoadPathPull.Enabled)
+            path = RoadPathPull.Pull(path, width, SampleTerrain, p =>
+            {
+                worldGen.GetRiverWeight(p.x, p.y, out float river, out _);
+                return river > RoadConstants.RiverImpassableThreshold || worldGen.GetHeight(p.x, p.y) < RoadConstants.ShallowWaterHeight;
+            }, RoadGrade.Configured + RoadConstants.SearchGradeMargin,
+            anchor: RoadNetworkGenerator.RoadSnap > 0f ? p => TryGetRoadWithin(p, 0.5f, out _) : null);
+
+        if (!followTerrain && RoadWiggle.Enabled && !SuppressWiggle)
+            path = RoadWiggle.Apply(path, SampleTerrain, p =>
+            {
+                worldGen.GetRiverWeight(p.x, p.y, out float river, out _);
+                return river > RoadConstants.RiverImpassableThreshold || worldGen.GetHeight(p.x, p.y) < RoadConstants.ShallowWaterHeight;
+            }, p => worldGen.GetBiome(p.x, p.y), width, p => TryGetRoadWithin(p, width + 2f, out _));
+
+        // Order: the search's path was snapped onto existing road in
+        // GenerateRoad; the pull above keeps every snapped waypoint; the sway
+        // leaves shared road alone. A last snap catches what the site-approach
+        // smoothing and the sway's resampling moved back off (measured: 126 m
+        // of road beside another without it, 52 m with it).
+        if (!followTerrain)
+            path = RoadNetworkGenerator.SnapToNetwork(path)!;
+
+        List<Vector2>? turns = null; List<bool>? landings = null; List<float>? shapeWidths = null;
+        bool shapedOk = followTerrain || RoadSwitchbacks.Shape(path, width, out turns, out landings, SampleTerrain, tight: tightTurns);
+        if (!followTerrain) shapeWidths = RoadSwitchbacks.LastWidths;
+        if (!shapedOk)
+        { LastRefusal = RoadSwitchbacks.LastRefusal ?? "switchback: no turning room"; Log.LogDebug($"Road refused: {LastRefusal}"); return null; }
         List<Vector2> densePoints = turns ?? SplinePath(path, segmentLength);
         if (turns != null)
         {
             totalLength = 0f;
+            // Only the curves and landings are tested, and the road's own end
+            // locations are exempt as they are in the search: the legs between
+            // them ARE the route the search already judged.
+            // A road rounded only for its bends has no switchback, and only its
+            // arcs are tested whatever the setting.
+            bool hasSwitchback = landings != null && landings.Contains(true);
+            var curve = RoadSwitchbacks.LastCurve;
+            bool curvesOnly = (CurveChecks || !hasSwitchback) && landings != null;
+            Vector2? ownStart = curvesOnly ? path[0] : (Vector2?)null, ownEnd = curvesOnly ? path[path.Count - 1] : (Vector2?)null;
             for (int i=1;i<densePoints.Count;i++)
             {
                 totalLength += Vector2.Distance(densePoints[i-1],densePoints[i]);
-                if (RoadSiteProtection.BlocksSegment(densePoints[i-1],densePoints[i],width*0.5f+2f,null,null))
+                if (curvesOnly && !landings![i] && !landings[i-1] && !(curve != null && i < curve.Count && (curve[i] || curve[i-1]))) continue;
+                if (RoadSiteProtection.BlocksSegment(densePoints[i-1],densePoints[i],width*0.5f+2f,ownStart,ownEnd))
+                {
+                    LastRefusal = "switchback: a turn's curve crosses a site";
                     return null;
+                }
                 worldGen.GetRiverWeight(densePoints[i].x,densePoints[i].y,out float river,out _);
                 if (river>RoadConstants.RiverImpassableThreshold ||
-                    worldGen.GetHeight(densePoints[i].x,densePoints[i].y)<RoadConstants.ShallowWaterHeight) return null;
+                    worldGen.GetHeight(densePoints[i].x,densePoints[i].y)<RoadConstants.ShallowWaterHeight)
+                {
+                    LastRefusal = "switchback: a turn's curve runs into water";
+                    return null;
+                }
             }
         }
         float[]? edgeGrades = null;
@@ -166,14 +334,14 @@ public static class RoadSpatialGrid
         {
             edgeGrades = new float[densePoints.Count];
             for(int i=0;i<edgeGrades.Length;i++) edgeGrades[i] = landings[i] || (i>0 && landings[i-1])
-                ? Mathf.Min(RoadGrade.Configured,RoadSwitchbacks.LandingGrade) : RoadGrade.Configured;
+                ? Mathf.Min(RoadGrade.Configured,RoadSwitchbacks.EffectiveLandingGrade()) : RoadGrade.Configured;
         }
         List<float> denseHeights = new List<float>(densePoints.Count);
 
         foreach (var point in densePoints)
             denseHeights.Add(SampleTerrain(point));
 
-        List<float> smoothedHeights = SmoothHeights(denseHeights, RoadConstants.HeightSmoothingWindow, out var debugInfos);
+        List<float> smoothedHeights = SmoothHeights(denseHeights, followTerrain ? RoadConstants.HeightSmoothingWindow : SmoothingWindow(width), out var debugInfos);
 
         int overlapCount = DetectOverlap(densePoints, width);
         if (overlapCount > densePoints.Count * RoadConstants.OverlapThreshold)
@@ -216,12 +384,26 @@ public static class RoadSpatialGrid
         if (!followTerrain)
         {
             float steepestBefore = RoadGrade.SteepestStep(densePoints, finalHeights);
-            if (!RoadGrade.Limit(densePoints, finalHeights, RoadGrade.Configured, edgeGrades))
+            if (RoadPitches.JunctionLanding > 0f && (joinedStart || joinedEnd))
+                edgeGrades = RoadPitches.ApplyJunctionLanding(densePoints, edgeGrades, RoadGrade.Configured,
+                    joinedStart, joinedEnd, RoadPitches.JunctionLanding);
+            if (RoadPitches.Enabled)
+            {
+                // Place the pitches on the profile the road will actually have at the cap, not on
+                // the ground-following one: a climb over 50 % ground is spread to the cap by the
+                // limiter, so judging its room on the raw rise dropped eases that fit.
+                var capped = new List<float>(finalHeights);
+                var basis = RoadGrade.Limit(densePoints, capped, RoadGrade.Configured, edgeGrades) ? capped : finalHeights;
+                edgeGrades = RoadPitches.PlacePitches(densePoints, basis, RoadGrade.Configured, edgeGrades,
+                    ground: FollowGround ? denseHeights : null) ?? edgeGrades;
+            }
+            if (!RoadGrade.Limit(densePoints, finalHeights, RoadPitches.LimitCap(RoadGrade.Configured, edgeGrades), edgeGrades))
             {
                 Log.LogDebug(
                     $"Road profile refused: ends {finalHeights[0]:F1}m and {finalHeights[finalHeights.Count - 1]:F1}m " +
                     $"are {Mathf.Abs(finalHeights[finalHeights.Count - 1] - finalHeights[0]):F1}m apart over {pathTotal:F0}m, " +
                     $"over the {RoadGrade.Configured:P0} cap including turn landings");
+                LastRefusal = landings != null ? "grade: ends too far apart once turn landings are flattened" : "grade: ends too far apart for the cap";
                 return null;
             }
             float steepestAfter = RoadGrade.SteepestStep(densePoints, finalHeights);
@@ -237,9 +419,10 @@ public static class RoadSpatialGrid
                     finalHeights[k] = Mathf.Max(finalHeights[k], minHeight);
         }
 
-        if (!followTerrain && turns != null && !RoadSwitchbacks.Separated(densePoints, finalHeights, width))
-        { Log.LogDebug("Road refused: switchback legs blend at different heights"); return null; }
-        return new PlannedPath(densePoints, finalHeights, debugInfos, width, totalLength, followTerrain);
+        if (!followTerrain && turns != null && landings != null && landings.Contains(true) && !RoadSwitchbacks.Separated(densePoints, finalHeights, width,
+                RoadSwitchbacks.StairTurns || tightTurns ? landings : null, surfaceOnly: RoadSwitchbacks.StairTurns || tightTurns, widths: shapeWidths))
+        { LastRefusal = "switchback: legs too close at different heights"; Log.LogDebug("Road refused: switchback legs blend at different heights"); return null; }
+        return new PlannedPath(densePoints, finalHeights, debugInfos, width, totalLength, followTerrain) { Widths = shapeWidths };
     }
 
     /// <summary>Store a planned road. Nothing here can fail; every decision
@@ -249,7 +432,7 @@ public static class RoadSpatialGrid
         Dictionary<Vector2i, List<RoadPoint>> tempPoints = new Dictionary<Vector2i, List<RoadPoint>>();
         for (int i = 0; i < plan.Points.Count; i++)
         {
-            AddRoadPoint(tempPoints, plan.Points[i], plan.Width, plan.Heights[i], plan.FollowTerrain);
+            AddRoadPoint(tempPoints, plan.Points[i], plan.Widths != null && i < plan.Widths.Count ? plan.Widths[i] : plan.Width, plan.Heights[i], plan.FollowTerrain);
 
             RoadPointDebugInfo debugInfo = plan.DebugInfos[i];
             debugInfo.SmoothedHeight = plan.Heights[i];
@@ -814,6 +997,57 @@ public static class RoadSpatialGrid
         return count;
     }
 
+    /// <summary>Nearest actual road point within reach, without allocating a census.</summary>
+    /// <summary>The stored height of the nearest existing road point within
+    /// <paramref name="reach"/>; false when there is none.</summary>
+    public static bool TryGetRoadHeightWithin(Vector2 position, float reach, out float height)
+    {
+        height = 0f;
+        if (!m_initialized || reach < 0) return false;
+        float best = reach * reach;
+        bool found = false;
+        int radius = Mathf.CeilToInt(reach / GridSize) + 1;
+        Vector2i center = GetRoadGrid(position.x, position.y);
+        m_roadCacheLock.EnterReadLock();
+        try
+        {
+            for (int x = -radius; x <= radius; x++)
+                for (int y = -radius; y <= radius; y++)
+                    if (m_roadPoints.TryGetValue(new Vector2i(center.x+x,center.y+y), out var points))
+                        foreach (var point in points)
+                        {
+                            float distance = (point.p-position).sqrMagnitude;
+                            if (distance <= best && !point.paintOnly) { best=distance; height=point.h; found=true; }
+                        }
+        }
+        finally { m_roadCacheLock.ExitReadLock(); }
+        return found;
+    }
+
+    public static bool TryGetRoadWithin(Vector2 position, float reach, out Vector2 nearest)
+    {
+        nearest = position;
+        if (!m_initialized || reach < 0) return false;
+        float best = reach * reach;
+        bool found = false;
+        int radius = Mathf.CeilToInt(reach / GridSize) + 1;
+        Vector2i center = GetRoadGrid(position.x, position.y);
+        m_roadCacheLock.EnterReadLock();
+        try
+        {
+            for (int x = -radius; x <= radius; x++)
+                for (int y = -radius; y <= radius; y++)
+                    if (m_roadPoints.TryGetValue(new Vector2i(center.x+x,center.y+y), out var points))
+                        foreach (var point in points)
+                        {
+                            float distance = (point.p-position).sqrMagnitude;
+                            if (distance <= best) { best=distance; nearest=point.p; found=true; }
+                        }
+        }
+        finally { m_roadCacheLock.ExitReadLock(); }
+        return found;
+    }
+
     public static List<RoadPoint> GetRoadPointsNearPosition(Vector3 worldPos, float radius)
     {
         List<RoadPoint> result = new List<RoadPoint>();
@@ -957,6 +1191,25 @@ public static class RoadSpatialGrid
         finally
         {
             m_roadCacheLock.ExitWriteLock();
+        }
+    }
+
+    /// <summary>
+    /// Every stored road point, copied out under the read lock. Unordered and
+    /// without the road each belongs to: the grid keeps a set per cell.
+    /// </summary>
+    public static List<RoadPoint> SnapshotAllRoadPoints()
+    {
+        m_roadCacheLock.EnterReadLock();
+        try
+        {
+            var all = new List<RoadPoint>();
+            foreach (var cell in m_roadPoints.Values) all.AddRange(cell);
+            return all;
+        }
+        finally
+        {
+            m_roadCacheLock.ExitReadLock();
         }
     }
 

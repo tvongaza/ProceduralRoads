@@ -42,6 +42,8 @@ public sealed class RoadCrossing
     public Vector2? ToLand;
     /// <summary>Shallow water the road walked (swamp pool), not a river jump. Not persisted.</summary>
     public bool Shallow;
+    /// <summary>Snapped to a crossing another road built (SnapToExistingCrossings). Not persisted.</summary>
+    public bool Shared;
     /// <summary>Shallow water too long or too deep to cross in any style: the road must go round.</summary>
     public bool Invalid;
     /// <summary>Why this shallow ford got its style (length, depth, heading, eligible styles). Not persisted.</summary>
