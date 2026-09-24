@@ -9,7 +9,7 @@ namespace ProceduralRoads;
 /// <summary>
 /// Spatial data structure for road points. Provides efficient lookup for road influence at any world position.
 /// </summary>
-public static class RoadSpatialGrid
+public static partial class RoadSpatialGrid
 {
     public struct RoadPoint
     {
@@ -20,14 +20,17 @@ public static class RoadSpatialGrid
         /// <summary>Paint only: the terrain is not leveled toward this point
         /// (a waded ford keeps the riverbed as it is).</summary>
         public bool paintOnly;
+        // 0 is the original network; positive values identify append operations.
+        public int addition;
 
-        public RoadPoint(Vector2 position, float width, float height, bool paintOnly = false)
+        public RoadPoint(Vector2 position, float width, float height, bool paintOnly = false, int addition = 0)
         {
             p = position;
             w = width;
             w2 = width * width;
             h = height;
             this.paintOnly = paintOnly;
+            this.addition = addition;
         }
     }
 
@@ -61,6 +64,7 @@ public static class RoadSpatialGrid
         try
         {
             m_roadPoints.Clear();
+            s_appendParents.Clear();
             m_initialized = false;
             TotalRoadPoints = 0;
             GridCellsWithRoads = 0;
@@ -474,12 +478,12 @@ public static class RoadSpatialGrid
 
     /// <summary>Store a planned road. Nothing here can fail; every decision
     /// was made in PlanRoadPath.</summary>
-    public static void Commit(PlannedPath plan)
+    public static void Commit(PlannedPath plan, int addition = 0)
     {
         Dictionary<Vector2i, List<RoadPoint>> tempPoints = new Dictionary<Vector2i, List<RoadPoint>>();
         for (int i = 0; i < plan.Points.Count; i++)
         {
-            AddRoadPoint(tempPoints, plan.Points[i], plan.Widths != null && i < plan.Widths.Count ? plan.Widths[i] : plan.Width, plan.Heights[i], plan.FollowTerrain);
+            AddRoadPoint(tempPoints, plan.Points[i], plan.Widths != null && i < plan.Widths.Count ? plan.Widths[i] : plan.Width, plan.Heights[i], plan.FollowTerrain, addition);
 
             RoadPointDebugInfo debugInfo = plan.DebugInfos[i];
             debugInfo.SmoothedHeight = plan.Heights[i];
@@ -831,7 +835,7 @@ public static class RoadSpatialGrid
         }
     }
 
-    private static void AddRoadPoint(Dictionary<Vector2i, List<RoadPoint>> roadPoints, Vector2 p, float width, float height, bool paintOnly)
+    private static void AddRoadPoint(Dictionary<Vector2i, List<RoadPoint>> roadPoints, Vector2 p, float width, float height, bool paintOnly, int addition = 0)
     {
         Vector2i grid = GetRoadGrid(p.x, p.y);
         int radius = Mathf.CeilToInt(width / GridSize);
@@ -848,7 +852,7 @@ public static class RoadSpatialGrid
                         list = new List<RoadPoint>();
                         roadPoints.Add(cellGrid, list);
                     }
-                    list.Add(new RoadPoint(p, width, height, paintOnly));
+                    list.Add(new RoadPoint(p, width, height, paintOnly, addition));
                 }
             }
         }
@@ -1071,7 +1075,7 @@ public static class RoadSpatialGrid
         return found;
     }
 
-    public static bool TryGetRoadWithin(Vector2 position, float reach, out Vector2 nearest)
+    public static bool TryGetRoadWithin(Vector2 position, float reach, out Vector2 nearest, System.Func<Vector2, bool>? allowed = null)
     {
         nearest = position;
         if (!m_initialized || reach < 0) return false;
@@ -1088,7 +1092,7 @@ public static class RoadSpatialGrid
                         foreach (var point in points)
                         {
                             float distance = (point.p-position).sqrMagnitude;
-                            if (distance <= best) { best=distance; nearest=point.p; found=true; }
+                            if (distance <= best && (allowed == null || allowed(point.p))) { best=distance; nearest=point.p; found=true; }
                         }
         }
         finally { m_roadCacheLock.ExitReadLock(); }
@@ -1275,7 +1279,8 @@ public static class RoadSpatialGrid
             using var writer = new BinaryWriter(ms);
             
             // Version 2 adds the paint-only flag per point (waded fords).
-            writer.Write(2);
+            bool appended = s_appendParents.Count > 0;
+            writer.Write(appended ? 3 : 2);
             
             writer.Write(m_roadPoints.Count);
             
@@ -1292,9 +1297,15 @@ public static class RoadSpatialGrid
                     writer.Write(rp.w);
                     writer.Write(rp.h);
                     writer.Write(rp.paintOnly);
+                    if (appended) writer.Write(rp.addition);
                 }
             }
             
+            if (appended)
+            {
+                writer.Write(s_appendParents.Count);
+                foreach (int parent in s_appendParents) writer.Write(parent);
+            }
             return ms.ToArray();
         }
         finally
@@ -1318,7 +1329,7 @@ public static class RoadSpatialGrid
             using var reader = new BinaryReader(ms);
             
             int version = reader.ReadInt32();
-            if (version != 1 && version != 2)
+            if (version != 1 && version != 2 && version != 3)
             {
                 Log.LogWarning($"Unknown road data version: {version}");
                 return false;
@@ -1354,16 +1365,38 @@ public static class RoadSpatialGrid
                     float w = reader.ReadSingle();
                     float h = reader.ReadSingle();
                     bool paintOnly = version >= 2 && reader.ReadBoolean();
-                    points[i] = new RoadPoint(new Vector2(px, py), w, h, paintOnly);
+                    int addition = version >= 3 ? reader.ReadInt32() : 0;
+                    if (!ManualRoadDraft.IsFinite(px) || !ManualRoadDraft.IsFinite(py) ||
+                        !ManualRoadDraft.IsFinite(w) || w <= 0 || !ManualRoadDraft.IsFinite(h) || addition < 0)
+                        return false;
+                    points[i] = new RoadPoint(new Vector2(px, py), w, h, paintOnly, addition);
                 }
                 
                 loadedPoints[new Vector2i(gridX, gridY)] = points;
                 totalPoints += pointCount;
             }
             
+            var parents = new List<int>();
+            if (version >= 3)
+            {
+                int count = reader.ReadInt32();
+                if (count < 1 || count > ManualRoadDraft.MaxAppends) return false;
+                for (int i = 0; i < count; i++)
+                {
+                    int parent = reader.ReadInt32();
+                    if (parents.Contains(parent)) return false;
+                    parents.Add(parent);
+                }
+                foreach (var cell in loadedPoints.Values)
+                    foreach (var point in cell)
+                        if (point.addition > count) return false;
+            }
+            if (ms.Position != ms.Length) return false;
             m_roadCacheLock.EnterWriteLock();
             try
             {
+                s_appendParents.Clear();
+                s_appendParents.AddRange(parents);
                 m_roadPoints = loadedPoints;
                 m_initialized = true;
                 GridCellsWithRoads = loadedPoints.Count;

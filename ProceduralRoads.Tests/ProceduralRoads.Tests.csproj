@@ -21,6 +21,11 @@
       here; anything touching Harmony patches or engine runtime cannot.
     -->
     <ItemGroup>
+        <Compile Include="../ProceduralRoads/Src/Utils/ManualRoadNetworkSync.cs" Link="ModSrc/ManualRoadNetworkSync.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/BridgeAppendQueue.cs" Link="ModSrc/BridgeAppendQueue.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/ManualRoadDraft.cs" Link="ModSrc/ManualRoadDraft.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/ManualRoads.cs" Link="ModSrc/ManualRoads.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadSpatialGrid.Appends.cs" Link="ModSrc/RoadSpatialGrid.Appends.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadGridComparer.cs" Link="ModSrc/RoadGridComparer.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadTerrainSamples.cs" Link="ModSrc/RoadTerrainSamples.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/ApproachTerrainSamples.cs" Link="ModSrc/ApproachTerrainSamples.cs"/>
