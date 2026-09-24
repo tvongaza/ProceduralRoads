@@ -126,6 +126,8 @@ public static class ServerTerrainBake
         public int Zones, Created, Rewritten, LiveWritten, Current, Ungenerated, Loaded, Duplicates, Failed, BridgeZones;
         public int NothingToWrite, VegetationZones, VegetationRemoved, GhostRocks, GhostSettled;
         public int GhostCreated, GhostRewritten, GhostFailed;
+        /// <summary>Zones the production lock refused (RoadNetworkLock).</summary>
+        public int Locked;
         public long Bytes;
         public double GhostMs;
     }
@@ -195,7 +197,8 @@ public static class ServerTerrainBake
         }
         string next = points == 0
             ? "nothing to write (no road terrain)"
-            : ServerBakePlanner.Decide(RoadSpatialGrid.RoadNetworkVersion, generated, loadedHere, facts, me).ToString();
+            : ServerBakePlanner.Decide(RoadSpatialGrid.RoadNetworkVersion, generated, loadedHere, facts, me,
+                RoadNetworkLock.Enabled).ToString();
         if (s_faults.IsQuarantined(zone))
             next = "stopped after a zone exception; fix the cause, then road_bake again";
         else if (s_faults.IsPaused)
@@ -446,6 +449,8 @@ public static class ServerTerrainBake
                 // which nothing would look at it again this session.
                 s_ghostRepair.Record(zone);
             }
+            else if (result == WriteResult.NothingToWrite && RoadNetworkLock.IsRefusedZone(zone))
+                s_counts.Locked++;
             else if (result == WriteResult.NothingToWrite)
                 s_counts.NothingToWrite++;
             else if (created)
@@ -453,7 +458,8 @@ public static class ServerTerrainBake
             else
                 s_counts.GhostRewritten++;
             s_counts.Bytes += bytes;
-            int rocks = ClearGhostRocks(zone);
+            // The production lock refused this zone's terrain: its rocks are left too.
+            int rocks = RoadNetworkLock.IsRefusedZone(zone) ? 0 : ClearGhostRocks(zone);
             s_counts.GhostRocks += rocks;
             Log.LogDebug($"[BAKE] zone {zone} (generated for a peer): {result}, " +
                          $"{bytes} bytes, {rocks} rock(s) cleared, {clock.Elapsed.TotalMilliseconds:F1} ms");
@@ -575,7 +581,9 @@ public static class ServerTerrainBake
                $"{s_busyMs / 1000.0:F1} s of frame time over {s_wall.Elapsed.TotalSeconds:F1} s. " +
                $"Generated for peers: {c.GhostCreated} compilers created, {c.GhostRewritten} saved ones written, " +
                $"{c.GhostFailed} failed ({s_ghostRepair.RepairCount} awaiting repair), {c.GhostRocks} rock(s) cleared, {c.GhostSettled} object(s) settled, {c.GhostMs:F0} ms; " +
-               $"{s_faults.Count} zone exception(s); queue " +
+               $"{s_faults.Count} zone exception(s); " +
+               (RoadNetworkLock.Enabled ? $"road network locked, {c.Locked} zone(s) refused; " : "") +
+               "queue " +
                (!Enabled ? "disabled by startup setting" : s_faults.IsPaused
                    ? $"paused ({s_faults.PauseReason}); fix the cause, then road_bake again"
                    : s_faults.Count > 0 ? "enabled; stopped zones need road_bake again after fixing the cause" : "enabled");
@@ -700,6 +708,10 @@ public static class ServerTerrainBake
         bool generated = zs.IsZoneGenerated(zone);
         bool loadedHere = zs.m_zones.ContainsKey(zone);
         Outcome terrain = ProcessTerrain(zone, generated, loadedHere);
+        // A zone the production lock refused keeps its vegetation as well: the
+        // road it would be cleared for is not the one its terrain carries.
+        if (terrain == Outcome.Done && RoadNetworkLock.IsRefusedZone(zone))
+            return Outcome.Done;
         return terrain == Outcome.Done ? ProcessVegetation(zone, generated) : terrain;
     }
 
@@ -731,9 +743,15 @@ public static class ServerTerrainBake
 
         List<ZDO> saved = FindSavedCompilers(zone);
         ServerBakePlanner.Action action = ServerBakePlanner.Decide(
-            s_version, generated, loadedHere, Describe(saved, zone), ZDOMan.GetSessionID());
+            s_version, generated, loadedHere, Describe(saved, zone), ZDOMan.GetSessionID(), RoadNetworkLock.Enabled);
         switch (action)
         {
+            case ServerBakePlanner.Action.RefusedByLock:
+                // Logs once per zone; nothing claimed, nothing retried.
+                RoadNetworkLock.RefusesTerrain(zone, saved[0].GetInt(RoadTerrainModifier.AppliedVersionHash), "server bake");
+                s_counts.Locked++;
+                Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
+                return Outcome.Done;
             case ServerBakePlanner.Action.LeaveToGeneration:
                 s_counts.Ungenerated++;
                 Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
@@ -1123,7 +1141,7 @@ public static class ServerTerrainBake
                                    ZDOMan.instance.IsInPeerActiveArea(zdo.GetPosition(), owner);
             int applied = zdo.GetInt(RoadTerrainModifier.AppliedVersionHash);
             facts.Add(new ServerBakePlanner.Compiler(applied, owner, ownerActiveHere,
-                RoadTerrainModifier.CarriesCurrentRoads(zone, applied)));
+                RoadTerrainModifier.CarriesCurrentRoads(zone, applied), RoadNetworkLock.IsForeignStamp(applied)));
         }
         return facts;
     }
@@ -1196,6 +1214,8 @@ public static class ServerTerrainBake
             // terrain operation): its Awake postfix already offered it the
             // roads. It is the game's object, not ours to take down.
             RoadTerrainModifier.CompletePendingTerrain(live, hmap);
+            if (RoadNetworkLock.IsRefusedZone(zone))
+                return WriteResult.NothingToWrite;   // refused, and said so; not a failure to repair
             return live.m_hmap == hmap && RoadTerrainModifier.CarriesCurrentRoads(live)
                 ? WriteResult.Written
                 : WriteResult.Failed;
@@ -1203,7 +1223,7 @@ public static class ServerTerrainBake
 
         List<ZDO> saved = FindSavedCompilers(zone);
         ServerBakePlanner.Action action = ServerBakePlanner.Decide(RoadSpatialGrid.RoadNetworkVersion,
-            generated: true, loadedHere: false, Describe(saved, zone), ZDOMan.GetSessionID());
+            generated: true, loadedHere: false, Describe(saved, zone), ZDOMan.GetSessionID(), RoadNetworkLock.Enabled);
         GameObject? go = null;
         bool bound = false;
         WriteResult result = WriteResult.Failed;
@@ -1214,6 +1234,10 @@ public static class ServerTerrainBake
             {
                 case ServerBakePlanner.Action.AlreadyCurrent:
                     return result = WriteResult.Written;
+                case ServerBakePlanner.Action.RefusedByLock:
+                    // Refused and logged once; not a failure, so not repaired.
+                    RoadNetworkLock.RefusesTerrain(zone, saved[0].GetInt(RoadTerrainModifier.AppliedVersionHash), "generated for a peer");
+                    return result = WriteResult.NothingToWrite;
                 case ServerBakePlanner.Action.CreateCompiler:
                     go = CreateCompiler(hmap);
                     created = true;

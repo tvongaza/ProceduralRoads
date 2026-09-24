@@ -44,6 +44,10 @@ public static class ServerBakePlanner
         CreateCompiler,
         /// <summary>Write the roads into the zone's saved compiler.</summary>
         WriteSavedCompiler,
+        /// <summary>The production lock (RoadNetworkLock) is on and the
+        /// compiler carries a network the loaded one does not account for:
+        /// it is never written, and nothing about it is claimed.</summary>
+        RefusedByLock,
     }
 
     /// <summary>What a write actually did, where one was attempted at all.</summary>
@@ -125,17 +129,23 @@ public static class ServerBakePlanner
         /// <summary>The saved stamp is an ancestor, with no new road points in this zone.</summary>
         public readonly bool UnchangedByAppends;
 
-        public Compiler(int appliedVersion, long owner, bool ownerActiveHere, bool unchangedByAppends = false)
+        /// <summary>The saved stamp is not zero and neither the loaded network nor
+        /// one of its append ancestors (RoadNetworkLock.IsForeignStamp).</summary>
+        public readonly bool ForeignStamp;
+
+        public Compiler(int appliedVersion, long owner, bool ownerActiveHere, bool unchangedByAppends = false,
+            bool foreignStamp = false)
         {
             AppliedVersion = appliedVersion;
             Owner = owner;
             OwnerActiveHere = ownerActiveHere;
             UnchangedByAppends = unchangedByAppends;
+            ForeignStamp = foreignStamp;
         }
     }
 
     public static Action Decide(int networkVersion, bool generated, bool loadedHere,
-        IReadOnlyList<Compiler> compilers, long mySession)
+        IReadOnlyList<Compiler> compilers, long mySession, bool locked = false)
     {
         if (networkVersion == 0)
             return Action.NoNetwork;
@@ -150,6 +160,11 @@ public static class ServerBakePlanner
         Compiler compiler = compilers[0];
         if (compiler.AppliedVersion == networkVersion || (compiler.AppliedVersion != 0 && compiler.UnchangedByAppends))
             return Action.AlreadyCurrent;
+        // Under the production lock a compiler carrying some other network is
+        // never written, whoever owns it: before the owner wait, so nothing is
+        // claimed or retried for it.
+        if (locked && compiler.ForeignStamp)
+            return Action.RefusedByLock;
         // Match the live writer's conservative rule: it never takes a live
         // compiler from another owner, even outside that owner's active area.
         // Saved compilers retain their existing inactive-owner takeover policy.

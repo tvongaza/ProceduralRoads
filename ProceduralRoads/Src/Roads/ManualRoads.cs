@@ -38,6 +38,7 @@ public static class ManualRoads
         IReadOnlyList<Island>? knownIslands = null)
     {
         if (Busy || RoadNetworkGenerator.IsGenerating) throw new InvalidOperationException("Road generation is busy.");
+        if (RoadNetworkLock.RefuseAppend() is string locked) throw new InvalidOperationException(locked);
         Busy = true;
         try { return PrepareCore(points, connect, knownIslands); }
         finally { Busy = false; }
@@ -133,6 +134,7 @@ public static class ManualRoads
         if (Busy || RoadNetworkGenerator.IsGenerating) throw new InvalidOperationException("Road generation is busy.");
         if (plan.Epoch != worldEpoch || plan.Version != RoadSpatialGrid.RoadNetworkVersion)
             throw new InvalidOperationException("The world or road network changed; plan the road again.");
+        if (RoadNetworkLock.RefuseAppend() is string locked) throw new InvalidOperationException(locked);
         if (plan.AlreadyConnected) return;
         Busy = true;
         try { RoadNetworkGenerator.AppendManualRoad(plan.Paths, plan.Crossings, plan.Start, plan.Version); }

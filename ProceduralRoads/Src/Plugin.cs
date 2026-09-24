@@ -224,6 +224,10 @@ namespace ProceduralRoads
             RoadNetworkGenerator.IslandRoadPercentage = IslandRoadPercentage.Value;
             // A validation switch, not a setting: see DebugSwitches.
             RoadNetworkGenerator.GenerateOnLoad = DebugSwitches.Flag("GENERATE_ROADS_ON_LOAD", true);
+            // The production lock: never regenerate or re-apply this world's
+            // saved network (RoadNetworkLock). An operator's switch, set once a
+            // fresh world's first, unlocked boot has generated its roads.
+            RoadNetworkLock.Enabled = DebugSwitches.Flag("LOCK_NETWORK", false);
             // How many islands may be built at once. Unset is what the mod
             // does on its own -- one fewer than the machine reports -- and 1
             // is the fully serial path. A validation switch for measuring

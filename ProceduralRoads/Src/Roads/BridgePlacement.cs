@@ -118,9 +118,13 @@ public static class BridgePlacement
 
     private static int SpawnInZone(Vector2s zoneID, bool ghost, ICollection<ZDOID>? condemned = null)
     {
-        if (!IsServer || ZNetScene.instance == null || ZDOMan.instance == null)
+        if (!IsServer || ZNetScene.instance == null || ZDOMan.instance == null || RoadNetworkLock.RoadsDisabled)
             return 0;
         if (BridgeAppendQueue.ForZone(zoneID) != null) return SpawnAppend(zoneID);
+        // Production lock with an older (or unreadable) layout saved: nothing
+        // from the plans, unspawned zones included (RoadNetworkLock.FreezeBridges).
+        if (!RoadNetworkLock.MaySpawnPlannedBridges)
+            return 0;
         List<BridgePiece>? pieces = BridgePlans.PlanFor(zoneID);
         if (pieces == null)
             return 0;
@@ -144,7 +148,7 @@ public static class BridgePlacement
     private static int s_appendCursor;
     public static void ApplyPendingAppends()
     {
-        if (!IsServer || ZNetScene.instance == null || ZDOMan.instance == null) return;
+        if (!IsServer || ZNetScene.instance == null || ZDOMan.instance == null || RoadNetworkLock.RoadsDisabled) return;
         var zones = new List<Vector2s>(BridgeAppendQueue.Zones);
         if (zones.Count == 0) return;
         // One zone / at most 64 new objects per retry. A missing prefab in one
@@ -250,6 +254,8 @@ public static class BridgePlacement
     public static int ClearSpawnedPieces(ICollection<ZDOID>? condemned = null)
     {
         if (!IsServer || ZDOMan.instance == null || ZNetScene.instance == null)
+            return 0;
+        if (!RoadNetworkLock.MayDestroyBridges("bridge piece removal"))
             return 0;
         BridgePlans.InvalidatePlans();
         BridgePlans.ForgetSpawned();

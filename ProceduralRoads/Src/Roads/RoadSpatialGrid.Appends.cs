@@ -11,6 +11,9 @@ public static partial class RoadSpatialGrid
     private static readonly List<int> s_appendParents = new();
     public static int AppendCount => s_appendParents.Count;
 
+    /// <summary>Whether <paramref name="version"/> is one this network was before one of its appends.</summary>
+    public static bool IsAppendAncestor(int version) => version != 0 && s_appendParents.Contains(version);
+
     public static List<RoadPoint> PendingPoints(List<RoadPoint> points, int appliedVersion)
     {
         if (appliedVersion != 0 && appliedVersion == RoadNetworkVersion) return new List<RoadPoint>();

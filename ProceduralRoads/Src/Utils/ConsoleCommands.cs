@@ -620,6 +620,11 @@ public static class ConsoleCommands
     /// </summary>
     private static void GenerateRoadsCommand(Terminal.ConsoleEventArgs args)
     {
+        if (RoadNetworkLock.RefuseRegeneration("road_generate") is string locked)
+        {
+            args.Context.AddString(locked);
+            return;
+        }
         // Check prerequisites
         if (WorldGenerator.instance == null)
         {
@@ -723,6 +728,11 @@ public static class ConsoleCommands
 
         if (args.Length > 1 && args[1] == "respawn")
         {
+            if (RoadNetworkLock.RefuseRegeneration("road_bridges respawn") is string locked)
+            {
+                args.Context.AddString(locked);
+                return;
+            }
             (int destroyed, int zones) = BridgePlacement.RespawnFromPlans();
             args.Context.AddString($"Destroyed {destroyed} bridge pieces; spawned the current plans into {zones} zone(s). Zones the world has not generated yet get theirs when it does.");
             return;
@@ -828,6 +838,11 @@ public static class ConsoleCommands
 
     private static void RegenerateIslandHere(Terminal.ConsoleEventArgs args)
     {
+        if (RoadNetworkLock.RefuseRegeneration("road_regen_island") is string locked)
+        {
+            args.Context.AddString(locked);
+            return;
+        }
         Vector3 pos;
         if (args.Length >= 3 && float.TryParse(args[1], out float x) && float.TryParse(args[2], out float z))
         {

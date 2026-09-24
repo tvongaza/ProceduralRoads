@@ -37,7 +37,7 @@ public static class RoadRockClearing
     public static void Tick()
     {
         RoadRockStats.MaybeLog();
-        if (!RoadRockPolicy.Clears(Mode) || !RoadNetworkGenerator.RoadsAvailable || ZoneSystem.instance == null || ZNetScene.instance == null ||
+        if (!RoadRockPolicy.Clears(Mode) || !RoadNetworkGenerator.RoadsAvailable || RoadNetworkLock.RoadsDisabled || ZoneSystem.instance == null || ZNetScene.instance == null ||
             Time.unscaledTime < s_next) return;
         s_next = Time.unscaledTime + 0.5f;
         var maps = Heightmap.GetAllHeightmaps();
@@ -69,6 +69,11 @@ public static class RoadRockClearing
             if (s_retryAt.TryGetValue(candidate.GetInstanceID(), out float retry) && Time.unscaledTime < retry) { RoadRockStats.NotReady++; continue; }
             if (candidate.HaveQueuedRebuild() || !ZNetScene.instance.IsAreaReady(candidate.transform.position) ||
                 !RoadTerrainModifier.TerrainSettled(candidate.transform.position)) { RoadRockStats.NotReady++; continue; }
+            // A zone whose terrain the production lock refused carries another
+            // network's road: its rocks are judged against neither, and left.
+            TerrainComp? compiler = TerrainComp.FindTerrainCompiler(candidate.transform.position);
+            if (compiler != null && RoadNetworkLock.RefusesTerrain(zone, RoadTerrainModifier.StampOf(compiler), "rock clearing"))
+            { MarkDone(candidate, version); continue; }
             map = candidate;
         }
         if (map == null) return;

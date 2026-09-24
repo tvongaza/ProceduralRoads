@@ -138,13 +138,21 @@ public static class VegetationClearing
         s_cleared.Add(zone);
     }
 
-    /// <summary>Take the saved record, unless it belongs to another network.</summary>
-    public static void Load(int savedVersion, IEnumerable<Vector2s> zones, int currentVersion)
+    /// <summary>
+    /// Take the saved record, unless it belongs to another network. With
+    /// <paramref name="keepMismatched"/> (the production lock) a record of
+    /// another network version is taken as this network's: the version can
+    /// change with a build that hashes the same roads differently, and
+    /// dropping the record would clear every road zone again, trees players
+    /// have since planted beside the road included.
+    /// </summary>
+    public static void Load(int savedVersion, IEnumerable<Vector2s> zones, int currentVersion,
+        bool keepMismatched = false)
     {
         Reset();
-        if (savedVersion == 0 || savedVersion != currentVersion)
+        if (savedVersion == 0 || currentVersion == 0 || (savedVersion != currentVersion && !keepMismatched))
             return;
-        Version = savedVersion;
+        Version = currentVersion;
         foreach (Vector2s zone in zones)
             s_cleared.Add(zone);
     }

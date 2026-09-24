@@ -257,6 +257,14 @@ public static class RoadNetworkPersistence
 
     private static void WriteBridgeZones(ZDO metadataZdo, IReadOnlyCollection<Vector2s> bridgeZones)
     {
+        // Under the production lock with an older bridge layout on the ground,
+        // the saved record is the only thing that still says which layout
+        // those pieces are: rewriting it would relabel them as this build's.
+        if (RoadNetworkLock.BridgesFrozen)
+        {
+            Log.LogDebug("[SAVE] Bridge zones not rewritten: the locked world keeps its older bridge layout record");
+            return;
+        }
         byte[] data = SerializeBridgeZones(bridgeZones);
         metadataZdo.Set(BridgeZonesHash, data);
         Log.LogDebug($"[SAVE] Saved {bridgeZones.Count} bridge zones ({data.Length} bytes)");
@@ -267,16 +275,21 @@ public static class RoadNetworkPersistence
     /// </summary>
     /// <param name="roadStartPoints">List to populate with loaded start points</param>
     /// <returns>True if road data was found and loaded</returns>
+    /// <summary>Why the last TryLoadGlobalRoadData returned false (null after a load).</summary>
+    public static string? LastLoadFailure { get; private set; }
+
     public static bool TryLoadGlobalRoadData(
         List<(Vector2 position, string label)> roadStartPoints,
         List<RoadCrossing> roadCrossings,
         HashSet<Vector2s> bridgeZones)
     {
         Log.LogDebug("[LOAD] TryLoadGlobalRoadData called");
+        LastLoadFailure = null;
 
         if (ZDOMan.instance == null)
         {
             Log.LogDebug("[LOAD] ZDOMan.instance is null!");
+            LastLoadFailure = "the world's objects are not loaded (no ZDOMan)";
             return false;
         }
 
@@ -284,6 +297,7 @@ public static class RoadNetworkPersistence
         if (metadataZdo == null)
         {
             Log.LogDebug("[LOAD] No road metadata ZDO found");
+            LastLoadFailure = $"no {MetadataPrefabName} object in the world";
             return false;
         }
 
@@ -293,6 +307,7 @@ public static class RoadNetworkPersistence
         if (data == null || data.Length == 0)
         {
             Log.LogDebug("[LOAD] Metadata ZDO found but no global road data");
+            LastLoadFailure = "the road metadata holds no road data";
             return false;
         }
 
@@ -311,6 +326,7 @@ public static class RoadNetworkPersistence
         }
 
         Log.LogWarning("[LOAD] DeserializeAllRoadPoints returned false!");
+        LastLoadFailure = $"the saved road data ({data.Length} bytes) could not be read: unknown format or corrupt";
         return false;
     }
 
@@ -528,10 +544,22 @@ public static class RoadNetworkPersistence
     /// a bridge half old and half new.</summary>
     public static bool BridgeLayoutIsStale { get; private set; }
 
+    /// <summary>The layout the saved bridge-zone record names, and how many zones it lists (for a stale one).</summary>
+    public static int SavedBridgeLayout { get; private set; }
+    public static int SavedBridgeZoneCount { get; private set; }
+
+    /// <summary>A bridge-zone record is there but this build cannot read it
+    /// (a newer build's format, or damage). Unlocked the mod carries on as if
+    /// no zone had its pieces; the production lock freezes bridges instead.</summary>
+    public static bool BridgeRecordUnreadable { get; private set; }
+
     private static void TryLoadBridgeZones(ZDO metadataZdo, HashSet<Vector2s> bridgeZones)
     {
         bridgeZones.Clear();
         BridgeLayoutIsStale = false;
+        SavedBridgeLayout = 0;
+        SavedBridgeZoneCount = 0;
+        BridgeRecordUnreadable = false;
         byte[]? data = metadataZdo.GetByteArray(BridgeZonesHash, null);
         if (data == null || data.Length == 0)
             return;
@@ -555,19 +583,25 @@ public static class RoadNetworkPersistence
             else
             {
                 Log.LogWarning($"Unknown bridge zone data version: {version}");
+                BridgeRecordUnreadable = true;
                 return;
             }
             int count = reader.ReadInt32();
             if (count < 0 || count > 1_000_000)
             {
                 Log.LogWarning($"Invalid bridge zone count: {count}");
+                BridgeRecordUnreadable = true;
                 return;
             }
+            SavedBridgeLayout = layout;
+            SavedBridgeZoneCount = count;
             if (layout != BridgeLayout.LayoutVersion)
             {
                 BridgeLayoutIsStale = true;
                 Log.LogInfo($"[BRIDGES] the saved bridges were laid out by layout {layout}; this build is layout {BridgeLayout.LayoutVersion}. " +
-                            $"Their {count} zone(s) are not marked spawned and their pieces will be replaced.");
+                            (RoadNetworkLock.Enabled
+                                ? $"Their {count} zone(s) are kept as they are: the road network is locked."
+                                : $"Their {count} zone(s) are not marked spawned and their pieces will be replaced."));
                 return;
             }
             for (int i = 0; i < count; i++)
@@ -578,6 +612,7 @@ public static class RoadNetworkPersistence
         {
             Log.LogWarning($"Failed to deserialize bridge zones: {ex.Message}");
             bridgeZones.Clear();
+            BridgeRecordUnreadable = true;
         }
     }
 

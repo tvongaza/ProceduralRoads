@@ -332,6 +332,9 @@ public static partial class RoadNetworkGenerator
     /// <summary>Load-time entry: generate unless GenerateOnLoad is off. Returns whether it generated.</summary>
     public static bool GenerateRoadsOnLoad()
     {
+        // The locked decision never comes here; this is for any other caller.
+        if (RoadNetworkLock.RefuseRegeneration("road generation on load") != null)
+            return false;
         if (!GenerateOnLoad)
         {
             Log.LogInfo("PROCEDURALROADS_GENERATE_ROADS_ON_LOAD is off: " +
@@ -390,6 +393,11 @@ public static partial class RoadNetworkGenerator
             Log.LogDebug("Roads already present, skipping");
             return;
         }
+
+        // Past this point a network is built, over the saved one if there is
+        // one: never under the production lock.
+        if (RoadNetworkLock.RefuseRegeneration($"road generation (GenerateRoads, force={force}, roads present={RoadsAvailable})") != null)
+            return;
 
         if (force && RoadsAvailable)
         {
@@ -1748,6 +1756,11 @@ public static partial class RoadNetworkGenerator
 
     public static bool RegenerateIslandAt(Vector3 worldPos, out string summary)
     {
+        if (RoadNetworkLock.RefuseRegeneration("island regeneration (RegenerateIslandAt)") is string refused)
+        {
+            summary = refused;
+            return false;
+        }
         if (WorldGenerator.instance == null || ZoneSystem.instance == null)
         {
             summary = "World not ready";
@@ -1879,6 +1892,26 @@ public static partial class RoadNetworkGenerator
         VegetationClearing.Reset();
         RoadNetworkPersistence.Reset();
         RoadSpatialGrid.Clear();
+        RoadNetworkLock.ResetSession();
+    }
+
+    /// <summary>
+    /// Locked, and the saved network did not load (RoadLifecycleManager): say
+    /// so, and drop anything a load that failed partway put in memory, so no
+    /// hook can act on half a network -- the append retry, for one, looks only
+    /// at the grid. The flags that say roads are available stay down.
+    /// </summary>
+    internal static void DisableLockedSession(string reason)
+    {
+        RoadSpatialGrid.Clear();
+        m_roadStartPoints.Clear();
+        m_roadCrossings.Clear();
+        BridgePlans.Reset();
+        BridgeAppendQueue.Reset();
+        VegetationClearing.Reset();
+        m_roadsGenerated = false;
+        m_roadsLoadedFromZDO = false;
+        RoadNetworkLock.DisableRoads(reason);
     }
 
     private static void LogGenerationStats(int roadsGenerated, TimeSpan elapsed)
@@ -2023,14 +2056,26 @@ public static partial class RoadNetworkGenerator
             // pieces are destroyed everywhere now, and since no zone is marked
             // spawned, each gets the current layout when it next comes alive
             // (or from the server bake). Never one bridge half old, half new.
-            if (RoadNetworkPersistence.BridgeLayoutIsStale)
+            if (RoadNetworkLock.Enabled)
+            {
+                // Locked: an older layout destroys nothing, and nothing is
+                // spawned from the plans this session, unvisited crossings
+                // included -- see RoadNetworkLock.FreezeBridges for why. A
+                // record this build cannot read (a newer build's, say, after a
+                // rollback) says no more about what stands, so it freezes too.
+                if (RoadNetworkPersistence.BridgeLayoutIsStale || RoadNetworkPersistence.BridgeRecordUnreadable)
+                    RoadNetworkLock.FreezeBridges(RoadNetworkPersistence.SavedBridgeLayout,
+                        BridgeLayout.LayoutVersion, RoadNetworkPersistence.SavedBridgeZoneCount);
+            }
+            else if (RoadNetworkPersistence.BridgeLayoutIsStale)
             {
                 int gone = BridgePlacement.ClearSpawnedPieces();
                 Log.LogInfo($"[BRIDGES] replaced an older bridge layout: destroyed {gone} piece(s)");
             }
             var cleared = new HashSet<Vector2s>();
             if (RoadNetworkPersistence.TryLoadClearedZones(out int clearedVersion, cleared))
-                VegetationClearing.Load(clearedVersion, cleared, RoadSpatialGrid.RoadNetworkVersion);
+                VegetationClearing.Load(clearedVersion, cleared, RoadSpatialGrid.RoadNetworkVersion,
+                    RoadNetworkLock.KeepVegetationRecord(clearedVersion, RoadSpatialGrid.RoadNetworkVersion, cleared.Count));
         }
         return loaded;
     }

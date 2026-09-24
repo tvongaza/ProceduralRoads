@@ -30,6 +30,8 @@ public static class RoadTerrainModifier
         NothingToWrite,
         /// <summary>The game would not save: this peer does not own the compiler.</summary>
         SaveRefused,
+        /// <summary>The production lock refused the zone (RoadNetworkLock): nothing written.</summary>
+        RefusedByLock,
     }
 
     /// <summary>
@@ -118,6 +120,9 @@ public static class RoadTerrainModifier
                 if (terrainComp == null) continue;
             }
             if (terrainComp.m_nview == null || !terrainComp.m_nview.IsValid()) continue;
+            // Before anything is claimed: a zone the production lock refuses is
+            // not this sweep's to take.
+            if (RoadNetworkLock.RefusesTerrain(zoneID, StampOf(terrainComp), "sweep")) { s_swept.Add((zoneID, version)); continue; }
             if (!terrainComp.m_nview.IsOwner())
             {
                 if (terrainComp.m_nview.HasOwner()) continue;   // another peer's; look again next sweep
@@ -167,8 +172,10 @@ public static class RoadTerrainModifier
 
         Vector2s zoneID = ZoneSystem.GetZone(terrainComp.m_hmap.transform.position);
         List<RoadSpatialGrid.RoadPoint> roadPoints = RoadSpatialGrid.GetRoadPointsInZone(zoneID);
-        bool forced = s_pendingForcedZones.Remove(zoneID);
+        bool forced = RoadNetworkLock.Force(zoneID, s_pendingForcedZones.Remove(zoneID));
         if (roadPoints.Count == 0 || (!forced && CarriesCurrentRoads(terrainComp)))
+            return;
+        if (RoadNetworkLock.RefusesTerrain(zoneID, StampOf(terrainComp), "zone load"))
             return;
 
         if (!terrainComp.m_nview.IsOwner())
@@ -180,6 +187,11 @@ public static class RoadTerrainModifier
 
         QueueWrite(zoneID, roadPoints, terrainComp.m_hmap, terrainComp, forced);
     }
+
+    /// <summary>The network version stamped on a compiler (0 = none, or not readable).</summary>
+    internal static int StampOf(TerrainComp terrainComp) =>
+        terrainComp.m_nview != null && terrainComp.m_nview.IsValid() && terrainComp.m_nview.GetZDO() != null
+            ? terrainComp.m_nview.GetZDO().GetInt(AppliedVersionHash, 0) : 0;
 
     /// <summary>Whether the zone's saved objects include a terrain compiler.</summary>
     public static bool HasSavedTerrainCompiler(Vector2s zoneID)
@@ -328,6 +340,8 @@ public static class RoadTerrainModifier
         if (roadPoints == null || roadPoints.Count == 0 || heightmap == null || terrainComp == null ||
             terrainComp.m_nview == null || !terrainComp.m_nview.IsValid() || !terrainComp.m_nview.IsOwner())
             return;
+        if (RoadNetworkLock.RefusesTerrain(zoneID, StampOf(terrainComp), "queued write"))
+            return;
 
         // Multiple requests before the late pass coalesce, preserving an explicit
         // reapplication even if a normal zone-load request follows it.
@@ -353,6 +367,15 @@ public static class RoadTerrainModifier
         if (!s_pendingWrites.TryGetValue(terrainComp, out var request))
             return;
         s_pendingWrites.Remove(terrainComp);
+        // The last door before the compiler's arrays: whatever queued this,
+        // the production lock refuses a zone stamped with a network it does
+        // not account for, and turns a forced write into an ordinary one.
+        if (RoadNetworkLock.RefusesTerrain(request.Zone, StampOf(terrainComp), "terrain rebuild"))
+        {
+            LastWriteOutcome = WriteOutcome.RefusedByLock;
+            return;
+        }
+        request.Force = RoadNetworkLock.Force(request.Zone, request.Force);
         // Ownership can change between queueing and rebuilding: the game
         // releases objects outside the player's active area, and a zone at the
         // ring's edge (or just after a teleport) can be released before its

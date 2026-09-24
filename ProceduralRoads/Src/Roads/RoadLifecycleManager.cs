@@ -120,6 +120,12 @@ public static class RoadLifecycleManager
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(
             $"Deciding after {trigger}: {ZoneSystem.instance!.GetLocationList()!.Count} locations");
 
+        if (RoadNetworkLock.Enabled)
+        {
+            DecideLocked();
+            return;
+        }
+
         if (RoadNetworkGenerator.TryLoadGlobalRoadData())
         {
             RoadNetworkGenerator.MarkRoadsLoadedFromZDO();
@@ -133,6 +139,47 @@ public static class RoadLifecycleManager
         // terrain to the zones that spawned during the loading screen, before
         // the network existed. Calling the generator directly loses both.
         RoadNetworkGenerator.GenerateRoadsOnLoad();
+    }
+
+    /// <summary>
+    /// The same decision under the production lock (RoadNetworkLock): load the
+    /// saved network, or have no roads at all. Nothing is generated in place of
+    /// a network that did not load, whatever the reason -- no metadata, no road
+    /// data, an unreadable format, or a load that threw -- because a generated
+    /// network would be re-applied over every zone the saved one wrote. The
+    /// session stays without roads once decided: a later trigger (player spawn)
+    /// does not try again.
+    /// </summary>
+    private static void DecideLocked()
+    {
+        if (RoadNetworkLock.RoadsDisabled)
+            return;
+
+        bool loaded;
+        string? failure = null;
+        try
+        {
+            loaded = RoadNetworkGenerator.TryLoadGlobalRoadData();
+        }
+        catch (System.Exception ex)
+        {
+            loaded = false;
+            failure = $"the load threw {ex.GetType().Name}: {ex.Message}";
+        }
+
+        if (!loaded)
+        {
+            RoadNetworkGenerator.DisableLockedSession(
+                failure ?? RoadNetworkPersistence.LastLoadFailure ?? "no saved network was found");
+            return;
+        }
+
+        RoadNetworkGenerator.MarkRoadsLoadedFromZDO();
+        var crossings = RoadNetworkGenerator.GetRoadCrossings();
+        int bridges = 0;
+        foreach (RoadCrossing crossing in crossings)
+            if (crossing.Kind == CrossingKind.Bridge) bridges++;
+        RoadNetworkLock.LogLocked(crossings.Count, BridgePlans.SpawnedZones.Count, bridges);
     }
 
     /// <summary>
