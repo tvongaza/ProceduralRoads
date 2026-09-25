@@ -310,6 +310,31 @@ public class ManualBridgeTests : IDisposable
     {
         RoadNetworkGenerator.Reset();WorldGenerator.instance=null;ZoneSystem.instance=null;ZDOMan.instance=null;Heightmap.Registered=null;
     }
+    [Fact] public void FullRespawnDiscardsAppendProgressButKeepsTheCompletePlan()
+    {
+        var island=new Island {Id=1,CellSize=8,WorldOffset=0,Min=new Vector2(-216,-120),Max=new Vector2(216,120)};
+        for(int x=-27;x<=27;x++)for(int z=-15;z<=15;z++)island.Cells.Add(new Vector2Int(x,z));
+        var plan=ManualRoads.Prepare(new[]{new Vector2(-160,0),new Vector2(160,0)},false,new[]{island});
+        ManualRoads.Commit(plan);
+        var zone=BridgeAppendQueue.Zones.First(z=>BridgeAppendQueue.ForZone(z)!.Count>1);
+        int fullCount=BridgePlans.PlannedPieceCount(zone);
+        var first=BridgeAppendQueue.ForZone(zone)![0];
+        BridgeAppendQueue.Acknowledge(zone,BridgeAppendQueue.Key(first));
+        Assert.True(BridgeAppendQueue.ForZone(zone)!.Count<fullCount);
+        // Ordinary retry/reload keeps acknowledgements: do not resurrect damage.
+        var pending=BridgeAppendQueue.Serialize(); BridgeAppendQueue.Load(pending);
+        Assert.DoesNotContain(BridgeAppendQueue.ForZone(zone)!,p=>BridgeAppendQueue.Key(p)==BridgeAppendQueue.Key(first));
+        BridgePlans.MarkSpawned(zone);
+        // The real clear/respawn path calls these two methods before spawning.
+        BridgePlans.InvalidatePlans(); BridgePlans.ForgetSpawned();
+        Assert.Null(BridgeAppendQueue.ForZone(zone));
+        Assert.False(BridgePlans.IsSpawned(zone));
+        Assert.Equal(fullCount,BridgePlans.PlannedPieceCount(zone));
+        // Persisting and restoring the queue cannot reinstate the stale remainder.
+        var after=BridgeAppendQueue.Serialize(); BridgeAppendQueue.Load(after);
+        Assert.Empty(BridgeAppendQueue.Zones);
+    }
+
     [Fact] public void AManualRiverCrossingQueuesNewPiecesInAnAlreadySpawnedZoneAndKeepsOldObjects()
     {
         var island=new Island {Id=1,CellSize=8,WorldOffset=0,Min=new Vector2(-216,-120),Max=new Vector2(216,120)};
