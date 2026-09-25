@@ -705,9 +705,8 @@ public static class RoadSpatialGrid
         m_roadCacheLock.EnterReadLock();
         try
         {
-            if (m_roadPoints.Count == 0)
-                return null;
-
+            // Zero cells is a saved network too. Writing its header replaces
+            // an older nonempty blob and distinguishes it from no saved data.
             using var ms = new MemoryStream();
             using var writer = new BinaryWriter(ms);
             
