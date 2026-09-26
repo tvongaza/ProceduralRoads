@@ -204,11 +204,13 @@ public static class RoadPitches
 
     private static float EdgeLimit(float s0, float s1, List<(float from, float to)> eases, float cap, float pitch, float pitchLength, float ease)
     {
+        // A long pitch beside an earlier rest can overlap the next rest.
+        // Check every rest before assigning any pitch, both when measuring
+        // available climb and when writing the per-edge limits.
         foreach (var (from, to) in eases)
-        {
             if (s1 > from && s0 < to) return ease;
+        foreach (var (from, to) in eases)
             if (s1 > from - pitchLength && s0 < to + pitchLength) return pitch;
-        }
         return cap;
     }
 

@@ -89,8 +89,31 @@ public static class RoadSiteProtection
     // An endpoint's own footprint is exempt during the centre-to-centre
     // search. Those sections are clipped away before storing the road.
     public static bool BlocksSegment(Vector2 a, Vector2 b, float clearance,
-        Vector2? start, Vector2? end)
+        Vector2? start, Vector2? end) =>
+        BlocksSegment(a, b, clearance, start, end, false, out _);
+
+    // A trimmed arrival is outside the site, at the edge of its extra road
+    // clearance. It may graze that margin while turning towards the site.
+    // Unlike the centre-to-centre search exemption, it never permits crossing
+    // the authored footprint itself. Use the input ends, before reshaping.
+    internal static bool BlocksFinalSegment(Vector2 a, Vector2 b, float clearance,
+        Vector2 start, Vector2 end, out Footprint? hit) =>
+        BlocksSegment(a, b, clearance, start, end, true, out hit);
+
+    private static bool IsArrival(Vector2? endpoint, Footprint site, float clearance)
     {
+        if (!endpoint.HasValue) return false;
+        float distance = (endpoint.Value - site.Centre).sqrMagnitude;
+        // Five centimetres accommodates float rounding of the radial trim
+        // at world coordinates; it does not enlarge the allowed footprint.
+        float outer = site.Radius + clearance + 0.05f;
+        return distance >= site.Radius * site.Radius && distance <= outer * outer;
+    }
+
+    private static bool BlocksSegment(Vector2 a, Vector2 b, float clearance,
+        Vector2? start, Vector2? end, bool final, out Footprint? hit)
+    {
+        hit = null;
         Ensure();
         // Footprints exist and cannot be consulted. Answering "nothing is in
         // the way" would run roads through every POI on the world, so this
@@ -104,12 +127,14 @@ public static class RoadSiteProtection
                 if (!cells.TryGetValue(new Vector2i(x, z), out var list)) continue;
                 foreach (var f in list)
                 {
-                    if ((start.HasValue && (start.Value - f.Centre).sqrMagnitude < f.Radius * f.Radius) ||
-                        (end.HasValue && (end.Value - f.Centre).sqrMagnitude < f.Radius * f.Radius)) continue;
+                    if (!final && ((start.HasValue && (start.Value - f.Centre).sqrMagnitude < f.Radius * f.Radius) ||
+                        (end.HasValue && (end.Value - f.Centre).sqrMagnitude < f.Radius * f.Radius))) continue;
                     Vector2 d = b - a, to = f.Centre - a;
                     float t = d.sqrMagnitude < 0.0001f ? 0f : Mathf.Clamp01((to.x * d.x + to.y * d.y) / d.sqrMagnitude);
                     float r = f.Radius + clearance;
-                    if ((a + d * t - f.Centre).sqrMagnitude < r * r) return true;
+                    if (final && (IsArrival(start, f, clearance) || IsArrival(end, f, clearance))) r = f.Radius;
+                    if ((a + d * t - f.Centre).sqrMagnitude < r * r)
+                    { hit = f; return true; }
                 }
             }
         return false;

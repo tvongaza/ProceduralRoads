@@ -704,7 +704,7 @@ public static partial class RoadNetworkGenerator
 
         Vector2 pathStart = RoadEndpoint.FindGround(WorldGenerator.instance, startCenter, startRadius);
         Vector2 pathEnd = RoadEndpoint.FindGround(WorldGenerator.instance, endCenter, endRadius);
-        List<Vector2>? path = SnapToNetwork(Finder.FindPath(pathStart, pathEnd));
+        List<Vector2>? path = SnapToNetwork(Finder.FindPath(pathStart, pathEnd), width);
 
         // Canvas.ForceUpdateCanvases() used to be pumped here to keep a
         // client's loading screen alive during a long generation. Islands are
@@ -1103,7 +1103,7 @@ public static partial class RoadNetworkGenerator
     internal const float CorridorHeight = 3f;
     internal const float CorridorRun = 12f;
 
-    internal static List<Vector2>? SnapToNetwork(List<Vector2>? path)
+    internal static List<Vector2>? SnapToNetwork(List<Vector2>? path, float? width = null)
     {
         if (path == null || RoadSnap <= 0f || path.Count < 3 || !RoadSpatialGrid.IsInitialized) return path;
         var moved = new Vector2[path.Count];
@@ -1140,6 +1140,14 @@ public static partial class RoadNetworkGenerator
         for (int i = 1; i < path.Count - 1; i++)
             if (Vector2.Distance(result[result.Count - 1], moved[i]) > 0.5f) result.Add(moved[i]);
         result.Add(path[path.Count - 1]);
+        // Snapping is cosmetic. Its new connecting legs have not been checked
+        // by the route search, so keep the original path when the merge cuts
+        // a protected site. Before trimming, only the route's own endpoint
+        // footprints are exempt, just as they are during the search.
+        float clearance = (width ?? RoadWidth) * 0.5f + 2f;
+        for (int i = 1; i < result.Count; i++)
+            if (RoadSiteProtection.BlocksSegment(result[i - 1], result[i], clearance, path[0], path[path.Count - 1]))
+                return path;
         return result;
     }
 
@@ -1259,7 +1267,7 @@ public static partial class RoadNetworkGenerator
         RoadPathfinder finder, Vector2 pathStart, Vector2 pathEnd, Vector2 startCenter, float startRadius,
         Vector2 endCenter, float endRadius, float width)
     {
-        var path = SnapToNetwork(finder.FindPath(pathStart, pathEnd));
+        var path = SnapToNetwork(finder.FindPath(pathStart, pathEnd), width);
         if (path == null || path.Count < 2) return null;
         path = TrimPathToRadii(path, startCenter, startRadius, endCenter, endRadius);
         path = TrimWetEnds(path);
