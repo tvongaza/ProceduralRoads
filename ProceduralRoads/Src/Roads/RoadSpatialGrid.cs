@@ -67,6 +67,7 @@ public static class RoadSpatialGrid
             TotalRoadLength = 0f;
             RoadNetworkVersion = 0;
             m_debugInfo.Clear();
+            System.Threading.Interlocked.Exchange(ref siteRefusalSamples, 0);
         }
         finally
         {
@@ -166,9 +167,22 @@ public static class RoadSpatialGrid
     public static PlannedPath? PlanRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
         float? startGround = null, float? endGround = null,
         bool followTerrain = false, float minHeight = float.NegativeInfinity,
-        System.Func<Vector2, float>? terrainHeight = null)
+        System.Func<Vector2, float>? terrainHeight = null) =>
+        PlanRoadPath(path, width, worldGen, startGround, endGround, followTerrain, minHeight, terrainHeight, checkSites: true);
+
+    // Approach selection must be able to score an old route that grazes a
+    // site, or it stops before looking for a safe replacement. This profile
+    // is comparison-only; the chosen candidate still uses PlanRoadPath.
+    internal static PlannedPath? PlanComparisonProfile(List<Vector2> path, float width, WorldGenerator worldGen,
+        float? startGround, float? endGround, System.Func<Vector2, float> terrainHeight) =>
+        PlanRoadPath(path, width, worldGen, startGround, endGround, false, float.NegativeInfinity, terrainHeight, checkSites: false);
+
+    private static PlannedPath? PlanRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
+        float? startGround, float? endGround, bool followTerrain, float minHeight,
+        System.Func<Vector2, float>? terrainHeight, bool checkSites)
     {
         var plan = PlanRoadPathShaped(path, width, worldGen, startGround, endGround, followTerrain, minHeight, terrainHeight);
+        if (checkSites) plan = CheckSiteClearance(plan, path);
         // The sway is cosmetic: the road is planned without it too, and the
         // swayed plan is kept only if it was built and moves no more earth.
         // Measured: swaying the approach to a bridge put it on higher ground
@@ -178,13 +192,47 @@ public static class RoadSpatialGrid
             string? why = LastRefusal;
             PlannedPath? plain;
             SuppressWiggle = true;
-            try { plain = PlanRoadPathShaped(path, width, worldGen, startGround, endGround, followTerrain, minHeight, terrainHeight); }
+            try
+            {
+                plain = PlanRoadPathShaped(path, width, worldGen, startGround, endGround, followTerrain, minHeight, terrainHeight);
+                if (checkSites) plain = CheckSiteClearance(plain, path);
+            }
             finally { SuppressWiggle = false; }
             float Ground(Vector2 q) => terrainHeight != null ? terrainHeight(q) : BiomeBlendedHeight.GetBlendedHeight(q.x, q.y, worldGen);
             if (plan == null) { System.Threading.Interlocked.Increment(ref SwayRefused); plan = plain; }
             else if (plain != null && !RoadWiggle.NoMoreEarth(plan.Points, plan.Heights, plain.Points, plain.Heights, Ground))
             { System.Threading.Interlocked.Increment(ref SwayMoreEarth); plan = plain; }
             else { System.Threading.Interlocked.Increment(ref SwayKept); LastRefusal = why; }
+        }
+        return plan;
+    }
+
+    private static int siteRefusalSamples;
+
+    private static PlannedPath? CheckSiteClearance(PlannedPath? plan, List<Vector2> input)
+    {
+        if (plan == null) return null;
+        // Preserve legitimate trimmed arrivals at their site's clearance
+        // edge. Only the input endpoints can grant that margin allowance:
+        // snapping must not turn a third site into an exempt destination.
+        Vector2 start = input[0], end = input[input.Count - 1];
+        for (int i = 1; i < plan.Points.Count; i++)
+        {
+            float width = plan.Widths != null ? Mathf.Max(plan.Widths[i - 1], plan.Widths[i]) : plan.Width;
+            if (RoadSiteProtection.BlocksFinalSegment(plan.Points[i - 1], plan.Points[i], width * 0.5f + 2f, start, end, out var hit))
+            {
+                LastRefusal = "final road crosses a protected site";
+                string site = hit.HasValue
+                    ? System.FormattableString.Invariant($"site=({hit.Value.Centre.x:F2},{hit.Value.Centre.y:F2}) radius={hit.Value.Radius:F2}")
+                    : "site=index unavailable";
+                string detail = System.FormattableString.Invariant(
+                    $"POI clearance refused trial: segment=({plan.Points[i - 1].x:F2},{plan.Points[i - 1].y:F2})->({plan.Points[i].x:F2},{plan.Points[i].y:F2}); {site}; width={width:F2}; input=({start.x:F2},{start.y:F2})->({end.x:F2},{end.y:F2}). Trial refusal, not necessarily a lost road.");
+                // Keep ordinary server logs useful without printing thousands
+                // of rejected sway/approach trials. Debug retains every one.
+                if (System.Threading.Interlocked.Increment(ref siteRefusalSamples) <= 20) Log.LogInfo(detail);
+                else Log.LogDebug(detail);
+                return null;
+            }
         }
         return plan;
     }
@@ -291,7 +339,7 @@ public static class RoadSpatialGrid
         // smoothing and the sway's resampling moved back off (measured: 126 m
         // of road beside another without it, 52 m with it).
         if (!followTerrain)
-            path = RoadNetworkGenerator.SnapToNetwork(path)!;
+            path = RoadNetworkGenerator.SnapToNetwork(path, width)!;
 
         List<Vector2>? turns = null; List<bool>? landings = null; List<float>? shapeWidths = null;
         bool shapedOk = followTerrain || RoadSwitchbacks.Shape(path, width, out turns, out landings, SampleTerrain, tight: tightTurns);
@@ -302,11 +350,10 @@ public static class RoadSpatialGrid
         if (turns != null)
         {
             totalLength = 0f;
-            // Only the curves and landings are tested, and the road's own end
-            // locations are exempt as they are in the search: the legs between
-            // them ARE the route the search already judged.
-            // A road rounded only for its bends has no switchback, and only its
-            // arcs are tested whatever the setting.
+            // Check new curves and landings early, including their water
+            // clearance. The completed buildable plan gets a separate POI
+            // check on every leg, since snapping can move ordinary legs too.
+            // A road rounded only for its bends checks only arcs here.
             bool hasSwitchback = landings != null && landings.Contains(true);
             var curve = RoadSwitchbacks.LastCurve;
             bool curvesOnly = (CurveChecks || !hasSwitchback) && landings != null;

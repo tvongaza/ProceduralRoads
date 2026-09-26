@@ -107,6 +107,12 @@ public sealed class RoadCrossing
         FairwayWidth = existing.FairwayWidth;
         Kind = existing.Kind;
         Style = existing.Style;
+        // These describe the adopted crossing, not the discarded candidate.
+        // Otherwise an invalid shallow ford stays invalid after it has been
+        // replaced by a valid bridge already carrying the network.
+        Shallow = existing.Shallow;
+        Invalid = existing.Invalid;
+        ShallowNote = existing.ShallowNote;
     }
 
     /// <summary>A crossing between two banks with its derived fields filled in.</summary>

@@ -51,7 +51,12 @@ public static class RoadSiteApproach
             // Trial profiles do not contribute to the network's grade report.
             float previousGrade = RoadGrade.SteepestPlanned;
             RoadSpatialGrid.PlannedPath? plan;
-            try { plan = RoadSpatialGrid.PlanRoadPath(tail, width, world, anchorHeight, target(tail[tail.Count - 1]), terrainHeight: profileSamples.Get); }
+            try
+            {
+                plan = requireClear
+                    ? RoadSpatialGrid.PlanRoadPath(tail, width, world, anchorHeight, target(tail[tail.Count - 1]), terrainHeight: profileSamples.Get)
+                    : RoadSpatialGrid.PlanComparisonProfile(tail, width, world, anchorHeight, target(tail[tail.Count - 1]), profileSamples.Get);
+            }
             finally { RoadGrade.SteepestPlanned = previousGrade; }
             if (plan == null) return Reject("profile unavailable");
             double sum = 0;
