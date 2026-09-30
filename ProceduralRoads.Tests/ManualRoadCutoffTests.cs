@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Valheim.Testing.Doubles;
 using Xunit;
 
 namespace ProceduralRoads.Tests;
@@ -24,21 +25,21 @@ public sealed class ManualRoadCutoffTests : IDisposable
     /// <summary>Explored too, far from any road.</summary>
     private static readonly Vector2s FarAway = new(6, 6);
 
+    private readonly ValheimWorldScope _scope = new ValheimWorldScope();
+
     public ManualRoadCutoffTests()
     {
         RoadNetworkGenerator.Reset(); RoadTerrainModifier.ResetDebugCounters(); NetworkCutoff.Forget();
-        WorldGenerator.instance = new FlatWorld(); ZDOMan.instance = new ZDOMan();
-        ZoneSystem.instance = new ZoneSystem(); RoadNetworkGenerator.MarkLocationsReady();
-        Heightmap.Registered = null; RoadGrade.Configured = .35f;
+        _scope.WithWorld(new FlatWorld()).WithZdos().WithZoneSystem(); RoadNetworkGenerator.MarkLocationsReady();
+        RoadGrade.Configured = .35f;
         RoadNetworkGenerator.RoadWidth = 4;
         RoadSiteProtection.Set(Array.Empty<RoadSiteProtection.Footprint>());
     }
 
     public void Dispose()
     {
-        BepInEx.Logging.ManualLogSource.Captured = null;
         RoadNetworkGenerator.Reset(); RoadTerrainModifier.ResetDebugCounters(); NetworkCutoff.Forget();
-        WorldGenerator.instance = null; ZDOMan.instance = null; ZoneSystem.instance = null; Heightmap.Registered = null;
+        _scope.Dispose();
     }
 
     private static Island Island()
@@ -64,13 +65,11 @@ public sealed class ManualRoadCutoffTests : IDisposable
     public void AManualRoadThroughAnExploredZoneBuildsThereAndSaysSo()
     {
         GeneratedNetworkOnAnExploredWorld();
-        Heightmap hm = Heightmap.CreateForZone(Explored);
-        Heightmap.Registered = hm;
+        Heightmap hm = _scope.RegisterHeightmap(Explored);
         TerrainComp tc = hm.m_terrainComp!;
         Assert.True(NetworkCutoff.Excludes(Explored));
 
-        var log = new List<string>();
-        BepInEx.Logging.ManualLogSource.Captured = log;
+        List<string> log = _scope.CaptureLog();
         var plan = ManualRoads.Prepare(new[] { new Vector2(-16f, 0f), new Vector2(80f, 0f) }, false, new[] { Island() });
         ManualRoads.Commit(plan);
 
@@ -106,8 +105,7 @@ public sealed class ManualRoadCutoffTests : IDisposable
         // The same road committed straight into the grid, as no command does: nothing admits the zone.
         var path = RoadSpatialGrid.PlanRoadPath(new List<Vector2> { new(-16f, 0f), new(80f, 0f) }, 4f, WorldGenerator.instance!)!;
         RoadSpatialGrid.CommitAppend(new[] { path }, RoadSpatialGrid.RoadNetworkVersion);
-        Heightmap hm = Heightmap.CreateForZone(Explored);
-        Heightmap.Registered = hm;
+        Heightmap hm = _scope.RegisterHeightmap(Explored);
         RoadTerrainModifier.ApplyAdditionsToLoadedZones();
         Assert.True(NetworkCutoff.Excludes(Explored));
         Assert.Equal(0, hm.m_terrainComp!.SaveCount);

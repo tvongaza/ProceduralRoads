@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Valheim.Testing;
+using Valheim.Testing.Doubles;
 using Xunit;
 
 namespace ProceduralRoads.Tests;
@@ -20,11 +22,12 @@ public sealed class SeamFadeTests : IDisposable
     /// <summary>East of the writable zone: their shared border is x = 32.</summary>
     private static readonly Vector2s Explored = new(1, 0);
 
+    private readonly ValheimWorldScope _world = new ValheimWorldScope()
+        .WithWorld(new SyntheticWorld { HasRiver = false, HasMountain = false }).WithZoneSystem();
+    private readonly StaticOverride _plain = PlainEarthworks.Apply();
+
     public SeamFadeTests()
     {
-        WorldGenerator.instance = new SyntheticWorld { HasRiver = false, HasMountain = false };
-        ZoneSystem.instance = new ZoneSystem();
-        PlainEarthworks.Begin();
         RoadSpatialGrid.Clear(); RoadTerrainModifier.ResetDebugCounters();
         NetworkCutoff.Forget();
     }
@@ -33,10 +36,8 @@ public sealed class SeamFadeTests : IDisposable
     {
         NetworkCutoff.Forget();
         RoadSpatialGrid.Clear(); RoadTerrainModifier.ResetDebugCounters();
-        PlainEarthworks.End();
-        Heightmap.Registered = null;
-        ZoneSystem.instance = null;
-        WorldGenerator.instance = null;
+        _plain.Dispose();
+        _world.Dispose();
     }
 
     /// <summary>An east-west road along z = 0 through both zones, standing <see cref="Lift"/> above the ground.</summary>
@@ -49,10 +50,9 @@ public sealed class SeamFadeTests : IDisposable
         return points;
     }
 
-    private static TerrainComp Write(Vector2s zone)
+    private TerrainComp Write(Vector2s zone)
     {
-        Heightmap hm = Heightmap.CreateForZone(zone, Width);
-        Heightmap.Registered = hm;
+        Heightmap hm = _world.RegisterHeightmap(zone, Width);
         TerrainComp tc = hm.m_terrainComp!;
         for (int i = 0; i < tc.m_paintMask.Length; i++)
             tc.m_paintMask[i] = new Color(0f, 0f, 0f, 0.25f);
@@ -135,8 +135,7 @@ public sealed class SeamFadeTests : IDisposable
         Assert.NotEmpty(points);
 
         ExcludeOnANewNetwork(Explored);
-        Heightmap hm = Heightmap.CreateForZone(Explored, Width);
-        Heightmap.Registered = hm;
+        Heightmap hm = _world.RegisterHeightmap(Explored, Width);
         TerrainComp tc = hm.m_terrainComp!;
         object[] before = Terrain(tc);
 
@@ -181,8 +180,7 @@ public sealed class SeamFadeTests : IDisposable
         ExcludeOnANewNetwork(Explored);
         Assert.True(NetworkCutoff.SeamWeight(new Vector2(30f, 0f)) < 1f);
 
-        Heightmap hm = Heightmap.CreateForZone(Explored, Width);
-        Heightmap.Registered = hm;
+        Heightmap hm = _world.RegisterHeightmap(Explored, Width);
         var log = new List<string>();
         BepInEx.Logging.ManualLogSource.Captured = log;
         try

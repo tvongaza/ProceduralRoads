@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
+using Valheim.Testing;
+using Valheim.Testing.Doubles;
 using Xunit;
 
 namespace ProceduralRoads.Tests;
@@ -10,39 +12,44 @@ namespace ProceduralRoads.Tests;
 /// footprint is wider than the painted one, the flat core is fully leveled,
 /// terrain beyond the blend margin is untouched, and paint alpha survives.
 /// </summary>
-public class TerrainModifierTests
+public class TerrainModifierTests : System.IDisposable
 {
     private const int Width = 64;                 // vanilla zone: 64 vertices per side, 1 m apart
     private const float RoadWidth = 4f;
     private const float Lift = 1.5f;              // road height above natural terrain
 
+    private readonly ValheimWorldScope _world = new ValheimWorldScope();
+    private StaticOverride? _plain;
+
     /// <summary>A straight east-west road through the zone centre, one point per metre.</summary>
-    private static (Heightmap hm, TerrainComp tc, float natural) BuildZone(SyntheticWorld world)
+    private (Heightmap hm, TerrainComp tc, float natural) BuildZone(SyntheticWorld world) =>
+        BuildZone(world, new Vector2s(0, 0));
+
+    private (Heightmap hm, TerrainComp tc, float natural) BuildZone(SyntheticWorld world, Vector2s zone)
     {
-        PlainEarthworks.Begin();
-        var zone = new Vector2s(0, 0);
-        Heightmap hm = Heightmap.CreateForZone(zone, Width);
-        Heightmap.Registered = hm;
+        _plain ??= PlainEarthworks.Apply();
+        Vector3 centre = ZoneSystem.GetZonePos(zone);
+        Heightmap hm = _world.RegisterHeightmap(zone, Width);
         TerrainComp tc = hm.m_terrainComp!;
         for (int i = 0; i < tc.m_paintMask.Length; i++)
             tc.m_paintMask[i] = new Color(0f, 0f, 0f, 0.25f);   // alpha must survive painting
 
-        float natural = BiomeBlendedHeight.GetBlendedHeight(0f, 0f, world);
+        float natural = BiomeBlendedHeight.GetBlendedHeight(centre.x, centre.z, world);
         var points = new List<RoadSpatialGrid.RoadPoint>();
         for (float x = -40f; x <= 40f; x += 1f)
-            points.Add(new RoadSpatialGrid.RoadPoint(new Vector2(x, 0f), RoadWidth, natural + Lift));
+            points.Add(new RoadSpatialGrid.RoadPoint(new Vector2(centre.x + x, centre.z), RoadWidth, natural + Lift));
 
         RoadTerrainModifier.ApplyRoadTerrainModsWithContext(zone, points, hm, tc);
         return (hm, tc, natural);
     }
 
-    /// <summary>Vertex index for world (x, z) on the zone grid (zone centred on the origin).</summary>
+    /// <summary>Vertex index for (x, z) metres from the zone centre on the zone grid.</summary>
     private static int Index(int x, int z) => (z + Width / 2) * (Width + 1) + (x + Width / 2);
 
-    private static SyntheticWorld FlatWorld()
+    private SyntheticWorld FlatWorld()
     {
         var world = new SyntheticWorld { HasRiver = false, HasMountain = false };
-        WorldGenerator.instance = world;
+        _world.WithWorld(world);
         return world;
     }
 
@@ -131,10 +138,10 @@ public class TerrainModifierTests
         finally { Cleanup(); }
     }
 
-    private static void Cleanup()
+    private void Cleanup()
     {
-        Heightmap.Registered = null;
-        WorldGenerator.instance = null;
-        PlainEarthworks.End();
+        _plain?.Dispose(); _plain = null;
     }
+
+    public void Dispose() { _plain?.Dispose(); _world.Dispose(); }
 }

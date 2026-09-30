@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
+using Valheim.Testing.Doubles;
 using Xunit;
 
 namespace ProceduralRoads.Tests;
@@ -17,8 +18,7 @@ public sealed class BridgeLayoutTests
     public void AStaleLayoutLeavesSpawnedZonesAlone()
     {
         var world = new SyntheticWorld { HasRiver = false, HasMountain = false };
-        WorldGenerator.instance = world;
-        ZDOMan.instance = new ZDOMan();
+        using var scope = new ValheimWorldScope().WithWorld(world).WithZdos().WithZoneSystem().WithScene().AsServer();
         RoadSpatialGrid.Clear(); RoadNetworkPersistence.Reset(); RoadNetworkGenerator.Reset();
         try
         {
@@ -39,21 +39,18 @@ public sealed class BridgeLayoutTests
             ZDO piece = ZDOMan.instance.CreateNewZDO(ZoneSystem.GetZonePos(zone), "wood_beam".GetStableHashCode());
             piece.Persistent = true;
             piece.Set(BridgePlans.MarkerHash, 1);
-            int cleared = BridgePlacement.ClearedByTests;
 
             RoadSpatialGrid.Clear(); RoadNetworkPersistence.Reset();
             Assert.True(RoadNetworkGenerator.TryLoadGlobalRoadData());
 
             Assert.True(RoadNetworkPersistence.BridgeLayoutIsStale);
             Assert.True(BridgePlans.IsSpawned(zone), "the zone's old pieces must stay its pieces");
-            Assert.Equal(cleared, BridgePlacement.ClearedByTests);
             Assert.Contains(piece, ZDOMan.instance.Zdos);
             Assert.Equal(1, piece.GetInt(BridgePlans.MarkerHash));
         }
         finally
         {
             RoadNetworkPersistence.Reset(); RoadSpatialGrid.Clear(); RoadNetworkGenerator.Reset();
-            ZDOMan.instance = null; WorldGenerator.instance = null;
         }
     }
 
@@ -69,8 +66,7 @@ public sealed class BridgeLayoutTests
     public void ABridgeReachingAnExcludedZoneIsNotBuiltAnywhere()
     {
         var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
-        WorldGenerator.instance = world;
-        ZoneSystem.instance = new ZoneSystem();
+        using var scope = new ValheimWorldScope().WithWorld(world).WithZoneSystem();
         NetworkCutoff.Forget();
         RoadNetworkGenerator.Reset();
         SetPathfinder(new RoadPathfinder(world) { Fords = true, Bridges = true, MaxGrade = 0f });
@@ -112,7 +108,6 @@ public sealed class BridgeLayoutTests
             NetworkCutoff.Forget();
             RoadNetworkGenerator.Reset();
             RoadCrossingDetector.SetFordStyleWeights(1f, 1f, 1f);
-            ZoneSystem.instance = null; WorldGenerator.instance = null;
         }
     }
 }

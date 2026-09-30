@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using Valheim.Testing.Doubles;
 using Xunit;
 
 namespace ProceduralRoads.Tests;
@@ -167,7 +168,7 @@ public class ServerBakeTests
     public void TheZonesWithRoadPointsAreExactlyTheZonesThatHaveThem()
     {
         var world = new SyntheticWorld { HasRiver = false, HasMountain = false };
-        WorldGenerator.instance = world;
+        using var scope = new ValheimWorldScope().WithWorld(world);
         try
         {
             RoadSpatialGrid.Clear();
@@ -206,7 +207,6 @@ public class ServerBakeTests
         finally
         {
             RoadSpatialGrid.Clear();
-            WorldGenerator.instance = null;
         }
     }
 
@@ -214,8 +214,7 @@ public class ServerBakeTests
     public void AZoneWhoseCompilerWillNotSaveIsNotStamped()
     {
         var world = new SyntheticWorld { HasRiver = false, HasMountain = false };
-        WorldGenerator.instance = world;
-        ZDOMan.instance = new ZDOMan();
+        using var scope = new ValheimWorldScope().WithWorld(world).WithZdos();
         try
         {
             RoadSpatialGrid.Clear();
@@ -226,8 +225,7 @@ public class ServerBakeTests
             RoadSpatialGrid.FinalizeRoadNetwork();
             var zone = new Vector2s(0, 0);
             List<RoadSpatialGrid.RoadPoint> points = RoadSpatialGrid.GetRoadPointsInZone(zone);
-            Heightmap hm = Heightmap.CreateForZone(zone, 64);
-            Heightmap.Registered = hm;
+            Heightmap hm = scope.RegisterHeightmap(zone, 64);
             TerrainComp tc = hm.m_terrainComp!;
             tc.m_nview.GetZDO().SetOwner(2); // another peer's
 
@@ -247,10 +245,7 @@ public class ServerBakeTests
         }
         finally
         {
-            Heightmap.Registered = null;
             RoadSpatialGrid.Clear();
-            ZDOMan.instance = null;
-            WorldGenerator.instance = null;
         }
     }
 

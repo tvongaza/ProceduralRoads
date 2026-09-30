@@ -301,7 +301,7 @@ public class RoadRockPolicyTests
     [Fact]
     public void ACutoffZoneKeepsItsRocks()
     {
-        ZoneSystem.instance = new ZoneSystem();
+        using var world = new Valheim.Testing.Doubles.ValheimWorldScope().WithZoneSystem();
         NetworkCutoff.Forget();
         try
         {
@@ -311,6 +311,6 @@ public class RoadRockPolicyTests
             Assert.False(RoadRockPolicy.MayTouch(new UnityEngine.Vector3(-31f, 30f, 31f)), "its corner");
             Assert.True(RoadRockPolicy.MayTouch(new UnityEngine.Vector3(70f, 30f, 0f)), "a boulder next door, generated with the network");
         }
-        finally { NetworkCutoff.Forget(); ZoneSystem.instance = null; }
+        finally { NetworkCutoff.Forget(); }
     }
 }

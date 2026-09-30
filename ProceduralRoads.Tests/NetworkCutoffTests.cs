@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Valheim.Testing.Doubles;
 using Xunit;
 
 namespace ProceduralRoads.Tests;
@@ -10,10 +11,11 @@ namespace ProceduralRoads.Tests;
 /// </summary>
 public sealed class NetworkCutoffTests : IDisposable
 {
+    private readonly ValheimWorldScope _world = new ValheimWorldScope().WithZoneSystem();
     private static readonly Vector2s A = new(0, 0), B = new(1, 0), C = new(2, 0), D = new(3, 0);
 
-    public NetworkCutoffTests() { ZoneSystem.instance = new ZoneSystem(); NetworkCutoff.Forget(); }
-    public void Dispose() { NetworkCutoff.Forget(); ZoneSystem.instance = null; }
+    public NetworkCutoffTests() => NetworkCutoff.Forget();
+    public void Dispose() { NetworkCutoff.Forget(); _world.Dispose(); }
 
     [Fact]
     public void ANewNetworkOnAnExploredWorldLeavesTheExploredZonesAlone()
@@ -73,7 +75,7 @@ public sealed class NetworkCutoffTests : IDisposable
     {
         NetworkCutoff.SnapshotWorld(new[] { A });
         NetworkCutoff.UseNewNetwork();
-        ZoneSystem.instance = new ZoneSystem();
+        using var other = new ValheimWorldScope().WithZoneSystem();
         Assert.False(NetworkCutoff.Excludes(A));
     }
 
@@ -86,11 +88,11 @@ public sealed class NetworkCutoffTests : IDisposable
     public void ANetworkReplacedInTheSessionLeavesThisSessionsZonesAlone()
     {
         NetworkCutoff.SnapshotWorld(new[] { A });
-        ZoneSystem.instance!.m_generatedZones.Add(A);
-        ZoneSystem.instance.m_generatedZones.Add(B);   // generated this session, before the first network
+        ZoneSystem.instance!.Generated.Add(A);
+        ZoneSystem.instance.Generated.Add(B);   // generated this session, before the first network
         NetworkCutoff.UseNewNetwork();
         Assert.False(NetworkCutoff.Excludes(B), "the first network reaches this session's zones");
-        ZoneSystem.instance.m_generatedZones.Add(C);   // generated with the first network
+        ZoneSystem.instance.Generated.Add(C);   // generated with the first network
         NetworkCutoff.UseNewNetwork();          // a command replaces it
         Assert.True(NetworkCutoff.Excludes(A));
         Assert.True(NetworkCutoff.Excludes(B));
@@ -105,7 +107,7 @@ public sealed class NetworkCutoffTests : IDisposable
         NetworkCutoff.UseNewNetwork();
         NetworkCutoff.Forget(new object());
         Assert.True(NetworkCutoff.Excludes(A));
-        ZoneSystem.instance = new ZoneSystem();
+        using var other = new ValheimWorldScope().WithZoneSystem();
         Assert.Null(NetworkCutoff.Record(1, new[] { A, B }));
     }
 }
