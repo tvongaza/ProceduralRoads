@@ -38,7 +38,7 @@ public class NetworkEligibilityTests
 
     private sealed class AshWorld : WorldGenerator
     {
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.AshLands;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.AshLands;
     }
 
     [Fact]

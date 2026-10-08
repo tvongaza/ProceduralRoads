@@ -12,7 +12,7 @@ public class RoadIslandDetectorTests
         public bool Swamp;
         public float Water = 20;
         public override float GetHeight(float x, float z) => Math.Abs(x) < 24 ? Water : 40;
-        public override Heightmap.Biome GetBiome(float x, float z) => Swamp ? Heightmap.Biome.Swamp : Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Swamp ? Heightmap.Biome.Swamp : Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float x, float z, out float weight, out float width)
         { weight=River && Math.Abs(x)<24 ? 1 : 0; width=48; }
     }

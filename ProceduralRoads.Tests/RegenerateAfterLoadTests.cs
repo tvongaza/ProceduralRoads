@@ -49,7 +49,7 @@ public class RegenerateAfterLoadTests : System.IDisposable
     /// pass on a run that did nothing.</summary>
     private static void GiveTheWorldSomePlaces()
     {
-        ZoneSystem zones = new();
+        ZoneSystem zones = ZoneSystem.instance!;
         (string name, float x, float z)[] places =
         {
             ("StartTemple", 0f, 0f),
@@ -60,23 +60,23 @@ public class RegenerateAfterLoadTests : System.IDisposable
         };
         foreach ((string name, float x, float z) place in places)
         {
-            zones.Locations.Add(new ZoneSystem.LocationInstance
+            TestLocations.Add(zones, new ZoneSystem.LocationInstance
             {
                 m_position = new Vector3(place.x, 0f, place.z),
                 m_location = new ZoneSystem.ZoneLocation
                 {
-                    m_prefab = new ZoneSystem.ZoneLocation.PrefabEntry { Name = place.name },
+                    m_prefab = new SoftReferenceableAssets.SoftReference<GameObject>(place.name),
                     m_exteriorRadius = 16f,
                 },
             });
         }
-        ZoneSystem.instance = zones;
+
     }
 
     private SyntheticWorld SetUp()
     {
         var world = new SyntheticWorld { HasRiver = false, HasMountain = false };
-        _world.WithWorld(world).WithZdos();
+        _world.WithWorld(world).WithZdos().WithZoneSystem();
         RoadNetworkGenerator.Reset();
         GiveTheWorldSomePlaces();
         return world;

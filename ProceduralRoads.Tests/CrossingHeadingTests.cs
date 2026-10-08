@@ -32,7 +32,7 @@ public class CrossingHeadingTests
             if (Mathf.Abs(wx) > 400f || Mathf.Abs(wy) > 400f) return 20f;
             return Mathf.Abs(wx) < HalfWidth ? Bed : 33f;
         }
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
         {
@@ -52,7 +52,7 @@ public class CrossingHeadingTests
         private static bool Land(float x, float z) =>
             Mathf.Abs(z) < 0.6f && (Mathf.Abs(x) < 0.6f || Mathf.Abs(x - 32f) < 0.6f);
         public override float GetHeight(float x, float z) => Land(x, z) ? 33f : 26f;
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float x, float z, out float weight, out float width)
         {
             weight = Land(x, z) ? 0f : 1f;
@@ -366,7 +366,7 @@ public class CrossingHeadingTests
         private static bool Water(float x) => Mathf.Abs(x) < 12f || (x > 40f && x < 64f);
         public override float GetHeight(float x, float z) =>
             Water(x) ? 26f : Mathf.Abs(z) >= 8f ? 40f : 33f;
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float x, float z, out float weight, out float width)
         {
             weight = Water(x) ? 1f : 0f;
@@ -381,7 +381,7 @@ public class CrossingHeadingTests
     {
         public override float GetHeight(float x, float z) =>
             Mathf.Abs(x) < 12f ? 26f : Mathf.Abs(z) >= 8f ? 40f : 33f;
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float x, float z, out float weight, out float width)
         {
             weight = Mathf.Abs(x) < 12f ? 1f : 0f;

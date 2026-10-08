@@ -26,10 +26,10 @@ public class BiomeBlendedHeightTests
     private sealed class TongueWorld : WorldGenerator
     {
         public bool Tongue = true;
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             Tongue && wx >= 500f && wx <= 530f && wy >= -150f && wy <= -110f
                 ? Heightmap.Biome.BlackForest : Heightmap.Biome.Meadows;
-        public override float GetBiomeHeight(Heightmap.Biome biome, float wx, float wy, out Color mask)
+        public override float GetBiomeHeight(Heightmap.Biome biome, float wx, float wy, out Color mask, bool preGeneration = false, bool riverPreDN = true)
         {
             mask = default;
             return biome == Heightmap.Biome.BlackForest ? ForestGround : MeadowsGround;
@@ -75,9 +75,9 @@ public class BiomeBlendedHeightTests
 
     private sealed class EastForest : WorldGenerator
     {
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             wx >= 544f ? Heightmap.Biome.BlackForest : Heightmap.Biome.Meadows;
-        public override float GetBiomeHeight(Heightmap.Biome biome, float wx, float wy, out Color mask)
+        public override float GetBiomeHeight(Heightmap.Biome biome, float wx, float wy, out Color mask, bool preGeneration = false, bool riverPreDN = true)
         {
             mask = default;
             return biome == Heightmap.Biome.BlackForest ? ForestGround : MeadowsGround;
