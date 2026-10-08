@@ -17,7 +17,7 @@ public class EndpointPoiHeightTests
     {
         public float Height = 60f;
         public override float GetHeight(float wx, float wy) => Height;
-        public override Heightmap.Biome GetBiome(float wx, float wy) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
     }
 
     private static List<Vector2> Path(float toX)
@@ -193,6 +193,6 @@ public class EndpointPoiHeightTests
     private sealed class Slope : WorldGenerator
     {
         public override float GetHeight(float wx, float wy) => 60f - 0.5f * wx;
-        public override Heightmap.Biome GetBiome(float wx, float wy) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
     }
 }

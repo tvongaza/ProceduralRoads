@@ -8,7 +8,7 @@ public class ReviewerHeadingTests
     {
         bool Land(float x,float z) => Mathf.Abs(z)<0.6f && (Mathf.Abs(x)<0.6f || Mathf.Abs(x-32f)<0.6f);
         public override float GetHeight(float x,float z) => Land(x,z) ? 33f : 26f;
-        public override Heightmap.Biome GetBiome(float x,float z) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x,float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float x,float z,out float weight,out float width) {weight=Land(x,z)?0f:1f;width=32f;}
     }
     [Fact]

@@ -39,9 +39,8 @@ public class LoadDecisionTests : System.IDisposable
             .GetField("m_worldDataLoaded", BindingFlags.NonPublic | BindingFlags.Static)!
             .SetValue(null, value);
 
-    private static ZoneSystem WorldWithPlaces()
+    private static ZoneSystem FillPlaces(ZoneSystem zones)
     {
-        ZoneSystem zones = new();
         (string name, float x, float z)[] places =
         {
             ("StartTemple", 0f, 0f),
@@ -51,12 +50,12 @@ public class LoadDecisionTests : System.IDisposable
         };
         foreach ((string name, float x, float z) place in places)
         {
-            zones.Locations.Add(new ZoneSystem.LocationInstance
+            TestLocations.Add(zones, new ZoneSystem.LocationInstance
             {
                 m_position = new Vector3(place.x, 0f, place.z),
                 m_location = new ZoneSystem.ZoneLocation
                 {
-                    m_prefab = new ZoneSystem.ZoneLocation.PrefabEntry { Name = place.name },
+                    m_prefab = new SoftReferenceableAssets.SoftReference<GameObject>(place.name),
                     m_exteriorRadius = 16f,
                 },
             });
@@ -78,14 +77,14 @@ public class LoadDecisionTests : System.IDisposable
     /// mod subscribed, nothing decided yet.</summary>
     private ZoneSystem SetUp(bool savedNetworkExists)
     {
-        _world.WithWorld(new SyntheticWorld { HasRiver = false, HasMountain = false }).WithZdos();
+        _world.WithWorld(new SyntheticWorld { HasRiver = false, HasMountain = false }).WithZdos().WithZoneSystem();
         SetWorldDataLoaded(false);
         RoadNetworkPersistence.Reset();
         RoadSpatialGrid.Clear();
         RoadNetworkGenerator.Reset();
 
-        ZoneSystem zones = WorldWithPlaces();
-        ZoneSystem.instance = zones;
+        ZoneSystem zones = FillPlaces(ZoneSystem.instance!);
+
 
         if (savedNetworkExists)
         {

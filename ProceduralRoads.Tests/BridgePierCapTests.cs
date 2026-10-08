@@ -38,7 +38,7 @@ public class BridgePierCapTests : IDisposable
     {
         public override float GetHeight(float x, float z) =>
             Mathf.Abs(x) < 12f ? 20f : 31f + Mathf.Min(Mathf.Abs(x) - 12f, 12f) * 0.6f;
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float x, float z, out float weight, out float width)
         {
             weight = Mathf.Abs(x) < 12f ? 1f : 0f;
@@ -171,7 +171,7 @@ public class BridgePierCapTests : IDisposable
     {
         public override float GetHeight(float x, float z) =>
             Mathf.Abs(x) < 12f ? 24f : 31f + Mathf.Min(Mathf.Abs(x) - 12f, 12f) * 0.3f;
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float x, float z, out float weight, out float width)
         {
             weight = Mathf.Abs(x) < 12f ? 1f : 0f;

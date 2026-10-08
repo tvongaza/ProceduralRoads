@@ -19,7 +19,7 @@ public class ShallowFordTests
         private readonly float m_cx, m_half, m_bed;
         public SwampPool(float cx, float length, float depth) { m_cx = cx; m_half = length * 0.5f; m_bed = RoadConstants.SeaLevel - depth; }
         public override float GetHeight(float x, float z) => Mathf.Abs(x - m_cx) < m_half ? m_bed : 31f;
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Swamp;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Swamp;
         public override void GetRiverWeight(float x, float z, out float weight, out float width) { weight = 0f; width = 0f; }
     }
 
@@ -109,7 +109,7 @@ public class ShallowFordTests
         private readonly Vector2 m_c; private readonly float m_r, m_bed;
         public RoundPool(Vector2 c, float r, float depth) { m_c = c; m_r = r; m_bed = RoadConstants.SeaLevel - depth; }
         public override float GetHeight(float x, float z) => (new Vector2(x, z) - m_c).magnitude < m_r ? m_bed : 31f;
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Swamp;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Swamp;
         public override void GetRiverWeight(float x, float z, out float weight, out float width) { weight = 0f; width = 0f; }
     }
 

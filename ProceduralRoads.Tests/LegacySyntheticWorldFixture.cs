@@ -53,7 +53,7 @@ public class LegacySyntheticWorldFixture : WorldGenerator
         return height;
     }
 
-    public override Heightmap.Biome GetBiome(float wx, float wy)
+    public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false)
     {
         if (GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f)
             return Heightmap.Biome.Ocean;

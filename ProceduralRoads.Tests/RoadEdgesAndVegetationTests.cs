@@ -28,7 +28,7 @@ public class RoadEdgesAndVegetationTests
         }
 
         public override float GetHeight(float wx, float wy) => 40f + 0.5f * wx;
-        public override Heightmap.Biome GetBiome(float wx, float wy) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
     }
 
     private static void RoadNorthSouth(float x, float width, WorldGenerator world)

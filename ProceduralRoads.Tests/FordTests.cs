@@ -35,7 +35,7 @@ public class FordTests
             if (Mathf.Abs(wx) < HalfWidth) return Bed;
             return wx > 0f ? 33f + EastRise : 33f;
         }
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Land;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
         {
@@ -53,7 +53,7 @@ public class FordTests
             if (Mathf.Abs(wx) > 100f || Mathf.Abs(wy) > 100f) return 20f;
             return Mathf.Abs(wx) < 14f ? 29.5f : 33f;
         }
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Land;
     }
 
@@ -402,7 +402,7 @@ public class FordTests
             if (Mathf.Abs(wx) >= 12f) return 33f;
             return Mathf.Abs(wx - 4f) < 2f ? 26f : 29.5f;
         }
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
         {
