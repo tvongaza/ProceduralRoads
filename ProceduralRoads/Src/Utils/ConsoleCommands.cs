@@ -939,6 +939,8 @@ public static class ConsoleCommands
         }
 
         args.Context.AddString($"Spawned {spawnedCount} markers ({debugInfoCount} with full debug info)");
+        if (!RoadSpatialGrid.RecordPointDebugInfo)
+            args.Context.AddString("Smoothing details are kept only for roads generated with PROCEDURALROADS_ROAD_POINT_DEBUG=1");
         args.Context.AddString("Interact with markers (E) to see smoothing calculation details");
         args.Context.AddString("Use 'road_debug_markers_clear' to remove them");
     }
@@ -1070,6 +1072,8 @@ public static class ConsoleCommands
         }
 
         sb.AppendLine($"Summary: {nearbyPoints.Count} points logged");
+        if (!RoadSpatialGrid.RecordPointDebugInfo)
+            sb.AppendLine("Generation details are kept only for roads generated with PROCEDURALROADS_ROAD_POINT_DEBUG=1");
 
         // Log to BepInEx
         Log.LogInfo(sb.ToString());

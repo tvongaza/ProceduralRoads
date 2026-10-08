@@ -43,6 +43,17 @@ public static partial class RoadSpatialGrid
     
     private static Dictionary<Vector2, RoadPointDebugInfo> m_debugInfo = new Dictionary<Vector2, RoadPointDebugInfo>();
     private static readonly object m_recordGate = new object();
+
+    /// <summary>
+    /// Keep each road point's smoothing record for road_debug_markers and
+    /// road_debug_log (PROCEDURALROADS_ROAD_POINT_DEBUG). Off by default: the
+    /// records live until the world unloads and hold an array of window heights
+    /// per point, roughly one per metre of road, which on a large network is
+    /// hundreds of thousands of objects the garbage collector walks for the
+    /// whole session. Without them the commands show the point's height alone,
+    /// as they already do for a network loaded from the save.
+    /// </summary>
+    internal static bool RecordPointDebugInfo = DebugSwitches.Flag("ROAD_POINT_DEBUG", false);
     
     public static int TotalRoadPoints { get; private set; } = 0;
     public static int GridCellsWithRoads { get; private set; } = 0;
@@ -485,6 +496,7 @@ public static partial class RoadSpatialGrid
         {
             AddRoadPoint(tempPoints, plan.Points[i], plan.Widths != null && i < plan.Widths.Count ? plan.Widths[i] : plan.Width, plan.Heights[i], plan.FollowTerrain, addition);
 
+            if (!RecordPointDebugInfo) continue;
             RoadPointDebugInfo debugInfo = plan.DebugInfos[i];
             debugInfo.SmoothedHeight = plan.Heights[i];
             lock (m_recordGate) m_debugInfo[plan.Points[i]] = debugInfo;
@@ -681,21 +693,19 @@ public static partial class RoadSpatialGrid
         
         List<float> smoothed = new List<float>(heights.Count);
         int halfWindow = windowSize / 2;
-        
+        bool keepWindows = RecordPointDebugInfo;
+
         for (int i = 0; i < heights.Count; i++)
         {
             float sum = 0f;
             int count = 0;
             int windowStart = Mathf.Max(0, i - halfWindow);
             int windowEnd = Mathf.Min(heights.Count - 1, i + halfWindow);
-            
-            List<float> windowHeights = new List<float>();
-            
+
             for (int j = windowStart; j <= windowEnd; j++)
             {
                 sum += heights[j];
                 count++;
-                windowHeights.Add(heights[j]);
             }
             
             float smoothedHeight = sum / count;
@@ -723,7 +733,7 @@ public static partial class RoadSpatialGrid
                 WindowStart = windowStart,
                 WindowEnd = windowEnd,
                 ActualWindowSize = count,
-                WindowHeights = windowHeights.ToArray()
+                WindowHeights = keepWindows ? heights.GetRange(windowStart, count).ToArray() : null!
             });
         }
         
