@@ -48,7 +48,7 @@ Install into the **test runtime** only: BepInEx, the matching ValheimCLI core wi
 
 ## The adapter
 
-The adapter registers the extension `roads.testing` through the toolkit's `TestExtension.Register`, which also serves the owned-session identity `roads.testing/session` (complete once the world is up and Roads reports its network available). The runner supplies `ROADS_TEST_SESSION_TOKEN`. It uses the toolkit's adapter helpers (`ZoneTerrain`, `Members`, `FixtureGate`); see [adapter helpers](https://github.com/tvongaza/ValheimTesting/blob/main/docs/testing-toolkit.md#adapter-fixture-command-and-harmony-helpers-valheimtestingadapter-preview-2).
+The adapter registers the extension `roads.testing` through the toolkit's `TestExtension.Register`, which also serves the owned-session identity `roads.testing/session` (complete once the world is up and Roads reports its network available). The runner supplies `ROADS_TEST_SESSION_TOKEN`. It uses the toolkit's shared `Members` and `FixtureGate` helpers. The terrain fixture's `ZoneTerrain` and `SpawnedTerrain` are in this adapter because they are exercised by Roads' own native scenarios and are absent from newer shared Adapter packages.
 
 | Command | Kind | What it does |
 |---|---|---|
