@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Valheim.Testing;
 using Valheim.Testing.Doubles;
@@ -41,10 +42,12 @@ public class SharedZoneWriterTests
                 RoadTerrainModifier.ApplyRoadTerrainModsWithContext(new Vector2s(zone, 0), points, hm, tc);
 
                 var once = TerrainSnapshot.Of(tc);
+                var renderedOnce = hm.LastRenderedHeights!.ToArray();
                 int saves = tc.SaveCount;
                 RoadTerrainModifier.ApplyRoadTerrainMods(new Vector2s(zone, 0), points);
                 Assert.Equal(saves, tc.SaveCount);
                 TerrainAssert.Unchanged(once, tc, $"zone {zone} after repeat write");
+                Assert.Equal(renderedOnce, hm.LastRenderedHeights!.ToArray());
             }
             TerrainAssert.SeamAgrees(heightmaps[0], heightmaps[1]);
             for (int zone = 0; zone < 2; zone++)

@@ -47,9 +47,8 @@ public class RegenerateAfterLoadTests : System.IDisposable
     /// <summary>Places the generator can actually build a network between, so
     /// that a regeneration really regenerates. Without them the test would
     /// pass on a run that did nothing.</summary>
-    private static void GiveTheWorldSomePlaces()
+    private static void GiveTheWorldSomePlaces(ZoneSystem zones)
     {
-        ZoneSystem zones = ZoneSystem.instance!;
         (string name, float x, float z)[] places =
         {
             ("StartTemple", 0f, 0f),
@@ -78,7 +77,7 @@ public class RegenerateAfterLoadTests : System.IDisposable
         var world = new SyntheticWorld { HasRiver = false, HasMountain = false };
         _world.WithWorld(world).WithZdos().WithZoneSystem();
         RoadNetworkGenerator.Reset();
-        GiveTheWorldSomePlaces();
+        GiveTheWorldSomePlaces(ZoneSystem.instance!);
         return world;
     }
 

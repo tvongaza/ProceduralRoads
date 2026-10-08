@@ -49,6 +49,24 @@ public sealed class ManualRoadCommandsTests : IDisposable
             Assert.True(Terminal.commands[name].IsCheat, name);
     }
 
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void ClosedCheatGateRefusesEveryManualRoadCommandWithoutMutation(bool devcommands, bool confirmed)
+    {
+        Terminal.m_cheat = devcommands;
+        Achievements.CheatedAtAll = confirmed;
+        int version = RoadSpatialGrid.RoadNetworkVersion;
+        int appends = RoadSpatialGrid.AppendCount;
+        foreach (var line in new[] { "road_mark add 10 20", "road_path 0,40 80,40", "road_connect 80 80" })
+            Assert.Equal(new[] { !confirmed ? Terminal.ConfirmCheat : $"'{line.Split(' ')[0]}' is not valid in the current context." }, Run(line));
+        Assert.Equal(version, RoadSpatialGrid.RoadNetworkVersion);
+        Assert.Equal(appends, RoadSpatialGrid.AppendCount);
+        Terminal.m_cheat = true;
+        Achievements.CheatedAtAll = true;
+        Assert.Equal(new[] { "No marks." }, Run("road_mark list"));
+    }
+
     [Fact] public void MarksAreAddedListedUndoneAndClearedWithoutTouchingTheNetwork()
     {
         int version = RoadSpatialGrid.RoadNetworkVersion;

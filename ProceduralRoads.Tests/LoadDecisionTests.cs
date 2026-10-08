@@ -39,9 +39,8 @@ public class LoadDecisionTests : System.IDisposable
             .GetField("m_worldDataLoaded", BindingFlags.NonPublic | BindingFlags.Static)!
             .SetValue(null, value);
 
-    private static ZoneSystem WorldWithPlaces()
+    private static ZoneSystem FillPlaces(ZoneSystem zones)
     {
-        ZoneSystem zones = ZoneSystem.instance!;
         (string name, float x, float z)[] places =
         {
             ("StartTemple", 0f, 0f),
@@ -84,7 +83,7 @@ public class LoadDecisionTests : System.IDisposable
         RoadSpatialGrid.Clear();
         RoadNetworkGenerator.Reset();
 
-        ZoneSystem zones = WorldWithPlaces();
+        ZoneSystem zones = FillPlaces(ZoneSystem.instance!);
 
 
         if (savedNetworkExists)
