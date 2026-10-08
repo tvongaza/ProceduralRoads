@@ -14,7 +14,8 @@ public class RoadEndReportTests : System.IDisposable
     {
         var world = new SyntheticWorld { HasRiver = false, HasMountain = false };
         _world.WithWorld(world);
-        var zones = new ZoneSystem();
+        _world.WithZoneSystem();
+        var zones = ZoneSystem.instance!;
         foreach (var (name, x, z, radius) in new[]
         {
             ("StartTemple", 0f, 0f, 25f),
@@ -23,13 +24,13 @@ public class RoadEndReportTests : System.IDisposable
             ("Crypt4", 120f, -260f, 18f),
         })
         {
-            zones.Locations.Add(new ZoneSystem.LocationInstance
+            TestLocations.Add(zones, new ZoneSystem.LocationInstance
             {
-                m_location = new ZoneSystem.ZoneLocation { m_prefab = new ZoneSystem.ZoneLocation.PrefabEntry { Name = name }, m_exteriorRadius = radius },
+                m_location = new ZoneSystem.ZoneLocation { m_prefab = new SoftReferenceableAssets.SoftReference<GameObject>(name), m_exteriorRadius = radius },
                 m_position = new Vector3(x, world.GetHeight(x, z), z),
             });
         }
-        ZoneSystem.instance = zones;
+
         _world.WithZdos();
         RoadNetworkGenerator.Reset();
         return world;

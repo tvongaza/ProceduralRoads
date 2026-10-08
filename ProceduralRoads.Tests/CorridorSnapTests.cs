@@ -18,7 +18,7 @@ public class CorridorSnapTests
     {
         public float StepZ = float.PositiveInfinity, High = 39f;
         public override float GetHeight(float x, float z) => z > StepZ ? High : 31f;
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float x, float z, out float weight, out float width) { weight = 0f; width = 0f; }
     }
 

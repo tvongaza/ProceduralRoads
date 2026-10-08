@@ -13,7 +13,7 @@ public class PoiArrivalClearanceTests : IDisposable
     private sealed class Flat : WorldGenerator
     {
         public override float GetHeight(float x, float z) => 40f;
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float x, float z, out float weight, out float width)
         { weight = 0; width = 0; }
     }

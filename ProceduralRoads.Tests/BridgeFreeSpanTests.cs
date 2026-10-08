@@ -73,7 +73,7 @@ public class BridgeFreeSpanTests
     private sealed class NarrowDeepChannel : WorldGenerator
     {
         public override float GetHeight(float x, float z) => Mathf.Abs(x) < 7f ? 6f : 31f;
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float x, float z, out float weight, out float width)
         {
             weight = Mathf.Abs(x) < 7f ? 1f : 0f;
@@ -171,7 +171,7 @@ public class BridgeFreeSpanTests
     private sealed class ShallowFlat : WorldGenerator
     {
         public override float GetHeight(float x, float z) => 31f;
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float x, float z, out float weight, out float width)
         {
             weight = 0f;

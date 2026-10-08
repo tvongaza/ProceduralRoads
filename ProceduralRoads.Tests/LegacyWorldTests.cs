@@ -86,11 +86,11 @@ public sealed class LegacyWorldTests : IDisposable
     internal static void OpenWorld()
     {
         var zones = ZoneSystem.instance!;
-        if (zones.Locations.Count == 0)
-            zones.Locations.Add(new ZoneSystem.LocationInstance
+        if (zones.m_locationInstances.Count == 0)
+            TestLocations.Add(zones, new ZoneSystem.LocationInstance
             {
                 m_position = new Vector3(0f, 0f, 600f),
-                m_location = new ZoneSystem.ZoneLocation { m_prefab = new ZoneSystem.ZoneLocation.PrefabEntry { Name = "StartTemple" }, m_exteriorRadius = 16f },
+                m_location = new ZoneSystem.ZoneLocation { m_prefab = new SoftReferenceableAssets.SoftReference<GameObject>("StartTemple"), m_exteriorRadius = 16f },
             });
         zones.LoadLocationsGeneratedFromSave(true);
         RoadLifecycleManager.OnZoneSystemStart(zones);

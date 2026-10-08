@@ -8,7 +8,7 @@ public class TurnLimitTests
     private sealed class Slope : WorldGenerator
     {
         public override float GetHeight(float x, float z) => 40f + 0.3f * z;
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
     }
 
     private static float SharpestTurn(List<Vector2> path)

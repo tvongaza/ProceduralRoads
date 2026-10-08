@@ -15,7 +15,7 @@ public class SyntheticWorld : WorldGenerator
     public float IslandRadius { get => _terrain.IslandRadius; set => _terrain.IslandRadius = value; }
     public float IslandPeakHeight { get => _terrain.IslandPeakHeight; set => _terrain.IslandPeakHeight = value; }
     public override float GetHeight(float x, float z) => _terrain.GetHeight(x, z);
-    public override Heightmap.Biome GetBiome(float x, float z) => _terrain.GetBiome(x, z) switch
+    public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => _terrain.GetBiome(x, z) switch
     {
         TerrainBiome.Ocean => Heightmap.Biome.Ocean,
         TerrainBiome.Mountain => Heightmap.Biome.Mountain,

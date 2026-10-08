@@ -38,7 +38,7 @@ public class BridgeTests
                 return ax >= 45f ? 32f : Mathf.Lerp(26f, 32f, (ax - 35f) / 10f);
             return ax < 41f ? Mathf.Lerp(26f, 30.4f, (ax - 35f) / 6f) : 32f + EastRise;
         }
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
         {
@@ -72,7 +72,7 @@ public class BridgeTests
             if (ax >= 45f) return 33f + rough;
             return Mathf.Lerp(26f, 33f, (ax - 35f) / 10f);
         }
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
         {
@@ -650,7 +650,7 @@ public class BridgeTests
             if (ax < 66f) return 33f;
             return 44f;
         }
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
         {
@@ -758,7 +758,7 @@ public class BridgeTests
             if (Mathf.Abs(wx) > 220f || Mathf.Abs(wy) > 120f) return 20f;
             return Mathf.Abs(wx) < 32f ? 29.5f : 33f;
         }
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
         {
@@ -803,7 +803,7 @@ public class BridgeTests
             if (Mathf.Abs(wx) >= 12f) return 33f;
             return Mathf.Abs(wx - 4f) < 2f ? 26f : 29.5f;
         }
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
         {
@@ -959,13 +959,14 @@ public class BridgeTests
     {
         var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
         using var scope = new ValheimWorldScope().WithWorld(world);
-        var zones = new ZoneSystem();
-        zones.Locations.Add(new ZoneSystem.LocationInstance
+        scope.WithZoneSystem();
+        var zones = ZoneSystem.instance!;
+        TestLocations.Add(zones, new ZoneSystem.LocationInstance
         {
-            m_location = new ZoneSystem.ZoneLocation { m_prefab = new ZoneSystem.ZoneLocation.PrefabEntry { Name = "StartTemple" }, m_exteriorRadius = 25f },
+            m_location = new ZoneSystem.ZoneLocation { m_prefab = new SoftReferenceableAssets.SoftReference<GameObject>("StartTemple"), m_exteriorRadius = 25f },
             m_position = new Vector3(-200f, world.GetHeight(-200f, 0f), 0f),
         });
-        ZoneSystem.instance = zones;
+
         scope.WithZdos();
         RoadNetworkGenerator.Reset();
         SetPathfinder(Pathfinder(world, true));
@@ -1075,16 +1076,17 @@ public class BridgeTests
         // river: the only road between them crosses it.
         var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
         using var scope = new ValheimWorldScope().WithWorld(world);
-        var zones = new ZoneSystem();
+        scope.WithZoneSystem();
+        var zones = ZoneSystem.instance!;
         foreach ((string name, float x, float z, float radius) in new[] { ("StartTemple", -200f, 0f, 25f), ("Eikthyrnir", 300f, 0f, 10f) })
         {
-            zones.Locations.Add(new ZoneSystem.LocationInstance
+            TestLocations.Add(zones, new ZoneSystem.LocationInstance
             {
-                m_location = new ZoneSystem.ZoneLocation { m_prefab = new ZoneSystem.ZoneLocation.PrefabEntry { Name = name }, m_exteriorRadius = radius },
+                m_location = new ZoneSystem.ZoneLocation { m_prefab = new SoftReferenceableAssets.SoftReference<GameObject>(name), m_exteriorRadius = radius },
                 m_position = new Vector3(x, world.GetHeight(x, z), z),
             });
         }
-        ZoneSystem.instance = zones;
+
         scope.WithZdos();
         RoadNetworkGenerator.Reset();
         try
@@ -1122,7 +1124,7 @@ public class BridgeTests
             if (Mathf.Abs(wx) > 100f || Mathf.Abs(wy) > 100f) return 20f;
             return Mathf.Abs(wx) < HalfWidth ? Bed : 33f;
         }
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Land;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
         {
@@ -1182,7 +1184,7 @@ public class BridgeTests
             if (ax >= HalfWidth + 10f) return 33f;
             return Mathf.Lerp(Bed, 33f, (ax - HalfWidth) / 10f);
         }
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean
             : wx > 0f ? EastBiome : Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
@@ -1236,7 +1238,7 @@ public class BridgeTests
             if (ax < 28f) return Mathf.Lerp(31.5f, 36f, (ax - 24f) / 4f);
             return 36f;
         }
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
         {
@@ -1430,7 +1432,7 @@ public class BridgeTests
             if (wx < -HalfChannel && wx > -HalfChannel - ShelfLength) return 31.0f;  // wade shelf: wet, near-level with the far bank
             return 33f;                                                      // dry ground
         }
-        public override Heightmap.Biome GetBiome(float wx, float wy) => Heightmap.Biome.Swamp;
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Swamp;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
         {
             weight = Mathf.Abs(wx) <= HalfChannel ? 1f : 0f;
@@ -1499,7 +1501,7 @@ public class BridgeTests
             : Mathf.Abs(wx) <= 56f ? 26f
             : Mathf.Abs(wx) <= 68f ? 32f
             : 36f;
-        public override Heightmap.Biome GetBiome(float wx, float wy) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
         {
             weight = Mathf.Abs(wx) <= 56f ? 1f : 0f;

@@ -19,7 +19,7 @@ public class RoadTerrainSamplesTests
             if (ThrowOnce) { ThrowOnce = false; throw new InvalidOperationException("terrain unavailable"); }
             return Ground + x * 0.001f + z * 0.002f;
         }
-        public override Heightmap.Biome GetBiome(float x, float z) { Biomes++; return Heightmap.Biome.Meadows; }
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) { Biomes++; return Heightmap.Biome.Meadows; }
         public override void GetRiverWeight(float x, float z, out float w, out float width) { Rivers++; w=Flow; width=5; }
     }
     [Fact]

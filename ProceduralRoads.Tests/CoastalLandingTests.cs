@@ -105,7 +105,7 @@ public class CoastalLandingTests
     {
         public int HeightReads;
         public override float GetHeight(float x,float z) { HeightReads++; return x<0 ? 25 : 33; }
-        public override Heightmap.Biome GetBiome(float x,float z) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x,float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
     }
 
     [Fact]

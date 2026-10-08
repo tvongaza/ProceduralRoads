@@ -68,7 +68,7 @@ public class BridgeRepairabilityTests
             return Bed;
         }
 
-        public override Heightmap.Biome GetBiome(float wx, float wy) =>
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
             GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
 
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)

@@ -160,9 +160,9 @@ public class ValheimVersionCompatibilityTests
         // A mod that treats "the event fired" as the definition of "locations are
         // ready" waits forever, and an existing world silently gets no roads.
         RoadNetworkGenerator.Reset();
-        var zones = new ZoneSystem();
-        using var scope = new ValheimWorldScope();
-        ZoneSystem.instance = zones;
+        using var scope = new ValheimWorldScope().WithZoneSystem();
+        var zones = ZoneSystem.instance!;
+
         try
         {
             bool eventFired = false;
@@ -183,9 +183,9 @@ public class ValheimVersionCompatibilityTests
         // The other half: on a new world the setter does run, the event is raised
         // for whoever subscribed, and the mod is told the ordinary way.
         RoadNetworkGenerator.Reset();
-        var zones = new ZoneSystem();
-        using var scope = new ValheimWorldScope();
-        ZoneSystem.instance = zones;
+        using var scope = new ValheimWorldScope().WithZoneSystem();
+        var zones = ZoneSystem.instance!;
+
         try
         {
             int fired = 0;

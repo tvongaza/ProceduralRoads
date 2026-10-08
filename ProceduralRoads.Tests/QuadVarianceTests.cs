@@ -11,7 +11,7 @@ public class QuadVarianceTests
         private readonly Func<float, float, float> m_h;
         public Ground(Func<float, float, float> h) { m_h = h; }
         public override float GetHeight(float x, float z) => m_h(x, z);
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Mountain;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Mountain;
     }
 
     private static float VarianceAtOrigin(Func<float, float, float> h, bool quad) =>

@@ -18,11 +18,11 @@ public sealed class ManualRoadCommandsTests : IDisposable
     {
         public override float GetHeight(float x, float z) => Mathf.Abs(x) < 400f && Mathf.Abs(z) < 400f ? 40f : -50f;
         public override void GetRiverWeight(float x, float z, out float weight, out float width) { weight = 0; width = 0; }
-        public override Heightmap.Biome GetBiome(float x, float z) => GetHeight(x, z) > 0f ? Heightmap.Biome.Meadows : Heightmap.Biome.Ocean;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => GetHeight(x, z) > 0f ? Heightmap.Biome.Meadows : Heightmap.Biome.Ocean;
     }
 
     private readonly ValheimWorldScope _world = new ValheimWorldScope()
-        .WithWorld(new SquareIsland()).WithZdos().WithZoneSystem().WithScene().WithNetwork(server: true).WithCommands();
+        .WithWorld(new SquareIsland()).WithZdos().WithZoneSystem().WithScene().WithNetwork(server: true).WithCommands().WithCheats();
     private readonly Terminal _console = new();
 
     public ManualRoadCommandsTests()
@@ -47,6 +47,24 @@ public sealed class ManualRoadCommandsTests : IDisposable
     {
         foreach (var name in new[] { "road_mark", "road_path", "road_connect" })
             Assert.True(Terminal.commands[name].IsCheat, name);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void ClosedCheatGateRefusesEveryManualRoadCommandWithoutMutation(bool devcommands, bool confirmed)
+    {
+        Terminal.m_cheat = devcommands;
+        Achievements.CheatedAtAll = confirmed;
+        int version = RoadSpatialGrid.RoadNetworkVersion;
+        int appends = RoadSpatialGrid.AppendCount;
+        foreach (var line in new[] { "road_mark add 10 20", "road_path 0,40 80,40", "road_connect 80 80" })
+            Assert.Equal(new[] { !confirmed ? Terminal.ConfirmCheat : $"'{line.Split(' ')[0]}' is not valid in the current context." }, Run(line));
+        Assert.Equal(version, RoadSpatialGrid.RoadNetworkVersion);
+        Assert.Equal(appends, RoadSpatialGrid.AppendCount);
+        Terminal.m_cheat = true;
+        Achievements.CheatedAtAll = true;
+        Assert.Equal(new[] { "No marks." }, Run("road_mark list"));
     }
 
     [Fact] public void MarksAreAddedListedUndoneAndClearedWithoutTouchingTheNetwork()
@@ -89,7 +107,14 @@ public sealed class ManualRoadCommandsTests : IDisposable
         ZNet.instance.Server = false;
         int version = RoadSpatialGrid.RoadNetworkVersion;
         foreach (var line in new[] { "road_mark add 1 2", "road_path 0,40 80,40", "road_connect 80 80" })
-            Assert.Equal(new[] { "Road not added: Run this command on the host or dedicated-server console." }, Run(line));
+        {
+            // Valheim rejects a cheat command on a client before invoking the mod callback.
+            Assert.Equal(new[] { $"'{line.Split(' ')[0]}' is not valid in the current context." }, Run(line));
+            // The callback still protects the mutation if invoked directly by another caller.
+            int from = _console.Output.Count;
+            Terminal.commands[line.Split(' ')[0]].RunAction(new Terminal.ConsoleEventArgs(line, _console));
+            Assert.Equal(new[] { "Road not added: Run this command on the host or dedicated-server console." }, _console.Output.Skip(from));
+        }
         ZNet.instance.Server = true;
         Assert.Equal(new[] { "No marks." }, Run("road_mark list"));
         Assert.Equal(version, RoadSpatialGrid.RoadNetworkVersion);
@@ -97,7 +122,7 @@ public sealed class ManualRoadCommandsTests : IDisposable
 
     [Fact] public void BeforeTheWorldIsReadyNothingRuns()
     {
-        ZDOMan.instance = null;
+        _world.WithoutZdos();
         Assert.Equal(new[] { "Road not added: The world is not ready." }, Run("road_mark add 1 2"));
     }
 

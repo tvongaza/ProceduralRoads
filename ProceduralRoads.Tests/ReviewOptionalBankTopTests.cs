@@ -10,7 +10,7 @@ public class ReviewOptionalBankTopTests
     {
         public override float GetHeight(float x, float z) =>
             Mathf.Abs(x) < 12f ? 26f : Mathf.Abs(z) >= 8f ? 40f : 33f;
-        public override Heightmap.Biome GetBiome(float x, float z) => Heightmap.Biome.Meadows;
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float x, float z, out float weight, out float width)
         {
             weight = Mathf.Abs(x) < 12f ? 1f : 0f;
