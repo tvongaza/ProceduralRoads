@@ -12,7 +12,15 @@ public static class PersistentTerrainScenario
     public const string PaintProfileVariable="ROADS_TEST_PAINT_PROFILE";
     public const string DirtFade="dirt-fade";
     // Accepted plan values: absent (paved, width 4) or exactly dirt-fade (width 8); a key differing only in case is refused.
-    public static int WidthFor(ServerRunPlan plan)=>plan.EnvironmentChoice(PaintProfileVariable,DirtFade)==DirtFade ? 8 : 4;
+    public static int WidthFor(ServerRunPlan plan)
+    {
+        if (plan.Environment.Keys.Any(key => key.Equals(PaintProfileVariable, StringComparison.OrdinalIgnoreCase) &&
+            key != PaintProfileVariable))
+            throw new ArgumentException($"Use the exact {PaintProfileVariable} environment key.");
+        if (!plan.Environment.TryGetValue(PaintProfileVariable, out string? profile)) return 4;
+        if (profile != DirtFade) throw new ArgumentException($"{PaintProfileVariable} must be {DirtFade} when set.");
+        return 8;
+    }
     public static string ProfileName(int width)=>width switch{4=>"paved",8=>DirtFade,_=>throw new ArgumentException("Unsupported fixture width.")};
     // Independent analytic oracle for deliberately constant width-4/8 roads:
     // flat through half-width, half one metre beyond, zero two metres beyond;

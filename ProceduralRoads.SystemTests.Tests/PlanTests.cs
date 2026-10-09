@@ -24,6 +24,15 @@ public class PlanTests
         Valid().Validate();
     }
     [Fact] public void AnUnknownScenarioIsRefused() { var p = Valid(); p.Scenario = "bridge"; Assert.Throws<ArgumentException>(p.Validate); }
+    [Fact] public void PreparationModesRefuseAnotherScenariosPlan()
+    {
+        var plan = Valid();
+        Assert.Throws<ArgumentException>(() => RunPlan.CheckMode("prepare-bridge", plan));
+        Assert.Throws<ArgumentException>(() => RunPlan.CheckMode("prepare-terrain", plan));
+        plan.Scenario = "bridge-respawn"; RunPlan.CheckMode("prepare-bridge", plan);
+        plan.Scenario = "terrain-persistence"; RunPlan.CheckMode("prepare-terrain", plan);
+        Assert.Throws<ArgumentException>(() => RunPlan.CheckMode("run", plan));
+    }
     [Fact] public void TerrainFixtureRequiresExplicitEnablementAndNoBridgeMutation()
     {
         var plan = Valid(); plan.Scenario = "terrain-calibration";
