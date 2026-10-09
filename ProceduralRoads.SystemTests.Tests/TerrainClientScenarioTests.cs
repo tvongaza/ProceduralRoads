@@ -41,7 +41,7 @@ public sealed class TerrainClientScenarioTests : IDisposable
     {
         bool joined = false, restarted = false;
         object State() => joined
-            ? new { source = "session-state", complete = true, phase = "world-present", worldUid = "123", worldPresent = true, worldReady = true, server = false, dedicated = false, localPlayer = true, playerReady = true, saving = false, loadError = false, connectionStatus = "Connected" }
+            ? (object)new { source = "session-state", complete = true, phase = "world-present", worldUid = "123", worldPresent = true, worldReady = true, server = false, dedicated = false, localPlayer = true, playerReady = true, saving = false, loadError = false, connectionStatus = "Connected" }
             : new { source = "session-state", complete = true, phase = "menu", worldUid = (string?)null, worldPresent = false, worldReady = false, server = false, dedicated = false, localPlayer = false, playerReady = false, saving = false, loadError = false, connectionStatus = "None" };
         return new ScriptedTransport()
             .Extension("valheim.session", "state", _ => State())

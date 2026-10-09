@@ -34,6 +34,7 @@ return await PinnedServerRun.MainAsync(args, new PinnedServerRunOptions<RunPlan>
                 server => OwnedServerSession.WaitUntilJoinable(server, RunPlan.SessionCapability, TimeSpan.FromSeconds(run.Plan.StartupSeconds), run.Cancellation),
                 run.Report, run.Output, run.Cancellation)),
             "empty-save" => RoadsScenarios.EmptyNetworkReplacesOld(run.Server, () => run.Server.Execute("road_generate"), run.Session.Restart, run.Report, cancellation: run.Cancellation),
+            "metadata-prefab" => Sync(() => RoadsScenarios.MetadataPrefabRetainsView(run.Server, run.Report)),
             _ => RoadsScenarios.BridgeAppendSurvivesRespawn(run.Server, () => run.Server.Execute(run.Plan.Append), run.Session.Restart, run.Plan.Expected, run.Report, run.Cancellation),
         },
     },
