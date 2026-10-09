@@ -24,6 +24,11 @@ public class PlanTests
         Valid().Validate();
     }
     [Fact] public void AnUnknownScenarioIsRefused() { var p = Valid(); p.Scenario = "bridge"; Assert.Throws<ArgumentException>(p.Validate); }
+    [Fact] public void MetadataPrefabObservationNeedsNoMutationOrClient()
+    {
+        var plan = Valid(); plan.Scenario = "metadata-prefab"; plan.Validate();
+        plan.Append = "road_path 1,2 3,4"; Assert.Throws<ArgumentException>(plan.Validate);
+    }
     [Fact] public void PreparationModesRefuseAnotherScenariosPlan()
     {
         var plan = Valid();

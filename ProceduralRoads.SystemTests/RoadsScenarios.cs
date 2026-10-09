@@ -9,6 +9,16 @@ namespace ProceduralRoads.SystemTests;
 public static class RoadsScenarios
 {
     private static Observation Network(GameActor server, Capability capability) => server.ObserveComplete(capability, "roads-memory");
+    public static void MetadataPrefabRetainsView(GameActor server, ScenarioReport report) =>
+        report.Step("registered metadata prefab retains its persistent ZNetView", () =>
+        {
+            var observed = server.Observe(server.RequireCapability("roads.testing/metadata-prefab"));
+            observed.RequireComplete("znet-scene");
+            if (!observed.Data.GetProperty("registered").GetBoolean() ||
+                !observed.Data.GetProperty("hasZNetView").GetBoolean() ||
+                !observed.Data.GetProperty("persistent").GetBoolean())
+                throw new InvalidOperationException("The registered metadata prefab lacks a persistent ZNetView in the game scene.");
+        });
     private static void Empty(Observation network)
     {
         foreach (string field in new[] { "cells", "points", "crossings", "pendingZones" })

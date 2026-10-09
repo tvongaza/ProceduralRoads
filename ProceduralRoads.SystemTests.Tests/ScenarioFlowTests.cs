@@ -7,6 +7,21 @@ public class ScenarioFlowTests
 {
     private static readonly PlacedObject Expected = new(10, [1, 2, 3], [0, 0, 0, 1]);
     private static readonly ZoneExpectation[] Zones = [new(0, 0, [Expected])];
+    [Fact] public void MetadataPrefabCheckRequiresTheRegisteredPersistentView()
+    {
+        var fake = new Transport(); using var actor = Actor(fake);
+        var report = new ScenarioReport("metadata");
+        RoadsScenarios.MetadataPrefabRetainsView(actor, report);
+        Assert.True(report.Passed);
+        Assert.Contains("cli_extension roads.testing/metadata-prefab", fake.Commands);
+
+        fake.MetadataView = false;
+        Assert.Throws<InvalidOperationException>(() => RoadsScenarios.MetadataPrefabRetainsView(actor, new("missing view")));
+        fake.MetadataView = true; fake.MetadataPersistent = false;
+        Assert.Throws<InvalidOperationException>(() => RoadsScenarios.MetadataPrefabRetainsView(actor, new("nonpersistent view")));
+        fake.MetadataPersistent = true; fake.MetadataRegistered = false;
+        Assert.Throws<InvalidOperationException>(() => RoadsScenarios.MetadataPrefabRetainsView(actor, new("missing prefab")));
+    }
     [Fact] public async Task PreparationObservesGenerationBeforeSavingAndNeverAppends()
     {
         var fake = new Transport { UngeneratedReads = 1 }; using var actor = Actor(fake);
@@ -109,6 +124,7 @@ public class ScenarioFlowTests
     private sealed class Transport
     {
         public bool Loaded, Missing, LoseAppendReply, CensusComplete = true, SaveRefused, NeverDrains;
+        public bool MetadataRegistered = true, MetadataView = true, MetadataPersistent = true;
         public int CensusZoneOffset;
         public int UngeneratedReads;
         public int Pending, Cells = 4, IncompleteReads, ReadsAfterGenerate;
@@ -122,6 +138,8 @@ public class ScenarioFlowTests
             .On("cli_save", _ => SaveRefused ? ScriptedTransport.Failed("ERROR: save failed") : ScriptedTransport.Ok("OK: SAVE saveNumber=2"))
             .Extension("roads.testing", "bridge-zone", _ => new { source = "zdo-store", complete = CensusComplete, zoneX = CensusZoneOffset, zoneZ = 0,
                 pieces = Missing ? Array.Empty<object>() : new object[] { new { prefabHash = 10, position = Expected.Position, rotation = Expected.Rotation } } })
+            .Extension("roads.testing", "metadata-prefab", _ => new { source = "znet-scene", complete = true,
+                registered = MetadataRegistered, hasZNetView = MetadataView, persistent = MetadataPersistent })
             .Extension("roads.testing", "network", _ =>
             {
                 if (Cells == 0) ReadsAfterGenerate++;

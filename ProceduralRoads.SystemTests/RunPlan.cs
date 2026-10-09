@@ -29,7 +29,7 @@ public sealed class RunPlan : ServerRunPlan
     }
     public void Validate()
     {
-        RequireScenario("empty-save", "bridge-respawn", "terrain-calibration", "terrain-persistence");
+        RequireScenario("empty-save", "bridge-respawn", "terrain-calibration", "terrain-persistence", "metadata-prefab");
         if (Scenario == "terrain-calibration") RequireEnvironmentFlag("ROADS_TEST_TERRAIN_CALIBRATION", "let the adapter write the calibration terrain");
         if (Scenario == "terrain-persistence") RequireEnvironmentFlag("ROADS_TEST_PERSISTENT_TERRAIN", "let the adapter write the persistent terrain fixture");
         PersistentTerrainScenario.WidthFor(this); // Refuses unknown paint profiles before launch.
