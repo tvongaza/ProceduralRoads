@@ -19,6 +19,14 @@ public sealed class RunPlan : ServerRunPlan
     public PinnedFile? HeightPlan { get; set; }
     public PinnedFile? PaintPlan { get; set; }
     public static RunPlan Read(string path) => Read<RunPlan>(path);
+    public static void CheckMode(string mode, RunPlan plan)
+    {
+        if ((mode == "prepare-bridge" && plan.Scenario != "bridge-respawn") ||
+            (mode == "prepare-terrain" && plan.Scenario != "terrain-persistence"))
+            throw new ArgumentException($"Mode {mode} runs only its own scenario's plan, not {plan.Scenario}.");
+        if (mode == "run" && plan.Scenario == "terrain-persistence" && plan.Client == null)
+            throw new ArgumentException("A terrain-persistence run measures from a client: add the client section, or prepare the fixture with prepare-terrain.");
+    }
     public void Validate()
     {
         RequireScenario("empty-save", "bridge-respawn", "terrain-calibration", "terrain-persistence");

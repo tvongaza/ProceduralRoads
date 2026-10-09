@@ -11,12 +11,7 @@ return await PinnedServerRun.MainAsync(args, new PinnedServerRunOptions<RunPlan>
     SessionCapability = RunPlan.SessionCapability,
     SessionTokenVariable = RunPlan.SessionTokenVariable,
     PrepareModes = ["prepare-bridge", "prepare-terrain"],
-    ModeScenarios = new Dictionary<string, string[]> { ["prepare-bridge"] = ["bridge-respawn"], ["prepare-terrain"] = ["terrain-persistence"] },
-    CheckMode = (mode, plan) =>
-    {
-        if (mode == "run" && plan.Scenario == "terrain-persistence" && plan.Client == null)
-            throw new ArgumentException("A terrain-persistence run measures from a client: add the client section, or prepare the fixture with prepare-terrain.");
-    },
+    CheckMode = RunPlan.CheckMode,
     Provenance = (plan, provenance) =>
     {
         if (plan.Scenario == "terrain-persistence") provenance["paintProfile"] = PersistentTerrainScenario.ProfileName(PersistentTerrainScenario.WidthFor(plan));
