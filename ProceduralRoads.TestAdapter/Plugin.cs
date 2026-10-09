@@ -22,6 +22,7 @@ public sealed class Plugin : BaseUnityPlugin
         new ExtensionCommand("terrain-persist", "Prepare one opt-in natural terrain replication fixture", PersistentTerrain.Run, role: ExtensionRole.Server, needsWorld: true),
         new ExtensionCommand("terrain-calibrate", "Run the opt-in two-zone declared terrain fixture", TerrainCalibration.Run, role: ExtensionRole.Server, needsWorld: true),
         new ExtensionCommand("network", "Read completed network and outstanding append counts", Network, readOnly: true, role: ExtensionRole.Server, needsWorld: true),
+        new ExtensionCommand("metadata-prefab", "Read the registered metadata prefab's network-view state", MetadataPrefab, readOnly: true, role: ExtensionRole.Server, needsWorld: true),
         new ExtensionCommand("bridge-zone", "Read marked bridge ZDOs in one zone: <zoneX> <zoneZ>", BridgeZone, readOnly: true, role: ExtensionRole.Server, needsWorld: true));
     private void OnDestroy() => _registration?.Dispose();
     private static IEnumerator Network(ExtensionContext context)
@@ -54,5 +55,19 @@ public sealed class Plugin : BaseUnityPlugin
                 ["rotation"] = new[] { item.GetRotation().x, item.GetRotation().y, item.GetRotation().z, item.GetRotation().w }
             }).ToArray()
         }); yield break;
+    }
+
+    private static IEnumerator MetadataPrefab(ExtensionContext context)
+    {
+        if (context.Arguments.Count != 0) { context.Fail("usage", "metadata-prefab takes no arguments"); yield break; }
+        var prefab = ZNetScene.instance?.GetPrefab(RoadNetworkPersistence.MetadataPrefabName);
+        var view = prefab?.GetComponent<ZNetView>();
+        context.Succeed(new Dictionary<string, object?>
+        {
+            ["source"] = "znet-scene", ["complete"] = true,
+            ["registered"] = prefab != null, ["hasZNetView"] = view != null,
+            ["persistent"] = view != null && view.m_persistent,
+        });
+        yield break;
     }
 }

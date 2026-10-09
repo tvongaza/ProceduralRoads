@@ -53,6 +53,7 @@ The adapter registers the extension `roads.testing` through the toolkit's `TestE
 | Command | Kind | What it does |
 |---|---|---|
 | `network` | read-only | The in-memory network: completion, cells, points, crossings, pending bridge-append zones and whether it was loaded from the save |
+| `metadata-prefab` | read-only | Whether the registered scene prefab still has a persistent `ZNetView` after the game and Jotunn finish registration |
 | `bridge-zone <zoneX> <zoneZ>` | read-only | Every saved object in one zone that carries the Roads bridge marker, with prefab, position and rotation; zones within ±255 only, and more than 512 marked pieces fails instead of truncating |
 | `terrain-calibrate` | fixture | The declared two-zone calibration below; refused unless `ROADS_TEST_TERRAIN_CALIBRATION=1` and a session token are set |
 | `terrain-persist` | fixture | Writes the persistent two-zone fixture below; refused unless `ROADS_TEST_PERSISTENT_TERRAIN=1` and a session token are set; once per process |
@@ -65,7 +66,9 @@ A plan is the toolkit's pinned server plan plus the Roads fields. The runner is 
 
 - `pins` must include `warpalicious.ProceduralRoads`, `valheimCLI.valheimCLI` and `testing.proceduralroads.adapter` (plus every other loaded plugin, as strict pins require).
 - `runtimePins` is required; a runtime with a BepInEx preloader patcher (for example one that includes ServersideQoL) must name it in `patchers`.
-- `scenario` is one of `empty-save`, `bridge-respawn`, `terrain-calibration`, `terrain-persistence`. Fields another scenario reads are refused.
+- `scenario` is one of `empty-save`, `bridge-respawn`, `terrain-calibration`, `terrain-persistence`, `metadata-prefab`. Fields another scenario reads are refused.
+
+`metadata-prefab` is a read-only server scenario. It waits for the owned Roads session, then checks the real `ZNetScene` registration for a persistent `ZNetView`. It does not regenerate roads or need a joined client.
 
 ### empty-save
 
