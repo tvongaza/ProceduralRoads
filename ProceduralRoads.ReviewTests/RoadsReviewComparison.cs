@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
 
 namespace ProceduralRoads.ReviewTests;
 
@@ -9,7 +10,8 @@ public static class RoadsReviewComparison
     public sealed record SiteReading(string Id, double GroundHeight, string RouteSha256, int RoadPoints, int SavedObjects,
         int LoadedPrefabs, int Pieces, IReadOnlyDictionary<string, int> SavedByType,
         IReadOnlyDictionary<string, int> LoadedByType, string StillSha256);
-    public sealed record Arm(string Directory, string SourceCommit, string ModSha256, string FixtureSha256, string PlanSha256,
+    public sealed record Arm(string Directory, string SourceCommit, string ModSha256, string AdapterSha256,
+        string FixtureSha256, string PlanSha256,
         string GameSha256, string LoaderSha256, string PatchersSha256, string OtherPluginsSha256,
         string WorldUid, double? GenerationSeconds, double? ServerStartupSeconds, IReadOnlyList<SiteReading> Sites);
     public sealed record SiteDifference(string Id, bool SameRoute, double GroundHeightChange, int RoadPoints, int SavedObjects,
@@ -73,6 +75,17 @@ public static class RoadsReviewComparison
         string inputs = Path.Combine(directory, "adapter-build", "inputs.json");
         using var adapter = JsonDocument.Parse(File.ReadAllText(inputs));
         string mod = RequiredHash(adapter.RootElement.GetProperty("mod").GetProperty("sha256").GetString(), "Roads mod");
+        // The adapter is compiled against each Roads DLL, so its binary hash may change even
+        // when the adapter source does not. Record both hashes, but compare only the other pins.
+        string adapterSha = RequiredHash(adapter.RootElement.GetProperty("adapter").GetProperty("sha256").GetString(), "Roads adapter");
+        string adapterPin = root.GetProperty("Plugins").GetProperty("server")
+            .GetProperty("testing.proceduralroads.adapter").GetString() ?? "";
+        if (!Regex.IsMatch(adapterPin, "^[0-9a-f]{32}$", RegexOptions.CultureInvariant))
+            throw new InvalidDataException("The Roads adapter server pin is missing or malformed.");
+        string adapterFile = Path.Combine(directory, "adapter-build", "bin", "ProceduralRoads.TestAdapter.dll");
+        if (Valheim.Testing.Game.FileHash.Sha256(adapterFile) != adapterSha ||
+            Convert.ToHexString(MD5.HashData(File.ReadAllBytes(adapterFile))).ToLowerInvariant() != adapterPin)
+            throw new InvalidDataException("The built Roads adapter differs from its build manifest or server pin.");
         string otherPlugins = OtherPluginsDigest(root.GetProperty("Plugins"));
         var entries = root.GetProperty("Evidence").EnumerateArray().ToArray();
         foreach (string kind in new[] { "roads-site", "area-objects", "review-still" })
@@ -120,7 +133,7 @@ public static class RoadsReviewComparison
                 site.GetProperty("LoadedPrefabs").GetInt32(), site.GetProperty("Pieces").GetInt32(),
                 savedByType, loadedByType, imageSha));
         }
-        return new(directory, sourceCommit, mod, fixture, planHash, game, loader, patchers, otherPlugins,
+        return new(directory, sourceCommit, mod, adapterSha, fixture, planHash, game, loader, patchers, otherPlugins,
             plan.WorldUid, generation, startup, sites);
 
         JsonElement Entry(string kind, string site)
@@ -179,7 +192,8 @@ public static class RoadsReviewComparison
         var lines = new List<string>();
         foreach (var actor in actors.EnumerateObject().OrderBy(item => item.Name, StringComparer.Ordinal))
             foreach (var pin in actor.Value.EnumerateObject().OrderBy(item => item.Name, StringComparer.Ordinal))
-                if (pin.Name != "warpalicious.ProceduralRoads") lines.Add(actor.Name + "/" + pin.Name + "=" + pin.Value.GetString());
+                if (pin.Name is not ("warpalicious.ProceduralRoads" or "testing.proceduralroads.adapter"))
+                    lines.Add(actor.Name + "/" + pin.Name + "=" + pin.Value.GetString());
         if (lines.Count == 0) throw new InvalidDataException("No other plugin pins were recorded.");
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(string.Join("\n", lines)))).ToLowerInvariant();

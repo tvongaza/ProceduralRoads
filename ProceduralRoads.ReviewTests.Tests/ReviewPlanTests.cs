@@ -50,6 +50,7 @@ public sealed class ReviewPlanTests
             string candidate = FakeRun(Path.Combine(root, "candidate"), new string('b', 64), new string('1', 64), 12);
             var comparison = RoadsReviewComparison.Compare(baseline, candidate);
             Assert.Equal(2, Assert.Single(comparison.Sites).RoadPoints);
+            Assert.NotEqual(comparison.Baseline.AdapterSha256, comparison.Candidate.AdapterSha256);
             Assert.Equal(0, Assert.Single(comparison.Sites).GroundHeightChange);
             Assert.Contains(Assert.Single(comparison.Sites).ObjectTypes,
                 type => type is { Layer: "saved", Type: "Rock_4", Baseline: 8, Candidate: 8 });
@@ -69,8 +70,15 @@ public sealed class ReviewPlanTests
         string output = Path.Combine(root, "evidence");
         Directory.CreateDirectory(output);
         Directory.CreateDirectory(Path.Combine(root, "adapter-build"));
+        string adapterDir = Path.Combine(root, "adapter-build", "bin");
+        Directory.CreateDirectory(adapterDir);
+        string adapterFile = Path.Combine(adapterDir, "ProceduralRoads.TestAdapter.dll");
+        File.WriteAllBytes(adapterFile, [checked((byte)mod[0])]);
+        string adapterSha = FileHash.Sha256(adapterFile);
+        string adapterMd5 = Convert.ToHexString(System.Security.Cryptography.MD5.HashData(File.ReadAllBytes(adapterFile))).ToLowerInvariant();
         File.WriteAllText(Path.Combine(root, "adapter-build", "inputs.json"),
-            JsonSerializer.Serialize(new { mod = new { sha256 = mod } }));
+            JsonSerializer.Serialize(new { mod = new { sha256 = mod },
+                adapter = new { sha256 = adapterSha } }));
         string planFile = Path.Combine(output, "roads-review-sites.json");
         File.WriteAllText(planFile, JsonSerializer.Serialize(new RoadsReviewPlan { WorldUid = "123", Sites =
         [new() { Id = "hill", X = 10, Z = 20, Height = 35 }] }));
@@ -83,7 +91,9 @@ public sealed class ReviewPlanTests
         report.Provenance["roadsLoaderSha256"] = new string('4', 64);
         report.Provenance["roadsPatchersSha256"] = new string('5', 64);
         report.RecordPlugins("server", new Dictionary<string, string>
-        { ["warpalicious.ProceduralRoads"] = new string('a', 32), ["valheimCLI.valheimCLI"] = new string('b', 32) });
+        { ["warpalicious.ProceduralRoads"] = new string('a', 32),
+          ["testing.proceduralroads.adapter"] = adapterMd5,
+          ["valheimCLI.valheimCLI"] = new string('b', 32) });
         report.Step("reviewed", () => { });
         if (cleanup) report.Step(StepPhase.Cleanup, "owned environment retired", () => { });
         var route = JsonSerializer.SerializeToElement(new { source = "roads-memory", complete = true,
