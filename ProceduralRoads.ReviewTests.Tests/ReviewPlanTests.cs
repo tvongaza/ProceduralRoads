@@ -93,6 +93,9 @@ public sealed class ReviewPlanTests
             Assert.Contains(Assert.Single(comparison.Sites).ObjectTypes,
                 type => type is { Layer: "saved", Type: "Rock_4", Baseline: 8, Candidate: 8 });
             Assert.Equal("not assessed: inspect every paired PNG and record a separate human verdict", comparison.VisualVerdict);
+            // Rewriting otherwise identical JSON must not change the toolkit identity.
+            MutateResult(candidate, _ => { });
+            Assert.Equal(2, Assert.Single(RoadsReviewComparison.Compare(baseline, candidate).Sites).RoadPoints);
             string changed = FakeRun(Path.Combine(root, "changed-fixture"), (byte)'c', new string('2', 64), 12);
             Assert.Throws<InvalidDataException>(() => RoadsReviewComparison.Compare(baseline, changed));
             string noCleanup = FakeRun(Path.Combine(root, "no-cleanup"), (byte)'d', new string('1', 64), 12, cleanup: false);
@@ -120,6 +123,11 @@ public sealed class ReviewPlanTests
             var metadata = JsonNode.Parse(File.ReadAllText(sidecar))!;
             metadata["gameBuild"] = new string('f', 64);
             File.WriteAllText(sidecar, metadata.ToJsonString());
+            MutateResult(changedStillGame, result =>
+            {
+                var still = result["Evidence"]!.AsArray().Single(entry => entry!["Kind"]!.GetValue<string>() == "review-still");
+                still!["Sha256"] = FileHash.Sha256(sidecar);
+            });
             Assert.Throws<InvalidDataException>(() => RoadsReviewComparison.Compare(baseline, changedStillGame));
             File.Delete(Path.Combine(candidate, "evidence", "review-hill", "hill.png"));
             Assert.ThrowsAny<Exception>(() => RoadsReviewComparison.Compare(baseline, candidate));

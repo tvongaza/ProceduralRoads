@@ -77,7 +77,7 @@ public static class RoadsReviewComparison
             clientPatchers = Input("roadsClientPatchersSha256");
         string scenario = Input("oneShotScenarioSha256");
         string toolkit = RequiredHash(Convert.ToHexString(SHA256.HashData(
-            System.Text.Encoding.UTF8.GetBytes(root.GetProperty("Toolkit").GetRawText()))).ToLowerInvariant(), "toolkit identity");
+            System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(root.GetProperty("Toolkit"))))).ToLowerInvariant(), "toolkit identity");
         string sitePlan = Path.Combine(evidence, "roads-review-sites.json");
         if (Valheim.Testing.Game.FileHash.Sha256(sitePlan) != planHash)
             throw new InvalidDataException("Captured Roads site-plan bytes changed after the run.");
