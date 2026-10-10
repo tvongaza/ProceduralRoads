@@ -17,7 +17,7 @@ valheim-test server-load --project ProceduralRoads/ProceduralRoads.csproj --serv
 
 The tool prepares private game/publicized references, builds Roads without deploying into the live game, and chooses disposable game copies, ValheimCLI, a fixture and strict pins ([source-build contract](https://github.com/tvongaza/ValheimTesting/blob/main/docs/packages/Valheim.Testing.NativeSmoke.md#build-a-mod-against-the-installed-game)). If the installed tool does not recognize `--project`, update it when the release containing #595 is published or build the current toolkit from source; do not fall back to a raw build with missing publicized assemblies. If Jotunn is ambiguous or outside the selected install, add `--dependency Jotunn=<exact-DLL>` or `--search-root <folder>`. Use `--server-only` for a cheaper server load check that does **not** test a joined client. The command prints its private result directory. A load/join pass proves Roads and its hard dependencies loaded and a clean client joined; it does **not** run the Roads-specific assertions below.
 
-The Roads assertions currently use the explicit pinned plan runner in this repository. Its [sample plan](sample-plan.json) shows the contract, but preparing that plan still takes several manual steps. ValheimTesting #593 has since shipped a [mod-owned one-shot scenario interface](https://github.com/tvongaza/ValheimTesting/blob/main/docs/packages/Valheim.Testing.NativeSmoke.md#run-a-mod-owned-scenario-with-the-same-preparation); moving a Roads scenario to it is follow-up work under Roads #7, not a claim this runner already uses it. Keep scenario logic and its adapter in Roads; environment selection, dependency and loader resolution, fixture creation, pins, lifecycle and cleanup belong in the toolkit. The migrated runner passed a joined-client terrain-persistence check on a disposable Windows server and client on 10 October 2026; that check used a prepared world copy, not fresh road-network generation.
+The older terrain assertions still use the explicit pinned plan runner in this repository. The Roads photography and timing scenario is in `ProceduralRoads.ReviewTests`; it uses the [mod-owned one-shot scenario interface](https://github.com/tvongaza/ValheimTesting/blob/main/docs/packages/Valheim.Testing.NativeSmoke.md#run-a-mod-owned-scenario-with-the-same-preparation). Keep scenario logic and its adapter in Roads; environment selection, dependency and loader resolution, fixture creation, pins, lifecycle and cleanup belong in the toolkit. The migrated older runner passed a joined-client terrain-persistence check on a disposable Windows server and client on 10 October 2026; that check used a prepared world copy, not fresh road-network generation.
 
 ## Projects and packages
 
@@ -27,6 +27,8 @@ The Roads assertions currently use the explicit pinned plan runner in this repos
 | `ProceduralRoads.SystemTests` | net10.0 (`RollForward` Major) | The Roads plan, scenarios and oracles on the toolkit's pinned server runner | `Valheim.Testing.Game` 0.1.0-preview.52 and `Valheim.Testing.GameSessions` 0.1.0-preview.12; the resolved Cli transport is preview.14 |
 | `ProceduralRoads.SystemTests.Tests` | net10.0 | Plan rules, scenario flows against scripted transports, and the terrain and paint oracles with their negative cases | through the runner project |
 | `ProceduralRoads.TestAdapter` | net48 | The game-side adapter plugin: the Roads commands below | `Valheim.Testing.Adapter` 0.1.0-preview.7 (source package) |
+| `ProceduralRoads.ReviewTests` | net10.0 | One-shot joined-client Roads photography and metrics scenario; `compare` checks two result sets | `Valheim.Testing.GameSessions` 0.1.0-preview.15 |
+| `ProceduralRoads.ReviewTests.Tests` | net10.0 | Site-plan and paired-result refusal tests without the game | through the review scenario project |
 
 All packages restore from NuGet.org. To try an unpublished toolkit build, use a local feed as in [Package versions and feeds](https://github.com/tvongaza/ValheimTesting/blob/main/docs/getting-started.md#package-versions-and-feeds). `ProceduralRoads.Testing.slnx` groups the three test projects for an IDE ([IDE notes](https://github.com/tvongaza/ValheimTesting/blob/main/docs/getting-started.md#using-visual-studio-rider-or-vs-code)); the adapter is deliberately outside it. The fast tests require the .NET SDK; net48 on macOS/Linux also requires Mono. They do not require a Valheim install, Steam account, fixture world, or local machine paths.
 
@@ -38,6 +40,7 @@ From the repository root:
 dotnet test ProceduralRoads.Tests/ProceduralRoads.Tests.csproj -c Release -f net10.0
 ProceduralRoads.Tests/run-tests.sh ProceduralRoads.Tests/ProceduralRoads.Tests.csproj
 dotnet test ProceduralRoads.SystemTests.Tests/ProceduralRoads.SystemTests.Tests.csproj -c Release
+dotnet test ProceduralRoads.ReviewTests.Tests/ProceduralRoads.ReviewTests.Tests.csproj -c Release
 ```
 
 `run-tests.sh` is the toolkit's [test runner](https://github.com/tvongaza/ValheimTesting/blob/main/tools/test-runners/README.md#run-it), copied unchanged: it runs both the net10.0 and net48 legs (net48 under Mono on macOS and Linux) and fails if either fails. On Windows, plain `dotnet test` also runs both legs.
@@ -68,6 +71,7 @@ The adapter registers the extension `roads.testing` through the toolkit's `TestE
 | Command | Kind | What it does |
 |---|---|---|
 | `network` | read-only | The in-memory network: completion, cells, points, crossings, pending bridge-append zones and whether it was loaded from the save |
+| `site-metrics <x> <z> <radius>` | read-only | Complete route-point count, paint-only count, nearest distance and stable SHA-256 of the route points in a 1–64 m site radius; an oversized census fails rather than truncating |
 | `metadata-prefab` | read-only | Whether the registered scene prefab still has a persistent `ZNetView` after the game and Jotunn finish registration |
 | `bridge-zone <zoneX> <zoneZ>` | read-only | Every saved object in one zone that carries the Roads bridge marker, with prefab, position and rotation; zones within ±255 only, and more than 512 marked pieces fails instead of truncating |
 | `terrain-calibrate` | fixture | The declared two-zone calibration below; refused unless `ROADS_TEST_TERRAIN_CALIBRATION=1` and a session token are set |
@@ -119,6 +123,30 @@ The runner's independent oracle expects full blend through the half-width, half 
 - `heightPlan` and `paintPlan`: the prepared client plans, each as `{"source": "<full path>", "sha256": "<hash>"}`, rechecked before use.
 
 The client half is the toolkit's `ClientRounds` ([Plan rules and client rounds](https://github.com/tvongaza/ValheimTesting/blob/main/docs/packages/Valheim.Testing.Game.md#plan-rules-and-client-rounds)): wait until the server accepts joins, join (which protects the player), arrive on the support point, measure; then a confirmed save, the client leaves, only the owned server restarts, and the client rejoins and measures again. Roads supplies the measurement: every prepared vertex on the client's heightmap and its own collider (15 at width 4, 18 at width 8), the 16 paint samples, and the player standing supported on the dry road core. The client's logs are scanned with the server's at teardown.
+
+## One-shot Roads visual and timing review
+
+Use this when comparing two Roads builds on **one immutable fixture**, not for a load/join smoke. `ProceduralRoads.ReviewTests` owns only the sites and assertions. `valheim-test` supplies a disposable server, a clean joined client, the ValheimCLI bundle, strict pins, profile-based launch and cleanup. The one-shot scenario API needs GameSessions preview.15 or newer; until that version is on NuGet.org, use an immutable candidate feed locally and do not treat this command as portable.
+
+Make a private copy of [sample-review-sites.json](../ProceduralRoads.ReviewTests/sample-review-sites.json). Replace its UID and every example coordinate with **scouted, dry, on-road sites from the exact fixture**. `height` is an approximate teleport target, at least 31.5 m; the client measures loaded ground before capture, so a changed road height can still be compared. Site IDs must be distinct. `requireFreshGeneration: true` refuses a network loaded from a saved Roads network and requires the completed `Roads done` timing line. For a pre-baked Roads fixture, set it to `false`: the result has startup time and site metrics but no new generation time. The file's bytes and full site order are captured in each run. Keep its content identical across arms.
+
+On a Windows desktop with Steam signed in, the dedicated server installed and a free test port, choose the same pinned fixture and dependency roots for both arms. Use `env list` and `env preflight` first. These commands intentionally omit `--copy-game`, so the default owned loader profiles are exercised. Let fresh Roads generation run with a realistic startup budget; do not shorten it to a generic smoke-test timeout.
+Build `ProceduralRoads.ReviewTests` once before validating the site plan. The one-shot tool rebuilds the scenario for each run.
+
+```powershell
+dotnet build ProceduralRoads.ReviewTests/ProceduralRoads.ReviewTests.csproj -c Release
+$env:ROADS_REVIEW_PLAN = 'C:\private\roads-review-sites.json'
+dotnet ProceduralRoads.ReviewTests/bin/Release/net10.0/ProceduralRoads.ReviewTests.dll validate $env:ROADS_REVIEW_PLAN
+valheim-test server-load --mod C:\private\baseline\ProceduralRoads.dll --scenario-project ProceduralRoads.ReviewTests/ProceduralRoads.ReviewTests.csproj --adapter-project ProceduralRoads.TestAdapter/ProceduralRoads.TestAdapter.csproj --adapter-property 'RoadsDll={mod}' --session-capability roads.testing/session --session-token-variable ROADS_TEST_SESSION_TOKEN --world-fixture C:\private\fixtures\roads-empty --dependency Jotunn=C:\private\deps\Jotunn.dll --server-startup-seconds 1800 --output C:\private\runs\roads-before
+valheim-test env status
+valheim-test server-load --mod C:\private\candidate\ProceduralRoads.dll --scenario-project ProceduralRoads.ReviewTests/ProceduralRoads.ReviewTests.csproj --adapter-project ProceduralRoads.TestAdapter/ProceduralRoads.TestAdapter.csproj --adapter-property 'RoadsDll={mod}' --session-capability roads.testing/session --session-token-variable ROADS_TEST_SESSION_TOKEN --world-fixture C:\private\fixtures\roads-empty --dependency Jotunn=C:\private\deps\Jotunn.dll --server-startup-seconds 1800 --output C:\private\runs\roads-after
+valheim-test env status
+dotnet ProceduralRoads.ReviewTests/bin/Release/net10.0/ProceduralRoads.ReviewTests.dll compare C:\private\runs\roads-before C:\private\runs\roads-after C:\private\runs\roads-comparison
+```
+
+The comparison refuses a failed/unpinned run, changed fixture manifest, game/loader/patchers, non-Roads plugin pins, site-plan bytes, missing object or still evidence, or a changed still. It reports loaded-ground, route-point, saved-object and loaded-prefab counts by type, piece-count differences, and network generation and server-startup time differences. It does **not** assert that fewer objects, a faster run or a changed route looks better. Inspect each paired PNG and record a separate human verdict.
+
+The native acceptance also requires checking that the source game install and source saves have the same bytes before and after, that `env status` is empty, and that both runs used the expected toolkit and Roads commits. Keep the result directories private: screenshots and source paths are evidence, not material for a public PR. The old private photo/timing driver can be archived only after this equivalent native pass succeeds.
 
 ## Run
 
