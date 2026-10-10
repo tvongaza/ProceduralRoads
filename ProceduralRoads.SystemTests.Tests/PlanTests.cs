@@ -6,13 +6,21 @@ using Xunit;
 // root, the session token, Doorstop variables, unknown fields) are the toolkit's and tested there.
 public class PlanTests
 {
+    [Fact] public void PortableSampleHasTheCurrentRunnerShapeAndCannotRunWithPlaceholders()
+    {
+        var plan = RunPlan.Read(Path.Combine(AppContext.BaseDirectory, "sample-plan.json"));
+        Assert.Equal("metadata-prefab", plan.Scenario);
+        Assert.Equal("{world}", plan.Arguments[Array.IndexOf(plan.Arguments, "-savedir") + 1]);
+        Assert.Throws<ArgumentException>(plan.Validate);
+    }
+
     internal static RunPlan Valid() => new()
     {
         Scenario = "empty-save", Runtime = new() { Source = Path.GetTempPath(), Sha256 = new() { ["server.exe"] = new('a', 64) } },
         World = new() { Source = Path.GetTempPath(), Sha256 = new() { ["worlds_local/test.db"] = new('b', 64) } },
         Executable = "valheim_server.exe", Arguments = ["-batchmode", "-nographics", "-savedir", "{world}"],
         Pins = new() { ["worlduid"] = "123", ["warpalicious.ProceduralRoads"] = new('1', 32), ["valheimCLI.valheimCLI"] = new('2', 32), ["testing.proceduralroads.adapter"] = new('3', 32) },
-        RuntimePins = new() { Game = new('4', 64), BepInExCore = new('5', 64), Patchers = new('6', 64) },
+        RuntimePins = new() { Game = new('4', 64), Loader = new('5', 64), Patchers = new('6', 64) },
     };
     [Fact] public void TheRoadsPluginsAreRequiredWithExactPins()
     {
