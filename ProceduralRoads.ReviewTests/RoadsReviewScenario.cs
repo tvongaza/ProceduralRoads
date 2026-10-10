@@ -192,9 +192,10 @@ public sealed record RoadsSiteEvidence(string Site, string WorldUid, JsonElement
     {
         route.RequireComplete("roads-memory");
         var data = route.Data;
+        float nearest = data.GetProperty("nearestMeters").GetSingle();
         if (data.GetProperty("x").GetSingle() != site.X || data.GetProperty("z").GetSingle() != site.Z ||
             data.GetProperty("radius").GetSingle() != site.Radius || data.GetProperty("points").GetInt32() <= 0 ||
-            data.GetProperty("nearestMeters").GetSingle() < 0 ||
+            !float.IsFinite(nearest) || nearest < 0 || nearest > site.MaxRoadDistanceMeters ||
             !Regex.IsMatch(data.GetProperty("routeSha256").GetString() ?? "", "^[0-9a-f]{64}$", RegexOptions.CultureInvariant))
             throw new InvalidDataException("Road route reading is missing, empty, or for the wrong site.");
     }

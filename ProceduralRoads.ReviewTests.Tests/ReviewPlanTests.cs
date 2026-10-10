@@ -31,6 +31,16 @@ public sealed class ReviewPlanTests
     }
 
     [Fact]
+    public void A_site_with_points_nearby_but_not_on_the_road_is_refused()
+    {
+        var site = new RoadsReviewSite { Id = "road", X = 10, Z = 20, Height = 35 };
+        Observation Reading(float nearest) => new("roads-memory", true, JsonSerializer.SerializeToElement(new
+        { x = 10f, z = 20f, radius = 32f, points = 3, nearestMeters = nearest, routeSha256 = new string('a', 64) }));
+        Assert.Throws<InvalidDataException>(() => RoadsSiteEvidence.RequireRoute(Reading(6), site));
+        RoadsSiteEvidence.RequireRoute(Reading(4), site);
+    }
+
+    [Fact]
     public void Comparison_refuses_changed_fixture_and_missing_still_but_accepts_measured_differences()
     {
         string root = Path.Combine(Path.GetTempPath(), "roads-review-test-" + Guid.NewGuid().ToString("N"));

@@ -7,6 +7,6 @@
   "cameraHeight": 12,
   "cameraAzimuthDegrees": 225,
   "sites": [
-    { "id": "dry-road-example", "x": 0, "z": 0, "height": 35, "radius": 32 }
+    { "id": "dry-road-example", "x": 0, "z": 0, "height": 35, "radius": 32, "maxRoadDistanceMeters": 5 }
   ]
 }

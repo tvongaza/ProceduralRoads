@@ -50,12 +50,14 @@ public sealed class RoadsReviewSite
     public float Z { get; set; }
     public float Height { get; set; }
     public int Radius { get; set; } = 32;
+    public float MaxRoadDistanceMeters { get; set; } = 5;
 
     public void Validate()
     {
         if (Id is null || Id.Length is < 1 or > 40 || !Id.All(c => char.IsAsciiLetterOrDigit(c) || c == '-') ||
             !float.IsFinite(X) || !float.IsFinite(Z) || !float.IsFinite(Height) ||
-            Math.Abs(X) > 20000 || Math.Abs(Z) > 20000 || Height < 31.5f || Radius is < 1 or > 64)
-            throw new InvalidDataException("Each site needs a short alphanumeric ID, finite dry arrival, world coordinates and 1-64 m radius.");
+            Math.Abs(X) > 20000 || Math.Abs(Z) > 20000 || Height < 31.5f || Radius is < 1 or > 64 ||
+            !float.IsFinite(MaxRoadDistanceMeters) || MaxRoadDistanceMeters <= 0 || MaxRoadDistanceMeters > Radius)
+            throw new InvalidDataException("Each site needs a short alphanumeric ID, finite dry arrival, world coordinates, 1-64 m radius and positive on-road distance within that radius.");
     }
 }
