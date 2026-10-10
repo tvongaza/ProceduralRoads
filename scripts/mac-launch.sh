@@ -1,4 +1,5 @@
 #!/bin/sh
+"$(dirname "$0")/legacy-script-guard.sh" "mac-launch.sh" "${1:-}" || exit $?
 # Relaunch the Mac client on the deployed build and load a world without
 # regenerating it (persisted roads):  ./scripts/mac-launch.sh <World>
 # Leaves the player in-world with safety on, ready for console commands.

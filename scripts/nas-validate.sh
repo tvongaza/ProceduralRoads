@@ -1,4 +1,5 @@
 #!/bin/sh
+"$(dirname "$0")/legacy-script-guard.sh" "nas-validate.sh" "${1:-}" || exit $?
 # Headless road-network validation on a remote x86_64 Linux box over SSH.
 # The Valheim dedicated server cannot run under emulation on Apple Silicon,
 # so it runs natively on the remote box; worlds persist there for
