@@ -66,12 +66,18 @@ public sealed class Plugin : BaseUnityPlugin
             .ThenBy(p => p.paintOnly).ThenBy(p => p.addition).Select(Line).ToArray();
         byte[] digest;
         using (var sha = SHA256.Create()) digest = sha.ComputeHash(Encoding.UTF8.GetBytes(string.Join("\n", ordered)));
-        float nearest = points.Count == 0 ? -1 : points.Min(p => Vector2.Distance(p.p, new Vector2(x, z)));
+        var centre = new Vector2(x, z);
+        var nearestPoint = points.OrderBy(p => (p.p - centre).sqrMagnitude)
+            .ThenBy(p => p.p.x).ThenBy(p => p.p.y).FirstOrDefault();
+        float nearest = points.Count == 0 ? -1 : Vector2.Distance(nearestPoint.p, centre);
         context.Succeed(new Dictionary<string, object?>
         {
             ["source"] = "roads-memory", ["complete"] = true, ["x"] = x, ["z"] = z,
             ["radius"] = radius, ["points"] = points.Count, ["paintOnlyPoints"] = points.Count(p => p.paintOnly),
-            ["nearestMeters"] = nearest, ["routeSha256"] = BitConverter.ToString(digest).Replace("-", "").ToLowerInvariant(),
+            ["nearestMeters"] = nearest, ["nearestX"] = points.Count == 0 ? null : (object)nearestPoint.p.x,
+            ["nearestZ"] = points.Count == 0 ? null : (object)nearestPoint.p.y,
+            ["nearestPaintOnly"] = points.Count == 0 ? null : (object)nearestPoint.paintOnly,
+            ["routeSha256"] = BitConverter.ToString(digest).Replace("-", "").ToLowerInvariant(),
         }); yield break;
     }
     private static IEnumerator BridgeZone(ExtensionContext context)

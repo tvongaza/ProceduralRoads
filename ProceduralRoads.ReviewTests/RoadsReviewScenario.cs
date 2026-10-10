@@ -97,10 +97,6 @@ public sealed class RoadsReviewScenario : IOneShotServerScenario
                     target = PlayerPlacement.Arrive(round.Server, round.Client, target,
                         TimeSpan.FromSeconds(clientPlan.ArrivalSeconds), session.Cancellation, loadedGround: true).Target;
                 });
-                round.Step(site.Id + ": reproducible still", () =>
-                    session.Report.Attach(ReviewCapture.Capture(round.Server, round.Client, captureHost,
-                        shots[index] with { Arrival = target }, TimeSpan.FromSeconds(clientPlan.ArrivalSeconds),
-                        TimeSpan.FromSeconds(60), session.Cancellation).Evidence));
                 round.Step(site.Id + ": three stationary support readings", () =>
                     PlayerPlacement.RequireSupported(round.Client, target, cancellation: session.Cancellation));
                 round.Step(site.Id + ": complete route and object census", () =>
@@ -116,6 +112,12 @@ public sealed class RoadsReviewScenario : IOneShotServerScenario
                     session.Report.Attach(new RoadsSiteEvidence(site.Id, context.WorldUid, route.Data,
                         objects.SavedObjects, objects.LoadedPrefabs, objects.Pieces, DateTimeOffset.UtcNow));
                 });
+                // A bad site must fail before a screenshot. These observations also let the first
+                // world-entry HUD message settle before the still is taken.
+                round.Step(site.Id + ": reproducible still", () =>
+                    session.Report.Attach(ReviewCapture.Capture(round.Server, round.Client, captureHost,
+                        shots[index] with { Arrival = target }, TimeSpan.FromSeconds(clientPlan.ArrivalSeconds),
+                        TimeSpan.FromSeconds(60), session.Cancellation).Evidence));
             }
         });
     }
