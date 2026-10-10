@@ -14,8 +14,8 @@ namespace ProceduralRoads.SystemTests;
 /// </summary>
 public static class TerrainClientScenario
 {
-    public static void Run(RunPlan runPlan, GameActor server, Func<GameActor> restartOwnedServer, Func<ClientSession> openClient,
-        Action<GameActor> waitUntilJoinable, ScenarioReport report, string output, CancellationToken cancellation = default)
+    public static void Run(RunPlan runPlan, GameActor server, IOwnedServer ownedServer, Func<ClientSession> openClient,
+        ScenarioReport report, string output, CancellationToken cancellation = default)
     {
         var plan = runPlan.Client ?? throw new ArgumentException("A terrain-persistence run needs its client.");
         SurfacePlan? height = null; PaintPlan? paint = null;
@@ -31,8 +31,8 @@ public static class TerrainClientScenario
         // measurements; between the rounds a confirmed save, the client leaves and only the owned server restarts.
         new ClientRounds
         {
-            Client = plan, WorldUid = runPlan.WorldUid, Report = report, Output = output, WaitUntilJoinable = waitUntilJoinable,
-            RestartServer = restartOwnedServer, Arrival = height!.Support, ArriveStep = "arrive on the dry support point", Cancellation = cancellation,
+            Client = plan, WorldUid = runPlan.WorldUid, Report = report, Output = output, OwnedServer = ownedServer,
+            Arrival = height!.Support, ArriveStep = "arrive on the dry support point", Cancellation = cancellation,
             OpenStep = plan.Owned ? "launch the owned client to its menu: exactly the declared plugins, Roads and MWL absent"
                 : "attach to the operator's client at its menu: exactly the declared plugins, Roads and MWL absent",
         }.Run(server, openClient, round => Measure(round, height!, paint!));

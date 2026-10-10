@@ -26,7 +26,7 @@ public sealed class TerrainClientScenarioTests : IDisposable
             Pins = new() { ["valheimCLI.valheimCLI"] = new('a', 32), ["warpalicious.ProceduralRoads"] = "absent", ["warpalicious.More_World_Locations_AIO"] = "absent" },
             ArrivalSeconds = 10, JoinSeconds = 10,
         };
-        plan.HeightPlan = new() { Source = h, Sha256 = WorldFixture.Hash(h) }; plan.PaintPlan = new() { Source = p, Sha256 = WorldFixture.Hash(p) };
+        plan.HeightPlan = new() { Source = h, Sha256 = FileHash.Sha256(h) }; plan.PaintPlan = new() { Source = p, Sha256 = FileHash.Sha256(p) };
         plan.Validate();
         return plan;
     }
@@ -44,6 +44,8 @@ public sealed class TerrainClientScenarioTests : IDisposable
             ? (object)new { source = "session-state", complete = true, phase = "world-present", worldUid = "123", worldPresent = true, worldReady = true, server = false, dedicated = false, localPlayer = true, playerReady = true, saving = false, loadError = false, connectionStatus = "Connected" }
             : new { source = "session-state", complete = true, phase = "menu", worldUid = (string?)null, worldPresent = false, worldReady = false, server = false, dedicated = false, localPlayer = false, playerReady = false, saving = false, loadError = false, connectionStatus = "None" };
         return new ScriptedTransport()
+            .ClientAccess(() => joined)
+            .ArrivalSignals(() => new { source = "local-player-support", complete = true, x = 100f, y = 42.5f, z = -40f, speed = 0f, grounded = true, flying = false, attached = false, dead = false, teleporting = false, units = "metres" })
             .Extension("valheim.session", "state", _ => State())
             .Extension("valheim.session", "join", _ => { joined = true; _events.Add("client:join"); return new { source = "session-join", complete = true, action = "join" }; }, readOnly: false)
             .Extension("valheim.session", "leave", _ => { joined = false; restarted = true; _events.Add("client:leave"); return new { source = "session-leave", complete = true, action = "leave" }; }, readOnly: false)
@@ -56,12 +58,10 @@ public sealed class TerrainClientScenarioTests : IDisposable
             })
             .Extension("valheim.world", "terrain-paint", a => new { source = "loaded-terrain-paint", complete = true, units = "rgba01", x = float.Parse(a[0]), z = float.Parse(a[1]), r = 1f, g = 0f, b = 0f, a = .3f })
             .Extension("valheim.world", "player-support", _ => new { source = "local-player-support", complete = true, x = 100f, y = 42.5f, z = -40f, speed = 0f, grounded = true, flying = false, attached = false, dead = false, teleporting = false, units = "metres" })
-            .On("cli_set_player_safety true", _ => ScriptedTransport.Ok("OK: playerSafety enabled=True god=True ghost=True debugMode=True cheats=True"))
+            .On("cli_set_player_safety true", _ => ScriptedTransport.Ok("OK: playerSafety enabled=True god=True ghost=True debugMode=True cheats=True ghostReplicated=True"))
             // The toolkit's arrival skips a first-spawn intro first; this character has spawned before.
-            .OnPrefix("cli_skip_intro", _ => ScriptedTransport.Ok("OK: skipped=False profileFirstSpawn=False position=0.0,40.00,0.0 ms=3"))
-            .On("devcommands", _ => ScriptedTransport.Ok((devcommands = !devcommands) ? "Dev commands: True" : "Dev commands: False"));
+            .OnPrefix("cli_skip_intro", _ => ScriptedTransport.Ok("OK: skipped=False profileFirstSpawn=False position=0.0,40.00,0.0 ms=3"));
     }
-    private bool devcommands;
 
     private (ScenarioReport Report, Exception? Error) Run(RunPlan plan, ScriptedTransport client, ScriptedTransport first, ScriptedTransport second,
         Action<GameActor>? waitUntilJoinable = null)
@@ -70,12 +70,20 @@ public sealed class TerrainClientScenarioTests : IDisposable
         using var server = first.Actor("server");
         try
         {
-            TerrainClientScenario.Run(plan, server, () => { _events.Add("restart"); return second.Actor("server2"); },
+            var owned = new ScriptedOwnedServer(() => { _events.Add("restart"); return second.Actor("server2"); },
+                waitUntilJoinable ?? (actor => _events.Add(actor.Name + ":joinable")));
+            TerrainClientScenario.Run(plan, server, owned,
                 () => { _events.Add("client:open"); return ClientSession.Attach(plan.Client!, _dir, client); },
-                waitUntilJoinable ?? (actor => _events.Add(actor.Name + ":joinable")), report, _dir);
+                report, _dir);
             return (report, null);
         }
         catch (Exception error) { return (report, error); }
+    }
+
+    private sealed class ScriptedOwnedServer(Func<GameActor> restart, Action<GameActor> waitUntilJoinable) : IOwnedServer
+    {
+        public GameActor Restart() => restart();
+        public void WaitUntilJoinable(GameActor server) => waitUntilJoinable(server);
     }
 
     [Fact] public void BothRoundsMeasureAroundAConfirmedSaveARestartAndARejoin()
@@ -83,7 +91,7 @@ public sealed class TerrainClientScenarioTests : IDisposable
         var client = Client();
         var (report, error) = Run(Plan(), client, Server("server1"), Server("server2"));
         Assert.Null(error); Assert.True(report.Passed);
-        Assert.True(devcommands); // The toolkit's join turned them on before each join.
+        Assert.True(client.Access.Devcommands); // The toolkit's join turned them on before each join.
         Assert.Equal(new[] { "client:open", "server:joinable", "client:join", "server1:teleport", "server1:save", "client:leave", "restart",
             "server2:joinable", "client:join", "server2:teleport", "client:leave" }, _events);
         Assert.Equal("detach from the operator's client", report.Steps[^1].Name);
