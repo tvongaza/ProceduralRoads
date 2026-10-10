@@ -83,6 +83,9 @@ public static class RoadsReviewComparison
         var network = Item("roads-network", "world");
         if (network.GetProperty("WorldUid").GetString() != plan.WorldUid)
             throw new InvalidDataException("Network evidence names the wrong world UID.");
+        var status = network.GetProperty("Status");
+        RoadsReviewScenario.StatusEvidence(status.EnumerateObject().ToDictionary(
+            field => field.Name, field => field.Value.GetString() ?? "", StringComparer.Ordinal));
         double? generation = NullableSeconds(network, "GenerationSeconds");
         double? startup = NullableSeconds(network, "ServerStartupSeconds");
         var sites = new List<SiteReading>();

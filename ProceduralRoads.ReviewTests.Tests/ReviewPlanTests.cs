@@ -21,6 +21,16 @@ public sealed class ReviewPlanTests
     }
 
     [Fact]
+    public void Status_evidence_requires_a_responsive_game_thread()
+    {
+        Assert.Throws<InvalidDataException>(() => RoadsReviewScenario.StatusEvidence(new Dictionary<string, string>()));
+        Assert.Throws<InvalidDataException>(() => RoadsReviewScenario.StatusEvidence(new Dictionary<string, string>
+        { ["mainThreadIdleMs"] = "5000" }));
+        Assert.Equal("75", RoadsReviewScenario.StatusEvidence(new Dictionary<string, string>
+        { ["mainThreadIdleMs"] = "75" })["mainThreadIdleMs"]);
+    }
+
+    [Fact]
     public void Comparison_refuses_changed_fixture_and_missing_still_but_accepts_measured_differences()
     {
         string root = Path.Combine(Path.GetTempPath(), "roads-review-test-" + Guid.NewGuid().ToString("N"));
@@ -69,7 +79,8 @@ public sealed class ReviewPlanTests
         var route = JsonSerializer.SerializeToElement(new { source = "roads-memory", complete = true,
             x = 10, z = 20, radius = 32, points, routeSha256 = new string('c', 64) });
         report.Attach(new RoadsNetworkEvidence("123", JsonSerializer.SerializeToElement(new { points = 100 }),
-            "Roads done: 1 road(s), in 20s.", 20, 25, DateTimeOffset.UtcNow, true));
+            "Roads done: 1 road(s), in 20s.", 20, 25, new Dictionary<string, string>
+            { ["mainThreadIdleMs"] = "75", ["busy"] = "none" }, DateTimeOffset.UtcNow, true));
         report.Attach(new RoadsSiteEvidence("hill", "123", route, 8, 6, 2, DateTimeOffset.UtcNow));
         report.Attach(new AreaObjectSnapshot("hill", "123", 10, 20, 32, DateTimeOffset.UtcNow,
             DateTimeOffset.UtcNow, 8, -1, 6, 2,

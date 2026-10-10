@@ -28,6 +28,8 @@ public sealed class RoadsReviewScenario : IOneShotServerScenario
         var plan = RoadsReviewPlan.Read(pinnedPlan);
         var clientPlan = context.ClientPlan ?? throw new InvalidDataException("Roads review needs the prepared clean client; omit --server-only.");
         var server = session.Server?.Game ?? throw new InvalidOperationException("Roads review needs the prepared dedicated server.");
+        if (session.Server.Host?.Kind != GameHostKind.Local)
+            throw new NotSupportedException("Roads review currently needs the dedicated server on the runner's machine for STATUS evidence.");
         if (!session.CampaignClients.Contains("client"))
             throw new InvalidDataException("Roads review needs the prepared 'client' actor in the one-shot campaign.");
         IGameHost captureHost = session.ClientHost("client");
@@ -66,10 +68,15 @@ public sealed class RoadsReviewScenario : IOneShotServerScenario
         if (!loaded && generationLine == null)
             throw new InvalidDataException("Roads generated a network without a complete generation timing line.");
         double? generationSeconds = ParseGenerationSeconds(generationLine);
+        // STATUS is a separate, off-thread ValheimCLI read. The completed network observation above
+        // rechecks strict pins; STATUS proves the game thread is responsive after generation.
+        IReadOnlyDictionary<string, string> status;
+        using (var statusTransport = new CliTransport("127.0.0.1", context.ServerPlan.Port))
+            status = StatusEvidence(statusTransport.ReadStatus());
         double? serverStartupSeconds = session.Report.Steps
             .LastOrDefault(step => step.Name == "start and verify owned dedicated fixture")?.Seconds;
         session.Report.Attach(new RoadsNetworkEvidence(context.WorldUid, network.Data, generationLine,
-            generationSeconds, serverStartupSeconds, DateTimeOffset.UtcNow, plan.RequireFreshGeneration));
+            generationSeconds, serverStartupSeconds, status, DateTimeOffset.UtcNow, plan.RequireFreshGeneration));
 
         var siteCapability = server.RequireCapability("roads.testing/site-metrics");
         new ClientRounds
@@ -143,6 +150,21 @@ public sealed class RoadsReviewScenario : IOneShotServerScenario
         return seconds;
     }
 
+    public static IReadOnlyDictionary<string, string> StatusEvidence(IReadOnlyDictionary<string, string> fields)
+    {
+        if (!fields.TryGetValue("mainThreadIdleMs", out string? text) ||
+            !long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out long idle) || idle < 0 || idle >= 5000)
+            throw new InvalidDataException("Roads server STATUS did not prove a responsive game thread after network completion.");
+        // Keep the readiness evidence, not incidental STATUS fields that can vary across installs.
+        return new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["state"] = fields.GetValueOrDefault("state", "unknown"),
+            ["phase"] = fields.GetValueOrDefault("phase", "unknown"),
+            ["mainThreadIdleMs"] = text,
+            ["busy"] = fields.GetValueOrDefault("busy", "none"),
+        };
+    }
+
     public static string FixtureManifestDigest(IReadOnlyDictionary<string, string> files)
     {
         if (files.Count == 0) throw new InvalidDataException("The fixture has no pinned files.");
@@ -153,7 +175,8 @@ public sealed class RoadsReviewScenario : IOneShotServerScenario
 }
 
 public sealed record RoadsNetworkEvidence(string WorldUid, JsonElement Network, string? GenerationLogLine,
-    double? GenerationSeconds, double? ServerStartupSeconds, DateTimeOffset CapturedUtc,
+    double? GenerationSeconds, double? ServerStartupSeconds, IReadOnlyDictionary<string, string> Status,
+    DateTimeOffset CapturedUtc,
     bool FreshGenerationRequired) : IEvidence
 {
     public string Kind => "roads-network";
