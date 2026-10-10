@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Security.Cryptography;
+using System.Xml.Linq;
 
 namespace ProceduralRoads.ReviewTests;
 
@@ -11,8 +12,10 @@ public static class RoadsReviewComparison
         int LoadedPrefabs, int Pieces, IReadOnlyDictionary<string, int> SavedByType,
         IReadOnlyDictionary<string, int> LoadedByType, string StillSha256);
     public sealed record Arm(string Directory, string SourceCommit, string ModSha256, string AdapterSha256,
+        string ObserverSourceSha256, string ScenarioSha256, string ToolkitSha256,
         string FixtureSha256, string PlanSha256,
-        string GameSha256, string LoaderSha256, string PatchersSha256, string OtherPluginsSha256,
+        string GameSha256, string LoaderSha256, string PatchersSha256,
+        string ClientGameSha256, string ClientLoaderSha256, string ClientPatchersSha256, string OtherPluginsSha256,
         string WorldUid, double? GenerationSeconds, double? ServerStartupSeconds, IReadOnlyList<SiteReading> Sites);
     public sealed record SiteDifference(string Id, bool SameRoute, double GroundHeightChange, int RoadPoints, int SavedObjects,
         int LoadedPrefabs, int Pieces, IReadOnlyList<ObjectTypeDifference> ObjectTypes,
@@ -30,9 +33,14 @@ public static class RoadsReviewComparison
         if (before.FixtureSha256 != after.FixtureSha256 || before.WorldUid != after.WorldUid ||
             before.PlanSha256 != after.PlanSha256 || before.GameSha256 != after.GameSha256 ||
             before.LoaderSha256 != after.LoaderSha256 || before.PatchersSha256 != after.PatchersSha256 ||
+            before.ClientGameSha256 != after.ClientGameSha256 ||
+            before.ClientLoaderSha256 != after.ClientLoaderSha256 ||
+            before.ClientPatchersSha256 != after.ClientPatchersSha256 ||
+            before.ObserverSourceSha256 != after.ObserverSourceSha256 ||
+            before.ScenarioSha256 != after.ScenarioSha256 || before.ToolkitSha256 != after.ToolkitSha256 ||
             before.OtherPluginsSha256 != after.OtherPluginsSha256 ||
             !before.Sites.Select(site => site.Id).SequenceEqual(after.Sites.Select(site => site.Id)))
-            throw new InvalidDataException("Fixture, game, loader, other plugins, world UID or site plan differ between arms.");
+            throw new InvalidDataException("Fixture, server/client runtime, observer source, scenario, toolkit, other plugins, world UID or site plan differ between arms.");
         var sites = before.Sites.Zip(after.Sites, (b, a) => new SiteDifference(b.Id,
             b.RouteSha256 == a.RouteSha256, a.GroundHeight - b.GroundHeight, a.RoadPoints - b.RoadPoints,
             a.SavedObjects - b.SavedObjects, a.LoadedPrefabs - b.LoadedPrefabs, a.Pieces - b.Pieces,
@@ -65,6 +73,11 @@ public static class RoadsReviewComparison
         string fixture = Input("roadsFixtureManifestSha256");
         string planHash = Input("roadsReviewPlanSha256");
         string game = Input("roadsGameSha256"), loader = Input("roadsLoaderSha256"), patchers = Input("roadsPatchersSha256");
+        string clientGame = Input("roadsClientGameSha256"), clientLoader = Input("roadsClientLoaderSha256"),
+            clientPatchers = Input("roadsClientPatchersSha256");
+        string scenario = Input("oneShotScenarioSha256");
+        string toolkit = RequiredHash(Convert.ToHexString(SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(root.GetProperty("Toolkit").GetRawText()))).ToLowerInvariant(), "toolkit identity");
         string sitePlan = Path.Combine(evidence, "roads-review-sites.json");
         if (Valheim.Testing.Game.FileHash.Sha256(sitePlan) != planHash)
             throw new InvalidDataException("Captured Roads site-plan bytes changed after the run.");
@@ -75,6 +88,20 @@ public static class RoadsReviewComparison
         string inputs = Path.Combine(directory, "adapter-build", "inputs.json");
         using var adapter = JsonDocument.Parse(File.ReadAllText(inputs));
         string mod = RequiredHash(adapter.RootElement.GetProperty("mod").GetProperty("sha256").GetString(), "Roads mod");
+        if (Input("roadsModSha256") != mod)
+            throw new InvalidDataException("The reported Roads DLL differs from the adapter build input.");
+        string observerSource = RetainObserverSource(directory, adapter.RootElement);
+        if (Input("roadsObserverSourceSha256") != observerSource)
+            throw new InvalidDataException("The retained Roads adapter source changed after the run.");
+        string modFile = RetainModInput(directory, adapter.RootElement, mod);
+        string modPin = root.GetProperty("Plugins").GetProperty("server")
+            .GetProperty("warpalicious.ProceduralRoads").GetString() ?? "";
+        if (!Regex.IsMatch(modPin, "^[0-9a-f]{32}$", RegexOptions.CultureInvariant) ||
+            Valheim.Testing.Game.FileHash.Sha256(modFile) != mod ||
+            Convert.ToHexString(MD5.HashData(File.ReadAllBytes(modFile))).ToLowerInvariant() != modPin)
+            throw new InvalidDataException("The built Roads DLL differs from its build manifest or server pin.");
+        if (root.GetProperty("Plugins").GetProperty("client").GetProperty("warpalicious.ProceduralRoads").GetString() != "absent")
+            throw new InvalidDataException("The review client must not load Roads.");
         // The adapter is compiled against each Roads DLL, so its binary hash may change even
         // when the adapter source does not. Record both hashes, but compare only the other pins.
         string adapterSha = RequiredHash(adapter.RootElement.GetProperty("adapter").GetProperty("sha256").GetString(), "Roads adapter");
@@ -110,6 +137,7 @@ public static class RoadsReviewComparison
             if (site.GetProperty("WorldUid").GetString() != plan.WorldUid ||
                 area.GetProperty("WorldUid").GetString() != plan.WorldUid ||
                 still.GetProperty("worldUid").GetString() != plan.WorldUid ||
+                still.GetProperty("gameBuild").GetString() != clientGame ||
                 still.GetProperty("visualVerdict").GetString() != "not asserted")
                 throw new InvalidDataException("Site evidence names the wrong world UID: " + id);
             var route = site.GetProperty("Route");
@@ -133,7 +161,8 @@ public static class RoadsReviewComparison
                 site.GetProperty("LoadedPrefabs").GetInt32(), site.GetProperty("Pieces").GetInt32(),
                 savedByType, loadedByType, imageSha));
         }
-        return new(directory, sourceCommit, mod, adapterSha, fixture, planHash, game, loader, patchers, otherPlugins,
+        return new(directory, sourceCommit, mod, adapterSha, observerSource, scenario, toolkit,
+            fixture, planHash, game, loader, patchers, clientGame, clientLoader, clientPatchers, otherPlugins,
             plan.WorldUid, generation, startup, sites);
 
         JsonElement Entry(string kind, string site)
@@ -186,6 +215,102 @@ public static class RoadsReviewComparison
     private static string RequiredHash(string? value, string label) =>
         Regex.IsMatch(value ?? "", "^[0-9a-f]{64}$", RegexOptions.CultureInvariant) ? value! :
         throw new InvalidDataException("Missing or malformed SHA-256 for " + label + ".");
+
+    /// <summary>Stable digest of the retained adapter project sources, independent of paths and timestamps.</summary>
+    public static string ObserverSourceDigest(string directory)
+    {
+        directory = Path.GetFullPath(directory);
+        if (!Directory.Exists(directory)) throw new DirectoryNotFoundException("Retain the adapter's source under adapter-build/source: " + directory);
+        var files = Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
+            .Where(file => Path.GetExtension(file) is ".cs" or ".csproj" or ".props")
+            .Select(file => (File: file, Relative: Path.GetRelativePath(directory, file).Replace('\\', '/')))
+            .Where(item => !item.Relative.Split('/').Any(part => part is "bin" or "obj"))
+            .OrderBy(item => item.Relative, StringComparer.Ordinal).ToArray();
+        if (!files.Any(item => item.Relative.EndsWith(".csproj", StringComparison.Ordinal)) ||
+            !files.Any(item => item.Relative.EndsWith(".cs", StringComparison.Ordinal)))
+            throw new InvalidDataException("The retained adapter source needs its project and C# files.");
+        foreach (var (file, _) in files)
+            if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidDataException("Adapter source must not contain links.");
+        string canonical = string.Join("\n", files.Select(item => item.Relative + "=" + Valheim.Testing.Game.FileHash.Sha256(item.File)));
+        return Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    public static string CaptureObserverSource(string run)
+    {
+        string inputs = Path.Combine(run, "adapter-build", "inputs.json");
+        using var document = JsonDocument.Parse(File.ReadAllText(inputs));
+        return RetainObserverSource(run, document.RootElement);
+    }
+
+    public static string CaptureModInput(string run)
+    {
+        string inputs = Path.Combine(run, "adapter-build", "inputs.json");
+        using var document = JsonDocument.Parse(File.ReadAllText(inputs));
+        string mod = RequiredHash(document.RootElement.GetProperty("mod").GetProperty("sha256").GetString(), "Roads mod");
+        RetainModInput(run, document.RootElement, mod);
+        return mod;
+    }
+
+    private static string RetainModInput(string run, JsonElement inputs, string sha256)
+    {
+        string retained = Path.Combine(run, "adapter-build", "inputs", "ProceduralRoads.dll");
+        if (!File.Exists(retained))
+        {
+            string source = inputs.GetProperty("mod").GetProperty("file").GetString() ?? "";
+            if (!Path.IsPathFullyQualified(source) || !File.Exists(source))
+                throw new InvalidDataException("The Roads DLL is unavailable and this run has no retained mod input.");
+            if (Valheim.Testing.Game.FileHash.Sha256(source) != sha256)
+                throw new InvalidDataException("The Roads DLL changed since the adapter build.");
+            Directory.CreateDirectory(Path.GetDirectoryName(retained)!);
+            File.Copy(source, retained, overwrite: false);
+        }
+        if (Valheim.Testing.Game.FileHash.Sha256(retained) != sha256)
+            throw new InvalidDataException("The retained Roads DLL differs from the adapter build manifest.");
+        return retained;
+    }
+
+    private static string RetainObserverSource(string run, JsonElement inputs)
+    {
+        string snapshot = Path.Combine(run, "adapter-build", "source");
+        if (Directory.Exists(snapshot)) return ObserverSourceDigest(snapshot);
+        // The one-shot build records the adapter project it compiled. Keep its source files with
+        // the run the first time they are compared so a later offline review need not find that checkout.
+        string project = inputs.GetProperty("project").GetString() ?? "";
+        if (!Path.IsPathFullyQualified(project) || !File.Exists(project))
+            throw new InvalidDataException("The adapter project is unavailable and this run has no retained observer source.");
+        string source = Path.GetDirectoryName(project)!;
+        string[] files = Directory.GetFiles(source, "*", SearchOption.AllDirectories)
+            .Where(file => Path.GetExtension(file) is ".cs" or ".csproj")
+            .Where(file => !Path.GetRelativePath(source, file).Replace('\\', '/').Split('/').Any(part => part is "bin" or "obj"))
+            .ToArray();
+        if (files.Length == 0) throw new InvalidDataException("The adapter project has no source files.");
+        Directory.CreateDirectory(snapshot);
+        foreach (string file in files)
+        {
+            string target = Path.Combine(snapshot, Path.GetRelativePath(source, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(file, target, overwrite: false);
+        }
+        // Roads' adapter links a fixture source and imports environment.props from sibling
+        // projects. Both affect the compiled observer even though neither is under its folder.
+        var projectXml = XDocument.Load(project);
+        foreach (var input in projectXml.Descendants()
+            .Where(element => element.Name.LocalName is "Compile" or "Import")
+            .Select(element => element.Attribute(element.Name.LocalName == "Import" ? "Project" : "Include")?.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value) && value!.StartsWith("..", StringComparison.Ordinal)))
+        {
+            if (input!.Contains("$(", StringComparison.Ordinal) || input.Contains('*'))
+                throw new InvalidDataException("The adapter's linked source needs an explicit file path: " + input);
+            string linked = Path.GetFullPath(input, source);
+            if (!File.Exists(linked)) throw new FileNotFoundException("The adapter's linked source is missing: " + linked, linked);
+            string relative = Path.GetRelativePath(source, linked).Replace('\\', '/');
+            string retained = Path.Combine(snapshot, "_external", relative.Replace("../", "parent/", StringComparison.Ordinal));
+            Directory.CreateDirectory(Path.GetDirectoryName(retained)!);
+            File.Copy(linked, retained, overwrite: false);
+        }
+        return ObserverSourceDigest(snapshot);
+    }
 
     private static string OtherPluginsDigest(JsonElement actors)
     {

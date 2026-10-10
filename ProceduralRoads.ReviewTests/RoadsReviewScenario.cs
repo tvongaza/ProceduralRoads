@@ -41,6 +41,10 @@ public sealed class RoadsReviewScenario : IOneShotServerScenario
         var shots = plan.Sites.Select(site => Shot(plan, site, session.Output, context, clientPlan)).ToArray();
         foreach (var shot in shots) ReviewCapture.Validate(shot, shell.Kind);
         session.Report.Provenance["roadsReviewPlanSha256"] = FileHash.Sha256(pinnedPlan);
+        session.Report.Provenance["roadsObserverSourceSha256"] = RoadsReviewComparison.CaptureObserverSource(
+            Directory.GetParent(session.Output)?.FullName ?? throw new InvalidDataException("The run has no output directory."));
+        session.Report.Provenance["roadsModSha256"] = RoadsReviewComparison.CaptureModInput(
+            Directory.GetParent(session.Output)?.FullName ?? throw new InvalidDataException("The run has no output directory."));
         session.Report.Provenance["roadsSourceCommit"] = sourceCommit;
         session.Report.Provenance["roadsReviewPlan"] = pinnedPlan;
         session.Report.Provenance["roadsReviewSiteIds"] = string.Join(",", plan.Sites.Select(s => s.Id));
@@ -49,6 +53,10 @@ public sealed class RoadsReviewScenario : IOneShotServerScenario
         session.Report.Provenance["roadsGameSha256"] = runtime.Game;
         session.Report.Provenance["roadsLoaderSha256"] = runtime.Loader;
         session.Report.Provenance["roadsPatchersSha256"] = runtime.Patchers;
+        var clientRuntime = clientPlan.InstallPins ?? throw new InvalidDataException("The client runtime is not pinned.");
+        session.Report.Provenance["roadsClientGameSha256"] = clientRuntime.Game;
+        session.Report.Provenance["roadsClientLoaderSha256"] = clientRuntime.Loader;
+        session.Report.Provenance["roadsClientPatchersSha256"] = clientRuntime.Patchers;
         session.Report.Provenance["roadsReviewVisualVerdict"] = "required from a person; screenshots are evidence only";
 
         var networkCapability = server.RequireCapability("roads.testing/network");
@@ -127,7 +135,7 @@ public sealed class RoadsReviewScenario : IOneShotServerScenario
         new HeightExpectation(site.X, site.Z, site.Height), plan.Weather, plan.TimeOfDay,
         plan.CameraDistance, plan.CameraHeight, Path.Combine(output, "capture-host-" + site.Id),
         Path.Combine(output, "review-" + site.Id), context.WorldUid,
-        context.ServerPlan.RuntimePins?.Game ?? throw new InvalidDataException("Server game build is not pinned."),
+        client.InstallPins?.Game ?? throw new InvalidDataException("Client game build is not pinned."),
         client.Pins, CameraAzimuthDegrees: plan.CameraAzimuthDegrees);
 
     private static readonly Regex Generation = new(@"Roads done: .* in (?<seconds>\d+(?:\.\d+)?)s\.", RegexOptions.CultureInvariant);
