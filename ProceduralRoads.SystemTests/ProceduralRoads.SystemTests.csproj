@@ -1,6 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><ToolkitPackageVersion Condition="'$(ToolkitPackageVersion)' == ''">0.1.0-preview.14</ToolkitPackageVersion></PropertyGroup>
+  <PropertyGroup>
+    <ToolkitGameVersion Condition="'$(ToolkitGameVersion)' == ''">0.1.0-preview.52</ToolkitGameVersion>
+    <ToolkitGameSessionsVersion Condition="'$(ToolkitGameSessionsVersion)' == ''">0.1.0-preview.12</ToolkitGameSessionsVersion>
+  </PropertyGroup>
   <PropertyGroup><OutputType>Exe</OutputType><RollForward>Major</RollForward><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
-  <ItemGroup><PackageReference Include="Valheim.Testing.Game" Version="[$(ToolkitPackageVersion)]" /></ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Valheim.Testing.Game" Version="[$(ToolkitGameVersion)]" />
+    <PackageReference Include="Valheim.Testing.GameSessions" Version="[$(ToolkitGameSessionsVersion)]" />
+  </ItemGroup>
   <ItemGroup><Compile Include="../ProceduralRoads.TestFixtures/FlatRoadFixture.cs" Link="Fixtures/FlatRoadFixture.cs" /></ItemGroup>
 </Project>
