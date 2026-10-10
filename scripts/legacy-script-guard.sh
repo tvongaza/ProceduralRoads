@@ -9,7 +9,7 @@ fi
 cat >&2 <<EOF
 REFUSED (exit 3): $script $verb is a historical shared-state test driver.
 Use valheim-test start, server-load, --hold, or cli on a disposable copy.
-If this workflow is missing, record the command and purpose on ValheimTesting#541
+If this workflow is missing, record the command and purpose on ValheimTesting#575
 or ProceduralRoads#7 before migrating the script.
 Only an intentional historical run may set VALHEIM_TEST_LEGACY_DEBUG=1.
 EOF

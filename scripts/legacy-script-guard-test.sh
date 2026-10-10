@@ -10,6 +10,6 @@ for script in "$here"/*.sh; do
 done
 rc=0
 out=$("$here/legacy-script-guard.sh" world-fixture.sh list 2>&1) || rc=$?
-[ "$rc" -eq 3 ] && echo "$out" | grep -q 'ValheimTesting#541'
+[ "$rc" -eq 3 ] && echo "$out" | grep -q 'ValheimTesting#575'
 VALHEIM_TEST_LEGACY_DEBUG=1 "$here/legacy-script-guard.sh" world-fixture.sh list >/dev/null 2>&1
 echo 'legacy guard: PASS'
