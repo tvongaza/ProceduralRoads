@@ -9,7 +9,7 @@ public static class RoadsReviewComparison
     public sealed record SiteReading(string Id, double GroundHeight, string RouteSha256, int RoadPoints, int SavedObjects,
         int LoadedPrefabs, int Pieces, IReadOnlyDictionary<string, int> SavedByType,
         IReadOnlyDictionary<string, int> LoadedByType, string StillSha256);
-    public sealed record Arm(string Directory, string ModSha256, string FixtureSha256, string PlanSha256,
+    public sealed record Arm(string Directory, string SourceCommit, string ModSha256, string FixtureSha256, string PlanSha256,
         string GameSha256, string LoaderSha256, string PatchersSha256, string OtherPluginsSha256,
         string WorldUid, double? GenerationSeconds, double? ServerStartupSeconds, IReadOnlyList<SiteReading> Sites);
     public sealed record SiteDifference(string Id, bool SameRoute, double GroundHeightChange, int RoadPoints, int SavedObjects,
@@ -57,6 +57,9 @@ public static class RoadsReviewComparison
             throw new InvalidDataException("Roads comparison needs a passing scenario with verified cleanup and strict pins: " + resultPath);
         var provenance = root.GetProperty("Provenance");
         string Input(string name) => RequiredHash(provenance.GetProperty(name).GetString(), name);
+        string sourceCommit = provenance.GetProperty("roadsSourceCommit").GetString() ?? "";
+        if (!Regex.IsMatch(sourceCommit, "^[0-9a-f]{40}$", RegexOptions.CultureInvariant))
+            throw new InvalidDataException("The Roads source commit is missing or malformed.");
         string fixture = Input("roadsFixtureManifestSha256");
         string planHash = Input("roadsReviewPlanSha256");
         string game = Input("roadsGameSha256"), loader = Input("roadsLoaderSha256"), patchers = Input("roadsPatchersSha256");
@@ -114,7 +117,7 @@ public static class RoadsReviewComparison
                 site.GetProperty("LoadedPrefabs").GetInt32(), site.GetProperty("Pieces").GetInt32(),
                 savedByType, loadedByType, imageSha));
         }
-        return new(directory, mod, fixture, planHash, game, loader, patchers, otherPlugins,
+        return new(directory, sourceCommit, mod, fixture, planHash, game, loader, patchers, otherPlugins,
             plan.WorldUid, generation, startup, sites);
 
         JsonElement Entry(string kind, string site)

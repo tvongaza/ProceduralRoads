@@ -17,6 +17,9 @@ public sealed class RoadsReviewScenario : IOneShotServerScenario
     {
         string path = Environment.GetEnvironmentVariable("ROADS_REVIEW_PLAN")
             ?? throw new InvalidDataException("Set ROADS_REVIEW_PLAN to a Roads site-plan JSON file before server-load.");
+        string sourceCommit = Environment.GetEnvironmentVariable("ROADS_REVIEW_SOURCE_COMMIT") ?? "";
+        if (!Regex.IsMatch(sourceCommit, "^[0-9a-f]{40}$", RegexOptions.CultureInvariant))
+            throw new InvalidDataException("Set ROADS_REVIEW_SOURCE_COMMIT to the tested Roads checkout's full Git commit before server-load.");
         string pinnedPlan = Path.Combine(session.Output, "roads-review-sites.json");
         if (File.Exists(pinnedPlan)) throw new IOException("This run already contains a Roads site plan.");
         File.Copy(path, pinnedPlan);
@@ -36,6 +39,7 @@ public sealed class RoadsReviewScenario : IOneShotServerScenario
         var shots = plan.Sites.Select(site => Shot(plan, site, session.Output, context, clientPlan)).ToArray();
         foreach (var shot in shots) ReviewCapture.Validate(shot, shell.Kind);
         session.Report.Provenance["roadsReviewPlanSha256"] = FileHash.Sha256(pinnedPlan);
+        session.Report.Provenance["roadsSourceCommit"] = sourceCommit;
         session.Report.Provenance["roadsReviewPlan"] = pinnedPlan;
         session.Report.Provenance["roadsReviewSiteIds"] = string.Join(",", plan.Sites.Select(s => s.Id));
         session.Report.Provenance["roadsFixtureManifestSha256"] = FixtureManifestDigest(context.ServerPlan.World.Sha256);

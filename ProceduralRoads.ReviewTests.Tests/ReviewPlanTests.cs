@@ -56,6 +56,7 @@ public sealed class ReviewPlanTests
         [new() { Id = "hill", X = 10, Z = 20, Height = 35 }] }));
         var report = new ScenarioReport("roads-review-sites");
         report.Provenance["roadsReviewPlanSha256"] = FileHash.Sha256(planFile);
+        report.Provenance["roadsSourceCommit"] = mod[0] == 'a' ? new string('a', 40) : new string('b', 40);
         report.Provenance["roadsReviewSiteIds"] = "hill";
         report.Provenance["roadsFixtureManifestSha256"] = fixture;
         report.Provenance["roadsGameSha256"] = new string('3', 64);
