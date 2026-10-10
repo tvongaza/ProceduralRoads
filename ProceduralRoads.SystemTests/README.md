@@ -6,16 +6,16 @@ Optional development tooling, outside the normal Roads release; the production m
 
 ## First run on another Windows PC
 
-For a **load and join smoke** with no hand-written plan, install the .NET 10 SDK, Valheim and the free Valheim Dedicated Server from Steam, and BepInEx for both installs. Keep Steam signed in and the desktop unlocked. Install the released toolkit tool, build Roads without deploying into your live game, and let it choose disposable game copies, ValheimCLI, the fixture and strict pins:
+For a **load and join smoke** with no hand-written plan, install the .NET 10 SDK, Valheim and the free Valheim Dedicated Server from Steam, and BepInEx for both installs. Roads also needs Jotunn; install one compatible copy or point the command at its DLL. Keep Steam signed in and the desktop unlocked. With a `valheim-test` build that includes ValheimTesting #595, run from the Roads repository root:
 
 ```powershell
 dotnet tool install --global Valheim.Testing.NativeSmoke --prerelease
-$noDeploy = Join-Path $env:TEMP ("roads-no-copy-" + [guid]::NewGuid().ToString("N"))
-dotnet build ProceduralRoads/ProceduralRoads.csproj -c Debug "-p:CopyOutputDLLPath=$noDeploy"
-valheim-test server-load --mod (Resolve-Path ProceduralRoads/bin/Debug/ProceduralRoads.dll)
+valheim-test env list
+valheim-test env preflight
+valheim-test server-load --project ProceduralRoads/ProceduralRoads.csproj --server-startup-seconds 900
 ```
 
-Run these from the repository root. On the toolkit's current `main`, [the one-shot source-build path](https://github.com/tvongaza/ValheimTesting/blob/main/docs/packages/Valheim.Testing.NativeSmoke.md#build-a-mod-against-the-installed-game) can instead prepare private game references and build Roads in the same run: `valheim-test server-load --project ProceduralRoads/ProceduralRoads.csproj --server-startup-seconds 900`. Use that form only once it is in your installed tool, or build the current toolkit from source. It does not deploy into the live game. If Jotunn is ambiguous or outside the selected install, give `--dependency Jotunn=<exact-DLL>` or `--search-root <folder>`. `valheim-test env list` shows the discovered game/server installs; run `valheim-test env preflight` for a read-only readiness check. Use `--server-only` for a cheaper server load check that does **not** test a joined client. The command prints its private result directory. A load/join pass proves Roads and its hard dependencies loaded and a clean client joined; it does **not** run the Roads-specific assertions below.
+The tool prepares private game/publicized references, builds Roads without deploying into the live game, and chooses disposable game copies, ValheimCLI, a fixture and strict pins ([source-build contract](https://github.com/tvongaza/ValheimTesting/blob/main/docs/packages/Valheim.Testing.NativeSmoke.md#build-a-mod-against-the-installed-game)). If the installed tool does not recognize `--project`, update it when the release containing #595 is published or build the current toolkit from source; do not fall back to a raw build with missing publicized assemblies. If Jotunn is ambiguous or outside the selected install, add `--dependency Jotunn=<exact-DLL>` or `--search-root <folder>`. Use `--server-only` for a cheaper server load check that does **not** test a joined client. The command prints its private result directory. A load/join pass proves Roads and its hard dependencies loaded and a clean client joined; it does **not** run the Roads-specific assertions below.
 
 The Roads assertions currently use the explicit pinned plan runner in this repository. Its [sample plan](sample-plan.json) shows the contract, but preparing that plan still takes several manual steps. ValheimTesting #593 has since shipped a [mod-owned one-shot scenario interface](https://github.com/tvongaza/ValheimTesting/blob/main/docs/packages/Valheim.Testing.NativeSmoke.md#run-a-mod-owned-scenario-with-the-same-preparation); moving a Roads scenario to it is follow-up work under Roads #7, not a claim this runner already uses it. Keep scenario logic and its adapter in Roads; environment selection, dependency and loader resolution, fixture creation, pins, lifecycle and cleanup belong in the toolkit. The migrated runner in this PR still needs its own joined-client native check.
 
