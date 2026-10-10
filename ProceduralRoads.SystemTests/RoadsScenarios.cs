@@ -33,7 +33,7 @@ public static class RoadsScenarios
         });
         cancellation.ThrowIfCancellationRequested();
         report.Step("generate empty network once", regenerateEmptyOnce);
-        await report.StepAsync("generation completed", () => Check.Eventually(() => server.Observe(capability), n => n.Source == "roads-memory" && n.Complete,
+        await report.StepAsync("generation completed", () => ObservedWait.UntilAsync("Roads generation", () => server.Observe(capability), n => n.Source == "roads-memory" && n.Complete,
             generationTimeout ?? TimeSpan.FromMinutes(2), TimeSpan.FromMilliseconds(500), cancellation), "Empty generation did not complete correctly.");
         report.Step("empty before save", () => Empty(Network(server, capability)));
         cancellation.ThrowIfCancellationRequested();
@@ -71,7 +71,7 @@ public static class RoadsScenarios
         });
         report.Step("respawn while pending", () => server.Execute("road_bridges respawn"));
         // Observations only. No repeated append/respawn/save while polling.
-        await report.StepAsync("append queue drained", () => Check.Eventually(() => Network(server, capability), n => n.Data.GetProperty("pendingZones").GetInt32() == 0,
+        await report.StepAsync("append queue drained", () => ObservedWait.UntilAsync("Roads bridge append queue", () => Network(server, capability), n => n.Data.GetProperty("pendingZones").GetInt32() == 0,
             drainTimeout ?? TimeSpan.FromMinutes(2), TimeSpan.FromSeconds(1), cancellation), "Queue did not drain.");
         report.Step("independent piece census", () => CompareZones(server, expected));
         cancellation.ThrowIfCancellationRequested();

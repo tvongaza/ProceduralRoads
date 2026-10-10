@@ -1,0 +1,30 @@
+{
+  "scenario": "metadata-prefab",
+  "runtime": {
+    "source": "<absolute path to disposable dedicated-server runtime>",
+    "sha256": { "<every runtime file, relative to source>": "<file SHA256>" }
+  },
+  "world": {
+    "source": "<absolute path to disposable world root>",
+    "sha256": { "<every world file, relative to source>": "<file SHA256>" }
+  },
+  "arguments": [
+    "-batchmode", "-nographics", "-name", "RoadsTest", "-port", "2456",
+    "-world", "<world name>", "-password", "<test password>", "-savedir", "{world}",
+    "-public", "0", "-logFile", "{runtime}/toolkit-unity.log"
+  ],
+  "environment": {},
+  "pins": {
+    "worlduid": "<fixture world UID>",
+    "warpalicious.ProceduralRoads": "<Roads DLL MD5>",
+    "com.jotunn.jotunn": "<Jotunn DLL MD5>",
+    "valheimCLI.valheimCLI": "<ValheimCLI core DLL MD5>",
+    "testing.proceduralroads.adapter": "<Roads test adapter DLL MD5>"
+  },
+  "runtimePins": {
+    "game": "<InstallPins.Of(runtime).Game>",
+    "loader": "<InstallPins.Of(runtime).Loader>",
+    "patchers": "<InstallPins.Of(runtime).Patchers>"
+  },
+  "port": 5577
+}
