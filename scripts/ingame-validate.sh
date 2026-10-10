@@ -1,4 +1,5 @@
 #!/bin/sh
+"$(dirname "$0")/legacy-script-guard.sh" "ingame-validate.sh" "${1:-}" || exit $?
 # Automated in-game validation of the road network — no manual inspection.
 #
 #   ./scripts/ingame-validate.sh [WorldName]

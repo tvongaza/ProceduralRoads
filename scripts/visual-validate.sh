@@ -1,4 +1,5 @@
 #!/bin/sh
+"$(dirname "$0")/legacy-script-guard.sh" "visual-validate.sh" "${1:-}" || exit $?
 # In-game VISUAL validation: launch the client, load the fixture world with
 # ForceRegenerate (so crossings/stairs/ruin plans exist), teleport to each
 # spot of note, let zones spawn (ruins instantiate), aim at the spot, and

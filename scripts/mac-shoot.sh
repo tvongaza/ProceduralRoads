@@ -1,4 +1,5 @@
 #!/bin/sh
+"$(dirname "$0")/legacy-script-guard.sh" "mac-shoot.sh" "${1:-}" || exit $?
 # Mac cockpit: relaunch the client on the deployed build, regenerate a
 # screenshot world, and photograph the crossings that matter for the current
 # round: the widest wood bridge plus one ford of each style, side A / side B /

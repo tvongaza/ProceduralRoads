@@ -1,4 +1,5 @@
 #!/bin/sh
+"$(dirname "$0")/legacy-script-guard.sh" "server-validate.sh" "${1:-}" || exit $?
 # Headless road-network validation via a Linux dedicated server in Docker.
 # No 3D client, no Steam login, no in-container steamcmd (whose 32-bit
 # bootstrapper cannot run under Rosetta-for-Linux on Apple Silicon).

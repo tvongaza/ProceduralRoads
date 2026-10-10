@@ -1,4 +1,5 @@
 #!/bin/sh
+"$(dirname "$0")/legacy-script-guard.sh" "world-fixture.sh" "${1:-}" || exit $?
 # Save/restore pristine world fixtures for repeatable road-generation tests.
 #
 #   ./scripts/world-fixture.sh save <WorldName>     # snapshot current world

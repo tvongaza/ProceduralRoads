@@ -1,4 +1,5 @@
 #!/bin/sh
+"$(dirname "$0")/legacy-script-guard.sh" "mac-shot-sites.sh" "${1:-}" || exit $?
 # Photograph chosen crossings of the world the client currently has loaded:
 #   ./scripts/mac-shot-sites.sh <World> <tag> <crossing index>...
 # Reads the site geometry from road_spots, teleports the player to the near
