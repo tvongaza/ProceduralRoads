@@ -62,7 +62,7 @@ dotnet build ProceduralRoads.TestAdapter/ProceduralRoads.TestAdapter.csproj -c R
 
 `CliDll` has no default and the build stops without it: point it at the exact ValheimCLI core installed in the test runtime. `RoadsDll` defaults to this repository's Debug build. Game references come from Roads' own `environment.props`; override `VALHEIM_INSTALL` if Steam uses another library. The production mod project has a post-build copy target, so when building it only for test inputs, set `-p:CopyOutputDLLPath=<nonexistent-path>` to avoid copying a DLL into a live install. The adapter has embedded symbols and no deployment target.
 
-Install into the **test runtime** only: BepInEx, the matching ValheimCLI core with its Standard and World Tools packs, `ProceduralRoads.dll` and the adapter, all in `BepInEx/plugins`. Never install the adapter on a client.
+Install into the **test runtime** only: BepInEx, the pinned default `valheimCLI.dll`, `ProceduralRoads.dll` and the adapter, all in `BepInEx/plugins`. The default ValheimCLI plugin supplies the session, terrain and observation commands; there are no first-party pack DLLs to choose or pin. Replace any older core-plus-pack installation as a set before running against the new toolkit. Never install the adapter on a client.
 
 ## The adapter
 
