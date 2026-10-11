@@ -4,4 +4,6 @@
   <Project Path="ProceduralRoads.Tests/ProceduralRoads.Tests.csproj" />
   <Project Path="ProceduralRoads.SystemTests/ProceduralRoads.SystemTests.csproj" />
   <Project Path="ProceduralRoads.SystemTests.Tests/ProceduralRoads.SystemTests.Tests.csproj" />
+  <Project Path="ProceduralRoads.ReviewTests/ProceduralRoads.ReviewTests.csproj" />
+  <Project Path="ProceduralRoads.ReviewTests.Tests/ProceduralRoads.ReviewTests.Tests.csproj" />
 </Solution>

@@ -28,6 +28,7 @@ jobs:
       # The unit tests also target net48; that leg runs in the net48 job below.
       - run: dotnet test ProceduralRoads.Tests/ProceduralRoads.Tests.csproj -c Release -f net10.0
       - run: dotnet test ProceduralRoads.SystemTests.Tests/ProceduralRoads.SystemTests.Tests.csproj -c Release
+      - run: dotnet test ProceduralRoads.ReviewTests.Tests/ProceduralRoads.ReviewTests.Tests.csproj -c Release
   net48:
     # The game runs the mod on Mono, a .NET Framework 4.x runtime: the net48 leg, built with dotnet and run by the
     # xunit console runner under Mono (tools/test-runners, copied from ValheimTesting).

@@ -1,0 +1,12 @@
+{
+  "worldUid": "REPLACE_WITH_PINNED_FIXTURE_UID",
+  "requireFreshGeneration": true,
+  "weather": "Clear",
+  "timeOfDay": 0.45,
+  "cameraDistance": 24,
+  "cameraHeight": 12,
+  "cameraAzimuthDegrees": 225,
+  "sites": [
+    { "id": "dry-road-example", "x": 0, "z": 0, "height": 35, "radius": 32, "maxRoadDistanceMeters": 5 }
+  ]
+}
