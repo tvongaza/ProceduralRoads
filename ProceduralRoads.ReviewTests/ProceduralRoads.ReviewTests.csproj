@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <ToolkitGameSessionsVersion Condition="'$(ToolkitGameSessionsVersion)' == ''">0.1.0-preview.15</ToolkitGameSessionsVersion>
+    <ToolkitGameSessionsVersion Condition="'$(ToolkitGameSessionsVersion)' == ''">0.1.0-preview.17</ToolkitGameSessionsVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Valheim.Testing.GameSessions" Version="[$(ToolkitGameSessionsVersion)]" />
