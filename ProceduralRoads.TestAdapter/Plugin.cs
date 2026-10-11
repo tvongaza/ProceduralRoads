@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using BepInEx;
 using UnityEngine;
 using Valheim.Testing.Adapter;
@@ -22,6 +24,7 @@ public sealed class Plugin : BaseUnityPlugin
         new ExtensionCommand("terrain-persist", "Prepare one opt-in natural terrain replication fixture", PersistentTerrain.Run, role: ExtensionRole.Server, needsWorld: true),
         new ExtensionCommand("terrain-calibrate", "Run the opt-in two-zone declared terrain fixture", TerrainCalibration.Run, role: ExtensionRole.Server, needsWorld: true),
         new ExtensionCommand("network", "Read completed network and outstanding append counts", Network, readOnly: true, role: ExtensionRole.Server, needsWorld: true),
+        new ExtensionCommand("site-metrics", "Read route points near a site: <x> <z> <radius>", SiteMetrics, readOnly: true, role: ExtensionRole.Server, needsWorld: true),
         new ExtensionCommand("metadata-prefab", "Read the registered metadata prefab's network-view state", MetadataPrefab, readOnly: true, role: ExtensionRole.Server, needsWorld: true),
         new ExtensionCommand("bridge-zone", "Read marked bridge ZDOs in one zone: <zoneX> <zoneZ>", BridgeZone, readOnly: true, role: ExtensionRole.Server, needsWorld: true));
     private void OnDestroy() => _registration?.Dispose();
@@ -32,8 +35,49 @@ public sealed class Plugin : BaseUnityPlugin
         {
             ["source"] = "roads-memory", ["complete"] = RoadNetworkGenerator.RoadsAvailable,
             ["version"] = RoadSpatialGrid.RoadNetworkVersion, ["cells"] = RoadSpatialGrid.GridCellsWithRoads,
-            ["points"] = RoadSpatialGrid.TotalRoadPoints, ["crossings"] = RoadNetworkGenerator.GetRoadCrossings().Count,
+            ["points"] = RoadSpatialGrid.TotalRoadPoints, ["lengthMeters"] = RoadSpatialGrid.TotalRoadLength,
+            ["crossings"] = RoadNetworkGenerator.GetRoadCrossings().Count,
             ["pendingZones"] = BridgeAppendQueue.Count, ["loadedFromSave"] = RoadNetworkGenerator.RoadsLoadedFromZDO
+        }); yield break;
+    }
+    private static IEnumerator SiteMetrics(ExtensionContext context)
+    {
+        if (context.Arguments.Count != 3 ||
+            !float.TryParse(context.Arguments[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float x) ||
+            !float.TryParse(context.Arguments[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float z) ||
+            !float.TryParse(context.Arguments[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float radius) ||
+            float.IsNaN(x) || float.IsInfinity(x) || float.IsNaN(z) || float.IsInfinity(z) ||
+            float.IsNaN(radius) || float.IsInfinity(radius) ||
+            Math.Abs(x) > 20000 || Math.Abs(z) > 20000 || radius < 1 || radius > 64)
+        { context.Fail("usage", "site-metrics <x> <z> <radius>, finite world coordinates and 1..64 m radius"); yield break; }
+        if (!RoadNetworkGenerator.RoadsAvailable)
+        { context.Fail("not_ready", "Road network has not completed or loaded."); yield break; }
+        var points = RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(x, 0, z), radius);
+        if (points.Count > 2048)
+        { context.Fail("census_limit", "More than 2048 road points near this site; choose a smaller radius."); yield break; }
+        // Stable, culture-independent fingerprint of the complete ordered route-point set, without a huge CLI reply.
+        string Line(RoadSpatialGrid.RoadPoint p) => string.Join("|", new[]
+        {
+            p.p.x.ToString("R", CultureInfo.InvariantCulture), p.p.y.ToString("R", CultureInfo.InvariantCulture),
+            p.w.ToString("R", CultureInfo.InvariantCulture), p.h.ToString("R", CultureInfo.InvariantCulture),
+            p.paintOnly ? "1" : "0", p.addition.ToString(CultureInfo.InvariantCulture)
+        });
+        var ordered = points.OrderBy(p => p.p.x).ThenBy(p => p.p.y).ThenBy(p => p.w).ThenBy(p => p.h)
+            .ThenBy(p => p.paintOnly).ThenBy(p => p.addition).Select(Line).ToArray();
+        byte[] digest;
+        using (var sha = SHA256.Create()) digest = sha.ComputeHash(Encoding.UTF8.GetBytes(string.Join("\n", ordered)));
+        var centre = new Vector2(x, z);
+        var nearestPoint = points.OrderBy(p => (p.p - centre).sqrMagnitude)
+            .ThenBy(p => p.p.x).ThenBy(p => p.p.y).FirstOrDefault();
+        float nearest = points.Count == 0 ? -1 : Vector2.Distance(nearestPoint.p, centre);
+        context.Succeed(new Dictionary<string, object?>
+        {
+            ["source"] = "roads-memory", ["complete"] = true, ["x"] = x, ["z"] = z,
+            ["radius"] = radius, ["points"] = points.Count, ["paintOnlyPoints"] = points.Count(p => p.paintOnly),
+            ["nearestMeters"] = nearest, ["nearestX"] = points.Count == 0 ? null : (object)nearestPoint.p.x,
+            ["nearestZ"] = points.Count == 0 ? null : (object)nearestPoint.p.y,
+            ["nearestPaintOnly"] = points.Count == 0 ? null : (object)nearestPoint.paintOnly,
+            ["routeSha256"] = BitConverter.ToString(digest).Replace("-", "").ToLowerInvariant(),
         }); yield break;
     }
     private static IEnumerator BridgeZone(ExtensionContext context)
