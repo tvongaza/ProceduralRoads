@@ -17,8 +17,11 @@ public sealed class RoadsReviewPlan
     public bool RequireFreshGeneration { get; set; } = true;
 
     public static RoadsReviewPlan Read(string path)
+        => Parse(File.ReadAllBytes(path));
+
+    public static RoadsReviewPlan Parse(ReadOnlySpan<byte> contents)
     {
-        var plan = JsonSerializer.Deserialize<RoadsReviewPlan>(File.ReadAllText(path),
+        var plan = JsonSerializer.Deserialize<RoadsReviewPlan>(contents,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow })
             ?? throw new InvalidDataException("Empty Roads review plan.");
         plan.Validate();
