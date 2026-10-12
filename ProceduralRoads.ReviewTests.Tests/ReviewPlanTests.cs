@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ProceduralRoads.ReviewTests;
@@ -8,6 +9,48 @@ namespace ProceduralRoads.ReviewTests.Tests;
 
 public sealed class ReviewPlanTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Plan_preflight_accepts_byte_order_marks_without_changing_the_source_bytes(bool utf16)
+    {
+        string json = JsonSerializer.Serialize(new RoadsReviewPlan { WorldUid = "123", Sites =
+            [new() { Id = "hill", X = 10, Z = 20, Height = 35 }] });
+        Encoding encoding = utf16 ? Encoding.Unicode : new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+        byte[] bytes = [.. encoding.GetPreamble(), .. encoding.GetBytes(json)];
+        Assert.Equal("123", RoadsReviewPlan.Parse(bytes).WorldUid);
+    }
+
+    [Fact]
+    public void Scenario_preflight_refuses_missing_commit_and_holds_the_exact_plan_bytes()
+    {
+        string? originalPlan = Environment.GetEnvironmentVariable("ROADS_REVIEW_PLAN");
+        string? originalCommit = Environment.GetEnvironmentVariable("ROADS_REVIEW_SOURCE_COMMIT");
+        string file = Path.Combine(Path.GetTempPath(), "roads-preflight-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(new RoadsReviewPlan { WorldUid = "123", Sites =
+                [new() { Id = "hill", X = 10, Z = 20, Height = 35 }] });
+            File.WriteAllBytes(file, bytes);
+            Environment.SetEnvironmentVariable("ROADS_REVIEW_PLAN", file);
+            Environment.SetEnvironmentVariable("ROADS_REVIEW_SOURCE_COMMIT", null);
+            var scenario = new RoadsReviewScenario();
+            Assert.Contains("ROADS_REVIEW_SOURCE_COMMIT", Assert.Throws<InvalidDataException>(scenario.ValidateInputs).Message);
+
+            Environment.SetEnvironmentVariable("ROADS_REVIEW_SOURCE_COMMIT", new string('a', 40));
+            object prepared = scenario.ValidateInputs();
+            File.Delete(file);
+            Assert.Equal(bytes, Assert.IsType<byte[]>(prepared.GetType().GetProperty("PlanBytes")!.GetValue(prepared)));
+            Assert.Equal(new string('a', 40), prepared.GetType().GetProperty("SourceCommit")!.GetValue(prepared));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ROADS_REVIEW_PLAN", originalPlan);
+            Environment.SetEnvironmentVariable("ROADS_REVIEW_SOURCE_COMMIT", originalCommit);
+            if (File.Exists(file)) File.Delete(file);
+        }
+    }
+
     [Fact]
     public void A_wet_or_duplicated_site_is_refused_before_any_visit()
     {
