@@ -8,24 +8,34 @@ using Valheim.Testing.GameSessions;
 namespace ProceduralRoads.ReviewTests;
 
 /// <summary>One Roads-owned observation pass; valheim-test owns actors, profile, pins and teardown.</summary>
-public sealed class RoadsReviewScenario : IOneShotServerScenario
+public sealed class RoadsReviewScenario : IOneShotServerScenario, IOneShotScenarioPreflight
 {
+    private sealed record Prepared(byte[] PlanBytes, RoadsReviewPlan Plan, string PlanSha256, string SourceCommit);
     public string Name => "roads-review-sites";
     public bool RequiresClient => true;
 
-    public async Task RunAsync(GameSession session, OneShotServerContext context)
+    public object ValidateInputs()
     {
         string path = Environment.GetEnvironmentVariable("ROADS_REVIEW_PLAN")
             ?? throw new InvalidDataException("Set ROADS_REVIEW_PLAN to a Roads site-plan JSON file before server-load.");
         string sourceCommit = Environment.GetEnvironmentVariable("ROADS_REVIEW_SOURCE_COMMIT") ?? "";
         if (!Regex.IsMatch(sourceCommit, "^[0-9a-f]{40}$", RegexOptions.CultureInvariant))
             throw new InvalidDataException("Set ROADS_REVIEW_SOURCE_COMMIT to the tested Roads checkout's full Git commit before server-load.");
+        byte[] bytes = File.ReadAllBytes(path);
+        var plan = RoadsReviewPlan.Parse(bytes);
+        string hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+        return new Prepared(bytes, plan, hash, sourceCommit);
+    }
+
+    public async Task RunAsync(GameSession session, OneShotServerContext context)
+    {
+        var prepared = context.RequireInputs<Prepared>();
         string pinnedPlan = Path.Combine(session.Output, "roads-review-sites.json");
-        if (File.Exists(pinnedPlan)) throw new IOException("This run already contains a Roads site plan.");
-        File.Copy(path, pinnedPlan);
-        if (FileHash.Sha256(path) != FileHash.Sha256(pinnedPlan))
+        using (var capture = new FileStream(pinnedPlan, FileMode.CreateNew, FileAccess.Write))
+            capture.Write(prepared.PlanBytes);
+        if (prepared.PlanSha256 != FileHash.Sha256(pinnedPlan))
             throw new InvalidDataException("Roads site plan changed while it was being captured.");
-        var plan = RoadsReviewPlan.Read(pinnedPlan);
+        var plan = prepared.Plan;
         var clientPlan = context.ClientPlan ?? throw new InvalidDataException("Roads review needs the prepared clean client; omit --server-only.");
         var server = session.Server?.Game ?? throw new InvalidOperationException("Roads review needs the prepared dedicated server.");
         if (session.Server.Host?.Kind != GameHostKind.Local)
@@ -45,7 +55,7 @@ public sealed class RoadsReviewScenario : IOneShotServerScenario
             Directory.GetParent(session.Output)?.FullName ?? throw new InvalidDataException("The run has no output directory."));
         session.Report.Provenance["roadsModSha256"] = RoadsReviewComparison.CaptureModInput(
             Directory.GetParent(session.Output)?.FullName ?? throw new InvalidDataException("The run has no output directory."));
-        session.Report.Provenance["roadsSourceCommit"] = sourceCommit;
+        session.Report.Provenance["roadsSourceCommit"] = prepared.SourceCommit;
         session.Report.Provenance["roadsReviewPlan"] = pinnedPlan;
         session.Report.Provenance["roadsReviewSiteIds"] = string.Join(",", plan.Sites.Select(s => s.Id));
         session.Report.Provenance["roadsFixtureManifestSha256"] = FixtureManifestDigest(context.ServerPlan.World.Sha256);
