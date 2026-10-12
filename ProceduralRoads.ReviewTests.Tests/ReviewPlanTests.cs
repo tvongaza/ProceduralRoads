@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ProceduralRoads.ReviewTests;
@@ -8,6 +9,18 @@ namespace ProceduralRoads.ReviewTests.Tests;
 
 public sealed class ReviewPlanTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Plan_preflight_accepts_byte_order_marks_without_changing_the_source_bytes(bool utf16)
+    {
+        string json = JsonSerializer.Serialize(new RoadsReviewPlan { WorldUid = "123", Sites =
+            [new() { Id = "hill", X = 10, Z = 20, Height = 35 }] });
+        Encoding encoding = utf16 ? Encoding.Unicode : new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+        byte[] bytes = [.. encoding.GetPreamble(), .. encoding.GetBytes(json)];
+        Assert.Equal("123", RoadsReviewPlan.Parse(bytes).WorldUid);
+    }
+
     [Fact]
     public void Scenario_preflight_refuses_missing_commit_and_holds_the_exact_plan_bytes()
     {

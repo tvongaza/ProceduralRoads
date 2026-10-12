@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Valheim.Testing.Game;
@@ -21,7 +22,10 @@ public sealed class RoadsReviewPlan
 
     public static RoadsReviewPlan Parse(ReadOnlySpan<byte> contents)
     {
-        var plan = JsonSerializer.Deserialize<RoadsReviewPlan>(contents,
+        // Match File.ReadAllText's BOM handling while the scenario retains the original bytes for evidence.
+        using var input = new MemoryStream(contents.ToArray(), writable: false);
+        using var reader = new StreamReader(input, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        var plan = JsonSerializer.Deserialize<RoadsReviewPlan>(reader.ReadToEnd(),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow })
             ?? throw new InvalidDataException("Empty Roads review plan.");
         plan.Validate();
