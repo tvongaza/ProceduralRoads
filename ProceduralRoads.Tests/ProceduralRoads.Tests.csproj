@@ -53,6 +53,7 @@
         <Compile Include="../ProceduralRoads/Src/Roads/RoadConstants.cs" Link="ModSrc/RoadConstants.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadPathfinder.cs" Link="ModSrc/RoadPathfinder.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadNetworkGenerator.cs" Link="ModSrc/RoadNetworkGenerator.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadIslandActivity.cs" Link="ModSrc/RoadIslandActivity.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadGenerationProgress.cs" Link="ModSrc/RoadGenerationProgress.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadLifecycleManager.cs" Link="ModSrc/RoadLifecycleManager.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadSpatialGrid.cs" Link="ModSrc/RoadSpatialGrid.cs"/>

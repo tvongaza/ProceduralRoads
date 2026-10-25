@@ -18,7 +18,7 @@ public sealed class GenerationProgressTests : IDisposable
     {
         internal readonly ManualResetEventSlim Entered = new(false), Release = new(false), RightRelease = new(false);
         internal readonly int MainThread = Thread.CurrentThread.ManagedThreadId;
-        internal bool Gate, Fail, Reverse;
+        internal bool Gate, Fail, Reverse, HoldCancellation;
         internal int ActiveReads;
         public override float GetHeight(float x, float z)
         {
@@ -29,7 +29,7 @@ public sealed class GenerationProgressTests : IDisposable
                 {
                     Entered.Set();
                     var gate = Reverse && x > 0 ? RightRelease : Release;
-                    while (!gate.Wait(10)) RoadLifecycleManager.ThrowIfCancellationRequested();
+                    while (!gate.Wait(10)) if(!HoldCancellation) RoadLifecycleManager.ThrowIfCancellationRequested();
                     if (Fail) throw new InvalidOperationException("controlled terrain failure");
                 }
                 finally { Interlocked.Decrement(ref ActiveReads); }
@@ -70,6 +70,8 @@ public sealed class GenerationProgressTests : IDisposable
     public void Dispose()
     {
         RoadLifecycleManager.BeforeWorkerCompletionCheck = null;
+        RoadLifecycleManager.ReturnToMenuForTests = null;
+        RoadLifecycleManager.MenuTransitionBlockedForTests = null;
         world.Release.Set(); world.RightRelease.Set();
         RoadLifecycleManager.OnZoneSystemDestroy(ZoneSystem.instance!);
         RoadNetworkGenerator.NetworkOptions = oldOptions;
@@ -78,6 +80,94 @@ public sealed class GenerationProgressTests : IDisposable
         RoadNetworkGenerator.GenerateOnLoad = true;
         scope.Dispose();
         world.Release.Dispose(); world.RightRelease.Dispose(); world.Entered.Dispose();
+    }
+    [Fact]
+    public void CancelRequestTicksWithoutBlockingWhileWorkerDrainsThenDispatchesMenuOnce()
+    {
+        world.Gate=world.HoldCancellation=true;
+        Begin(); RoadLifecycleManager.Tick(); Assert.True(world.Entered.Wait(3000));
+        int menu=0; RoadLifecycleManager.ReturnToMenuForTests=()=>menu++;
+        long run=RoadLifecycleManager.Progress.RunId;
+        Assert.False(RoadLifecycleManager.RequestCancelToMenu(run-1));
+        Assert.True(RoadLifecycleManager.RequestCancelToMenu(run));
+        Assert.True(RoadLifecycleManager.RequestCancelToMenu(run));
+        Assert.Equal("Stopping",RoadLifecycleManager.Progress.Phase);
+        try
+        {
+            var tick=Task.Run(RoadLifecycleManager.Tick);
+            Assert.True(tick.Wait(1000),"cancellation Tick blocked on live work");
+            Assert.True(RoadLifecycleManager.InitialGenerationActive);
+            Assert.Equal(0,menu); Assert.True(world.ActiveReads>0); Assert.True(LocationLevelling.Sealed);
+            RoadLifecycleManager.OnPrepareSave(); Assert.Empty(ZDOMan.instance!.Zdos);
+        }
+        finally { world.Release.Set(); }
+        Assert.True(SpinWait.SpinUntil(()=> { RoadLifecycleManager.Tick(); return menu==1; },5000));
+        Assert.Equal(0,world.ActiveReads); Assert.False(LocationLevelling.Sealed);
+        Assert.True(RoadLifecycleManager.IsGenerating); Assert.True(RoadLifecycleManager.WorkersOwnWorld);
+        Assert.Equal("ReturningToMenu",RoadLifecycleManager.Progress.Phase);
+        Assert.Empty(RoadLifecycleManager.Progress.Islands); Assert.Equal(0,RoadSpatialGrid.TotalRoadPoints);
+        for(int i=0;i<5;i++) RoadLifecycleManager.Tick(); Assert.Equal(1,menu);
+        RoadLifecycleManager.OnPrepareSave(); Assert.Empty(ZDOMan.instance!.Zdos);
+        RoadLifecycleManager.CancelAndDrain(); // Game.Shutdown prefix precedes vanilla's final save.
+        RoadLifecycleManager.OnPrepareSave();
+        Assert.False(RoadLifecycleManager.IsGenerating); Assert.False(RoadNetworkGenerator.RoadsAvailable);
+        Assert.Empty(ZDOMan.instance!.Zdos);
+        world.Gate=false; RoadLifecycleManager.OnZoneSystemDestroy(ZoneSystem.instance!);
+        RoadLifecycleManager.OnZoneSystemStart(ZoneSystem.instance!); Begin(); Finish();
+        Assert.Equal("Complete",RoadLifecycleManager.Progress.Phase);
+    }
+    [Fact]
+    public void AcceptedCancelWinsOverAlreadyCompletedUnpublishedWorker()
+    {
+        Begin(); RoadLifecycleManager.Tick();
+        var run=typeof(RoadLifecycleManager).GetField("m_generation",BindingFlags.NonPublic|BindingFlags.Static)!.GetValue(null)!;
+        var worker=(Task)run.GetType().GetField("Worker",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(run)!;
+        Assert.True(SpinWait.SpinUntil(()=>worker.IsCompleted,5000));
+        Assert.False(RoadNetworkGenerator.RoadsAvailable);
+        int menus=0; RoadLifecycleManager.ReturnToMenuForTests=()=>menus++;
+        Assert.True(RoadLifecycleManager.RequestCancelToMenu(RoadLifecycleManager.Progress.RunId));
+        RoadLifecycleManager.Tick();
+        Assert.Equal(1,menus); Assert.False(RoadNetworkGenerator.RoadsAvailable); Assert.Empty(ZDOMan.instance!.Zdos);
+        Assert.Equal(0,RoadSpatialGrid.TotalRoadPoints);
+    }
+    [Fact]
+    public void CancelBeforePreparationAndMenuFailureKeepGateUntilExplicitRetry()
+    {
+        Begin(); long run=RoadLifecycleManager.Progress.RunId;
+        int menus=0; RoadLifecycleManager.ReturnToMenuForTests=()=> { menus++; throw new InvalidOperationException("controlled menu failure"); };
+        Assert.True(RoadLifecycleManager.RequestCancelToMenu(run)); RoadLifecycleManager.Tick();
+        Assert.Equal("MenuFailed",RoadLifecycleManager.Progress.Phase);
+        Assert.Equal(1,menus); Assert.True(RoadLifecycleManager.InitialGenerationActive);
+        for(int i=0;i<5;i++) RoadLifecycleManager.Tick(); Assert.Equal(1,menus);
+        RoadLifecycleManager.ReturnToMenuForTests=()=>menus++;
+        Assert.True(RoadLifecycleManager.RequestCancelToMenu(run)); Assert.Equal(1,menus);
+        RoadLifecycleManager.MenuTransitionBlockedForTests=()=>true;
+        Assert.False(RoadLifecycleManager.RetryReturnToMenu(run)); Assert.Equal(1,menus);
+        RoadLifecycleManager.MenuTransitionBlockedForTests=()=>false;
+        Assert.True(RoadLifecycleManager.RetryReturnToMenu(run)); Assert.Equal(2,menus);
+        Assert.Equal("ReturningToMenu",RoadLifecycleManager.Progress.Phase);
+    }
+    [Fact]
+    public void DialogAppearingDuringDrainDefersInitialMenuDispatchUntilExplicitRetry()
+    {
+        Begin(); int menus=0;
+        RoadLifecycleManager.ReturnToMenuForTests=()=>menus++;
+        RoadLifecycleManager.MenuTransitionBlockedForTests=()=>true;
+        long run=RoadLifecycleManager.Progress.RunId;
+        Assert.True(RoadLifecycleManager.RequestCancelToMenu(run)); RoadLifecycleManager.Tick();
+        Assert.Equal(0,menus); Assert.True(RoadLifecycleManager.InitialGenerationActive);
+        Assert.Equal("MenuFailed",RoadLifecycleManager.Progress.Phase);
+        Assert.False(RoadLifecycleManager.RetryReturnToMenu(run));
+        RoadLifecycleManager.MenuTransitionBlockedForTests=()=>false;
+        RoadLifecycleManager.Tick(); Assert.Equal(0,menus);
+        Assert.True(RoadLifecycleManager.RetryReturnToMenu(run)); Assert.Equal(1,menus);
+    }
+    [Fact]
+    public void CompletedNetworkCannotBeCancelledToMenu()
+    {
+        Begin(); Finish();
+        Assert.False(RoadLifecycleManager.RequestCancelToMenu(RoadLifecycleManager.Progress.RunId));
+        Assert.True(RoadNetworkGenerator.RoadsAvailable);
     }
     [Fact]
     public void BeginClaimsOnceAndFramesContinueWhileWorkersAreGated()

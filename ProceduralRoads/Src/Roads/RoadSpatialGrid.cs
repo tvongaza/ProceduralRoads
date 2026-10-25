@@ -510,6 +510,7 @@ public static partial class RoadSpatialGrid
         {
             TotalRoadPoints += plan.Points.Count;
             TotalRoadLength += plan.TotalLength;
+            RoadNetworkGenerator.IslandActivity?.Committed(plan.TotalLength);
             m_initialized = true;
         }
     }

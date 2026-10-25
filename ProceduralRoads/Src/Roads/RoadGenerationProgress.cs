@@ -1,5 +1,7 @@
 using System;
 using System.Diagnostics;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -9,16 +11,17 @@ namespace ProceduralRoads;
 /// <summary>An immutable observation of the one owned generation. Counts are completed islands, never started islands.</summary>
 public sealed class RoadGenerationProgress
 {
+    public ReadOnlyCollection<RoadIslandProgress> Islands { get; }
     public long RunId { get; }
     public string Phase { get; }
     public int Completed { get; }
     public int Total { get; }
     public double ElapsedSeconds { get; }
     public string? Failure { get; }
-    public bool Active => Phase == "Preparing" || Phase == "Generating" || Phase == "Finalizing";
-    internal RoadGenerationProgress(long runId, string phase, int completed, int total, double elapsedSeconds, string? failure = null)
-    { RunId = runId; Phase = phase; Completed = completed; Total = total; ElapsedSeconds = elapsedSeconds; Failure = failure; }
-    public string Text => Phase == "Preparing" ? "Preparing roads…" : Phase == "Finalizing" ? "Finishing roads…" :
+    public bool Active => Phase == "Preparing" || Phase == "Generating" || Phase == "Finalizing" || Phase == "Stopping" || Phase == "ReturningToMenu" || Phase == "MenuFailed";
+    internal RoadGenerationProgress(long runId, string phase, int completed, int total, double elapsedSeconds, string? failure = null, ReadOnlyCollection<RoadIslandProgress>? islands = null)
+    { Islands=islands ?? Array.AsReadOnly(Array.Empty<RoadIslandProgress>()); RunId = runId; Phase = phase; Completed = completed; Total = total; ElapsedSeconds = elapsedSeconds; Failure = failure; }
+    public string Text => Phase == "Stopping" ? "Stopping generation…" : Phase == "ReturningToMenu" ? "Returning to menu…" : Phase == "MenuFailed" ? "Generation stopped. Return to menu" : Phase == "Preparing" ? "Preparing roads…" : Phase == "Finalizing" ? "Finishing roads…" :
         Phase == "Failed" ? "Road generation failed (see the log)" : $"Generating roads: {Completed} of {Total} islands complete";
 }
 
@@ -32,6 +35,8 @@ public static partial class RoadLifecycleManager
         internal readonly Stopwatch Clock = Stopwatch.StartNew();
         internal RoadNetworkGenerator.GenerationWork? Work;
         internal Task? Worker;
+        internal bool ExitRequested, CleanupDone, MenuRequested, DrainFaultReported;
+        internal double NextPublicationMs;
         internal double PreparationMs;
         internal double ComputeStartedMs;
         internal Generation(WorldGenerator world, ZoneSystem zones) { World = world; Zones = zones; }
@@ -42,6 +47,8 @@ public static partial class RoadLifecycleManager
     internal static void AllowInitialRetry() => m_initialAttempted = false;
 #if ROADS_TESTS
     internal static Action? BeforeWorkerCompletionCheck;
+    internal static Action? ReturnToMenuForTests;
+    internal static Func<bool>? MenuTransitionBlockedForTests;
 #endif
     private static long m_nextRun;
     private static RoadGenerationProgress m_progress = new(0, "Idle", 0, 0, 0);
@@ -52,7 +59,7 @@ public static partial class RoadLifecycleManager
     internal static void ThrowIfCancellationRequested() => m_generation?.Cancellation.Token.ThrowIfCancellationRequested();
     private static void SetProgress(string phase, int completed, int total, string? failure = null) =>
         Volatile.Write(ref m_progress, new RoadGenerationProgress(m_nextRun, phase, completed, total,
-            m_generation?.Clock.Elapsed.TotalSeconds ?? 0, failure));
+            m_generation?.Clock.Elapsed.TotalSeconds ?? 0, failure, m_generation?.CleanupDone==true ? null : m_generation?.Work?.Activity?.Snapshot()));
 
     private static void BeginInitialGeneration()
     {
@@ -71,6 +78,7 @@ public static partial class RoadLifecycleManager
         if (run == null) return;
         if (!ReferenceEquals(run.World, WorldGenerator.instance) || !ReferenceEquals(run.Zones, ZoneSystem.instance))
         { CancelAndDrain(); return; }
+        if(run.ExitRequested) { TickCancellation(run); return; }
         try
         {
             if (run.Worker == null)
@@ -92,7 +100,11 @@ public static partial class RoadLifecycleManager
             BeforeWorkerCompletionCheck?.Invoke();
 #endif
             if (!run.Worker.IsCompleted)
-            { SetProgress("Generating", Progress.Completed, Progress.Total); return; }
+            {
+                if(run.Clock.Elapsed.TotalMilliseconds >= run.NextPublicationMs)
+                { SetProgress("Generating", Progress.Completed, Progress.Total); run.NextPublicationMs=run.Clock.Elapsed.TotalMilliseconds+250; }
+                return;
+            }
             run.Worker.GetAwaiter().GetResult();
             // Joining closes publication: the last island may have finished after the earlier drain.
             ReportFinished(run.Work!);
@@ -126,8 +138,84 @@ public static partial class RoadLifecycleManager
         }
     }
 
+    /// <summary>A UI request only. The Unity frame must remain free while cancellation drains.</summary>
+    public static bool RequestCancelToMenu(long expectedRunId)
+    {
+        var run=m_generation;
+        if(run==null || expectedRunId!=m_nextRun || !ReferenceEquals(run.World,WorldGenerator.instance)
+            || !ReferenceEquals(run.Zones,ZoneSystem.instance) || RoadNetworkGenerator.RoadsGenerated
+            || Progress.Phase=="Finalizing") return false;
+        if(run.ExitRequested) return true;
+        run.ExitRequested=true;
+        run.Cancellation.Cancel();
+        SetProgress("Stopping",Progress.Completed,Progress.Total);
+        return true;
+    }
+    public static bool RetryReturnToMenu(long expectedRunId)
+    {
+        var run=m_generation;
+        if(run==null || expectedRunId!=m_nextRun || !run.ExitRequested || !run.CleanupDone
+            || !ReferenceEquals(run.World,WorldGenerator.instance) || !ReferenceEquals(run.Zones,ZoneSystem.instance) || MenuTransitionBlocked()) return false;
+        run.MenuRequested=false;
+        DispatchMenu(run);
+        return true;
+    }
+    private static bool MenuTransitionBlocked()
+    {
+#if ROADS_TESTS
+        return MenuTransitionBlockedForTests?.Invoke() ?? false;
+#else
+        return UnifiedPopup.IsVisible() || (Game.instance!=null && Game.instance.IsShuttingDown());
+#endif
+    }
+    private static void TickCancellation(Generation run)
+    {
+        if(run.CleanupDone) return;
+        if(run.Worker!=null && !run.Worker.IsCompleted)
+        {
+            if(run.Clock.Elapsed.TotalMilliseconds>=run.NextPublicationMs)
+            { SetProgress("Stopping",Progress.Completed,Progress.Total); run.NextPublicationMs=run.Clock.Elapsed.TotalMilliseconds+250; }
+            return;
+        }
+        Drain(run, true); // IsCompleted above proves this observes results without waiting on live workers.
+        RoadNetworkGenerator.ReleaseGenerationResources();
+        run.Work?.Activity?.Close();
+        RoadNetworkGenerator.ResetData();
+        run.CleanupDone=true;
+        SetProgress("ReturningToMenu",Progress.Completed,Progress.Total);
+        ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo("Road generation stopped; unpublished road data discarded. Returning to menu.");
+        DispatchMenu(run);
+    }
+    private static void DispatchMenu(Generation run)
+    {
+        if(run.MenuRequested) return;
+        if(MenuTransitionBlocked())
+        {
+            SetProgress("MenuFailed",Progress.Completed,Progress.Total,"A game dialog or shutdown already owns the menu transition.");
+            return;
+        }
+        run.MenuRequested=true;
+        SetProgress("ReturningToMenu",Progress.Completed,Progress.Total);
+        try
+        {
+#if ROADS_TESTS
+            ReturnToMenuForTests?.Invoke();
+#else
+            // Logout(false) is not a reliable no-save transition in the actual client.
+            // Vanilla may save the world; the unpublished Roads network has already been discarded.
+            Game.instance.Logout();
+#endif
+        }
+        catch(Exception error)
+        {
+            SetProgress("MenuFailed",Progress.Completed,Progress.Total,error.GetBaseException().Message);
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError($"Road generation stopped, but return to menu failed: {error}");
+        }
+    }
+
     internal static void ReportPrepared(RoadNetworkGenerator.GenerationWork work)
     {
+        work.Activity = new RoadIslandActivity(work.Workers, work.Islands.Count);
         SetProgress("Generating", 0, work.Islands.Count);
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo($"Generating roads on {work.Islands.Count} islands ({work.Workers} thread(s)). This takes a few minutes.");
     }
@@ -143,16 +231,26 @@ public static partial class RoadLifecycleManager
     }
     private static void End(Generation run, string phase, string? failure = null)
     {
-        RoadNetworkGenerator.ReleaseGenerationResources();
+        if(!run.CleanupDone) { RoadNetworkGenerator.ReleaseGenerationResources(); run.Work?.Activity?.Close(); }
         SetProgress(phase, Progress.Completed, Progress.Total, failure);
         m_generation = null;
         run.Cancellation.Dispose();
     }
-    private static void Drain(Generation run)
+    private static void Drain(Generation run, bool reportFault = false)
     {
         if (run.Worker == null) return;
         try { run.Worker.GetAwaiter().GetResult(); }
-        catch (Exception) { /* observed; cancellation/failure is reported by the owner */ }
+        catch (Exception error)
+        {
+            if(reportFault && !run.DrainFaultReported)
+            {
+                IEnumerable<Exception> faults=error is AggregateException aggregate ? aggregate.Flatten().InnerExceptions : new[] { error };
+                foreach(var fault in faults)
+                    if(fault is not OperationCanceledException)
+                        ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError($"Road worker failed while stopping generation: {fault}");
+                run.DrainFaultReported=true;
+            }
+        }
     }
     /// <summary>Drain before destroying the world, unsealing its caches, or resetting any shared network state.</summary>
     public static void CancelAndDrain()
@@ -160,9 +258,10 @@ public static partial class RoadLifecycleManager
         var run = m_generation;
         if (run == null) return;
         run.Cancellation.Cancel();
-        Drain(run);
+        Drain(run, true);
+        bool alreadyClean=run.CleanupDone;
         End(run, "Cancelled");
-        RoadNetworkGenerator.ResetData();
+        if(!alreadyClean) RoadNetworkGenerator.ResetData();
     }
     internal static void RunSynchronous(Action action)
     {

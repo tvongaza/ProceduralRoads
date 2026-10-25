@@ -175,6 +175,7 @@ public static partial class RoadNetworkGenerator
         m_threadPathfinders != null ? m_threadPathfinders.Value : m_pathfinder;
     private static readonly object m_recordGate = new object();
     [System.ThreadStatic] private static int m_islandRoads;
+    [System.ThreadStatic] internal static RoadIslandActivity.Token? IslandActivity;
     /// <summary>How many of an island's destinations the finished network
     /// reaches. Measured rather than tallied from what the planner attempted:
     /// a destination can be reached by a road built to its neighbour, and a
@@ -186,11 +187,17 @@ public static partial class RoadNetworkGenerator
     private static void CountDestinationsReached(
         List<(string name, Vector3 position, float radius)> selected)
     {
-        int reached = 0;
-        foreach (var d in selected)
-            if (AlreadyServedByNetwork(d.position, d.radius)) reached++;
+        int reached = MeasureDestinationsReached(selected);
+        IslandActivity?.Reached(reached);
         System.Threading.Interlocked.Add(ref m_destinationsSelected, selected.Count);
         System.Threading.Interlocked.Add(ref m_destinationsConnected, reached);
+    }
+
+    private static int MeasureDestinationsReached(List<(string name, Vector3 position, float radius)> selected)
+    {
+        int reached=0;
+        foreach(var d in selected) if(AlreadyServedByNetwork(d.position,d.radius)) reached++;
+        return reached;
     }
 
     /// <summary>Whether the network reaches this place: is there a road point
@@ -493,19 +500,28 @@ public static partial class RoadNetworkGenerator
         internal readonly int Workers = RoadParallel.IslandWorkers;
         internal readonly System.Collections.Concurrent.ConcurrentQueue<string> Finished = new();
         internal System.Threading.CancellationToken Cancellation;
+        internal RoadIslandActivity? Activity;
         internal void Compute()
         {
+            Activity ??= new RoadIslandActivity(Workers, Islands.Count);
             System.Threading.Tasks.Parallel.ForEach(Islands,
                 new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = Workers, CancellationToken = Cancellation },
                 (island, state, number) =>
                 {
                     Cancellation.ThrowIfCancellationRequested();
                     var clock = System.Diagnostics.Stopwatch.StartNew();
+                    var token=Activity.Claim((int)number+1,island.Locations.Count);
+                    IslandActivity=token;
+                    if(Finder!=null) Finder.Activity=token;
+                    try
+                    {
                     m_islandRoads = 0;
                     GenerateIslandRoads(island.Island, island.Locations, island.Spawn, island.Radius);
                     Cancellation.ThrowIfCancellationRequested();
                     CountDestinationsReached(island.Locations);
                     Finished.Enqueue($"island {number + 1}: {m_islandRoads} road(s) from {island.Locations.Count} destination(s) in {clock.Elapsed.TotalSeconds:F0}s");
+                    }
+                    finally { if(Finder!=null) Finder.Activity=null; IslandActivity=null; token.Finish(); }
                 });
         }
     }
@@ -1320,6 +1336,7 @@ public static partial class RoadNetworkGenerator
     internal static List<RoadSpatialGrid.PlannedPath>? PlanRoadPathWithCrossings(
         List<Vector2> path, List<RoadCrossing> crossings, float width, float? startGround, float? endGround)
     {
+        using var fitting = new RoadFittingActivity(IslandActivity);
         var plans = PlanPieces(path, crossings, width, startGround, endGround);
         // A shallow ford is a style, never a reason a road cannot be built: its banks hold their
         // natural heights and split the road, and a short piece between two held ends can be too
@@ -1592,7 +1609,7 @@ public static partial class RoadNetworkGenerator
     {
         if (locations.Count == 0) return;
         
-        var unvisited = new List<(string name, Vector3 position, float radius)>(locations);
+        var unvisited = Enumerable.Range(0, locations.Count).ToList();
         Vector3 current = startPos;
         float currentRadius = startRadius;
         string currentName = "Start";
@@ -1604,7 +1621,7 @@ public static partial class RoadNetworkGenerator
             float nearestDist = float.MaxValue;
             for (int i = 0; i < unvisited.Count; i++)
             {
-                float dist = Vector3.Distance(current, unvisited[i].position);
+                float dist = Vector3.Distance(current, locations[unvisited[i]].position);
                 if (dist < nearestDist)
                 {
                     nearestDist = dist;
@@ -1612,12 +1629,15 @@ public static partial class RoadNetworkGenerator
                 }
             }
             
-            var nearest = unvisited[nearestIdx];
+            int selectedIndex = unvisited[nearestIdx];
+            var nearest = locations[selectedIndex];
             unvisited.RemoveAt(nearestIdx);
             
             GenerateRoad(current, currentRadius, nearest.position, nearest.radius, RoadWidth,
                 $"{currentName} -> {nearest.name}");
             
+            IslandActivity?.Settled(selectedIndex);
+            IslandActivity?.Reached(MeasureDestinationsReached(locations));
             current = nearest.position;
             currentRadius = nearest.radius;
             currentName = nearest.name;
@@ -1681,6 +1701,8 @@ public static partial class RoadNetworkGenerator
                 GenerateRoad(from.position, from.radius, to.position, to.radius, RoadWidth,
                     $"{from.name} -> {to.name}");
             }
+            IslandActivity?.Settled(i-1);
+            IslandActivity?.Reached(MeasureDestinationsReached(locations));
         }
     }
 
@@ -1712,6 +1734,7 @@ public static partial class RoadNetworkGenerator
         Log.LogDebug(
             $"Island {island.Id}: {islandLocations.Count} locations, strategy={(NetworkOptions.RoutedConnections ? "Routed tree with reverse branches" : useMST ? "MST" : "Chain")}");
         
+        IslandActivity?.Stage("Connecting");
         if (NetworkOptions.RoutedConnections)
             GenerateRoutedRoads(startPos, startRadius, islandLocations);
         else if (useMST)

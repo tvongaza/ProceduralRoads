@@ -284,6 +284,7 @@ namespace ProceduralRoads
         private void Update()
         {
             RoadLifecycleManager.Tick();
+            RoadGenerationPanel.Synchronize();
             if (m_configurationPending && !RoadLifecycleManager.IsGenerating) ApplyConfiguration();
             if (Time.time < m_nextTerrainSweep) return;
             m_nextTerrainSweep = Time.time + 3f;
@@ -299,6 +300,7 @@ namespace ProceduralRoads
 
         private void OnDestroy()
         {
+            RoadGenerationPanel.Clear();
             RoadLifecycleManager.CancelAndDrain();
             Config.Save();
         }
