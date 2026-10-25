@@ -110,7 +110,7 @@ public static partial class RoadLifecycleManager
     /// steps inside it. Without it an existing world could build a second
     /// network over the one it saved, and no one would be told.
     /// </summary>
-    private static void DecideOnce(string trigger)
+    private static void DecideOnce(string trigger, bool afterSpawn = false)
     {
         // World load can announce readiness before ZoneSystem.Start. Initialize first, then replay both readiness facts.
         if (!ReferenceEquals(m_subscribedZone, ZoneSystem.instance)) return;
@@ -139,11 +139,26 @@ public static partial class RoadLifecycleManager
         }
 
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug("No persisted roads found, generating...");
-        // GenerateRoadsOnLoad, not GenerateRoads: it honours the
-        // PROCEDURALROADS_GENERATE_ROADS_ON_LOAD switch and then applies road
-        // terrain to the zones that spawned during the loading screen, before
-        // the network existed. Calling the generator directly loses both.
-        BeginInitialGeneration();
+        // Behind the loading screen: BeginInitialGeneration builds the network over many frames
+        // (it honours the PROCEDURALROADS_GENERATE_ROADS_ON_LOAD switch, and Tick applies road
+        // terrain to the zones spawned before the network existed). With the player already in
+        // the world (the spawn fallback) it would hold zone streaming off around a live player
+        // for minutes, so that path builds synchronously as before, through GenerateRoadsOnLoad.
+        if (afterSpawn) GenerateAfterSpawn();
+        else BeginInitialGeneration();
+    }
+
+    /// <summary>The spawn fallback's generation: synchronous, once per world as the loading-screen
+    /// one is (a failed attempt is not retried), host only, and never thrown into the spawn hook.</summary>
+    private static void GenerateAfterSpawn()
+    {
+        if (m_initialAttempted || ZNet.instance == null || !ZNet.instance.IsServer()) return;
+        m_initialAttempted = true;
+        try { RoadNetworkGenerator.GenerateRoadsOnLoad(); }
+        catch (System.Exception error)
+        {
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError($"Road generation after spawn failed; no network was published: {error}");
+        }
     }
 
     /// <summary>
@@ -162,7 +177,7 @@ public static partial class RoadLifecycleManager
         // outside what this hook can promise.
         m_worldDataLoaded = true;
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug($"Player spawning at {spawnPoint}");
-        DecideOnce("player spawn");
+        DecideOnce("player spawn", afterSpawn: true);
     }
 
     /// <summary>

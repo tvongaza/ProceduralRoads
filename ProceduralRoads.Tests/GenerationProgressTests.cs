@@ -443,6 +443,19 @@ public sealed class GenerationProgressTests : IDisposable
         Assert.Equal(2, RoadLifecycleManager.Progress.Completed);
     }
     [Fact]
+    public void LocationRegistrationDuringGenerationIsQueuedNotRefused()
+    {
+        // Another mod registering from a world-load hook now overlaps the asynchronous initial
+        // generation; its island workers read the registered names, so the change waits for it.
+        world.Gate=true; Begin(); AdvanceToCompute();
+        RoadNetworkGenerator.RegisterLocation("QueuedPlace");
+        Assert.DoesNotContain("QueuedPlace", RoadNetworkGenerator.GetRegisteredLocations());
+        world.Release.Set(); Finish();
+        Assert.Contains("QueuedPlace", RoadNetworkGenerator.GetRegisteredLocations());
+        RoadNetworkGenerator.UnregisterLocation("QueuedPlace");
+        Assert.DoesNotContain("QueuedPlace", RoadNetworkGenerator.GetRegisteredLocations());
+    }
+    [Fact]
     public void WorkerFailureDiscardsPartialStateAndPublishesNoMetadata()
     {
         world.Gate = world.Fail = true;

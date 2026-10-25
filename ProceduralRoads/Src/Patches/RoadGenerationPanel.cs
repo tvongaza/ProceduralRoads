@@ -102,7 +102,7 @@ internal static class RoadGenerationPanel
             tipRect.pivot=new Vector2(.5f,0); tipRect.anchoredPosition=new Vector2(0,50); tipRect.sizeDelta=new Vector2(0,58);
             var tip=MakeText("Explanation",tipRect,template,15,TextAlignmentOptions.Center);
             var tipTextRect=(RectTransform)tip.transform; tipTextRect.anchorMin=Vector2.zero; tipTextRect.anchorMax=Vector2.one;
-            tipTextRect.offsetMin=new Vector2(8,4); tipTextRect.offsetMax=new Vector2(-8,-4); tip.enableWordWrapping=true;
+            tipTextRect.offsetMin=new Vector2(8,4); tipTextRect.offsetMax=new Vector2(-8,-4); tip.textWrappingMode=TextWrappingModes.Normal;
             tip.text="Discard this unfinished road network and return to the menu. The world and character may still be saved.";
             tooltip.SetActive(false);
             var contentObject=new GameObject("Island slots",typeof(RectTransform)); contentObject.transform.SetParent(view,false);
@@ -117,7 +117,7 @@ internal static class RoadGenerationPanel
             {
                 var item=new GameObject("Island slot "+(i+1),typeof(RectTransform),typeof(TextMeshProUGUI)); item.transform.SetParent(area,false);
                 var text=item.GetComponent<TextMeshProUGUI>(); text.font=template.font; text.fontSharedMaterial=template.fontSharedMaterial;
-                text.enableWordWrapping=false; text.raycastTarget=false; text.alignment=TextAlignmentOptions.TopLeft;
+                text.textWrappingMode=TextWrappingModes.NoWrap; text.raycastTarget=false; text.alignment=TextAlignmentOptions.TopLeft;
                 rows.Add(text);
             }
         }

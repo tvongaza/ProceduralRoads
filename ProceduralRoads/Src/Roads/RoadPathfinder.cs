@@ -175,7 +175,9 @@ public class RoadPathfinder
 
         while (openSet.Count > 0 && iterations < (iterationLimit ?? MaxIterations))
         {
-            RoadLifecycleManager.ThrowIfCancellationRequested();
+            // Every 256 iterations: a cancelled generation drains within milliseconds, without a
+            // static read and token check on each of the millions of nodes a world searches.
+            if ((iterations & 255) == 0) RoadLifecycleManager.ThrowIfCancellationRequested();
             iterations++;
             activity.Step();
 
@@ -300,7 +302,9 @@ public class RoadPathfinder
 
         while (openSet.Count > 0 && iterations < MaxIterations)
         {
-            RoadLifecycleManager.ThrowIfCancellationRequested();
+            // Every 256 iterations: a cancelled generation drains within milliseconds, without a
+            // static read and token check on each of the millions of nodes a world searches.
+            if ((iterations & 255) == 0) RoadLifecycleManager.ThrowIfCancellationRequested();
             iterations++;
             activity.Step();
             var current = openSet.Min;

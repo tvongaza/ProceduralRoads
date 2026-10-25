@@ -290,6 +290,7 @@ public static partial class RoadLifecycleManager
         SetProgress(phase, Progress.Completed, Progress.Total, failure);
         m_generation = null;
         run.Cancellation.Dispose();
+        RoadNetworkGenerator.ApplyPendingRegistrations();
     }
     private static void DisposePreparation(Generation run)
     {
@@ -337,6 +338,6 @@ public static partial class RoadLifecycleManager
         SetProgress("Preparing", 0, 0);
         try { action(); SetProgress("Complete", Progress.Completed, Progress.Total); }
         catch { RoadNetworkGenerator.ReleaseGenerationResources(); if (!RoadNetworkGenerator.RoadsGenerated) RoadNetworkGenerator.ResetData(); SetProgress("Failed", Progress.Completed, Progress.Total); throw; }
-        finally { m_synchronous = false; }
+        finally { m_synchronous = false; RoadNetworkGenerator.ApplyPendingRegistrations(); }
     }
 }

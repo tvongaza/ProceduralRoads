@@ -660,8 +660,15 @@ public static class ConsoleCommands
 
         Log.LogInfo("Manual road generation triggered via console command");
 
-        // Generate roads (force=true to regenerate if needed)
-        RoadNetworkGenerator.GenerateRoads(force: true);
+        // Generate roads (force=true to regenerate if needed). A failed preparation now throws
+        // out of the synchronous run; say so here rather than in an unhandled console error.
+        try { RoadNetworkGenerator.GenerateRoads(force: true); }
+        catch (System.Exception error)
+        {
+            Log.LogError($"Manual road generation failed: {error}");
+            args.Context.AddString($"Road generation failed: {error.GetBaseException().Message}");
+            return;
+        }
 
         if (!RoadNetworkGenerator.RoadsGenerated)
         {

@@ -127,7 +127,7 @@ public static partial class RoadNetworkGenerator
             return;
         
         string trimmed = locationName.Trim();
-        if (IsGenerating) throw new InvalidOperationException("Road generation is busy.");
+        if (DeferWhileGenerating(trimmed, true)) return;
         if (RegisteredLocationNames.Add(trimmed))
         {
             Log.LogDebug($"Registered location for roads: {trimmed}");
@@ -143,11 +143,34 @@ public static partial class RoadNetworkGenerator
             return;
         
         string trimmed = locationName.Trim();
-        if (IsGenerating) throw new InvalidOperationException("Road generation is busy.");
+        if (DeferWhileGenerating(trimmed, false)) return;
         if (RegisteredLocationNames.Remove(trimmed))
         {
             Log.LogDebug($"Unregistered location from roads: {trimmed}");
         }
+    }
+
+    /// <summary>Registrations asked for while a generation runs: its island workers read the
+    /// registered names, so the set cannot change under them. Another mod registering from a
+    /// world-load hook now overlaps the asynchronous initial generation; it is applied when the
+    /// generation ends (it takes effect from the next generation), never refused.</summary>
+    private static readonly List<(string name, bool add)> m_pendingRegistrations = new();
+
+    private static bool DeferWhileGenerating(string name, bool add)
+    {
+        if (!IsGenerating) return false;
+        lock (m_pendingRegistrations) m_pendingRegistrations.Add((name, add));
+        Log.LogDebug($"Road location {(add ? "registration" : "removal")} of {name} queued until road generation ends");
+        return true;
+    }
+
+    /// <summary>Apply registrations queued while a generation ran. Called as it ends.</summary>
+    internal static void ApplyPendingRegistrations()
+    {
+        (string name, bool add)[] pending;
+        lock (m_pendingRegistrations) { pending = m_pendingRegistrations.ToArray(); m_pendingRegistrations.Clear(); }
+        foreach (var (name, add) in pending)
+            if (add) RegisterLocation(name); else UnregisterLocation(name);
     }
 
     /// <summary>
@@ -484,7 +507,7 @@ public static partial class RoadNetworkGenerator
         List<Island>? islands=null;
         foreach(var step in IslandDetector.DetectRoadIslandsSteps(world,options,preparation,value=>islands=value)) yield return step;
         preparation.BeginStage("Indexing island membership",islands!.Sum(i=>(long)i.Cells.Count),"cells"); yield return true;
-        foreach(var island in islands)
+        foreach(var island in islands!)
             foreach(var step in island.PrepareMembership(preparation)) yield return step;
 
         preparation.BeginStage("Finding island destinations",(long)islands.Count*locations.Value.AllLocations.Count,"location checks"); yield return true;
@@ -632,7 +655,8 @@ public static partial class RoadNetworkGenerator
     private static RoadNetworkOptions? m_generationOptions;
     private static RoadNetworkOptions GenerationOptions=>m_generationOptions ?? NetworkOptions;
     private static WorldGenerator? m_generationWorld;
-    private static WorldGenerator? GenerationWorld => m_generationWorld ?? WorldGenerator.instance;
+    // As WorldGenerator.instance was read before: callers that can run without a world check it.
+    private static WorldGenerator GenerationWorld => m_generationWorld ?? WorldGenerator.instance!;
 
     /// <summary>
     /// Merge the config-defined custom locations into the registered set.
@@ -1798,7 +1822,11 @@ public static partial class RoadNetworkGenerator
             LocationLevelling.Prime?.Invoke();
         }
         if(RoadSiteProtection.InstalledButUnprepared)
+        {
+            Log.LogError("the site footprint index could not be built, so no road could avoid a POI. " +
+                         "No roads were generated. This is a gap in preparation, not in the world.");
             throw new InvalidOperationException("Road site preparation failed; no network was published.");
+        }
         preparation.BeginStage("Finishing road preparation"); yield return true;
         LocationLevelling.Seal();
     }

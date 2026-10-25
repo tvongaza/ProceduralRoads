@@ -144,10 +144,11 @@ public static class LocationPrefabLevelling
         return new RoadSiteProtection.Footprint(new Vector2(location.m_position.x,location.m_position.z),
             Mathf.Max(location.m_location.m_exteriorRadius,terrainRadius));
     }
+    private static readonly int LocationProxyHash="LocationProxy".GetStableHashCode();
     private static bool TryPlacement(ZDO zdo,out (Vector2 centre,float height) placement)
     {
         placement=default;
-        if(zdo.GetPrefab()!="LocationProxy".GetStableHashCode()) return false;
+        if(zdo.GetPrefab()!=LocationProxyHash) return false;
         Vector3 position=zdo.GetPosition();
         placement=(new Vector2(position.x,position.z),position.y);
         return true;
