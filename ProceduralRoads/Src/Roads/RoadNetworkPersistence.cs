@@ -138,7 +138,7 @@ public static class RoadNetworkPersistence
         if (data != null && data.Length > 0)
         {
             metadataZdo.Set(GlobalRoadDataHash, data);
-            Log.LogDebug($"[SAVE] Saved global road data: {data.Length} bytes, {RoadSpatialGrid.GridCellsWithRoads} cells, {RoadSpatialGrid.TotalRoadPoints} points");
+            Log.LogDebug($"[SAVE] Saved global road data: {data.Length} bytes, {RoadSpatialGrid.GridCellsWithRoads} cells, {RoadSpatialGrid.StoredPointRecords} stored records");
         }
         else if (RoadSpatialGrid.GridCellsWithRoads == 0)
         {
@@ -300,7 +300,7 @@ public static class RoadNetworkPersistence
 
         if (RoadSpatialGrid.DeserializeAllRoadPoints(data))
         {
-            Log.LogDebug($"[LOAD] Successfully loaded: {RoadSpatialGrid.GridCellsWithRoads} cells, {RoadSpatialGrid.TotalRoadPoints} points");
+            Log.LogDebug($"[LOAD] Successfully loaded: {RoadSpatialGrid.GridCellsWithRoads} cells, {RoadSpatialGrid.StoredPointRecords} stored records");
 
             TryLoadRoadMetadata(roadStartPoints);
             TryLoadRoadCrossings(metadataZdo, roadCrossings);

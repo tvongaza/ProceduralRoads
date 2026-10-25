@@ -677,8 +677,8 @@ public static class ConsoleCommands
         }
 
         args.Context.AddString($"Road generation complete!");
-        args.Context.AddString($"  Total road points: {RoadSpatialGrid.TotalRoadPoints}");
-        args.Context.AddString($"  Total road length: {RoadSpatialGrid.TotalRoadLength:F0}m");
+        args.Context.AddString($"  Stored road-point records: {RoadSpatialGrid.StoredPointRecords}");
+        args.Context.AddString($"  Committed planned-path length: {RoadSpatialGrid.Statistics.LengthText()}");
         args.Context.AddString($"  Grid cells with roads: {RoadSpatialGrid.GridCellsWithRoads}");
 
         // Apply roads to currently loaded zones

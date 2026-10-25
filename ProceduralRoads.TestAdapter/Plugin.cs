@@ -34,12 +34,13 @@ public sealed class Plugin : BaseUnityPlugin
     {
         if (context.Arguments.Count != 0) { context.Fail("usage", "generation-progress takes no arguments"); yield break; }
         var progress = RoadLifecycleManager.Progress;
+        var kilometres=RoadLifecycleManager.InitialGenerationActive ? progress.TotalKilometres : RoadSpatialGrid.Statistics.CommittedKilometres;
         context.Succeed(new Dictionary<string, object?>
         {
             ["source"] = "roads-generation", ["complete"] = true,
             ["runId"] = progress.RunId, ["phase"] = progress.Phase,
             ["completedIslands"] = progress.Completed, ["totalIslands"] = progress.Total,
-            ["elapsedSeconds"] = progress.ElapsedSeconds, ["totalKilometres"] = progress.TotalKilometres, ["frame"] = Time.frameCount,
+            ["elapsedSeconds"] = progress.ElapsedSeconds, ["totalKilometres"] = kilometres, ["lengthKnown"] = kilometres.HasValue, ["frame"] = Time.frameCount,
             ["preparationStage"] = progress.PreparationStage, ["preparationCompleted"] = progress.PreparationCompleted,
             ["preparationTotal"] = progress.PreparationTotal, ["preparationUnit"] = progress.PreparationUnit,
             ["preparationActiveMilliseconds"] = progress.PreparationActiveMilliseconds,
@@ -89,11 +90,14 @@ public sealed class Plugin : BaseUnityPlugin
             });
             yield break;
         }
+        var statistics=RoadSpatialGrid.Statistics;
         context.Succeed(new Dictionary<string, object?>
         {
             ["source"] = "roads-memory", ["complete"] = RoadNetworkGenerator.RoadsAvailable,
-            ["version"] = RoadSpatialGrid.RoadNetworkVersion, ["cells"] = RoadSpatialGrid.GridCellsWithRoads,
-            ["points"] = RoadSpatialGrid.TotalRoadPoints, ["lengthMeters"] = RoadSpatialGrid.TotalRoadLength,
+            ["version"] = RoadSpatialGrid.RoadNetworkVersion, ["cells"] = statistics.Cells,
+            ["points"] = statistics.StoredPointRecords, ["pointMetric"] = "stored-cell-records",
+            ["lengthMeters"] = statistics.CommittedPathLengthMeters, ["lengthKnown"] = statistics.LengthKnown,
+            ["lengthMetric"] = "committed-planned-path-length",
             ["crossings"] = RoadNetworkGenerator.GetRoadCrossings().Count,
             ["pendingZones"] = BridgeAppendQueue.Count, ["loadedFromSave"] = RoadNetworkGenerator.RoadsLoadedFromZDO
         }); yield break;

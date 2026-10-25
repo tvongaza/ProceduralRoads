@@ -51,7 +51,7 @@ public static class ManualRoads
         if (connect)
         {
             if (points.Count != 1 || !ManualRoadDraft.ValidPoint(points[0])) throw new ArgumentException("Connect needs one valid X,Z position.");
-            if (!RoadNetworkGenerator.RoadsAvailable || RoadSpatialGrid.TotalRoadPoints == 0)
+            if (!RoadNetworkGenerator.RoadsAvailable || RoadSpatialGrid.StoredPointRecords == 0)
                 throw new InvalidOperationException("No road network exists on this island.");
         }
         else ManualRoadDraft.Validate(points);

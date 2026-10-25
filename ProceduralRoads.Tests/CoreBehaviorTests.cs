@@ -100,12 +100,8 @@ public class CoreBehaviorTests
 
             Assert.True(RoadSpatialGrid.DeserializeAllRoadPoints(data), "Deserialize failed");
 
-            // FINDING (upstream master): TotalRoadPoints after a round trip
-            // differs from before (e.g. 552 -> 628) — the counter measures
-            // different things on the two paths. The invariants that MUST
-            // hold: road queries are functionally identical, and a second
-            // serialize produces a byte-identical blob (no accumulation
-            // across save/load cycles — the historical persistence bug class).
+            Assert.Equal(points,RoadSpatialGrid.TotalRoadPoints);
+            Assert.Equal(length,RoadSpatialGrid.TotalRoadLength);
             RoadSpatialGrid.GetRoadWeight(0f, 10f, out float weightAfter, out float widthAfter);
             Assert.Equal(weightBefore, weightAfter, 3);
             Assert.Equal(widthBefore, widthAfter, 3);

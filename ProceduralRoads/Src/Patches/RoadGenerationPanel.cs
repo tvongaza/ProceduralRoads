@@ -128,8 +128,9 @@ internal static class RoadGenerationPanel
         if(cancel!=null) cancel.interactable=progress.Phase=="Preparing" || progress.Phase=="Generating" || progress.Phase=="ReturningToMenu" || progress.Phase=="MenuFailed";
         if(cancelText!=null) cancelText.text=progress.Phase=="Stopping" ? "Stopping generation…" : progress.Phase=="ReturningToMenu" || progress.Phase=="MenuFailed" ? "Return to menu" : "Cancel and return to menu";
         bool stopped=progress.Phase=="ReturningToMenu" || progress.Phase=="MenuFailed";
+        string length=progress.TotalKilometres.HasValue ? $"{progress.TotalKilometres:F1} km committed" : "committed length unknown (legacy save)";
         if(summary!=null) summary.text=progress.Phase=="Preparing" ? $"Preparing roads · {(int)progress.ElapsedSeconds/60}m {(int)progress.ElapsedSeconds%60:00}s elapsed" : stopped ? "Road generation stopped; unpublished roads discarded." :
-            $"{progress.TotalKilometres:F1} km generated · {progress.Completed}/{progress.Total} islands complete · {visibleCount} island{(visibleCount==1?"":"s")} active · {(int)progress.ElapsedSeconds/60}m {(int)progress.ElapsedSeconds%60:00}s elapsed";
+            $"{length} · {progress.Completed}/{progress.Total} islands complete · {visibleCount} island{(visibleCount==1?"":"s")} active · {(int)progress.ElapsedSeconds/60}m {(int)progress.ElapsedSeconds%60:00}s elapsed";
         if(status!=null) { status.gameObject.SetActive(visibleCount==0); status.text=progress.Phase=="Generating" ? "Waiting for island work…" : progress.Text; }
         for(int i=0;i<rows.Count;i++)
         {

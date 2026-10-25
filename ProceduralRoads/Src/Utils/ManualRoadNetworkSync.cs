@@ -106,7 +106,7 @@ public static class ManualRoadNetworkSync
             if (grid.Length > 64 * 1024 * 1024 || starts.Length > 1024 * 1024 || crossings.Length > 16 * 1024 * 1024)
                 throw new InvalidOperationException("Manual road snapshot is too large.");
             RoadNetworkGenerator.AcceptManualSnapshot(grid, starts, crossings);
-            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug($"Manual road snapshot applied: version={RoadSpatialGrid.RoadNetworkVersion}, additions={RoadSpatialGrid.AppendCount}, points={RoadSpatialGrid.TotalRoadPoints}");
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug($"Manual road snapshot applied: version={RoadSpatialGrid.RoadNetworkVersion}, additions={RoadSpatialGrid.AppendCount}, stored-records={RoadSpatialGrid.StoredPointRecords}");
             RoadTerrainModifier.ApplyAdditionsToLoadedZones();
         }
         catch (Exception ex) { ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError($"Road snapshot not applied: {ex}"); }

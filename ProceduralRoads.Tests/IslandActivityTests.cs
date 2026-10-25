@@ -103,13 +103,13 @@ public sealed class IslandActivityTests
             RoadNetworkGenerator.IslandActivity=first; RoadSpatialGrid.Commit(plan);
             first.Finish(); first.Finish();
             var finished=new RoadGenerationProgress(1,"Generating",1,2,1,islands:owner.Snapshot(),totalKilometres:RoadSpatialGrid.SnapshotTotalKilometres());
-            Assert.Empty(finished.ActiveIslands); Assert.Equal(plan.TotalLength/1000d,finished.TotalKilometres,6);
+            Assert.Empty(finished.ActiveIslands); Assert.Equal(plan.TotalLength/1000d,finished.TotalKilometres!.Value,6);
             var second=owner.Claim(2,1); first.Committed(999999); first.Finish();
             RoadNetworkGenerator.IslandActivity=second; RoadSpatialGrid.Commit(plan);
             var reused=new RoadGenerationProgress(1,"Generating",1,2,2,islands:owner.Snapshot(),totalKilometres:RoadSpatialGrid.SnapshotTotalKilometres());
             Assert.Equal(plan.TotalLength/1000d,reused.ActiveIslands.Single().Kilometres,6);
-            Assert.Equal(plan.TotalLength*2/1000d,reused.TotalKilometres,6);
-            Assert.Equal(plan.TotalLength/1000d,finished.TotalKilometres,6);
+            Assert.Equal(plan.TotalLength*2/1000d,reused.TotalKilometres!.Value,6);
+            Assert.Equal(plan.TotalLength/1000d,finished.TotalKilometres!.Value,6);
             second.Finish(); Assert.Equal(reused.TotalKilometres,RoadSpatialGrid.SnapshotTotalKilometres());
             RoadSpatialGrid.Clear(); Assert.Equal(0,RoadSpatialGrid.SnapshotTotalKilometres());
         }
