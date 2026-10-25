@@ -607,7 +607,7 @@ public static partial class RoadNetworkGenerator
 
         TimeSpan elapsed = DateTime.Now - work.StartTime;
         Log.LogInfo($"Roads done: {m_roadsGeneratedCount} road(s), " +
-                    $"{RoadSpatialGrid.TotalRoadLength / 1000f:F1} km, connecting " +
+                    $"{RoadSpatialGrid.Statistics.LengthText("F1",1000f," km")}, connecting " +
                     $"{m_destinationsConnected} of {m_destinationsSelected} destination(s), " +
                     $"in {elapsed.TotalSeconds:F0}s.");
         int unconnected = m_destinationsSelected - m_destinationsConnected;
@@ -1976,7 +1976,7 @@ public static partial class RoadNetworkGenerator
         summary =
             $"Island {island.Id} ({island.ApproxArea / 1_000_000f:F1}km²): " +
             $"{selected.Count} locations, {m_roadsGeneratedCount} roads, " +
-            $"{RoadSpatialGrid.TotalRoadLength:F0}m in {elapsed.TotalSeconds:F1}s; " +
+            $"{RoadSpatialGrid.Statistics.LengthText()} in {elapsed.TotalSeconds:F1}s; " +
             $"{m_destinationsConnected}/{m_destinationsSelected} destinations connected, " +
             $"{m_roadsWithNoRoute} attempt(s) found no route" +
             (m_refusalReasons.IsEmpty ? "" : "; refused when built: " + string.Join("; ",
@@ -2031,14 +2031,14 @@ public static partial class RoadNetworkGenerator
 
         log.LogDebug("=== Road Generation Summary ===");
         log.LogDebug($"  Roads generated: {roadsGenerated}");
-        log.LogDebug($"  Total road points: {RoadSpatialGrid.TotalRoadPoints}");
-        log.LogDebug($"  Total road length: {RoadSpatialGrid.TotalRoadLength:F0}m");
+        log.LogDebug($"  Stored road-point records: {RoadSpatialGrid.StoredPointRecords}");
+        log.LogDebug($"  Committed planned-path length: {RoadSpatialGrid.Statistics.LengthText()}");
         log.LogDebug($"  Grid cells with roads: {RoadSpatialGrid.GridCellsWithRoads}");
 
         if (roadsGenerated > 0)
         {
-            log.LogDebug($"  Avg points/road: {RoadSpatialGrid.TotalRoadPoints / (float)roadsGenerated:F0}");
-            log.LogDebug($"  Avg length/road: {RoadSpatialGrid.TotalRoadLength / roadsGenerated:F0}m");
+            log.LogDebug($"  Avg stored records/road: {RoadSpatialGrid.StoredPointRecords / (float)roadsGenerated:F0}");
+            log.LogDebug($"  Avg committed length/road: {RoadSpatialGrid.Statistics.LengthText(divisor:roadsGenerated)}");
         }
 
         log.LogDebug($"  Generation time: {elapsed.TotalSeconds:F2}s");

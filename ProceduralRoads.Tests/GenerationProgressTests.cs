@@ -537,7 +537,7 @@ public sealed class GenerationProgressTests : IDisposable
             Assert.Equal(row.PricesTotal,row.PricesCompleted); Assert.True(row.SearchSteps>0);
         }
         Assert.Equal(RoadSpatialGrid.TotalRoadLength/1000d,rows.Sum(r=>r.Kilometres),5);
-        Assert.Equal(RoadSpatialGrid.TotalRoadLength/1000d,RoadLifecycleManager.Progress.TotalKilometres,5);
+        Assert.Equal(RoadSpatialGrid.TotalRoadLength/1000d,RoadLifecycleManager.Progress.TotalKilometres!.Value,5);
         Assert.Empty(RoadLifecycleManager.Progress.ActiveIslands);
     }
     [Fact]
@@ -565,7 +565,8 @@ public sealed class GenerationProgressTests : IDisposable
     private static string[] CanonicalRecords(byte[] bytes)
     {
         using var input = new BinaryReader(new MemoryStream(bytes));
-        Assert.Equal(2, input.ReadInt32());
+        int envelope=input.ReadInt32();
+        Assert.Equal(4,envelope); Assert.Equal(2,input.ReadInt32());
         int cells = input.ReadInt32();
         var records = new List<string>();
         for (int c = 0; c < cells; c++)
@@ -574,6 +575,7 @@ public sealed class GenerationProgressTests : IDisposable
             for (int p = 0; p < points; p++)
                 records.Add(x + ":" + z + ":" + Convert.ToBase64String(input.ReadBytes(17)));
         }
+        Assert.Equal(1,input.ReadByte()); input.ReadSingle(); // Separate statistics tests assert exact length persistence.
         Assert.Equal(input.BaseStream.Length, input.BaseStream.Position);
         return records.OrderBy(r => r, StringComparer.Ordinal).ToArray();
     }

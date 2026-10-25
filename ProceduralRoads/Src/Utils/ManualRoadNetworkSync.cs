@@ -89,8 +89,10 @@ public static class ManualRoadNetworkSync
     /// a client cannot see the save, so without them it would write road
     /// terrain into zones explored before the network. A version-1 snapshot
     /// (no such list) is refused, so a client never writes on a guess.
+    /// Version 3 carries the grid in format 4 (the committed path length): a version-2 peer cannot read that grid,
+    /// so the two refuse each other by version instead of failing inside the grid.
     /// </summary>
-    internal const int SnapshotVersion = 2;
+    internal const int SnapshotVersion = 3;
 
     private static void Send(long peer)
     {
@@ -129,7 +131,7 @@ public static class ManualRoadNetworkSync
                 excluded.Length > 16 * 1024 * 1024)
                 throw new InvalidOperationException("Manual road snapshot is too large.");
             RoadNetworkGenerator.AcceptManualSnapshot(grid, starts, crossings, excluded);
-            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug($"Manual road snapshot applied: version={RoadSpatialGrid.RoadNetworkVersion}, additions={RoadSpatialGrid.AppendCount}, points={RoadSpatialGrid.TotalRoadPoints}, excluded zones={NetworkCutoff.ExcludedCount}");
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug($"Manual road snapshot applied: version={RoadSpatialGrid.RoadNetworkVersion}, additions={RoadSpatialGrid.AppendCount}, stored-records={RoadSpatialGrid.StoredPointRecords}, excluded zones={NetworkCutoff.ExcludedCount}");
             RoadTerrainModifier.ApplyAdditionsToLoadedZones();
             return true;
         }

@@ -82,7 +82,7 @@ public class ManualRoadTests : IDisposable
         int original = BaseRoad(); var before = RoadSpatialGrid.GetRoadPointsInZone(new Vector2s(0,0)).Where(p=>p.addition==0).ToArray();
         Add(16); int appended = RoadSpatialGrid.RoadNetworkVersion;
         var bytes = RoadSpatialGrid.SerializeAllRoadPoints()!;
-        Assert.Equal(3, BitConverter.ToInt32(bytes,0));
+        Assert.Equal(4, BitConverter.ToInt32(bytes,0)); Assert.Equal(3, BitConverter.ToInt32(bytes,4));
         RoadSpatialGrid.Clear(); Assert.True(RoadSpatialGrid.DeserializeAllRoadPoints(bytes));
         Assert.Equal(appended,RoadSpatialGrid.RoadNetworkVersion);
         var all = RoadSpatialGrid.GetRoadPointsInZone(new Vector2s(0,0));
@@ -100,10 +100,10 @@ public class ManualRoadTests : IDisposable
         Assert.Equal(all,RoadSpatialGrid.PendingPoints(all,0));
         Assert.Equal(all,RoadSpatialGrid.PendingPoints(all,123456));
     }
-    [Fact] public void OrdinaryNetworksStillWriteTheExistingFormat()
+    [Fact] public void OrdinaryNetworksKeepPlainGeometryInsideTheStatisticsEnvelope()
     {
         BaseRoad(); var before=RoadSpatialGrid.SerializeAllRoadPoints()!;
-        Assert.Equal(2,BitConverter.ToInt32(before,0));
+        Assert.Equal(4,BitConverter.ToInt32(before,0)); Assert.Equal(2,BitConverter.ToInt32(before,4));
         RoadSpatialGrid.Clear(); Assert.True(RoadSpatialGrid.DeserializeAllRoadPoints(before));
         Assert.Equal(before,RoadSpatialGrid.SerializeAllRoadPoints());
     }

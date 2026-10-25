@@ -13,7 +13,7 @@ public sealed class RoadGenerationProgress
 {
     public ReadOnlyCollection<RoadIslandProgress> Islands { get; }
     public ReadOnlyCollection<RoadIslandProgress> ActiveIslands { get; }
-    public double TotalKilometres { get; }
+    public double? TotalKilometres { get; }
     public string PreparationStage { get; }
     public string PreparationUnit { get; }
     public long PreparationCompleted { get; }
@@ -27,7 +27,7 @@ public sealed class RoadGenerationProgress
     public double ElapsedSeconds { get; }
     public string? Failure { get; }
     public bool Active => Phase == "Preparing" || Phase == "Generating" || Phase == "Finalizing" || Phase == "Stopping" || Phase == "ReturningToMenu" || Phase == "MenuFailed";
-    internal RoadGenerationProgress(long runId, string phase, int completed, int total, double elapsedSeconds, string? failure = null, ReadOnlyCollection<RoadIslandProgress>? islands = null, double totalKilometres = 0, RoadPreparation? preparation = null)
+    internal RoadGenerationProgress(long runId, string phase, int completed, int total, double elapsedSeconds, string? failure = null, ReadOnlyCollection<RoadIslandProgress>? islands = null, double? totalKilometres = 0, RoadPreparation? preparation = null)
     {
         PreparationStage=phase=="Preparing" ? preparation?.Stage ?? "" : "";
         PreparationUnit=PreparationStage.Length>0 ? preparation!.Unit : "";
@@ -87,7 +87,7 @@ public static partial class RoadLifecycleManager
     {
         // Commit holds grid then activity. Snapshot activity completely before reading the grid scalar.
         var islands=m_generation?.CleanupDone==true ? null : m_generation?.Work?.Activity?.Snapshot();
-        double kilometres=RoadSpatialGrid.SnapshotTotalKilometres();
+        double? kilometres=RoadSpatialGrid.SnapshotTotalKilometres();
         Volatile.Write(ref m_progress, new RoadGenerationProgress(m_nextRun, phase, completed, total,
             m_generation?.Clock.Elapsed.TotalSeconds ?? 0, failure, islands, kilometres, m_generation?.Preparation));
     }

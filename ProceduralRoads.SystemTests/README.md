@@ -72,7 +72,7 @@ The adapter registers the extension `roads.testing` through the toolkit's `TestE
 
 | Command | Kind | What it does |
 |---|---|---|
-| `network` | read-only | The in-memory network: completion, cells, points, crossings, pending bridge-append zones and whether it was loaded from the save |
+| `network` | read-only | The in-memory network: completion, cells, stored point records (`pointMetric`), nullable committed path length (`lengthMeters`, `lengthKnown`, `lengthMetric`), crossings, pending bridge-append zones and whether it was loaded from the save |
 | `site-metrics <x> <z> <radius>` | read-only | Complete route-point count, paint-only count, nearest distance and stable SHA-256 of the route points in a 1–64 m site radius; an oversized census fails rather than truncating |
 | `metadata-prefab` | read-only | Whether the registered scene prefab still has a persistent `ZNetView` after the game and Jotunn finish registration |
 | `bridge-zone <zoneX> <zoneZ>` | read-only | Every saved object in one zone that carries the Roads bridge marker, with prefab, position and rotation; zones within ±255 only, and more than 512 marked pieces fails instead of truncating |

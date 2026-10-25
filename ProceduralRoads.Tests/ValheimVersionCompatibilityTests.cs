@@ -67,7 +67,7 @@ public class ValheimVersionCompatibilityTests
         // wrote. Crossings added a per-point paint-only flag and took the
         // format to version 2, so the bytes are no longer the version 1 bytes
         // above -- the invariant that has to hold is the round trip, plus the
-        // version 2 marker that tells an older reader it cannot read this.
+        // explicit new envelope marker that tells an older reader it cannot read this.
         using var scope = new ValheimWorldScope().WithWorld(new SyntheticWorld());
         try
         {
@@ -75,7 +75,9 @@ public class ValheimVersionCompatibilityTests
             Assert.True(RoadSpatialGrid.DeserializeAllRoadPoints(NetworkAsSavedBefore1Point0()));
             byte[] written = RoadSpatialGrid.SerializeAllRoadPoints()!;
 
-            Assert.Equal(2, System.BitConverter.ToInt32(written, 0));
+            Assert.Equal(4, System.BitConverter.ToInt32(written, 0));
+            Assert.Equal(2,System.BitConverter.ToInt32(written,4));
+            Assert.False(RoadSpatialGrid.Statistics.LengthKnown);
 
             RoadSpatialGrid.Clear();
             Assert.True(RoadSpatialGrid.DeserializeAllRoadPoints(written),

@@ -15,10 +15,12 @@ internal static class Released144
     /// <summary>A 1.4.4 blob of the network this build's grid holds now (cells and points as this build stores them).</summary>
     internal static byte[] BlobOfCurrentGrid()
     {
-        // This build's own blob (format 2), read back cell by cell and written the way 1.4.4 wrote it.
-        byte[] v2 = RoadSpatialGrid.SerializeAllRoadPoints()!;
-        using var input = new BinaryReader(new MemoryStream(v2));
-        Assert(input.ReadInt32() == 2, "format");
+        // This build's own v4 blob, read back cell by cell and written the way 1.4.4 wrote it.
+        byte[] v4 = RoadSpatialGrid.SerializeAllRoadPoints()!;
+        using var input = new BinaryReader(new MemoryStream(v4));
+        Assert(input.ReadInt32() == 4, "envelope");
+        int encoding = input.ReadInt32();
+        Assert(encoding == 2, "a network without appends");
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms);
         writer.Write(1);

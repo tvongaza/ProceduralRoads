@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -5,6 +6,20 @@ using BepInEx.Logging;
 using UnityEngine;
 
 namespace ProceduralRoads;
+
+/// <summary>A detached observation of the stored records and successful planned-path length.
+/// Length includes overlapping commits and excludes unplanned levelled bridge supports.</summary>
+public readonly struct RoadStatistics
+{
+    public int StoredPointRecords { get; }
+    public int Cells { get; }
+    public float? CommittedPathLengthMeters { get; }
+    public bool LengthKnown=>CommittedPathLengthMeters.HasValue;
+    public double? CommittedKilometres=>CommittedPathLengthMeters/1000d;
+    internal RoadStatistics(int records,int cells,float? length) { StoredPointRecords=records; Cells=cells; CommittedPathLengthMeters=length; }
+    public string LengthText(string format="F0",float divisor=1f,string unit="m")=>
+        CommittedPathLengthMeters.HasValue ? (CommittedPathLengthMeters.Value/divisor).ToString(format,System.Globalization.CultureInfo.InvariantCulture)+unit : "unknown (legacy save)";
+}
 
 /// <summary>
 /// Spatial data structure for road points. Provides efficient lookup for road influence at any world position.
@@ -55,10 +70,30 @@ public static partial class RoadSpatialGrid
     /// </summary>
     internal static bool RecordPointDebugInfo = DebugSwitches.Flag("ROAD_POINT_DEBUG", false);
     
-    public static int TotalRoadPoints { get; private set; } = 0;
+#if ROADS_TESTS
+    internal static Action? BeforeStatisticsPublication;
+    internal static Action? BeforeVersionCalculation;
+#endif
+    private static int m_storedPointRecords;
+    private static float? m_committedPathLength=0f;
+    public static RoadStatistics Statistics
+    {
+        get
+        {
+            m_roadCacheLock.EnterReadLock();
+            try { return new RoadStatistics(m_storedPointRecords,m_roadPoints.Count,m_committedPathLength); }
+            finally { m_roadCacheLock.ExitReadLock(); }
+        }
+    }
+    public static int StoredPointRecords=>Statistics.StoredPointRecords;
+    public static float? CommittedPathLengthMeters=>Statistics.CommittedPathLengthMeters;
+    /// <summary>Compatibility alias: counts stored cell records, including cell copies.</summary>
+    public static int TotalRoadPoints=>StoredPointRecords;
     public static int GridCellsWithRoads { get; private set; } = 0;
-    public static float TotalRoadLength { get; private set; } = 0f;
-    internal static double SnapshotTotalKilometres() { lock (m_recordGate) return TotalRoadLength / 1000d; }
+    /// <summary>Compatibility alias. NaN means legacy committed length is unknown.
+    /// New consumers should use the nullable Statistics projection.</summary>
+    public static float TotalRoadLength=>CommittedPathLengthMeters ?? float.NaN;
+    internal static double? SnapshotTotalKilometres()=>Statistics.CommittedKilometres;
     
     /// <summary>
     /// Version hash for the current road network. Changes when roads are regenerated.
@@ -87,9 +122,9 @@ public static partial class RoadSpatialGrid
             m_roadPoints.Clear();
             s_appendParents.Clear();
             m_initialized = false;
-            TotalRoadPoints = 0;
+            m_storedPointRecords = 0;
             GridCellsWithRoads = 0;
-            TotalRoadLength = 0f;
+            m_committedPathLength = 0f;
             RoadNetworkVersion = 0;
             m_debugInfo.Clear();
             System.Threading.Interlocked.Exchange(ref siteRefusalSamples, 0);
@@ -512,17 +547,8 @@ public static partial class RoadSpatialGrid
             lock (m_recordGate) m_debugInfo[plan.Points[i]] = debugInfo;
         }
 
-        MergePoints(tempPoints);
-
-        // Read-modify-write from several islands at once: without the gate
-        // these silently lose updates.
-        lock (m_recordGate)
-        {
-            TotalRoadPoints += plan.Points.Count;
-            TotalRoadLength += plan.TotalLength;
-            RoadNetworkGenerator.IslandActivity?.Committed(plan.TotalLength);
-            m_initialized = true;
-        }
+        MergePoints(tempPoints,plan.TotalLength,true);
+        RoadNetworkGenerator.IslandActivity?.Committed(plan.TotalLength);
     }
 
     /// <summary>Road points levelled to the given heights and painted, stored
@@ -565,38 +591,41 @@ public static partial class RoadSpatialGrid
     public static void FinalizeRoadNetwork()
     {
         int worldSeed = WorldGenerator.instance?.GetSeed() ?? 0;
+        m_roadCacheLock.EnterWriteLock();
+        try { RoadNetworkVersion=ComputeRoadNetworkVersion(m_roadPoints,worldSeed); }
+        finally { m_roadCacheLock.ExitWriteLock(); }
+        Log.LogDebug($"Road network finalized: version={RoadNetworkVersion}, stored-records={StoredPointRecords}, cells={GridCellsWithRoads}");
+    }
+    // Caller owns the grid write lock; no locking getters or callbacks inside the hash publication.
+    private static int ComputeRoadNetworkVersion(Dictionary<Vector2i,RoadPoint[]> geometry,int worldSeed)
+    {
+#if ROADS_TESTS
+        BeforeVersionCalculation?.Invoke();
+#endif
         uint hash = 2166136261u; // FNV offset basis
         int storedPoints = 0;
         int cells = 0;
 
-        m_roadCacheLock.EnterReadLock();
-        try
+        var keys = new List<Vector2i>(geometry.Keys);
+        keys.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x) : a.y.CompareTo(b.y));
+        var records = new List<RoadPoint>();
+        foreach (var key in keys)
         {
-            var keys = new List<Vector2i>(m_roadPoints.Keys);
-            keys.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x) : a.y.CompareTo(b.y));
-            var records = new List<RoadPoint>();
-            foreach (var key in keys)
+            cells++;
+            Mix(ref hash, key.x);
+            Mix(ref hash, key.y);
+            records.Clear();
+            records.AddRange(geometry[key]);
+            records.Sort(CompareRecords);
+            foreach (var rp in records)
             {
-                cells++;
-                Mix(ref hash, key.x);
-                Mix(ref hash, key.y);
-                records.Clear();
-                records.AddRange(m_roadPoints[key]);
-                records.Sort(CompareRecords);
-                foreach (var rp in records)
-                {
-                    storedPoints++;
-                    Mix(ref hash, rp.p.x.GetHashCode());
-                    Mix(ref hash, rp.p.y.GetHashCode());
-                    Mix(ref hash, rp.w.GetHashCode());
-                    Mix(ref hash, rp.h.GetHashCode());
-                    Mix(ref hash, rp.paintOnly ? 1 : 0);
-                }
+                storedPoints++;
+                Mix(ref hash, rp.p.x.GetHashCode());
+                Mix(ref hash, rp.p.y.GetHashCode());
+                Mix(ref hash, rp.w.GetHashCode());
+                Mix(ref hash, rp.h.GetHashCode());
+                Mix(ref hash, rp.paintOnly ? 1 : 0);
             }
-        }
-        finally
-        {
-            m_roadCacheLock.ExitReadLock();
         }
 
         Mix(ref hash, worldSeed);
@@ -606,8 +635,7 @@ public static partial class RoadSpatialGrid
         if (version == 0)
             version = 1; // 0 means "no network"
 
-        RoadNetworkVersion = version;
-        Log.LogDebug($"Road network finalized: version={RoadNetworkVersion}, points={TotalRoadPoints}, cells={GridCellsWithRoads}");
+        return version;
     }
 
     private static int CompareRecords(RoadPoint a, RoadPoint b)
@@ -887,11 +915,15 @@ public static partial class RoadSpatialGrid
         return Mathf.Abs(delta.x) < r + halfGrid && Mathf.Abs(delta.y) < r + halfGrid;
     }
 
-    private static void MergePoints(Dictionary<Vector2i, List<RoadPoint>> tempPoints)
+    private static void MergePoints(Dictionary<Vector2i, List<RoadPoint>> tempPoints,float? committedLength=null,bool initialize=false)
     {
         m_roadCacheLock.EnterWriteLock();
         try
         {
+            int added=0;
+            foreach(var points in tempPoints.Values) added=checked(added+points.Count);
+            int total=checked(m_storedPointRecords+added);
+            float? length=AddCommittedLength(m_committedPathLength,committedLength);
             foreach (var kvp in tempPoints)
             {
                 if (m_roadPoints.TryGetValue(kvp.Key, out var existing))
@@ -906,12 +938,28 @@ public static partial class RoadSpatialGrid
                 }
             }
             
+#if ROADS_TESTS
+            BeforeStatisticsPublication?.Invoke();
+#endif
+            m_storedPointRecords=total;
+            m_committedPathLength=length;
+            if(initialize) m_initialized=true;
             GridCellsWithRoads = m_roadPoints.Count;
         }
         finally
         {
             m_roadCacheLock.ExitWriteLock();
         }
+    }
+
+    private static float? AddCommittedLength(float? current,float? addition)
+    {
+        if(!addition.HasValue) return current;
+        if(!ManualRoadDraft.IsFinite(addition.Value) || addition.Value<0) throw new ArgumentException("Invalid committed path length.");
+        if(!current.HasValue) return null;
+        float result=current.Value+addition.Value;
+        if(!ManualRoadDraft.IsFinite(result)) throw new OverflowException("Committed path length overflow.");
+        return result;
     }
 
     public static Vector2i GetRoadGrid(float wx, float wy)
@@ -1278,9 +1326,10 @@ public static partial class RoadSpatialGrid
                     list = new List<RoadPoint>();
                     pointsByGrid[grid] = list;
                 }
+                if(!ManualRoadDraft.IsFinite(px) || !ManualRoadDraft.IsFinite(py) || !ManualRoadDraft.IsFinite(w) || w<=0 || !ManualRoadDraft.IsFinite(h)) return;
                 list.Add(point);
             }
-            
+            if(ms.Position!=ms.Length) return;
             AddDeserializedPoints(pointsByGrid);
         }
         catch (System.Exception ex)
@@ -1297,6 +1346,10 @@ public static partial class RoadSpatialGrid
         m_roadCacheLock.EnterWriteLock();
         try
         {
+            int added=0;
+            foreach(var cell in pointsByGrid)
+                if(!m_roadPoints.ContainsKey(cell.Key)) added=checked(added+cell.Value.Count);
+            int total=checked(m_storedPointRecords+added);
             foreach (var kvp in pointsByGrid)
             {
                 Vector2i grid = kvp.Key;
@@ -1308,6 +1361,8 @@ public static partial class RoadSpatialGrid
                 }
             }
             
+            m_storedPointRecords=total;
+            if(added>0) m_committedPathLength=null;
             GridCellsWithRoads = m_roadPoints.Count;
             m_initialized = true;
             
@@ -1339,7 +1394,9 @@ public static partial class RoadSpatialGrid
 
     /// <summary>
     /// Serialize the entire road network to a byte array for global persistence.
-    /// Format: [version:int][cellCount:int][grid.x:int][grid.y:int][pointCount:int][points...]...
+    /// Version 4: [4][geometry encoding 2 or 3][the old geometry payload after its version]
+    /// [known-length byte 0 or 1][committed planned-path length:float]. Geometry/hash inputs are unchanged.
+    /// Older Roads readers reject v4; this reader also accepts legacy v1-v3 with unknown nonempty length.
     /// </summary>
     public static byte[]? SerializeAllRoadPoints()
     {
@@ -1353,6 +1410,7 @@ public static partial class RoadSpatialGrid
             
             // Version 2 adds the paint-only flag per point (waded fords).
             bool appended = s_appendParents.Count > 0;
+            writer.Write(4);
             writer.Write(appended ? 3 : 2);
             
             writer.Write(m_roadPoints.Count);
@@ -1379,6 +1437,8 @@ public static partial class RoadSpatialGrid
                 writer.Write(s_appendParents.Count);
                 foreach (int parent in s_appendParents) writer.Write(parent);
             }
+            writer.Write((byte)(m_committedPathLength.HasValue?1:0));
+            writer.Write(m_committedPathLength ?? 0f);
             return ms.ToArray();
         }
         finally
@@ -1401,8 +1461,9 @@ public static partial class RoadSpatialGrid
             using var ms = new MemoryStream(data);
             using var reader = new BinaryReader(ms);
             
-            int version = reader.ReadInt32();
-            if (version != 1 && version != 2 && version != 3)
+            int envelope=reader.ReadInt32();
+            int version=envelope==4 ? reader.ReadInt32() : envelope;
+            if ((envelope==4 && version!=2 && version!=3) || (version != 1 && version != 2 && version != 3))
             {
                 Log.LogWarning($"Unknown road data version: {version}");
                 return false;
@@ -1420,7 +1481,7 @@ public static partial class RoadSpatialGrid
             // A released build (1.4.x, format 1) clamped widths and saved
             // averaged heights, but never checked them. One bad point there
             // costs that point, not the world its whole network.
-            bool released = version == 1;
+            bool released = envelope == 1;
             int dropped = 0;
             
             for (int c = 0; c < cellCount; c++)
@@ -1454,9 +1515,17 @@ public static partial class RoadSpatialGrid
                     points.Add(new RoadPoint(new Vector2(px, py), w, h, paintOnly, addition));
                 }
                 
+                var key=new Vector2i(gridX,gridY);
                 if (points.Count == 0 && pointCount > 0) continue;   // every point of the cell was dropped
-                loadedPoints[new Vector2i(gridX, gridY)] = points.ToArray();
-                totalPoints += points.Count;
+                if (loadedPoints.TryGetValue(key, out var earlier))
+                {
+                    // A released build read a cell listed twice as one cell (it filed each point under its grid
+                    // cell), so a released blob keeps both lists; in this build's own formats a repeat is damage.
+                    if (!released) return false;
+                    points.InsertRange(0, earlier);
+                }
+                loadedPoints[key]=points.ToArray();
+                totalPoints=checked(totalPoints+points.Count - (earlier?.Length ?? 0));
             }
             
             var parents = new List<int>();
@@ -1474,17 +1543,30 @@ public static partial class RoadSpatialGrid
                     foreach (var point in cell)
                         if (point.addition > count) return false;
             }
+            float? length=totalPoints==0 ? 0f : (float?)null;
+            if(envelope==4)
+            {
+                byte known=reader.ReadByte();
+                float metres=reader.ReadSingle();
+                bool canonicalZero=BitConverter.ToInt32(BitConverter.GetBytes(metres),0)==0;
+                if(known>1 || !ManualRoadDraft.IsFinite(metres) || metres<0 || (known==0 && !canonicalZero)
+                    || (totalPoints==0 && (known!=1 || !canonicalZero))) return false;
+                length=known==1 ? metres : (float?)null;
+            }
             if (ms.Position != ms.Length) return false;
+            int worldSeed=WorldGenerator.instance?.GetSeed() ?? 0;
             m_roadCacheLock.EnterWriteLock();
             try
             {
-                s_appendParents.Clear();
-                s_appendParents.AddRange(parents);
+                int networkVersion=ComputeRoadNetworkVersion(loadedPoints,worldSeed);
+                s_appendParents=parents;
                 m_roadPoints = loadedPoints;
                 m_initialized = true;
                 GridCellsWithRoads = loadedPoints.Count;
-                TotalRoadPoints = totalPoints;
-                LoadedFromReleasedFormat = released;
+                m_storedPointRecords=totalPoints;
+                m_committedPathLength=length;
+                RoadNetworkVersion=networkVersion;
+                LoadedFromReleasedFormat=released;
             }
             finally
             {
@@ -1494,8 +1576,7 @@ public static partial class RoadSpatialGrid
             if (dropped > 0)
                 Log.LogWarning($"The saved road network (format 1, from a released build) held {dropped} point(s) with a " +
                                "non-finite position or height, or no width; they were left out and the rest of the network loaded.");
-            Log.LogDebug($"Deserialized {cellCount} grid cells, {totalPoints} road points");
-            FinalizeRoadNetwork();
+            Log.LogDebug($"Deserialized {cellCount} grid cells, {totalPoints} stored records");
             return true;
         }
         catch (System.Exception ex)
