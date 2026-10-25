@@ -124,8 +124,8 @@ public sealed class RoadStatisticsTests : IDisposable
             var snapshot=Task.Run(()=> { reading.Set(); return RoadSpatialGrid.Statistics; });
             var bytes=Task.Run(()=> { serializing.Set(); return Bytes(); });
             Assert.True(reading.Wait(3000)); Assert.True(serializing.Wait(3000));
-            Assert.False(snapshot.Wait(100),"snapshot escaped the active geometry/statistics publication lock");
-            Assert.False(bytes.Wait(100),"serializer escaped the active geometry/statistics publication lock");
+            Assert.False(ReferenceEquals(snapshot,await Task.WhenAny(snapshot,Task.Delay(100))),"snapshot escaped the active geometry/statistics publication lock");
+            Assert.False(ReferenceEquals(bytes,await Task.WhenAny(bytes,Task.Delay(100))),"serializer escaped the active geometry/statistics publication lock");
             release.Set(); await writer;
             var result=await snapshot; byte[] saved=await bytes;
             Assert.True(result.StoredPointRecords>2); Assert.Equal(2f,result.CommittedPathLengthMeters);
