@@ -17,10 +17,18 @@ public static class RoadIslandDetector
     public static List<Island> Detect(WorldGenerator wg, float minArea = 163840, float worldRadius = 10000,
         RoadNetworkOptions? options = null)
     {
+        List<Island>? result=null;
+        using var preparation=new RoadPreparation(p=>DetectSteps(wg,p,value=>result=value,minArea,worldRadius,options));
+        preparation.Drain(); return result!;
+    }
+
+    internal static IEnumerable<bool> DetectSteps(WorldGenerator wg, RoadPreparation preparation, System.Action<List<Island>> complete,
+        float minArea=163840,float worldRadius=10000,RoadNetworkOptions? options=null)
+    {
         if (wg == null)
         {
             Log.LogWarning("IslandDetector: WorldGenerator not available");
-            return new List<Island>();
+            complete(new List<Island>()); yield break;
         }
 
         const float cellSize = SampleSpacing;
@@ -33,6 +41,7 @@ public static class RoadIslandDetector
         Log.LogDebug($"IslandDetector: walkable+crossable, scanning {gridSize}x{gridSize} " +
                      $"grid (cellSize={cellSize}m)");
 
+        preparation.BeginStage("Mapping island terrain",n,"cells"); yield return true;
         bool[] walkable = new bool[n];
         float[] height = new float[n];
         int landCells = 0;
@@ -45,6 +54,7 @@ public static class RoadIslandDetector
                 if (wx * wx + wy * wy > worldRadius * worldRadius)
                 {
                     height[x * gridSize + y] = float.MinValue;
+                    if(preparation.Checkpoint()) yield return true;
                     continue;
                 }
 
@@ -61,16 +71,20 @@ public static class RoadIslandDetector
                     walkable[x * gridSize + y] = true;
                     landCells++;
                 }
+                if(preparation.Checkpoint()) yield return true;
             }
         }
 
         // Pieces of walkable ground, before any crossing is considered.
+        preparation.BeginStage("Labeling island terrain",n,"cells"); yield return true;
         int[] piece = new int[n];
-        for (int i = 0; i < n; i++) piece[i] = -1;
+        for (int i = 0; i < n; i++) { piece[i] = -1; if(preparation.Checkpoint()) yield return true; }
+        preparation.BeginStage("Grouping walkable cells",unit:"visits"); yield return true;
         List<List<Vector2Int>> pieces = new();
         Queue<int> queue = new();
         for (int start = 0; start < n; start++)
         {
+            if(preparation.Checkpoint()) yield return true;
             if (!walkable[start] || piece[start] >= 0) continue;
             int id = pieces.Count;
             List<Vector2Int> cells = new();
@@ -85,6 +99,7 @@ public static class RoadIslandDetector
                 if (cx > 0) Push(c - gridSize);
                 if (cy + 1 < gridSize) Push(c + 1);
                 if (cy > 0) Push(c - 1);
+                if(preparation.Checkpoint()) yield return true;
                 void Push(int nb)
                 {
                     if (walkable[nb] && piece[nb] < 0) { piece[nb] = id; queue.Enqueue(nb); }
@@ -94,8 +109,9 @@ public static class RoadIslandDetector
         }
 
         // Rejoin across crossable water.
+        preparation.BeginStage("Preparing water crossings",n+pieces.Count,"entries"); yield return true;
         int[] parent = new int[pieces.Count];
-        for (int i = 0; i < parent.Length; i++) parent[i] = i;
+        for (int i = 0; i < parent.Length; i++) { parent[i] = i; if(preparation.Checkpoint()) yield return true; }
         int Find(int a) { while (parent[a] != a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; }
         void Union(int a, int b) { int ra = Find(a), rb = Find(b); if (ra != rb) parent[ra] = rb; }
 
@@ -109,19 +125,21 @@ public static class RoadIslandDetector
         int[] owner = piece;
         byte[] steps = new byte[n];
         Queue<int> front = new();
-        for (int i = 0; i < n; i++) if (owner[i] >= 0) front.Enqueue(i);
+        for (int i = 0; i < n; i++) { if (owner[i] >= 0) front.Enqueue(i); if(preparation.Checkpoint()) yield return true; }
+        preparation.BeginStage("Joining crossable shores",unit:"visits"); yield return true;
 
         int joinedFord = 0, joinedBridge = 0;
         while (front.Count > 0)
         {
             int c = front.Dequeue();
             int d = steps[c];
-            if (d >= reach) continue;
+            if (d >= reach) { if(preparation.Checkpoint()) yield return true; continue; }
             int cx = c / gridSize, cy = c % gridSize;
             if (cx + 1 < gridSize) Visit(c + gridSize);
             if (cx > 0) Visit(c - gridSize);
             if (cy + 1 < gridSize) Visit(c + 1);
             if (cy > 0) Visit(c - 1);
+            if(preparation.Checkpoint()) yield return true;
 
             void Visit(int nb)
             {
@@ -154,33 +172,36 @@ public static class RoadIslandDetector
         }
 
         // Pieces that were joined become one island.
+        preparation.BeginStage("Merging island groups",unit:"cells"); yield return true;
         Dictionary<int, List<Vector2Int>> merged = new();
         for (int i = 0; i < pieces.Count; i++)
         {
             int root = Find(i);
             if (!merged.TryGetValue(root, out List<Vector2Int>? cells))
                 merged[root] = cells = new List<Vector2Int>();
-            cells.AddRange(pieces[i]);
+            foreach(var cell in pieces[i]) { cells.Add(cell); if(preparation.Checkpoint()) yield return true; }
         }
 
+        preparation.BeginStage("Measuring islands",unit:"cells"); yield return true;
         List<Island> islands = new();
         foreach (List<Vector2Int> cells in merged.Values)
         {
             if (cells.Count * cellSize * cellSize < minArea) continue;
-            islands.Add(Build(cells, cellSize, worldOffset));
+            foreach(var step in BuildSteps(cells,cellSize,worldOffset,preparation,islands.Add)) yield return step;
         }
 
+        preparation.BeginStage("Ordering islands"); yield return true;
         islands.Sort(BySizeThenPosition);
         for (int i = 0; i < islands.Count; i++) islands[i].Id = i;
         if (options?.CoastalLandings == true)
             foreach (var island in islands)
-                island.CoastalLandings = RoadCoastalLandings.Find(island, height, gridSize,
-                    (x,z) => wg.GetBiome(x,z), options);
+                foreach(var step in RoadCoastalLandings.FindSteps(island,height,gridSize,(x,z)=>wg.GetBiome(x,z),options,
+                    preparation,landings=>island.CoastalLandings=landings)) yield return step;
 
         Log.LogDebug($"IslandDetector: {landCells} walkable cells, {pieces.Count} pieces, " +
                      $"{joinedFord} ford join(s), {joinedBridge} bridge join(s), " +
                      $"{islands.Count} islands at or above {minArea / 1_000_000f:F2} km²");
-        return islands;
+        complete(islands);
     }
 
     /// <summary>Order for Id assignment: biggest first, then by position.
@@ -204,7 +225,8 @@ public static class RoadIslandDetector
     }
 
     /// <summary>Build an island from the joined land cells.</summary>
-    private static Island Build(List<Vector2Int> cells, float cellSize, float worldOffset)
+    private static IEnumerable<bool> BuildSteps(List<Vector2Int> cells, float cellSize, float worldOffset,
+        RoadPreparation preparation,System.Action<Island> complete)
     {
         Island island = new() { Cells = cells, CellCount = cells.Count };
         float minX = float.MaxValue, minY = float.MaxValue;
@@ -218,6 +240,7 @@ public static class RoadIslandDetector
             if (p.x > maxX) maxX = p.x;
             if (p.y < minY) minY = p.y;
             if (p.y > maxY) maxY = p.y;
+            if(preparation.Checkpoint()) yield return true;
         }
 
         Vector2 centroid = new(sumX / cells.Count, sumY / cells.Count);
@@ -228,6 +251,7 @@ public static class RoadIslandDetector
             Vector2 p = IslandDetector.CellToWorld(cell, cellSize, worldOffset);
             float d = (p.x - centroid.x) * (p.x - centroid.x) + (p.y - centroid.y) * (p.y - centroid.y);
             if (d < best) { best = d; closest = p; }
+            if(preparation.Checkpoint()) yield return true;
         }
 
         island.Center = closest;
@@ -236,7 +260,7 @@ public static class RoadIslandDetector
         island.ApproxArea = cells.Count * cellSize * cellSize;
         island.CellSize = cellSize;
         island.WorldOffset = worldOffset;
-        return island;
+        complete(island);
     }
 
 }

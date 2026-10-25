@@ -23,6 +23,7 @@
       here; anything touching Harmony patches or engine runtime cannot.
     -->
     <ItemGroup>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadPreparation.cs" Link="ModSrc/RoadPreparation.cs"/>
         <Compile Include="../ProceduralRoads/Src/Utils/ManualRoadNetworkSync.cs" Link="ModSrc/ManualRoadNetworkSync.cs"/>
         <Compile Include="../ProceduralRoads/Src/Utils/ManualRoadCommands.cs" Link="ModSrc/ManualRoadCommands.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/BridgeAppendQueue.cs" Link="ModSrc/BridgeAppendQueue.cs"/>

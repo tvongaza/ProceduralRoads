@@ -414,26 +414,44 @@ public static partial class RoadNetworkGenerator
     // The asynchronous load path and explicit synchronous callers use these same phases.
     internal static GenerationWork? PrepareGeneration(bool force)
     {
-        if (RoadsAvailable && !force) return null;
+        using var preparation=BeginPreparation(force);
+        preparation.Drain();
+        preparation.LogTimings();
+        return preparation.TakeResult();
+    }
+    internal static RoadPreparation BeginPreparation(bool force)
+    {
+        var world=WorldGenerator.instance;
+        var zones=ZoneSystem.instance;
+        var options=NetworkOptions.Snapshot();
+        var start=DateTime.Now;
+        int percentage=IslandRoadPercentage,maxLocations=MaxLocationsPerIsland;
+        return new RoadPreparation(p=>PrepareSteps(force,world,zones,options,start,percentage,maxLocations,p));
+    }
+    private static IEnumerable<bool> PrepareSteps(bool force,WorldGenerator? capturedWorld,ZoneSystem? capturedZones,
+        RoadNetworkOptions options,DateTime startTime,int percentage,int maxLocations,RoadPreparation preparation)
+    {
+        if (RoadsAvailable && !force) yield break;
         if (force && RoadsAvailable) ResetData();
-        if (WorldGenerator.instance == null)
+        if (capturedWorld == null)
         {
             Log.LogWarning("WorldGenerator not available, cannot generate roads");
-            return null;
+            yield break;
         }
 
-        if (ZoneSystem.instance == null)
+        if (capturedZones == null)
         {
             Log.LogWarning("ZoneSystem not available, cannot generate roads");
-            return null;
+            yield break;
         }
 
+        preparation.BeginStage("Preparing road settings"); yield return true;
         Log.LogDebug("Starting road network generation...");
 
         RegisterConfiguredLocations();
 
-        DateTime startTime = DateTime.Now;
-        var world = WorldGenerator.instance;
+        m_generationOptions=options;
+        var world = capturedWorld;
         float clearance = RoadWidth * 0.5f + 2f;
         m_generationWorld = world;
         m_pathfinder = new RoadPathfinder(world) { SiteClearance = clearance };
@@ -459,33 +477,50 @@ public static partial class RoadNetworkGenerator
         RoadGrade.SteepestPlanned = 0f;
         RoadSiteProtection.Reset();
 
-        var locations = GatherLocationData();
-        if (locations == null)
-            return null;
+        LocationData? locations=null;
+        foreach(var step in GatherLocationSteps(capturedZones,preparation,value=>locations=value)) yield return step;
+        if(locations==null) yield break;
 
-        var islands = IslandDetector.DetectRoadIslands();
-        
-        var eligible = islands.ToDictionary(i => i, i => GetLocationsOnIsland(i, locations.Value.AllLocations));
+        List<Island>? islands=null;
+        foreach(var step in IslandDetector.DetectRoadIslandsSteps(world,options,preparation,value=>islands=value)) yield return step;
+        preparation.BeginStage("Indexing island membership",islands!.Sum(i=>(long)i.Cells.Count),"cells"); yield return true;
+        foreach(var island in islands)
+            foreach(var step in island.PrepareMembership(preparation)) yield return step;
+
+        preparation.BeginStage("Finding island destinations",(long)islands.Count*locations.Value.AllLocations.Count,"location checks"); yield return true;
+        var eligible=new Dictionary<Island,List<(string name,Vector3 position,float radius)>>();
+        foreach(var island in islands)
+        {
+            var found=new List<(string name,Vector3 position,float radius)>();
+            foreach(var loc in locations.Value.AllLocations)
+            {
+                if(island.ContainsPoint(loc.position) && IsRoadLocation(loc.name) && options.Allows(world.GetBiome(loc.position.x,loc.position.z))) found.Add(loc);
+                if(preparation.Checkpoint()) yield return true;
+            }
+            eligible[island]=found;
+        }
         var selectedIslands = RoadNetworkSelection.Islands(islands, i => eligible[i].Count,
-            IslandRoadPercentage, NetworkOptions);
+            percentage, options);
         Log.LogDebug($"Islands: {islands.Count} total, {selectedIslands.Count} selected (target {IslandRoadPercentage}%; boss islands are not automatically included)");
 
 
+        preparation.BeginStage("Selecting road destinations",selectedIslands.Count,"islands"); yield return true;
         var work = new GenerationWork(startTime);
         foreach (var island in selectedIslands)
         {
             var candidates = eligible[island];
-            if (candidates.Count == 0) continue;
-            int maxLocs = GetMaxLocationsForIsland(island);
+            if(candidates.Count==0) { preparation.Checkpoint(); yield return true; continue; }
+            int maxLocs = RoadNetworkSelection.Quota(island.ApproxArea,maxLocations);
             var selected = SelectIslandDestinations(island, candidates, maxLocs);
             Log.LogDebug($"Island {island.Id}: {candidates.Count} candidates -> {selected.Count} selected (max {maxLocs}, area {island.ApproxArea/1_000_000:F1}km²)");
             work.Islands.Add(new IslandWork(island, selected,
                 island.ContainsPoint(locations.Value.SpawnPoint) ? locations.Value.SpawnPoint : (Vector3?)null,
                 locations.Value.SpawnRadius));
+            preparation.Checkpoint(); yield return true;
         }
         RoadParallel.IslandsRunning = Math.Min(work.Islands.Count, RoadParallel.IslandWorkers);
-        if (!PrepareAndSeal()) throw new InvalidOperationException("Road site preparation failed; no network was published.");
-        return work;
+        foreach(var step in PrepareAndSealSteps(preparation)) yield return step;
+        preparation.Result=work;
     }
 
     internal sealed class IslandWork
@@ -591,8 +626,11 @@ public static partial class RoadNetworkGenerator
         m_threadPathfinders?.Dispose();
         m_threadPathfinders = null;
         m_generationWorld = null;
+        m_generationOptions = null;
     }
 
+    private static RoadNetworkOptions? m_generationOptions;
+    private static RoadNetworkOptions GenerationOptions=>m_generationOptions ?? NetworkOptions;
     private static WorldGenerator? m_generationWorld;
     private static WorldGenerator? GenerationWorld => m_generationWorld ?? WorldGenerator.instance;
 
@@ -1493,54 +1531,35 @@ public static partial class RoadNetworkGenerator
         public List<(string name, Vector3 position, float radius)> AllLocations;
     }
 
+    private static IEnumerable<bool> GatherLocationSteps(ZoneSystem zones,RoadPreparation preparation,Action<LocationData?> complete)
+    {
+        // Snapshot the live ValueCollection in one main-thread operation; no live enumerator crosses a frame.
+        var source=zones.GetLocationList()?.ToArray();
+        preparation.BeginStage("Copying world locations",source?.Length ?? 0,"locations"); yield return true;
+        if(source==null || source.Length==0) { Log.LogWarning("No location instances found"); complete(null); yield break; }
+        Vector3? spawn=null; float radius=0;
+        var bosses=new List<(string name,Vector3 position,float radius)>();
+        var all=new List<(string name,Vector3 position,float radius)>();
+        foreach(var location in source)
+        {
+            var item=(location.m_location.m_prefab.Name,location.m_position,location.m_location.m_exteriorRadius);
+            all.Add(item);
+            if(item.Item1=="StartTemple") { spawn=item.Item2; radius=item.Item3; }
+            else if(BossLocationNames.Contains(item.Item1)) bosses.Add(item);
+            if(preparation.Checkpoint()) yield return true;
+        }
+        if(!spawn.HasValue) { Log.LogWarning("Could not find spawn point (StartTemple)"); spawn=Vector3.zero; }
+        Log.LogDebug($"Found spawn at {spawn.Value}, {bosses.Count} boss locations, {all.Count} total locations");
+        complete(new LocationData {SpawnPoint=spawn.Value,SpawnRadius=radius,BossLocations=bosses,AllLocations=all});
+    }
+
     private static LocationData? GatherLocationData()
     {
-        var locationInstances = ZoneSystem.instance.GetLocationList();
-        if (locationInstances == null || locationInstances.Count == 0)
-        {
-            Log.LogWarning("No location instances found");
-            return null;
-        }
-
-        Vector3? spawnPoint = null;
-        float spawnRadius = 0f;
-        var bossLocations = new List<(string name, Vector3 position, float radius)>();
-        var allLocations = new List<(string name, Vector3 position, float radius)>();
-
-        foreach (var loc in locationInstances)
-        {
-            string prefabName = loc.m_location.m_prefab.Name;
-            float exteriorRadius = loc.m_location.m_exteriorRadius;
-
-            allLocations.Add((prefabName, loc.m_position, exteriorRadius));
-
-            if (prefabName == "StartTemple")
-            {
-                spawnPoint = loc.m_position;
-                spawnRadius = exteriorRadius;
-            }
-            else if (BossLocationNames.Contains(prefabName))
-            {
-                bossLocations.Add((prefabName, loc.m_position, exteriorRadius));
-            }
-        }
-
-        if (!spawnPoint.HasValue)
-        {
-            Log.LogWarning("Could not find spawn point (StartTemple)");
-            spawnPoint = Vector3.zero;
-        }
-
-        Log.LogDebug(
-            $"Found spawn at {spawnPoint.Value}, {bossLocations.Count} boss locations, {allLocations.Count} total locations");
-
-        return new LocationData
-        {
-            SpawnPoint = spawnPoint.Value,
-            SpawnRadius = spawnRadius,
-            BossLocations = bossLocations,
-            AllLocations = allLocations
-        };
+        LocationData? result=null;
+        var zones=ZoneSystem.instance;
+        using var preparation=new RoadPreparation(p=>GatherLocationSteps(zones,p,value=>result=value));
+        preparation.Drain();
+        return result;
     }
 
     private static List<(string name, Vector3 position, float radius)> GetLocationsOnIsland(
@@ -1550,7 +1569,7 @@ public static partial class RoadNetworkGenerator
         foreach (var loc in allLocations)
         {
             if (island.ContainsPoint(loc.position) && IsRoadLocation(loc.name)
-                && (GenerationWorld == null || NetworkOptions.Allows(
+                && (GenerationWorld == null || GenerationOptions.Allows(
                     GenerationWorld.GetBiome(loc.position.x, loc.position.z))))
                 result.Add(loc);
         }
@@ -1577,7 +1596,7 @@ public static partial class RoadNetworkGenerator
         var candidates = new List<(string name, Vector3 position, float radius)>(locations);
         // Island ranking has already happened using real POIs only. Landings
         // consume quota slots like required sites; they never select an island.
-        if (NetworkOptions.CoastalLandings)
+        if (GenerationOptions.CoastalLandings)
             candidates.AddRange(island.CoastalLandings.Select(p => (RoadCoastalLandings.Name, p, RoadCoastalLandings.Radius)));
         var selected = SelectLocations(candidates, quota, island.ApproxArea);
         Log.LogDebug($"Coastal landings on island {island.Id}: {selected.Count(p => p.name == RoadCoastalLandings.Name)} selected; connection and boat access are not guaranteed");
@@ -1590,7 +1609,7 @@ public static partial class RoadNetworkGenerator
     private static List<(string name, Vector3 position, float radius)> SelectLocations(
         List<(string name, Vector3 position, float radius)> candidates, int maxCount, float area = 0) =>
         RoadNetworkSelection.Destinations(candidates, maxCount, area, GetLocationPriority,
-            IsRequiredLocation, GenerationWorld?.GetSeed() ?? 0, NetworkOptions);
+            IsRequiredLocation, GenerationWorld?.GetSeed() ?? 0, GenerationOptions);
 
     private static int GetLocationPriority(string locationName)
     {
@@ -1599,7 +1618,7 @@ public static partial class RoadNetworkGenerator
             return priority;
 
         if (IsCustomLocation(locationName))
-            return NetworkOptions.CustomLocationPriority;
+            return GenerationOptions.CustomLocationPriority;
 
         return DefaultPriority;
     }
@@ -1737,10 +1756,10 @@ public static partial class RoadNetworkGenerator
         bool useMST = (island.Id % 2) == 0;
         
         Log.LogDebug(
-            $"Island {island.Id}: {islandLocations.Count} locations, strategy={(NetworkOptions.RoutedConnections ? "Routed tree with reverse branches" : useMST ? "MST" : "Chain")}");
+            $"Island {island.Id}: {islandLocations.Count} locations, strategy={(GenerationOptions.RoutedConnections ? "Routed tree with reverse branches" : useMST ? "MST" : "Chain")}");
         
         IslandActivity?.Stage("Connecting");
-        if (NetworkOptions.RoutedConnections)
+        if (GenerationOptions.RoutedConnections)
             GenerateRoutedRoads(startPos, startRadius, islandLocations);
         else if (useMST)
             GenerateMSTRoads(startPos, startRadius, islandLocations);
@@ -1767,6 +1786,23 @@ public static partial class RoadNetworkGenerator
     /// could not be built. The caller must Unseal() in a finally. Shared by
     /// whole-world generation and road_regen_island.
     /// </summary>
+    private static IEnumerable<bool> PrepareAndSealSteps(RoadPreparation preparation)
+    {
+        if(LocationLevelling.PrimeIncremental!=null && (LocationLevelling.CanPrimeIncrementally?.Invoke() ?? true))
+            foreach(var step in RoadPreparation.Own(LocationLevelling.PrimeIncremental(preparation))) yield return step;
+        else
+        {
+            preparation.BeginStage("Preparing location footprints"); yield return true;
+            foreach(var step in RoadSiteProtection.PrimeSteps(preparation)) yield return step;
+            preparation.BeginStage("Preparing saved placements"); yield return true;
+            LocationLevelling.Prime?.Invoke();
+        }
+        if(RoadSiteProtection.InstalledButUnprepared)
+            throw new InvalidOperationException("Road site preparation failed; no network was published.");
+        preparation.BeginStage("Finishing road preparation"); yield return true;
+        LocationLevelling.Seal();
+    }
+
     private static bool PrepareAndSeal()
     {
         RoadSiteProtection.Prime();

@@ -59,6 +59,14 @@ public class Island
         return CellToWorld(edgeCell);
     }
     
+    internal IEnumerable<bool> PrepareMembership(RoadPreparation preparation)
+    {
+        if(_cellSet!=null) yield break;
+        var copied=new HashSet<Vector2Int>();
+        foreach(var cell in Cells) { copied.Add(cell); if(preparation.Checkpoint()) yield return true; }
+        _cellSet=copied;
+    }
+
     public Vector2 CellToWorld(Vector2Int cell) => IslandDetector.CellToWorld(cell, CellSize, WorldOffset);
 }
 
@@ -81,21 +89,38 @@ public static class IslandDetector
     /// <summary>The grouping used by road generation, also exposed by road_islands without arguments.</summary>
     public static List<Island> DetectRoadIslands()
     {
-        var options = RoadNetworkGenerator.NetworkOptions;
-        if (!options.WalkableIslands) return DetectIslands();
-        var clock = System.Diagnostics.Stopwatch.StartNew();
-        var islands = RoadIslandDetector.Detect(WorldGenerator.instance, options: options);
-        Log.LogInfo($"Road island detection: {islands.Count} groups at {RoadIslandDetector.SampleSpacing} m in {clock.Elapsed.TotalSeconds:F1}s");
-        return islands;
+        List<Island>? result=null;
+        using var preparation=new RoadPreparation(p=>DetectRoadIslandsSteps(WorldGenerator.instance,RoadNetworkGenerator.NetworkOptions,p,value=>result=value));
+        preparation.Drain(); return result!;
+    }
+    internal static IEnumerable<bool> DetectRoadIslandsSteps(WorldGenerator world,RoadNetworkOptions options,
+        RoadPreparation preparation,System.Action<List<Island>> complete)
+    {
+        if(!options.WalkableIslands)
+        {
+            foreach(var step in DetectSteps(world,preparation,complete)) yield return step;
+            yield break;
+        }
+        var clock=System.Diagnostics.Stopwatch.StartNew();
+        List<Island>? islands=null;
+        foreach(var step in RoadIslandDetector.DetectSteps(world,preparation,value=>islands=value,options:options)) yield return step;
+        Log.LogInfo($"Road island detection: {islands!.Count} groups at {RoadIslandDetector.SampleSpacing} m in {clock.Elapsed.TotalSeconds:F1}s");
+        complete(islands);
     }
 
     public static List<Island> DetectIslands(float cellSize = DefaultCellSize, int minCells = MinIslandCells)
     {
-        var wg = WorldGenerator.instance;
+        List<Island>? result=null;
+        using var preparation=new RoadPreparation(p=>DetectSteps(WorldGenerator.instance,p,value=>result=value,cellSize,minCells));
+        preparation.Drain(); return result!;
+    }
+    internal static IEnumerable<bool> DetectSteps(WorldGenerator wg,RoadPreparation preparation,System.Action<List<Island>> complete,
+        float cellSize=DefaultCellSize,int minCells=MinIslandCells)
+    {
         if (wg == null)
         {
             Log.LogWarning("IslandDetector: WorldGenerator not available");
-            return new List<Island>();
+            complete(new List<Island>()); yield break;
         }
         
         float worldRadius = 10000f;
@@ -105,6 +130,7 @@ public static class IslandDetector
         
         Log.LogDebug($"IslandDetector: Scanning {gridSize}x{gridSize} grid (cellSize={cellSize}m)");
         
+        preparation.BeginStage("Mapping legacy islands",gridSize*gridSize,"cells visited"); yield return true;
         bool[,] isLand = new bool[gridSize, gridSize];
         int landCells = 0;
         
@@ -119,17 +145,20 @@ public static class IslandDetector
                 if (distFromCenter > worldRadius)
                 {
                     isLand[x, y] = false;
+                    if(preparation.Checkpoint()) yield return true;
                     continue;
                 }
                 
                 float baseHeight = wg.GetBaseHeight(worldX, worldY, false);
                 isLand[x, y] = baseHeight >= WaterThreshold;
                 if (isLand[x, y]) landCells++;
+                if(preparation.Checkpoint()) yield return true;
             }
         }
         
         Log.LogDebug($"IslandDetector: Found {landCells} land cells out of {gridSize * gridSize} total");
         
+        preparation.BeginStage("Grouping legacy islands",unit:"visits"); yield return true;
         bool[,] visited = new bool[gridSize, gridSize];
         var islands = new List<Island>();
         int islandId = 0;
@@ -138,10 +167,12 @@ public static class IslandDetector
         {
             for (int y = 0; y < gridSize; y++)
             {
+                if(preparation.Checkpoint()) yield return true;
                 if (isLand[x, y] && !visited[x, y])
                 {
-                    var island = FloodFill(isLand, visited, x, y, gridSize, cellSize, worldOffset);
-                    if (island.CellCount >= minCells)
+                    Island? island=null;
+                    foreach(var step in FloodFillSteps(isLand,visited,x,y,gridSize,cellSize,worldOffset,preparation,value=>island=value)) yield return step;
+                    if (island!.CellCount >= minCells)
                     {
                         island.Id = islandId++;
                         islands.Add(island);
@@ -150,15 +181,16 @@ public static class IslandDetector
             }
         }
         
+        preparation.BeginStage("Ordering legacy islands"); yield return true;
         islands.Sort((a, b) => b.CellCount.CompareTo(a.CellCount));
         
         Log.LogDebug($"IslandDetector: Detected {islands.Count} islands (min {minCells} cells)");
         
-        return islands;
+        complete(islands);
     }
     
-    private static Island FloodFill(bool[,] isLand, bool[,] visited, int startX, int startY, 
-        int gridSize, float cellSize, float worldOffset)
+    private static IEnumerable<bool> FloodFillSteps(bool[,] isLand, bool[,] visited, int startX, int startY,
+        int gridSize, float cellSize, float worldOffset,RoadPreparation preparation,System.Action<Island> complete)
     {
         var island = new Island();
         var queue = new Queue<Vector2Int>();
@@ -175,6 +207,7 @@ public static class IslandDetector
         while (queue.Count > 0)
         {
             var cell = queue.Dequeue();
+            if(preparation.Checkpoint()) yield return true;
             island.Cells.Add(cell);
             island.CellCount++;
             
@@ -207,6 +240,7 @@ public static class IslandDetector
         Vector2 closestCell = centroid;
         foreach (var cell in island.Cells)
         {
+            if(preparation.Checkpoint()) yield return true;
             Vector2 cellWorld = CellToWorld(cell, cellSize, worldOffset);
             float dist = (cellWorld.x - centroid.x) * (cellWorld.x - centroid.x) + 
                          (cellWorld.y - centroid.y) * (cellWorld.y - centroid.y);
@@ -224,7 +258,7 @@ public static class IslandDetector
         island.CellSize = cellSize;
         island.WorldOffset = worldOffset;
         
-        return island;
+        complete(island);
     }
     
     public static string GetIslandSummary(Island island)

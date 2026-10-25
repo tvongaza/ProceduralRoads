@@ -14,6 +14,12 @@ public sealed class RoadGenerationProgress
     public ReadOnlyCollection<RoadIslandProgress> Islands { get; }
     public ReadOnlyCollection<RoadIslandProgress> ActiveIslands { get; }
     public double TotalKilometres { get; }
+    public string PreparationStage { get; }
+    public string PreparationUnit { get; }
+    public long PreparationCompleted { get; }
+    public long PreparationTotal { get; }
+    public double PreparationActiveMilliseconds { get; }
+    public double PreparationMaxSliceMilliseconds { get; }
     public long RunId { get; }
     public string Phase { get; }
     public int Completed { get; }
@@ -21,16 +27,26 @@ public sealed class RoadGenerationProgress
     public double ElapsedSeconds { get; }
     public string? Failure { get; }
     public bool Active => Phase == "Preparing" || Phase == "Generating" || Phase == "Finalizing" || Phase == "Stopping" || Phase == "ReturningToMenu" || Phase == "MenuFailed";
-    internal RoadGenerationProgress(long runId, string phase, int completed, int total, double elapsedSeconds, string? failure = null, ReadOnlyCollection<RoadIslandProgress>? islands = null, double totalKilometres = 0)
+    internal RoadGenerationProgress(long runId, string phase, int completed, int total, double elapsedSeconds, string? failure = null, ReadOnlyCollection<RoadIslandProgress>? islands = null, double totalKilometres = 0, RoadPreparation? preparation = null)
     {
+        PreparationStage=phase=="Preparing" ? preparation?.Stage ?? "" : "";
+        PreparationUnit=PreparationStage.Length>0 ? preparation!.Unit : "";
+        PreparationCompleted=PreparationStage.Length>0 ? preparation!.Completed : 0;
+        PreparationTotal=PreparationStage.Length>0 ? preparation!.Total : 0;
+        PreparationActiveMilliseconds=preparation?.ActiveMilliseconds ?? 0;
+        PreparationMaxSliceMilliseconds=preparation?.MaxSliceMilliseconds ?? 0;
         Islands=islands ?? Array.AsReadOnly(Array.Empty<RoadIslandProgress>());
         var active=new List<RoadIslandProgress>();
         foreach(var island in Islands) if(island.Active && island.Assignment>0) active.Add(island);
         active.Sort((left,right)=>left.Slot.CompareTo(right.Slot));
         ActiveIslands=active.AsReadOnly(); TotalKilometres=totalKilometres;
         RunId = runId; Phase = phase; Completed = completed; Total = total; ElapsedSeconds = elapsedSeconds; Failure = failure; }
-    public string Text => Phase == "Stopping" ? "Stopping generation…" : Phase == "ReturningToMenu" ? "Returning to menu…" : Phase == "MenuFailed" ? "Generation stopped. Return to menu" : Phase == "Preparing" ? "Preparing roads…" : Phase == "Finalizing" ? "Finishing roads…" :
+    public string Text => Phase == "Stopping" ? "Stopping generation…" : Phase == "ReturningToMenu" ? "Returning to menu…" : Phase == "MenuFailed" ? "Generation stopped. Return to menu" : Phase == "Preparing" ? PreparationText : Phase == "Finalizing" ? "Finishing roads…" :
         Phase == "Failed" ? "Road generation failed (see the log)" : $"Generating roads: {Completed} of {Total} islands complete";
+    public string PreparationText => PreparationStage.Length==0 ? "Preparing roads…" :
+        PreparationTotal>0 ? $"{PreparationStage}: {PreparationCompleted:N0} / {PreparationTotal:N0} {PreparationUnit}" :
+        PreparationCompleted>0 ? $"{PreparationStage}: {PreparationCompleted:N0} {PreparationUnit}" : $"{PreparationStage}…";
+
 }
 
 public static partial class RoadLifecycleManager
@@ -41,6 +57,7 @@ public static partial class RoadLifecycleManager
         internal readonly ZoneSystem Zones;
         internal readonly CancellationTokenSource Cancellation = new();
         internal readonly Stopwatch Clock = Stopwatch.StartNew();
+        internal RoadPreparation? Preparation;
         internal RoadNetworkGenerator.GenerationWork? Work;
         internal Task? Worker;
         internal bool ExitRequested, CleanupDone, MenuRequested, DrainFaultReported;
@@ -72,7 +89,7 @@ public static partial class RoadLifecycleManager
         var islands=m_generation?.CleanupDone==true ? null : m_generation?.Work?.Activity?.Snapshot();
         double kilometres=RoadSpatialGrid.SnapshotTotalKilometres();
         Volatile.Write(ref m_progress, new RoadGenerationProgress(m_nextRun, phase, completed, total,
-            m_generation?.Clock.Elapsed.TotalSeconds ?? 0, failure, islands, kilometres));
+            m_generation?.Clock.Elapsed.TotalSeconds ?? 0, failure, islands, kilometres, m_generation?.Preparation));
     }
 
     private static void BeginInitialGeneration()
@@ -81,6 +98,8 @@ public static partial class RoadLifecycleManager
         m_initialAttempted = true;
         m_generation = new Generation(WorldGenerator.instance!, ZoneSystem.instance!);
         m_nextRun++;
+        m_generation.Preparation=RoadNetworkGenerator.BeginPreparation(false);
+        m_generation.Preparation.Cancellation=m_generation.Cancellation.Token;
         SetProgress("Preparing", 0, 0);
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo("Preparing road network generation…");
     }
@@ -97,9 +116,24 @@ public static partial class RoadLifecycleManager
         {
             if (run.Worker == null)
             {
-                var prepareClock = Stopwatch.StartNew();
-                run.Work = RoadNetworkGenerator.PrepareGeneration(false);
-                run.PreparationMs = prepareClock.Elapsed.TotalMilliseconds;
+                var preparation=run.Preparation!;
+                string previousStage=Progress.PreparationStage;
+                bool finished=preparation.Advance();
+                if(!finished)
+                {
+                    if(previousStage!=preparation.Stage || run.Clock.Elapsed.TotalMilliseconds>=run.NextPublicationMs)
+                    {
+                        SetProgress("Preparing",0,0);
+                        if(previousStage!=preparation.Stage)
+                            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(Progress.PreparationText);
+                        run.NextPublicationMs=run.Clock.Elapsed.TotalMilliseconds+250;
+                    }
+                    return;
+                }
+                preparation.LogTimings();
+                run.PreparationMs=preparation.WallMilliseconds;
+                run.Work=preparation.TakeResult();
+                preparation.Dispose(); run.Preparation=null;
                 if (run.Work == null) { End(run, "Complete"); return; }
                 run.Work.Cancellation = run.Cancellation.Token;
                 ReportPrepared(run.Work);
@@ -135,6 +169,7 @@ public static partial class RoadLifecycleManager
             // A faulted Parallel loop has joined every island before its Task completes.
             run.Cancellation.Cancel();
             Drain(run);
+            DisposePreparation(run);
             RoadNetworkGenerator.ReleaseGenerationResources();
             if (RoadNetworkGenerator.RoadsGenerated)
             {
@@ -192,6 +227,7 @@ public static partial class RoadLifecycleManager
             return;
         }
         Drain(run, true); // IsCompleted above proves this observes results without waiting on live workers.
+        DisposePreparation(run);
         RoadNetworkGenerator.ReleaseGenerationResources();
         run.Work?.Activity?.Close();
         RoadNetworkGenerator.ResetData();
@@ -249,10 +285,16 @@ public static partial class RoadLifecycleManager
     }
     private static void End(Generation run, string phase, string? failure = null)
     {
+        DisposePreparation(run);
         if(!run.CleanupDone) { RoadNetworkGenerator.ReleaseGenerationResources(); run.Work?.Activity?.Close(); }
         SetProgress(phase, Progress.Completed, Progress.Total, failure);
         m_generation = null;
         run.Cancellation.Dispose();
+    }
+    private static void DisposePreparation(Generation run)
+    {
+        var preparation=run.Preparation; run.Preparation=null;
+        preparation?.Dispose();
     }
     private static void Drain(Generation run, bool reportFault = false)
     {
@@ -277,6 +319,7 @@ public static partial class RoadLifecycleManager
         if (run == null) return;
         run.Cancellation.Cancel();
         Drain(run, true);
+        DisposePreparation(run);
         if(!run.CleanupDone)
         {
             RoadNetworkGenerator.ReleaseGenerationResources();
