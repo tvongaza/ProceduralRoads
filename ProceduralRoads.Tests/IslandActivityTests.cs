@@ -1,6 +1,8 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Threading;
+using Valheim.Testing.Doubles;
 using UnityEngine;
 using Xunit;
 
@@ -8,6 +10,73 @@ namespace ProceduralRoads.Tests;
 
 public sealed class IslandActivityTests
 {
+    private sealed class SearchWorld : WorldGenerator
+    {
+        internal Func<long>? Steps;
+        internal readonly ManualResetEventSlim First=new(false), Second=new(false), ContinueFirst=new(false), ContinueSecond=new(false);
+        private int reads, stage;
+        public override float GetHeight(float x,float z)
+        {
+            if((++reads & 127)==0 && Steps!=null)
+            {
+                long steps=Steps();
+                if(stage==0 && steps>=256) { stage=1; First.Set(); if(!ContinueFirst.Wait(5000)) throw new TimeoutException("first search gate"); }
+                else if(stage==1 && steps>=512) { stage=2; Second.Set(); if(!ContinueSecond.Wait(5000)) throw new TimeoutException("second search gate"); }
+            }
+            return 45;
+        }
+        public override Heightmap.Biome GetBiome(float x,float z,float oceanLevel=.02f,bool waterAlwaysOcean=false)=>Heightmap.Biome.Meadows;
+        public override void GetRiverWeight(float x,float z,out float weight,out float width) { weight=width=0; }
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RealPathfinderPublishesBatchesWhileDestinationCountsStayUnchanged(bool toNetwork)
+    {
+        var world=new SearchWorld(); using var scope=new ValheimWorldScope(); scope.WithWorld(world);
+        RoadSpatialGrid.Clear(); int limit=RoadPathfinder.MaxIterations; RoadPathfinder.MaxIterations=1024;
+        var owner=new RoadIslandActivity(1,1); var token=owner.Claim(4,3);
+        world.Steps=()=>owner.Snapshot()[0].SearchSteps;
+        var finder=new RoadPathfinder(world) { Activity=token };
+        var search=Task.Run(()=>toNetwork ? finder.FindPathToNetwork(new Vector2(0,0),8) : finder.FindPath(new Vector2(0,0),new Vector2(20000,20000),1024));
+        try
+        {
+            Assert.True(world.First.Wait(3000)); var first=owner.Snapshot()[0];
+            Assert.False(search.IsCompleted); Assert.True(first.SearchSteps>=256); Assert.Equal(1,first.ActiveSearches);
+            world.ContinueFirst.Set(); Assert.True(world.Second.Wait(3000)); var second=owner.Snapshot()[0];
+            Assert.False(search.IsCompleted); Assert.True(second.SearchSteps>first.SearchSteps);
+            Assert.Equal(0,second.Processed); Assert.Equal(0,second.Reached);
+        }
+        finally
+        {
+            world.ContinueFirst.Set(); world.ContinueSecond.Set();
+            try { await search; } finally { RoadPathfinder.MaxIterations=limit; }
+            world.First.Dispose(); world.Second.Dispose(); world.ContinueFirst.Dispose(); world.ContinueSecond.Dispose();
+            RoadSpatialGrid.Clear();
+        }
+        Assert.Equal(0,owner.Snapshot()[0].ActiveSearches);
+        Assert.Equal(1024,owner.Snapshot()[0].SearchSteps);
+    }
+    [Fact]
+    public void RealCommitAccountingMatchesSharedPathsAndExcludesLevelledPieces()
+    {
+        using var scope=new ValheimWorldScope(); var world=new SyntheticWorld { HasRiver=false, HasMountain=false }; scope.WithWorld(world);
+        RoadSpatialGrid.Clear(); var owner=new RoadIslandActivity(1,1); var token=owner.Claim(1,2);
+        var previous=RoadNetworkGenerator.IslandActivity; RoadNetworkGenerator.IslandActivity=token;
+        try
+        {
+            var plan=RoadSpatialGrid.PlanRoadPath(new System.Collections.Generic.List<Vector2> { new(-100,-100),new(100,-100) },4,world);
+            Assert.NotNull(plan); RoadSpatialGrid.Commit(plan!); RoadSpatialGrid.Commit(plan!);
+            float length=RoadSpatialGrid.TotalRoadLength;
+            Assert.Null(RoadSpatialGrid.PlanRoadPath(new System.Collections.Generic.List<Vector2> { new Vector2(0,0) },4,world));
+            Assert.Equal(length,RoadSpatialGrid.TotalRoadLength);
+            RoadSpatialGrid.CommitLevelled(new[]{new Vector2(0,0),new Vector2(8,0)},new[]{45f,45f},4);
+            Assert.Equal(length,RoadSpatialGrid.TotalRoadLength);
+            Assert.Equal(length/1000d,owner.Snapshot()[0].Kilometres,5);
+            Assert.Equal(plan!.TotalLength*2,length,3);
+        }
+        finally { RoadNetworkGenerator.IslandActivity=previous; RoadSpatialGrid.Clear(); }
+    }
     [Theory]
     [InlineData(8,0,0)]
     [InlineData(8,2,2)]

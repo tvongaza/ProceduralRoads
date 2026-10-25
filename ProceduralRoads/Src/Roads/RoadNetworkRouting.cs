@@ -59,7 +59,7 @@ public static partial class RoadNetworkGenerator
         }
         RoadConnectionPlanner.Connect(places,Price,Build,Join,GetLocationPriority,
             (place,result)=>Log.LogDebug($"Road destination {place.Name} at {place.Position}: {result}"),
-            index => { activity?.Settled(index-1); activity?.Reached(MeasureDestinationsReached(locations)); },
+            index => { activity?.Settled(index-1); RefreshDestinationsReached(locations); },
             total => activity?.Pricing(total), () => activity?.Priced(), () => activity?.Stage("Connecting"));
         // These are thrown away at the end of this island, so their memo
         // counters have to be collected before they go.

@@ -193,6 +193,12 @@ public static partial class RoadNetworkGenerator
         System.Threading.Interlocked.Add(ref m_destinationsConnected, reached);
     }
 
+    private static void RefreshDestinationsReached(List<(string name, Vector3 position, float radius)> selected)
+    {
+        var activity=IslandActivity;
+        if(activity!=null && activity.ReachSampleDue()) activity.Reached(MeasureDestinationsReached(selected));
+    }
+
     private static int MeasureDestinationsReached(List<(string name, Vector3 position, float radius)> selected)
     {
         int reached=0;
@@ -503,14 +509,13 @@ public static partial class RoadNetworkGenerator
         internal RoadIslandActivity? Activity;
         internal void Compute()
         {
-            Activity ??= new RoadIslandActivity(Workers, Islands.Count);
             System.Threading.Tasks.Parallel.ForEach(Islands,
                 new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = Workers, CancellationToken = Cancellation },
                 (island, state, number) =>
                 {
                     Cancellation.ThrowIfCancellationRequested();
                     var clock = System.Diagnostics.Stopwatch.StartNew();
-                    var token=Activity.Claim((int)number+1,island.Locations.Count);
+                    var token=Activity?.Claim((int)number+1,island.Locations.Count);
                     IslandActivity=token;
                     if(Finder!=null) Finder.Activity=token;
                     try
@@ -521,7 +526,7 @@ public static partial class RoadNetworkGenerator
                     CountDestinationsReached(island.Locations);
                     Finished.Enqueue($"island {number + 1}: {m_islandRoads} road(s) from {island.Locations.Count} destination(s) in {clock.Elapsed.TotalSeconds:F0}s");
                     }
-                    finally { if(Finder!=null) Finder.Activity=null; IslandActivity=null; token.Finish(); }
+                    finally { if(Finder!=null) Finder.Activity=null; IslandActivity=null; token?.Finish(); }
                 });
         }
     }
@@ -1637,7 +1642,7 @@ public static partial class RoadNetworkGenerator
                 $"{currentName} -> {nearest.name}");
             
             IslandActivity?.Settled(selectedIndex);
-            IslandActivity?.Reached(MeasureDestinationsReached(locations));
+            RefreshDestinationsReached(locations);
             current = nearest.position;
             currentRadius = nearest.radius;
             currentName = nearest.name;
@@ -1702,7 +1707,7 @@ public static partial class RoadNetworkGenerator
                     $"{from.name} -> {to.name}");
             }
             IslandActivity?.Settled(i-1);
-            IslandActivity?.Reached(MeasureDestinationsReached(locations));
+            RefreshDestinationsReached(locations);
         }
     }
 

@@ -3,6 +3,7 @@ using System.Linq;
 using System.IO;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Threading;
 using UnityEngine;
@@ -16,12 +17,18 @@ public sealed class GenerationProgressTests : IDisposable
     // The real generator sees two disjoint islands. Only worker terrain reads are gated; preparation is real and completes.
     private sealed class Islands : WorldGenerator
     {
-        internal readonly ManualResetEventSlim Entered = new(false), Release = new(false), RightRelease = new(false);
+        internal readonly ManualResetEventSlim Entered = new(false), Release = new(false), RightRelease = new(false), PricingEntered=new(false), PricingRelease=new(false);
+        internal Func<bool>? PricingGate;
         internal readonly int MainThread = Thread.CurrentThread.ManagedThreadId;
         internal bool Gate, Fail, Reverse, HoldCancellation;
         internal int ActiveReads;
         public override float GetHeight(float x, float z)
         {
+            if(Thread.CurrentThread.ManagedThreadId!=MainThread && PricingGate?.Invoke()==true)
+            {
+                PricingEntered.Set();
+                while(!PricingRelease.Wait(10)) RoadLifecycleManager.ThrowIfCancellationRequested();
+            }
             if (Gate && Thread.CurrentThread.ManagedThreadId != MainThread)
             {
                 Interlocked.Increment(ref ActiveReads);
@@ -72,14 +79,15 @@ public sealed class GenerationProgressTests : IDisposable
         RoadLifecycleManager.BeforeWorkerCompletionCheck = null;
         RoadLifecycleManager.ReturnToMenuForTests = null;
         RoadLifecycleManager.MenuTransitionBlockedForTests = null;
-        world.Release.Set(); world.RightRelease.Set();
+        RoadLifecycleManager.DisableActivityForTests=false;
+        world.Release.Set(); world.RightRelease.Set(); world.PricingRelease.Set();
         RoadLifecycleManager.OnZoneSystemDestroy(ZoneSystem.instance!);
         RoadNetworkGenerator.NetworkOptions = oldOptions;
         RoadNetworkGenerator.IslandRoadPercentage = oldPercentage;
         RoadParallel.Configured = oldWorkers;
         RoadNetworkGenerator.GenerateOnLoad = true;
         scope.Dispose();
-        world.Release.Dispose(); world.RightRelease.Dispose(); world.Entered.Dispose();
+        world.Release.Dispose(); world.RightRelease.Dispose(); world.Entered.Dispose(); world.PricingEntered.Dispose(); world.PricingRelease.Dispose();
     }
     [Fact]
     public void CancelRequestTicksWithoutBlockingWhileWorkerDrainsThenDispatchesMenuOnce()
@@ -235,9 +243,74 @@ public sealed class GenerationProgressTests : IDisposable
         Assert.False(RoadLifecycleManager.IsGenerating);
     }
     [Fact]
+    public void HeldWorkersReuseSnapshotBetweenPublicationDeadlinesButCompletionPublishesImmediately()
+    {
+        world.Gate=true; Begin(); RoadLifecycleManager.Tick(); Assert.True(world.Entered.Wait(3000));
+        var run=typeof(RoadLifecycleManager).GetField("m_generation",BindingFlags.NonPublic|BindingFlags.Static)!.GetValue(null)!;
+        var clock=(Stopwatch)run.GetType().GetField("Clock",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(run)!;
+        clock.Stop(); // Hold the real owner's clock between deadlines without adding a runtime scheduler abstraction.
+        RoadLifecycleManager.Tick(); var held=RoadLifecycleManager.Progress;
+        for(int frame=0;frame<1000;frame++) RoadLifecycleManager.Tick();
+        Assert.Same(held,RoadLifecycleManager.Progress);
+        world.Release.Set(); Finish();
+        Assert.NotSame(held,RoadLifecycleManager.Progress);
+        Assert.Equal("Complete",RoadLifecycleManager.Progress.Phase); Assert.Equal(2,RoadLifecycleManager.Progress.Completed);
+    }
+    [Fact]
+    public void SingleIslandNestedPricingReportsToItsOneLogicalSlot()
+    {
+        RoadNetworkGenerator.IslandRoadPercentage=50;
+        world.Gate=true;
+        Begin(); RoadLifecycleManager.Tick(); Assert.True(world.Entered.Wait(3000));
+        var run=typeof(RoadLifecycleManager).GetField("m_generation",BindingFlags.NonPublic|BindingFlags.Static)!.GetValue(null)!;
+        var work=(RoadNetworkGenerator.GenerationWork)run.GetType().GetField("Work",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(run)!;
+        world.PricingGate=()=> {
+            var activity=work.Activity!.Snapshot()[0];
+            return activity.Stage=="Pricing" && activity.SearchSteps>0 && activity.ActiveSearches>0;
+        };
+        world.Gate=false; world.Release.Set();
+        try
+        {
+            Assert.True(world.PricingEntered.Wait(3000));
+            var pricing=Assert.Single(work.Activity!.Snapshot());
+            Assert.Equal("Pricing",pricing.Stage); Assert.True(pricing.SearchSteps>0); Assert.True(pricing.ActiveSearches>0);
+            Assert.Equal(0,pricing.Processed); Assert.Equal(0,pricing.Reached);
+        }
+        finally { world.PricingRelease.Set(); }
+        Finish();
+        var row=Assert.Single(RoadLifecycleManager.Progress.Islands);
+        Assert.Equal(1,RoadLifecycleManager.Progress.Total);
+        Assert.Equal(2,RoadParallel.Configured);
+        Assert.True(row.PricesTotal>=3); Assert.Equal(row.PricesTotal,row.PricesCompleted);
+        Assert.True(row.SearchSteps>0); Assert.Equal(0,row.ActiveSearches);
+        Assert.Equal(row.Destinations,row.Processed);
+        Assert.Equal(RoadSpatialGrid.TotalRoadLength/1000d,row.Kilometres,5);
+    }
+    [Fact]
+    public void RealIslandRowsMatchFinalReachAndCommittedLengthAuthorities()
+    {
+        world.Gate=true; Begin(); RoadLifecycleManager.Tick();
+        Assert.True(SpinWait.SpinUntil(()=>world.ActiveReads==2,5000));
+        var run=typeof(RoadLifecycleManager).GetField("m_generation",BindingFlags.NonPublic|BindingFlags.Static)!.GetValue(null)!;
+        var work=(RoadNetworkGenerator.GenerationWork)run.GetType().GetField("Work",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(run)!;
+        world.Release.Set(); Finish();
+        var rows=RoadLifecycleManager.Progress.Islands;
+        Assert.Equal(2,rows.Count);
+        foreach(var row in rows)
+        {
+            var selected=work.Islands[row.Island-1].Locations;
+            Assert.Equal(selected.Count,row.Processed); Assert.Equal(selected.Count,row.Destinations);
+            Assert.Equal(selected.Count(d=>RoadNetworkGenerator.AlreadyServedByNetwork(d.position,d.radius)),row.Reached);
+            Assert.Equal("Finished",row.Stage); Assert.False(row.Active); Assert.Equal(0,row.ActiveSearches);
+            Assert.Equal(row.PricesTotal,row.PricesCompleted); Assert.True(row.SearchSteps>0);
+        }
+        Assert.Equal(RoadSpatialGrid.TotalRoadLength/1000d,rows.Sum(r=>r.Kilometres),5);
+    }
+    [Fact]
     public void AsyncTwoIslandNetworkMatchesSerialBytes()
     {
         RoadParallel.Configured = 1;
+        RoadLifecycleManager.DisableActivityForTests=true;
         RoadNetworkGenerator.GenerateRoads();
         byte[] serial = RoadSpatialGrid.SerializeAllRoadPoints()!;
         int version = RoadSpatialGrid.RoadNetworkVersion;
@@ -246,6 +319,7 @@ public sealed class GenerationProgressTests : IDisposable
         Assert.True(RoadSpatialGrid.TotalRoadPoints > 0);
         RoadNetworkGenerator.Reset();
         RoadParallel.Configured = 2;
+        RoadLifecycleManager.DisableActivityForTests=false;
         Begin(); Finish();
         Assert.Equal(CanonicalRecords(serial), CanonicalRecords(RoadSpatialGrid.SerializeAllRoadPoints()!));
         Assert.Equal(2, RoadLifecycleManager.Progress.Total);

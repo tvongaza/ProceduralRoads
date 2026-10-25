@@ -38,12 +38,21 @@ internal sealed class RoadIslandActivity
         private readonly RoadIslandActivity owner;
         internal readonly int Slot, Island;
         internal readonly long Epoch;
+        private long nextReachSample;
         internal Token(RoadIslandActivity owner, int slot, int island, long epoch)
         { this.owner=owner; Slot=slot; Island=island; Epoch=epoch; }
         internal void Stage(string stage) => owner.Update(this, s => { if (s.Stage != stage) { s.Stage=stage; s.StageStart=Stopwatch.GetTimestamp(); } });
         internal void Pricing(int total) => owner.Update(this, s => { s.Stage="Pricing"; s.StageStart=Stopwatch.GetTimestamp(); s.PricesTotal=total; s.PricesCompleted=0; });
         internal void Priced() => owner.Update(this, s => s.PricesCompleted++);
         internal void Settled(int index) => owner.Update(this, s => { if (index>=0 && index<s.Settled.Length) s.Settled[index]=true; });
+        // Called only by this island's serial planner, outside the snapshot lock.
+        internal bool ReachSampleDue()
+        {
+            long now=Stopwatch.GetTimestamp();
+            if(now<nextReachSample) return false;
+            nextReachSample=now+Stopwatch.Frequency/2;
+            return true;
+        }
         internal void Reached(int count) => owner.Update(this, s => s.Reached=count);
         internal void Committed(float metres) => owner.Update(this, s => s.Metres+=metres);
         internal void Search(int steps, int activeDelta) => owner.Search(this,steps,activeDelta);

@@ -49,6 +49,7 @@ public static partial class RoadLifecycleManager
     internal static Action? BeforeWorkerCompletionCheck;
     internal static Action? ReturnToMenuForTests;
     internal static Func<bool>? MenuTransitionBlockedForTests;
+    internal static bool DisableActivityForTests;
 #endif
     private static long m_nextRun;
     private static RoadGenerationProgress m_progress = new(0, "Idle", 0, 0, 0);
@@ -215,7 +216,11 @@ public static partial class RoadLifecycleManager
 
     internal static void ReportPrepared(RoadNetworkGenerator.GenerationWork work)
     {
+#if ROADS_TESTS
+        work.Activity = DisableActivityForTests ? null : new RoadIslandActivity(work.Workers, work.Islands.Count);
+#else
         work.Activity = new RoadIslandActivity(work.Workers, work.Islands.Count);
+#endif
         SetProgress("Generating", 0, work.Islands.Count);
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo($"Generating roads on {work.Islands.Count} islands ({work.Workers} thread(s)). This takes a few minutes.");
     }
