@@ -94,12 +94,16 @@ public sealed class GenerationProgressTests : IDisposable
     {
         world.Gate=world.HoldCancellation=true;
         Begin(); RoadLifecycleManager.Tick(); Assert.True(world.Entered.Wait(3000));
+        var partial=RoadSpatialGrid.PlanRoadPath(new List<Vector2> { new(-1800,0),new(-1750,0) },4,world)!;
+        RoadSpatialGrid.Commit(partial);
+        Assert.True(RoadSpatialGrid.SnapshotTotalKilometres()>0);
         int menu=0; RoadLifecycleManager.ReturnToMenuForTests=()=>menu++;
         long run=RoadLifecycleManager.Progress.RunId;
         Assert.False(RoadLifecycleManager.RequestCancelToMenu(run-1));
         Assert.True(RoadLifecycleManager.RequestCancelToMenu(run));
         Assert.True(RoadLifecycleManager.RequestCancelToMenu(run));
         Assert.Equal("Stopping",RoadLifecycleManager.Progress.Phase);
+        Assert.True(RoadLifecycleManager.Progress.TotalKilometres>0);
         try
         {
             var tick=Task.Run(RoadLifecycleManager.Tick);
@@ -114,6 +118,7 @@ public sealed class GenerationProgressTests : IDisposable
         Assert.True(RoadLifecycleManager.IsGenerating); Assert.True(RoadLifecycleManager.WorkersOwnWorld);
         Assert.Equal("ReturningToMenu",RoadLifecycleManager.Progress.Phase);
         Assert.Empty(RoadLifecycleManager.Progress.Islands); Assert.Equal(0,RoadSpatialGrid.TotalRoadPoints);
+        Assert.Equal(0,RoadLifecycleManager.Progress.TotalKilometres);
         for(int i=0;i<5;i++) RoadLifecycleManager.Tick(); Assert.Equal(1,menu);
         RoadLifecycleManager.OnPrepareSave(); Assert.Empty(ZDOMan.instance!.Zdos);
         RoadLifecycleManager.CancelAndDrain(); // Game.Shutdown prefix precedes vanilla's final save.
@@ -123,6 +128,23 @@ public sealed class GenerationProgressTests : IDisposable
         world.Gate=false; RoadLifecycleManager.OnZoneSystemDestroy(ZoneSystem.instance!);
         RoadLifecycleManager.OnZoneSystemStart(ZoneSystem.instance!); Begin(); Finish();
         Assert.Equal("Complete",RoadLifecycleManager.Progress.Phase);
+    }
+    [Fact]
+    public void EmergencyDrainClearsCommittedTotalBeforeTerminalAndNextRun()
+    {
+        world.Gate=true; Begin(); RoadLifecycleManager.Tick(); Assert.True(world.Entered.Wait(3000));
+        var partial=RoadSpatialGrid.PlanRoadPath(new List<Vector2> { new(-1800,0),new(-1750,0) },4,world)!;
+        RoadSpatialGrid.Commit(partial); Assert.True(RoadSpatialGrid.SnapshotTotalKilometres()>0);
+        RoadLifecycleManager.CancelAndDrain();
+        Assert.Equal("Cancelled",RoadLifecycleManager.Progress.Phase);
+        Assert.Equal(0,RoadLifecycleManager.Progress.TotalKilometres);
+        Assert.Empty(RoadLifecycleManager.Progress.ActiveIslands);
+        Assert.False(RoadLifecycleManager.IsGenerating); Assert.False(LocationLevelling.Sealed);
+        RoadLifecycleManager.OnZoneSystemDestroy(ZoneSystem.instance!);
+        RoadLifecycleManager.OnZoneSystemStart(ZoneSystem.instance!); Begin();
+        Assert.Equal("Preparing",RoadLifecycleManager.Progress.Phase);
+        Assert.Equal(0,RoadLifecycleManager.Progress.TotalKilometres);
+        world.Gate=false; world.Release.Set(); Finish();
     }
     [Fact]
     public void AcceptedCancelWinsOverAlreadyCompletedUnpublishedWorker()
@@ -305,6 +327,8 @@ public sealed class GenerationProgressTests : IDisposable
             Assert.Equal(row.PricesTotal,row.PricesCompleted); Assert.True(row.SearchSteps>0);
         }
         Assert.Equal(RoadSpatialGrid.TotalRoadLength/1000d,rows.Sum(r=>r.Kilometres),5);
+        Assert.Equal(RoadSpatialGrid.TotalRoadLength/1000d,RoadLifecycleManager.Progress.TotalKilometres,5);
+        Assert.Empty(RoadLifecycleManager.Progress.ActiveIslands);
     }
     [Fact]
     public void AsyncTwoIslandNetworkMatchesSerialBytes()

@@ -39,7 +39,7 @@ public sealed class Plugin : BaseUnityPlugin
             ["source"] = "roads-generation", ["complete"] = true,
             ["runId"] = progress.RunId, ["phase"] = progress.Phase,
             ["completedIslands"] = progress.Completed, ["totalIslands"] = progress.Total,
-            ["elapsedSeconds"] = progress.ElapsedSeconds, ["frame"] = Time.frameCount,
+            ["elapsedSeconds"] = progress.ElapsedSeconds, ["totalKilometres"] = progress.TotalKilometres, ["frame"] = Time.frameCount,
             ["active"] = RoadLifecycleManager.InitialGenerationActive,
             ["isServer"] = ZNet.instance != null && ZNet.instance.IsServer(),
             ["isDedicated"] = ZNet.instance != null && ZNet.instance.IsDedicated(),

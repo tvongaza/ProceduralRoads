@@ -58,6 +58,7 @@ public static partial class RoadSpatialGrid
     public static int TotalRoadPoints { get; private set; } = 0;
     public static int GridCellsWithRoads { get; private set; } = 0;
     public static float TotalRoadLength { get; private set; } = 0f;
+    internal static double SnapshotTotalKilometres() { lock (m_recordGate) return TotalRoadLength / 1000d; }
     
     /// <summary>
     /// Version hash for the current road network. Changes when roads are regenerated.

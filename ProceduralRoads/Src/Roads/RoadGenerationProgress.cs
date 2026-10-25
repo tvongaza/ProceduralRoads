@@ -12,6 +12,8 @@ namespace ProceduralRoads;
 public sealed class RoadGenerationProgress
 {
     public ReadOnlyCollection<RoadIslandProgress> Islands { get; }
+    public ReadOnlyCollection<RoadIslandProgress> ActiveIslands { get; }
+    public double TotalKilometres { get; }
     public long RunId { get; }
     public string Phase { get; }
     public int Completed { get; }
@@ -19,8 +21,14 @@ public sealed class RoadGenerationProgress
     public double ElapsedSeconds { get; }
     public string? Failure { get; }
     public bool Active => Phase == "Preparing" || Phase == "Generating" || Phase == "Finalizing" || Phase == "Stopping" || Phase == "ReturningToMenu" || Phase == "MenuFailed";
-    internal RoadGenerationProgress(long runId, string phase, int completed, int total, double elapsedSeconds, string? failure = null, ReadOnlyCollection<RoadIslandProgress>? islands = null)
-    { Islands=islands ?? Array.AsReadOnly(Array.Empty<RoadIslandProgress>()); RunId = runId; Phase = phase; Completed = completed; Total = total; ElapsedSeconds = elapsedSeconds; Failure = failure; }
+    internal RoadGenerationProgress(long runId, string phase, int completed, int total, double elapsedSeconds, string? failure = null, ReadOnlyCollection<RoadIslandProgress>? islands = null, double totalKilometres = 0)
+    {
+        Islands=islands ?? Array.AsReadOnly(Array.Empty<RoadIslandProgress>());
+        var active=new List<RoadIslandProgress>();
+        foreach(var island in Islands) if(island.Active && island.Assignment>0) active.Add(island);
+        active.Sort((left,right)=>left.Slot.CompareTo(right.Slot));
+        ActiveIslands=active.AsReadOnly(); TotalKilometres=totalKilometres;
+        RunId = runId; Phase = phase; Completed = completed; Total = total; ElapsedSeconds = elapsedSeconds; Failure = failure; }
     public string Text => Phase == "Stopping" ? "Stopping generation…" : Phase == "ReturningToMenu" ? "Returning to menu…" : Phase == "MenuFailed" ? "Generation stopped. Return to menu" : Phase == "Preparing" ? "Preparing roads…" : Phase == "Finalizing" ? "Finishing roads…" :
         Phase == "Failed" ? "Road generation failed (see the log)" : $"Generating roads: {Completed} of {Total} islands complete";
 }
@@ -58,9 +66,14 @@ public static partial class RoadLifecycleManager
     public static bool InitialGenerationActive => m_generation != null;
     internal static bool WorkersOwnWorld => InitialGenerationActive && Progress.Phase != "Finalizing";
     internal static void ThrowIfCancellationRequested() => m_generation?.Cancellation.Token.ThrowIfCancellationRequested();
-    private static void SetProgress(string phase, int completed, int total, string? failure = null) =>
+    private static void SetProgress(string phase, int completed, int total, string? failure = null)
+    {
+        // Commit holds grid then activity. Snapshot activity completely before reading the grid scalar.
+        var islands=m_generation?.CleanupDone==true ? null : m_generation?.Work?.Activity?.Snapshot();
+        double kilometres=RoadSpatialGrid.SnapshotTotalKilometres();
         Volatile.Write(ref m_progress, new RoadGenerationProgress(m_nextRun, phase, completed, total,
-            m_generation?.Clock.Elapsed.TotalSeconds ?? 0, failure, m_generation?.CleanupDone==true ? null : m_generation?.Work?.Activity?.Snapshot()));
+            m_generation?.Clock.Elapsed.TotalSeconds ?? 0, failure, islands, kilometres));
+    }
 
     private static void BeginInitialGeneration()
     {
@@ -264,9 +277,14 @@ public static partial class RoadLifecycleManager
         if (run == null) return;
         run.Cancellation.Cancel();
         Drain(run, true);
-        bool alreadyClean=run.CleanupDone;
+        if(!run.CleanupDone)
+        {
+            RoadNetworkGenerator.ReleaseGenerationResources();
+            run.Work?.Activity?.Close();
+            RoadNetworkGenerator.ResetData();
+            run.CleanupDone=true;
+        }
         End(run, "Cancelled");
-        if(!alreadyClean) RoadNetworkGenerator.ResetData();
     }
     internal static void RunSynchronous(Action action)
     {

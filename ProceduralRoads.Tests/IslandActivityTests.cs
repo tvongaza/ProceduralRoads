@@ -77,6 +77,44 @@ public sealed class IslandActivityTests
         }
         finally { RoadNetworkGenerator.IslandActivity=previous; RoadSpatialGrid.Clear(); }
     }
+    [Fact]
+    public void ActiveProjectionHidesWaitingAndFinishedAndOrdersLogicalSlots()
+    {
+        var owner=new RoadIslandActivity(3,4);
+        var first=owner.Claim(9,2); var second=owner.Claim(2,1); first.Finish();
+        var progress=new RoadGenerationProgress(1,"Generating",1,4,2,islands:owner.Snapshot());
+        Assert.Equal(new[]{2},progress.ActiveIslands.Select(row=>row.Island));
+        var reused=owner.Claim(7,1);
+        var next=new RoadGenerationProgress(1,"Generating",1,4,3,islands:owner.Snapshot());
+        Assert.Equal(new[]{7,2},next.ActiveIslands.Select(row=>row.Island));
+        Assert.Equal(new[]{2},progress.ActiveIslands.Select(row=>row.Island));
+        reused.Finish(); second.Finish();
+        Assert.Empty(new RoadGenerationProgress(1,"Generating",4,4,4,islands:owner.Snapshot()).ActiveIslands);
+    }
+    [Fact]
+    public void RunTotalUsesCommittedAuthorityAcrossFinishedAndReusedSlots()
+    {
+        using var scope=new ValheimWorldScope(); var world=new SyntheticWorld { HasRiver=false, HasMountain=false }; scope.WithWorld(world);
+        RoadSpatialGrid.Clear(); var owner=new RoadIslandActivity(1,2); var first=owner.Claim(1,2);
+        var previous=RoadNetworkGenerator.IslandActivity;
+        try
+        {
+            var plan=RoadSpatialGrid.PlanRoadPath(new System.Collections.Generic.List<Vector2> { new(-100,-100),new(100,-100) },4,world)!;
+            RoadNetworkGenerator.IslandActivity=first; RoadSpatialGrid.Commit(plan);
+            first.Finish(); first.Finish();
+            var finished=new RoadGenerationProgress(1,"Generating",1,2,1,islands:owner.Snapshot(),totalKilometres:RoadSpatialGrid.SnapshotTotalKilometres());
+            Assert.Empty(finished.ActiveIslands); Assert.Equal(plan.TotalLength/1000d,finished.TotalKilometres,6);
+            var second=owner.Claim(2,1); first.Committed(999999); first.Finish();
+            RoadNetworkGenerator.IslandActivity=second; RoadSpatialGrid.Commit(plan);
+            var reused=new RoadGenerationProgress(1,"Generating",1,2,2,islands:owner.Snapshot(),totalKilometres:RoadSpatialGrid.SnapshotTotalKilometres());
+            Assert.Equal(plan.TotalLength/1000d,reused.ActiveIslands.Single().Kilometres,6);
+            Assert.Equal(plan.TotalLength*2/1000d,reused.TotalKilometres,6);
+            Assert.Equal(plan.TotalLength/1000d,finished.TotalKilometres,6);
+            second.Finish(); Assert.Equal(reused.TotalKilometres,RoadSpatialGrid.SnapshotTotalKilometres());
+            RoadSpatialGrid.Clear(); Assert.Equal(0,RoadSpatialGrid.SnapshotTotalKilometres());
+        }
+        finally { RoadNetworkGenerator.IslandActivity=previous; RoadSpatialGrid.Clear(); }
+    }
     [Theory]
     [InlineData(8,0,0)]
     [InlineData(8,2,2)]
