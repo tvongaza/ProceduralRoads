@@ -57,8 +57,14 @@ public static class ZoneSystem_Patch
     [HarmonyPatch(typeof(ZoneSystem), "Update")]
     public static class ZoneSystem_Update_Patch
     {
+        // Location/zone placement mutates world state that the sealed island workers read. HUD and CLI still tick.
+        [HarmonyPrefix]
+        public static bool Prefix() => !RoadLifecycleManager.InitialGenerationActive;
         [HarmonyPostfix]
-        public static void Postfix() => ServerTerrainBake.Tick();
+        public static void Postfix()
+        {
+            if (!RoadLifecycleManager.IsGenerating) ServerTerrainBake.Tick();
+        }
     }
 
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.SpawnZone))]

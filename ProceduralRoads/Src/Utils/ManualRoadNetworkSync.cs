@@ -45,6 +45,7 @@ public static class ManualRoadNetworkSync
     {
         private static void Postfix()
         {
+            if (RoadLifecycleManager.IsGenerating) return;
             if (RoadSpatialGrid.AppendCount == 0 || Time.realtimeSinceStartup < nextRetry) return;
             nextRetry = Time.realtimeSinceStartup + 2f;
             try
@@ -78,6 +79,7 @@ public static class ManualRoadNetworkSync
 
     public static void Publish()
     {
+        if (RoadLifecycleManager.IsGenerating) return;
         if (ZRoutedRpc.instance == null || !ZNet.instance.IsServer()) return;
         readers.RemoveWhere(id => ZNet.instance.GetPeer(id) == null);
         foreach (long id in readers) Send(id);
@@ -98,6 +100,7 @@ public static class ManualRoadNetworkSync
 
     internal static ZPackage? Snapshot()
     {
+        if (RoadLifecycleManager.IsGenerating) return null;
         byte[]? data = RoadSpatialGrid.SerializeAllRoadPoints();
         if (data == null) return null;
         var package = new ZPackage();

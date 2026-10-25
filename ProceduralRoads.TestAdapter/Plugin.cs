@@ -23,14 +23,72 @@ public sealed class Plugin : BaseUnityPlugin
         () => RoadNetworkGenerator.RoadsAvailable, registration => _registration = registration, Logger.LogError,
         new ExtensionCommand("terrain-persist", "Prepare one opt-in natural terrain replication fixture", PersistentTerrain.Run, role: ExtensionRole.Server, needsWorld: true),
         new ExtensionCommand("terrain-calibrate", "Run the opt-in two-zone declared terrain fixture", TerrainCalibration.Run, role: ExtensionRole.Server, needsWorld: true),
+        new ExtensionCommand("generation-progress", "Read owned initial generation, including while loading or at menu", GenerationProgress, readOnly: true, needsWorld: false),
+        new ExtensionCommand("cancel-generation", "Request cooperative initial-host cancellation: <expectedRunId>", CancelGeneration, role: ExtensionRole.Server, needsWorld: true),
         new ExtensionCommand("network", "Read completed network and outstanding append counts", Network, readOnly: true, role: ExtensionRole.Server, needsWorld: true),
         new ExtensionCommand("site-metrics", "Read route points near a site: <x> <z> <radius>", SiteMetrics, readOnly: true, role: ExtensionRole.Server, needsWorld: true),
         new ExtensionCommand("metadata-prefab", "Read the registered metadata prefab's network-view state", MetadataPrefab, readOnly: true, role: ExtensionRole.Server, needsWorld: true),
         new ExtensionCommand("bridge-zone", "Read marked bridge ZDOs in one zone: <zoneX> <zoneZ>", BridgeZone, readOnly: true, role: ExtensionRole.Server, needsWorld: true));
     private void OnDestroy() => _registration?.Dispose();
+    private static IEnumerator GenerationProgress(ExtensionContext context)
+    {
+        if (context.Arguments.Count != 0) { context.Fail("usage", "generation-progress takes no arguments"); yield break; }
+        var progress = RoadLifecycleManager.Progress;
+        context.Succeed(new Dictionary<string, object?>
+        {
+            ["source"] = "roads-generation", ["complete"] = true,
+            ["runId"] = progress.RunId, ["phase"] = progress.Phase,
+            ["completedIslands"] = progress.Completed, ["totalIslands"] = progress.Total,
+            ["elapsedSeconds"] = progress.ElapsedSeconds, ["totalKilometres"] = progress.TotalKilometres, ["frame"] = Time.frameCount,
+            ["preparationStage"] = progress.PreparationStage, ["preparationCompleted"] = progress.PreparationCompleted,
+            ["preparationTotal"] = progress.PreparationTotal, ["preparationUnit"] = progress.PreparationUnit,
+            ["preparationActiveMilliseconds"] = progress.PreparationActiveMilliseconds,
+            ["preparationMaxSliceMilliseconds"] = progress.PreparationMaxSliceMilliseconds,
+            ["active"] = RoadLifecycleManager.InitialGenerationActive,
+            ["isServer"] = ZNet.instance != null && ZNet.instance.IsServer(),
+            ["isDedicated"] = ZNet.instance != null && ZNet.instance.IsDedicated(),
+            ["roadsAvailable"] = RoadNetworkGenerator.RoadsAvailable,
+            ["hasWorld"] = ZoneSystem.instance != null, ["hasLocalPlayer"] = Player.m_localPlayer != null,
+            ["slots"] = progress.Islands.Select(row => new Dictionary<string, object?>
+            {
+                ["slot"] = row.Slot, ["assignment"] = row.Assignment, ["island"] = row.Island,
+                ["active"] = row.Active, ["stage"] = row.Stage,
+                ["processed"] = row.Processed, ["destinations"] = row.Destinations, ["reached"] = row.Reached,
+                ["kilometres"] = row.Kilometres, ["pricesCompleted"] = row.PricesCompleted, ["pricesTotal"] = row.PricesTotal,
+                ["searchSteps"] = row.SearchSteps, ["activeSearches"] = row.ActiveSearches, ["stageSeconds"] = row.StageSeconds
+            }).ToArray()
+        });
+        yield break;
+    }
+    private static IEnumerator CancelGeneration(ExtensionContext context)
+    {
+        if (context.Arguments.Count != 1 || !long.TryParse(context.Arguments[0], NumberStyles.None, CultureInfo.InvariantCulture, out long runId) || runId <= 0)
+        { context.Fail("usage", "cancel-generation <expectedRunId>, positive integer"); yield break; }
+        if (ZNet.instance == null || !ZNet.instance.IsServer() || ZNet.instance.IsDedicated() || Game.instance == null || Hud.instance == null)
+        { context.Fail("not_host", "Cancellation requires a local host loading screen."); yield break; }
+        if (!RoadLifecycleManager.RequestCancelToMenu(runId))
+        { context.Fail("rejected", "The run is stale, absent, or has begun publication."); yield break; }
+        context.Succeed(new Dictionary<string, object?>
+        {
+            ["source"] = "roads-generation", ["accepted"] = true, ["runId"] = runId,
+            ["phase"] = RoadLifecycleManager.Progress.Phase
+        });
+        yield break;
+    }
+
     private static IEnumerator Network(ExtensionContext context)
     {
         if (context.Arguments.Count != 0) { context.Fail("usage", "network takes no arguments"); yield break; }
+        if (RoadLifecycleManager.IsGenerating)
+        {
+            var progress = RoadLifecycleManager.Progress;
+            context.Succeed(new Dictionary<string, object?>
+            {
+                ["source"] = "roads-progress", ["complete"] = false, ["phase"] = progress.Phase,
+                ["completedIslands"] = progress.Completed, ["totalIslands"] = progress.Total
+            });
+            yield break;
+        }
         context.Succeed(new Dictionary<string, object?>
         {
             ["source"] = "roads-memory", ["complete"] = RoadNetworkGenerator.RoadsAvailable,

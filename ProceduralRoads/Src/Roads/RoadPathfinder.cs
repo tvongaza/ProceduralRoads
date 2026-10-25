@@ -131,12 +131,14 @@ public class RoadPathfinder
 
     /// <summary>Set by FindPathToNetwork when the start was already within
     /// reach of a road, so a null result can be told apart from a failure.</summary>
+    internal RoadIslandActivity.Token? Activity;
     public bool AlreadyOnNetwork { get; private set; }
 
     public List<Vector2>? FindPath(Vector2 start, Vector2 end) => FindPath(start, end, null);
 
     public List<Vector2>? FindPath(Vector2 start, Vector2 end, int? iterationLimit)
     {
+        using var activity = new RoadSearchActivity(Activity);
         // The memo is NOT blanked here. It holds world-generator facts, and
         // the generator a pathfinder was built for does not change underneath
         // it: a pathfinder is built at the start of a generation and thrown
@@ -173,7 +175,11 @@ public class RoadPathfinder
 
         while (openSet.Count > 0 && iterations < (iterationLimit ?? MaxIterations))
         {
+            // Every 256 iterations: a cancelled generation drains within milliseconds, without a
+            // static read and token check on each of the millions of nodes a world searches.
+            if ((iterations & 255) == 0) RoadLifecycleManager.ThrowIfCancellationRequested();
             iterations++;
+            activity.Step();
 
             var current = openSet.Min;
             openSet.Remove(current);
@@ -242,6 +248,7 @@ public class RoadPathfinder
     /// guide the search; they do not promise a globally cheapest junction.</summary>
     public List<Vector2>? FindPathToNetwork(Vector2 start, float reach, IReadOnlyList<Vector2>? hints = null, System.Func<Vector2, bool>? targetAllowed = null)
     {
+        using var activity = new RoadSearchActivity(Activity);
         LastPathCost = 0;
         // Kept between searches, for the reason given in FindPath.
         m_searchStart = start;
@@ -295,7 +302,11 @@ public class RoadPathfinder
 
         while (openSet.Count > 0 && iterations < MaxIterations)
         {
+            // Every 256 iterations: a cancelled generation drains within milliseconds, without a
+            // static read and token check on each of the millions of nodes a world searches.
+            if ((iterations & 255) == 0) RoadLifecycleManager.ThrowIfCancellationRequested();
             iterations++;
+            activity.Step();
             var current = openSet.Min;
             openSet.Remove(current);
             Vector2i currentPos = current.pos;

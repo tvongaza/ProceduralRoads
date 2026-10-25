@@ -218,8 +218,12 @@ namespace ProceduralRoads
             ProceduralRoadsLogger.LogDebug($"Registered metadata prefab: {RoadNetworkGenerator.MetadataPrefabName}");
         }
 
+        private static bool m_configurationPending;
+
         private static void ApplyConfiguration()
         {
+            if (RoadLifecycleManager.IsGenerating) { m_configurationPending = true; return; }
+            m_configurationPending = false;
             RoadNetworkGenerator.RoadWidth = RoadWidth.Value;
             RoadNetworkGenerator.IslandRoadPercentage = IslandRoadPercentage.Value;
             // A validation switch, not a setting: see DebugSwitches.
@@ -279,6 +283,9 @@ namespace ProceduralRoads
         // Road terrain the zone-spawn path missed (see RoadTerrainModifier.SweepUnstamped).
         private void Update()
         {
+            RoadLifecycleManager.Tick();
+            RoadGenerationPanel.Synchronize();
+            if (m_configurationPending && !RoadLifecycleManager.IsGenerating) ApplyConfiguration();
             if (Time.time < m_nextTerrainSweep) return;
             m_nextTerrainSweep = Time.time + 3f;
             if (RoadNetworkGenerator.RoadsAvailable && ZNet.instance != null)
@@ -293,6 +300,8 @@ namespace ProceduralRoads
 
         private void OnDestroy()
         {
+            RoadGenerationPanel.Clear();
+            RoadLifecycleManager.CancelAndDrain();
             Config.Save();
         }
 

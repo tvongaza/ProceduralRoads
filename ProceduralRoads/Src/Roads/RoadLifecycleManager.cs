@@ -5,16 +5,24 @@ namespace ProceduralRoads;
 /// <summary>
 /// Manages road generation lifecycle: initialization, loading, and cleanup.
 /// </summary>
-public static class RoadLifecycleManager
+public static partial class RoadLifecycleManager
 {
     /// <summary>
     /// Called when ZoneSystem starts. Initializes road generator and subscribes to events.
     /// </summary>
+    private static ZoneSystem? m_subscribedZone;
+
     public static void OnZoneSystemStart(ZoneSystem zoneSystem)
     {
+        if (ReferenceEquals(m_subscribedZone, zoneSystem)) return;
+        if (m_subscribedZone != null) m_subscribedZone.GenerateLocationsCompleted -= OnLocationsGenerated;
+        m_subscribedZone = zoneSystem;
+        AllowInitialRetry();
+        zoneSystem.GenerateLocationsCompleted -= OnLocationsGenerated;
         RoadNetworkGenerator.Initialize();
         zoneSystem.GenerateLocationsCompleted += OnLocationsGenerated;
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug("Subscribed to GenerateLocationsCompleted event");
+        DecideOnce("zone system start");
     }
 
     /// <summary>
@@ -23,6 +31,7 @@ public static class RoadLifecycleManager
     public static void OnZoneSystemDestroy(ZoneSystem zoneSystem)
     {
         zoneSystem.GenerateLocationsCompleted -= OnLocationsGenerated;
+        m_subscribedZone = null;
         m_worldDataLoaded = false;
         RoadNetworkGenerator.Reset();
         NetworkCutoff.Forget(zoneSystem);
@@ -107,9 +116,11 @@ public static class RoadLifecycleManager
     /// steps inside it. Without it an existing world could build a second
     /// network over the one it saved, and no one would be told.
     /// </summary>
-    private static void DecideOnce(string trigger)
+    private static void DecideOnce(string trigger, bool afterSpawn = false)
     {
-        if (RoadNetworkGenerator.RoadsAvailable)
+        // World load can announce readiness before ZoneSystem.Start. Initialize first, then replay both readiness facts.
+        if (!ReferenceEquals(m_subscribedZone, ZoneSystem.instance)) return;
+        if (RoadNetworkGenerator.RoadsAvailable || IsGenerating)
             return;
 
         bool hasWorldGen = WorldGenerator.instance != null;
@@ -142,11 +153,26 @@ public static class RoadLifecycleManager
             return;
 
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug("No persisted roads found, generating...");
-        // GenerateRoadsOnLoad, not GenerateRoads: it honours the
-        // PROCEDURALROADS_GENERATE_ROADS_ON_LOAD switch and then applies road
-        // terrain to the zones that spawned during the loading screen, before
-        // the network existed. Calling the generator directly loses both.
-        RoadNetworkGenerator.GenerateRoadsOnLoad();
+        // Behind the loading screen: BeginInitialGeneration builds the network over many frames
+        // (it honours the PROCEDURALROADS_GENERATE_ROADS_ON_LOAD switch, and Tick applies road
+        // terrain to the zones spawned before the network existed). With the player already in
+        // the world (the spawn fallback) it would hold zone streaming off around a live player
+        // for minutes, so that path builds synchronously as before, through GenerateRoadsOnLoad.
+        if (afterSpawn) GenerateAfterSpawn();
+        else BeginInitialGeneration();
+    }
+
+    /// <summary>The spawn fallback's generation: synchronous, once per world as the loading-screen
+    /// one is (a failed attempt is not retried), host only, and never thrown into the spawn hook.</summary>
+    private static void GenerateAfterSpawn()
+    {
+        if (m_initialAttempted || ZNet.instance == null || !ZNet.instance.IsServer()) return;
+        m_initialAttempted = true;
+        try { RoadNetworkGenerator.GenerateRoadsOnLoad(); }
+        catch (System.Exception error)
+        {
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError($"Road generation after spawn failed; no network was published: {error}");
+        }
     }
 
     /// <summary>
@@ -154,7 +180,7 @@ public static class RoadLifecycleManager
     /// </summary>
     public static void OnPlayerSpawn(Vector3 spawnPoint)
     {
-        if (RoadNetworkGenerator.RoadsAvailable)
+        if (RoadNetworkGenerator.RoadsAvailable || IsGenerating)
             return;
 
         // A last resort, for a host path that did not go through ZNet's world
@@ -165,7 +191,7 @@ public static class RoadLifecycleManager
         // outside what this hook can promise.
         m_worldDataLoaded = true;
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug($"Player spawning at {spawnPoint}");
-        DecideOnce("player spawn");
+        DecideOnce("player spawn", afterSpawn: true);
     }
 
     /// <summary>
@@ -173,6 +199,7 @@ public static class RoadLifecycleManager
     /// </summary>
     public static void OnPrepareSave()
     {
+        if (IsGenerating) return;
         if (RoadNetworkGenerator.RoadsGenerated)
         {
             RoadNetworkGenerator.SaveGlobalRoadData();

@@ -18,5 +18,7 @@ public sealed class RoadNetworkOptions
     public float WeightExponent { get; set; } = 2f;
     public float DistanceScale { get; set; } = 200f;
 
+    internal RoadNetworkOptions Snapshot()=>(RoadNetworkOptions)MemberwiseClone();
+
     public bool Allows(Heightmap.Biome biome) => (biome & ExcludedBiomes) == 0;
 }

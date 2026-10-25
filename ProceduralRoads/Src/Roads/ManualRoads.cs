@@ -189,11 +189,12 @@ public static class ManualRoads
 
 public static partial class RoadNetworkGenerator
 {
-    public static bool IsGenerating => m_pathfinder != null;
+    public static bool IsGenerating => RoadLifecycleManager.IsGenerating;
     /// <summary>Returns the zones explored before the network that the road is built through (see NetworkCutoff.Admit).</summary>
     internal static List<Vector2s> AppendManualRoad(IReadOnlyList<RoadSpatialGrid.PlannedPath> paths,
         List<RoadCrossing> crossings, Vector2 start, int expectedVersion)
     {
+        if (IsGenerating) throw new InvalidOperationException("Road generation is busy.");
         ManualRoads.RefuseOnReleasedNetwork();
         // An explicit manual road is built in full, explored zones included; before the bridge plans are read, so
         // a bridge this makes whole is built whole.
@@ -227,6 +228,7 @@ public static partial class RoadNetworkGenerator
 {
     internal static void AcceptManualSnapshot(byte[] data, byte[] starts, byte[] crossings, byte[] excluded)
     {
+        if (IsGenerating) throw new InvalidOperationException("Road generation is busy.");
         var newStarts = new List<(Vector2 position, string label)>();
         var newCrossings = new List<RoadCrossing>();
         if (!NetworkCutoff.TryReadClientList(excluded, out HashSet<Vector2s> excludedZones) ||

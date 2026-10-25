@@ -98,6 +98,7 @@ public static class RoadTerrainModifier
 
     public static int SweepUnstamped()
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return 0;
         int version = RoadSpatialGrid.RoadNetworkVersion;
         if (version == 0) return 0;
         var heightmaps = Heightmap.GetAllHeightmaps();
@@ -144,6 +145,7 @@ public static class RoadTerrainModifier
     /// </summary>
     public static void OnZoneSpawned(Vector2s zoneID, List<RoadSpatialGrid.RoadPoint> roadPoints)
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return;
         Vector3 zonePos = ZoneSystem.GetZonePos(zoneID);
         if (TerrainComp.FindTerrainCompiler(zonePos) == null && HasSavedTerrainCompiler(zoneID))
         {
@@ -208,7 +210,7 @@ public static class RoadTerrainModifier
     {
         // Before the compiler is asked for: a zone explored before this
         // network gets no compiler and no write (NetworkCutoff).
-        if (!force && NetworkCutoff.Excludes(zoneID)) return;
+        if (RoadLifecycleManager.WorkersOwnWorld || (!force && NetworkCutoff.Excludes(zoneID))) return;
         TerrainContext? context = GetTerrainContext(zoneID);
         if (context == null)
             return;
@@ -260,6 +262,7 @@ public static class RoadTerrainModifier
     /// </summary>
     public static void ApplyAdditionsToLoadedZones()
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return;
         foreach (var heightmap in Heightmap.GetAllHeightmaps())
         {
             if (heightmap == null) continue;
@@ -283,9 +286,10 @@ public static class RoadTerrainModifier
     /// <param name="admitted">The zones explored before the network that the command now builds in full.</param>
     public static int ApplyToLoadedZones(bool operatorRequest, out List<Vector2s> admitted)
     {
+        admitted = new List<Vector2s>();
+        if (RoadLifecycleManager.WorkersOwnWorld) return 0;
         var heightmaps = Heightmap.GetAllHeightmaps();
         int zonesWithRoads = 0;
-        admitted = new List<Vector2s>();
         if (heightmaps == null)
             return 0;
 
@@ -349,6 +353,7 @@ public static class RoadTerrainModifier
     public static void ApplyRoadTerrainModsWithContext(Vector2s zoneID, List<RoadSpatialGrid.RoadPoint> roadPoints,
         Heightmap heightmap, TerrainComp terrainComp)
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return;
         QueueWrite(zoneID, roadPoints, heightmap, terrainComp, force: true);
     }
 
