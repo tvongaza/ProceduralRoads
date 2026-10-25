@@ -13,7 +13,7 @@ public static partial class RoadNetworkGenerator
         // read straight after the call that sets them.
         var finder = Finder;
         if (finder == null) return;
-        var world = WorldGenerator.instance;
+        var world = GenerationWorld;
         var places = new List<RoadConnectionPlanner.Place> { new("Start",start,radius) };
         foreach (var place in locations) places.Add(new(place.name,place.position,place.radius));
         // Generation-local samples, released after this island. No route-history
@@ -25,10 +25,12 @@ public static partial class RoadNetworkGenerator
         // shared one cannot be priced on several threads. Each worker gets its
         // own, built exactly as the serial one is; the cost of a pair does not
         // depend on which finder asked.
+        var activity=IslandActivity;
         using var pricers = new System.Threading.ThreadLocal<RoadPathfinder>(
-            () => new RoadPathfinder(world) { SiteClearance = RoadWidth * 0.5f + 2f }, trackAllValues: true);
+            () => new RoadPathfinder(world) { SiteClearance = RoadWidth * 0.5f + 2f, Activity=activity }, trackAllValues: true);
         float? Price(RoadConnectionPlanner.Place a,RoadConnectionPlanner.Place b)
         {
+            RoadLifecycleManager.ThrowIfCancellationRequested();
             Vector2 from=Ground(a),to=Ground(b);
             if (OpenSeaOnLine(world,from,to)) return null;
             var pricer = RoadParallel.PricingWorkers > 1 ? pricers.Value! : finder;
@@ -56,7 +58,9 @@ public static partial class RoadNetworkGenerator
                 RoadWidth,$"{place.Name} -> road",hints);
         }
         RoadConnectionPlanner.Connect(places,Price,Build,Join,GetLocationPriority,
-            (place,result)=>Log.LogDebug($"Road destination {place.Name} at {place.Position}: {result}"));
+            (place,result)=>Log.LogDebug($"Road destination {place.Name} at {place.Position}: {result}"),
+            index => { activity?.Settled(index-1); RefreshDestinationsReached(locations); },
+            total => activity?.Pricing(total), () => activity?.Priced(), () => activity?.Stage("Connecting"));
         // These are thrown away at the end of this island, so their memo
         // counters have to be collected before they go.
         foreach (var pricer in pricers.Values) pricer.FoldTerrainMemoCounters();

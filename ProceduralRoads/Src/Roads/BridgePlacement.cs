@@ -50,6 +50,7 @@ public static class BridgePlacement
     /// </summary>
     public static int SpawnInLoadedZones(ICollection<ZDOID>? condemned = null)
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return 0;
         var heightmaps = Heightmap.GetAllHeightmaps();
         if (heightmaps == null)
             return 0;
@@ -74,6 +75,7 @@ public static class BridgePlacement
     /// </summary>
     public static (int destroyed, int zones) RespawnFromPlans()
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return (0, 0);
         // The ids come back because destruction is QUEUED: the old pieces are
         // still in ZDOMan's sector lookup while the replacements go in, and
         // without this the replacement pass would mistake them for pieces
@@ -144,6 +146,7 @@ public static class BridgePlacement
     private static int s_appendCursor;
     public static void ApplyPendingAppends()
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return;
         if (!IsServer || ZNetScene.instance == null || ZDOMan.instance == null) return;
         var zones = new List<Vector2s>(BridgeAppendQueue.Zones);
         if (zones.Count == 0) return;
@@ -249,6 +252,7 @@ public static class BridgePlacement
     /// </summary>
     public static int ClearSpawnedPieces(ICollection<ZDOID>? condemned = null)
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return 0;
         if (!IsServer || ZDOMan.instance == null || ZNetScene.instance == null)
             return 0;
         BridgePlans.InvalidatePlans();
@@ -292,6 +296,7 @@ public static class BridgePlacement
     /// </summary>
     public static List<ZoneSystem.ClearArea> GetClearAreas(Vector2s zoneID)
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return new List<ZoneSystem.ClearArea>();
         List<ZoneSystem.ClearArea> areas = new();
         List<BridgePiece>? pieces = BridgePlans.PlanFor(zoneID);
         if (pieces == null)

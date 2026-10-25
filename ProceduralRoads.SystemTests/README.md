@@ -51,6 +51,8 @@ Roads-specific unit coverage that uses the shared terrain model ([shared-world g
 - `SharedZoneWriterTests` runs the real Roads writer on shared multi-zone height and paint state: both zone orders meet at the edge, keep an earlier verge edit and paint, and are unchanged on repeat.
 - `TerrainPaintMatrixTests` runs eight real-writer cases: positive and negative cross-slopes, fill and cut, the ±8 m clamp, 2/4/8 m widths, dirt and paved regions, paint-only roads, pre-existing RGBA and ordinary-load preservation. Every vertex across the road is declared: the core is levelled to the road height, the vertex one metre into the 2 m release moves half way, and the ground beyond is untouched. Earthwork noise, fill spread and cut batter are disabled in this matrix; their own unit tests still apply, and nothing here shows their native appearance.
 
+`GenerationProgressTests` gates real island workers to check frame-by-frame owner updates, reverse completion counts, cancellation/draining, partial-save refusal, exact network equivalence and failure after loaded-zone side effects. `LoadDecisionTests` also covers world-data and already-generated locations arriving before `ZoneSystem.Start`. These controlled checks do not prove that the native loading screen repaints; that needs a disposable hosted-client run and screenshots during active generation.
+
 These tests exercise Roads decisions and the writer on declared terrain, not Unity terrain, RPCs or save encoding.
 
 ## Build the runner and the adapter
