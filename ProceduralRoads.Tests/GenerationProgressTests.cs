@@ -456,6 +456,95 @@ public sealed class GenerationProgressTests : IDisposable
         RoadNetworkGenerator.UnregisterLocation("QueuedPlace");
         Assert.DoesNotContain("QueuedPlace", RoadNetworkGenerator.GetRegisteredLocations());
     }
+    [Theory]
+    [InlineData("failure")]
+    [InlineData("cancel")]
+    [InlineData("unload")]
+    public void IntegratedQueuedRegistrationAppliesAfterEachTerminalPath(string terminal)
+    {
+        string name="QueuedIntegration"+terminal;
+        world.Gate=true; Begin(); AdvanceToCompute(); Assert.True(world.Entered.Wait(3000));
+        try
+        {
+            RoadNetworkGenerator.RegisterLocation(name);
+            Assert.DoesNotContain(name,RoadNetworkGenerator.GetRegisteredLocations());
+            if(terminal=="failure") { world.Fail=true; world.Release.Set(); Finish(); Assert.Equal("Failed",RoadLifecycleManager.Progress.Phase); }
+            else if(terminal=="cancel") RoadLifecycleManager.CancelAndDrain();
+            else RoadLifecycleManager.OnZoneSystemDestroy(ZoneSystem.instance!);
+            Assert.False(RoadLifecycleManager.IsGenerating); Assert.Equal(0,world.ActiveReads);
+            Assert.Contains(name,RoadNetworkGenerator.GetRegisteredLocations());
+        }
+        finally { RoadNetworkGenerator.UnregisterLocation(name); }
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void IntegratedSynchronousGenerationFlushesRegistrationsEvenWhenPreparationFails(bool fail)
+    {
+        const string name="QueuedSynchronousIntegration";
+        var oldPrime=LocationLevelling.Prime;
+        LocationLevelling.Prime=()=>
+        {
+            RoadNetworkGenerator.RegisterLocation(name);
+            Assert.DoesNotContain(name,RoadNetworkGenerator.GetRegisteredLocations());
+            if(fail) throw new InvalidOperationException("controlled synchronous preparation failure");
+        };
+        try
+        {
+            if(fail) Assert.Throws<InvalidOperationException>(()=>RoadNetworkGenerator.GenerateRoads());
+            else RoadNetworkGenerator.GenerateRoads();
+            Assert.False(RoadLifecycleManager.IsGenerating);
+            Assert.Contains(name,RoadNetworkGenerator.GetRegisteredLocations());
+        }
+        finally { LocationLevelling.Prime=oldPrime; RoadNetworkGenerator.UnregisterLocation(name); }
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void IntegratedSpawnFallbackIsSynchronousOnceAndNeverThrows(bool fail)
+    {
+        int primes=0; var oldPrime=LocationLevelling.Prime;
+        LocationLevelling.Prime=()=> { primes++; if(fail) throw new InvalidOperationException("controlled spawn preparation failure"); };
+        try
+        {
+            ZoneSystem.instance!.LocationsGenerated=true;
+            RoadLifecycleManager.OnPlayerSpawn(Vector3.zero);
+            Assert.Equal(1,primes); Assert.False(RoadLifecycleManager.IsGenerating);
+            Assert.Equal(!fail,RoadNetworkGenerator.RoadsAvailable);
+            int reads=world.MainReads;
+            RoadLifecycleManager.OnPlayerSpawn(Vector3.zero); RoadLifecycleManager.OnWorldDataLoaded();
+            Assert.Equal(1,primes); Assert.Equal(reads,world.MainReads);
+        }
+        finally { LocationLevelling.Prime=oldPrime; }
+    }
+    [Fact]
+    public void IntegratedSpawnFallbackDoesNotGenerateForJoinedClient()
+    {
+        scope.WithNetwork(server:false); ZoneSystem.instance!.LocationsGenerated=true;
+        int reads=world.MainReads;
+        RoadLifecycleManager.OnPlayerSpawn(Vector3.zero);
+        Assert.Equal(reads,world.MainReads); Assert.False(RoadLifecycleManager.IsGenerating);
+        Assert.False(RoadNetworkGenerator.RoadsAvailable);
+    }
+    [Fact]
+    public void IntegratedSpawnFallbackRetainsPublishedNetworkAfterZoneApplicationFails()
+    {
+        RoadNetworkGenerator.GenerateRoads();
+        var zones=RoadSpatialGrid.GetZonesWithRoadPoints().Take(2).ToArray();
+        Assert.Equal(2,zones.Length); RoadNetworkGenerator.Reset();
+        scope.RegisterHeightmap(zones[0],64,withCompiler:false);
+        var broken=scope.RegisterHeightmap(zones[1],64);
+        broken.m_terrainComp!.m_nview=null!;
+        ZoneSystem.instance!.LocationsGenerated=true;
+        RoadLifecycleManager.OnPlayerSpawn(Vector3.zero);
+        Assert.False(RoadLifecycleManager.IsGenerating);
+        Assert.True(RoadNetworkGenerator.RoadsAvailable);
+        Assert.True(RoadSpatialGrid.Statistics.StoredPointRecords>0);
+        Assert.True(ZDOMan.instance!.CountWithPrefab(TerrainComp.PrefabName)>=2);
+        int version=RoadSpatialGrid.RoadNetworkVersion;
+        RoadLifecycleManager.OnPrepareSave();
+        Assert.Equal(version,RoadSpatialGrid.RoadNetworkVersion);
+    }
     [Fact]
     public void WorkerFailureDiscardsPartialStateAndPublishesNoMetadata()
     {
