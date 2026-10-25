@@ -13,7 +13,7 @@ public static partial class RoadNetworkGenerator
         // read straight after the call that sets them.
         var finder = Finder;
         if (finder == null) return;
-        var world = WorldGenerator.instance;
+        var world = GenerationWorld;
         var places = new List<RoadConnectionPlanner.Place> { new("Start",start,radius) };
         foreach (var place in locations) places.Add(new(place.name,place.position,place.radius));
         // Generation-local samples, released after this island. No route-history
@@ -29,6 +29,7 @@ public static partial class RoadNetworkGenerator
             () => new RoadPathfinder(world) { SiteClearance = RoadWidth * 0.5f + 2f }, trackAllValues: true);
         float? Price(RoadConnectionPlanner.Place a,RoadConnectionPlanner.Place b)
         {
+            RoadLifecycleManager.ThrowIfCancellationRequested();
             Vector2 from=Ground(a),to=Ground(b);
             if (OpenSeaOnLine(world,from,to)) return null;
             var pricer = RoadParallel.PricingWorkers > 1 ? pricers.Value! : finder;

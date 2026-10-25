@@ -31,6 +31,16 @@ public sealed class Plugin : BaseUnityPlugin
     private static IEnumerator Network(ExtensionContext context)
     {
         if (context.Arguments.Count != 0) { context.Fail("usage", "network takes no arguments"); yield break; }
+        if (RoadLifecycleManager.IsGenerating)
+        {
+            var progress = RoadLifecycleManager.Progress;
+            context.Succeed(new Dictionary<string, object?>
+            {
+                ["source"] = "roads-progress", ["complete"] = false, ["phase"] = progress.Phase,
+                ["completedIslands"] = progress.Completed, ["totalIslands"] = progress.Total
+            });
+            yield break;
+        }
         context.Succeed(new Dictionary<string, object?>
         {
             ["source"] = "roads-memory", ["complete"] = RoadNetworkGenerator.RoadsAvailable,

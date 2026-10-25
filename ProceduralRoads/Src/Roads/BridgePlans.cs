@@ -165,6 +165,7 @@ public static class BridgePlans
 
     private static void EnsurePlans()
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) throw new InvalidOperationException("Road generation is in progress.");
         if (s_plansByZone != null || WorldGenerator.instance == null)
             return;
 

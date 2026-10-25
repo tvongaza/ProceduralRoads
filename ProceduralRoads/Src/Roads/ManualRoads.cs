@@ -142,10 +142,11 @@ public static class ManualRoads
 
 public static partial class RoadNetworkGenerator
 {
-    public static bool IsGenerating => m_pathfinder != null;
+    public static bool IsGenerating => RoadLifecycleManager.IsGenerating;
     internal static void AppendManualRoad(IReadOnlyList<RoadSpatialGrid.PlannedPath> paths,
         List<RoadCrossing> crossings, Vector2 start, int expectedVersion)
     {
+        if (IsGenerating) throw new InvalidOperationException("Road generation is busy.");
         var bridgeAdditions = BridgeAppendQueue.Prepare(crossings);
         RoadNetworkPersistence.EnsureMetadataInstance();
         RoadSpatialGrid.CommitAppend(paths, expectedVersion);
@@ -163,6 +164,7 @@ public static partial class RoadNetworkGenerator
 {
     internal static void AcceptManualSnapshot(byte[] data, byte[] starts, byte[] crossings)
     {
+        if (IsGenerating) throw new InvalidOperationException("Road generation is busy.");
         var newStarts = new List<(Vector2 position, string label)>();
         var newCrossings = new List<RoadCrossing>();
         if (!RoadNetworkPersistence.DeserializeRoadStartPoints(starts, newStarts) ||

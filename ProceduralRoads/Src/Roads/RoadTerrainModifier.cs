@@ -98,6 +98,7 @@ public static class RoadTerrainModifier
 
     public static int SweepUnstamped()
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return 0;
         int version = RoadSpatialGrid.RoadNetworkVersion;
         if (version == 0) return 0;
         var heightmaps = Heightmap.GetAllHeightmaps();
@@ -143,6 +144,7 @@ public static class RoadTerrainModifier
     /// </summary>
     public static void OnZoneSpawned(Vector2s zoneID, List<RoadSpatialGrid.RoadPoint> roadPoints)
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return;
         Vector3 zonePos = ZoneSystem.GetZonePos(zoneID);
         if (TerrainComp.FindTerrainCompiler(zonePos) == null && HasSavedTerrainCompiler(zoneID))
         {
@@ -203,6 +205,7 @@ public static class RoadTerrainModifier
     /// </summary>
     public static void ApplyRoadTerrainMods(Vector2s zoneID, List<RoadSpatialGrid.RoadPoint> roadPoints, bool force = false)
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return;
         TerrainContext? context = GetTerrainContext(zoneID);
         if (context == null)
             return;
@@ -254,6 +257,7 @@ public static class RoadTerrainModifier
     /// </summary>
     public static void ApplyAdditionsToLoadedZones()
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return;
         foreach (var heightmap in Heightmap.GetAllHeightmaps())
         {
             if (heightmap == null) continue;
@@ -270,6 +274,7 @@ public static class RoadTerrainModifier
 
     public static int ApplyToLoadedZones()
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return 0;
         var heightmaps = Heightmap.GetAllHeightmaps();
         int zonesWithRoads = 0;
         if (heightmaps == null)
@@ -319,6 +324,7 @@ public static class RoadTerrainModifier
     public static void ApplyRoadTerrainModsWithContext(Vector2s zoneID, List<RoadSpatialGrid.RoadPoint> roadPoints,
         Heightmap heightmap, TerrainComp terrainComp)
     {
+        if (RoadLifecycleManager.WorkersOwnWorld) return;
         QueueWrite(zoneID, roadPoints, heightmap, terrainComp, force: true);
     }
 

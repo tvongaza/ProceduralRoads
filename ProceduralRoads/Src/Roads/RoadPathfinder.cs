@@ -173,6 +173,7 @@ public class RoadPathfinder
 
         while (openSet.Count > 0 && iterations < (iterationLimit ?? MaxIterations))
         {
+            RoadLifecycleManager.ThrowIfCancellationRequested();
             iterations++;
 
             var current = openSet.Min;
@@ -295,6 +296,7 @@ public class RoadPathfinder
 
         while (openSet.Count > 0 && iterations < MaxIterations)
         {
+            RoadLifecycleManager.ThrowIfCancellationRequested();
             iterations++;
             var current = openSet.Min;
             openSet.Remove(current);

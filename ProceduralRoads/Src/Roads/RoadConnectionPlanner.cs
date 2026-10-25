@@ -76,6 +76,7 @@ public static class RoadConnectionPlanner
             .ToList();
         while (remaining.Count>0)
         {
+            RoadLifecycleManager.ThrowIfCancellationRequested();
             int from=-1,to=-1; float best=float.MaxValue;
             foreach (int a in tree)
                 foreach (int b in remaining)

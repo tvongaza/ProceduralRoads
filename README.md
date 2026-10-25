@@ -10,6 +10,8 @@ A Valheim mod that generates procedural roads connecting locations across your w
 - Supports destinations from other mods through configuration or the registration API
 - Server-side: players without the mod see and walk the same roads
 
+When a world needs its first road network, the local host stays on the loading screen while islands are built. The indicator shows completed islands; its animation continues while a large island is still working. Dedicated servers report the same completion counts in their logs. Preparation and final application run on the main thread and can still cause a pause. Saved networks load without running generation again. `road_progress` reports the current phase and island count.
+
 ## Installation
 
 1. Install [BepInEx](https://valheim.thunderstore.io/package/denikson/BepInExPack_Valheim/)
