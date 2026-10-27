@@ -77,6 +77,9 @@ public static class BridgePlacement
     {
         if (!IsServer || ZNetScene.instance == null || ZDOMan.instance == null)
             return 0;
+        // A zone explored before this network gets no pieces (NetworkCutoff).
+        if (NetworkCutoff.Excludes(zoneID))
+            return 0;
         List<BridgePiece>? pieces = BridgePlans.PlanFor(zoneID);
         if (pieces == null)
             return 0;
