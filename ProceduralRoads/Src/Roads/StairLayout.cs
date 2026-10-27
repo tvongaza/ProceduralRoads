@@ -6,7 +6,7 @@ namespace ProceduralRoads;
 
 /// <summary>The rules for steep ground a test may switch off (StairLayout.RulesOff).</summary>
 [Flags]
-internal enum SteepRules { None = 0, TurnSteepness = 2, FirstFlight = 8192 }
+internal enum SteepRules { None = 0, TurnSteepness = 2, WedgeBurial = 8, FirstFlight = 8192 }
 
 public enum StairPieceKind
 {
@@ -74,6 +74,12 @@ public sealed class StairPlan
     public readonly List<StairPiece> Pieces = new();
     /// <summary>What must be clear of rock before the pieces go down.</summary>
     public readonly List<StairClearance> Clearances = new();
+    /// <summary>Points where the ground covers a walking surface, each with the
+    /// height (y) to lower the ground to: a small earthwork that exposes a
+    /// buried stretch, applied as a level of radius <see cref="StairLayout.CutRadius"/>.</summary>
+    public readonly List<Vector3> Cuts = new();
+    /// <summary>The deepest cut, metres.</summary>
+    public float MaxCut;
     public bool Reached;
     /// <summary>Search steps the layout spent, every leg and backtrack together.</summary>
     public int Expansions;
@@ -638,6 +644,13 @@ public static partial class StairLayout
 
                 float rise = kind == StairPieceKind.Stair ? PieceRise : 0f;
                 Fit(start, dir, Right(heading), half, node.Height, rise, ground, out float floatGap, out float buried);
+                // The wedge a turn opens is filled level with the piece before (StairFiller): it is walked
+                // too, and buried it needs earthwork as a piece does. Where a staircase is kept off earthwork
+                // (an approach, laid with less than MaxBuriedDepth: no cuts in a place's footprint), it is read
+                // as a piece is: unread, a turn on Hildir's cave's face left a filler 0.6 m
+                // under the slope inside the cave's footprint, and the approach was refused. A road's staircase
+                // cuts its fillers out, as before: read there, the 82 m climb up the real face found no way up.
+                if (turn != 0 && !first && !floorOnFloor && !NoWedgeBurial && route.MaxBuried < MaxBuriedDepth) buried = Mathf.Max(buried, WedgeBuried(node.Edge, node.Height, pivot, start, ground));
                 if (buried > route.MaxBuried) continue; // the stair would disappear into the slope
                 if (CrossesItself(node, middle, heading, width)) continue;
                 var child = new Node
@@ -768,6 +781,7 @@ public static partial class StairLayout
     [ThreadStatic] private static SteepRules t_off;
     internal static SteepRules RulesOff { get => t_off; set => t_off = value; }
     private static bool NoTurnSteepness => (t_off & SteepRules.TurnSteepness) != 0;
+    private static bool NoWedgeBurial => (t_off & SteepRules.WedgeBurial) != 0;
     private static bool NoFirstFlight => (t_off & SteepRules.FirstFlight) != 0;
 
     /// <summary>Two pieces, <paramref name="acrossA"/> by a run, overlap by more than
@@ -830,6 +844,7 @@ public static partial class StairLayout
         plan.EndHeading = last.Heading;
         plan.Rise = last.Height - first.Height;
         plan.End = new Vector3(last.Edge.x, last.Height, last.Edge.y);
+        GuardEnds(plan, kit, first.Edge, last.Edge, ground);
     }
 
     /// <summary>Highest a walking surface may stand over the ground a player walks onto it from:
@@ -838,19 +853,20 @@ public static partial class StairLayout
 
     /// <summary>One row of pieces across the stair.</summary>
     private static void AddRow(StairPlan plan, StairKit kit, StairPieceKind kind, string prefab, Vector2 start, float heading,
-        float baseHeight, int lanes, Func<float, float, float> ground, bool mark)
+        float baseHeight, int lanes, Func<float, float, float> ground, bool mark, bool cut = true)
     {
         Vector2 right = Right(heading);
         for (int lane = 0; lane < lanes; lane++)
-            AddPiece(plan, kit, kind, prefab, start + right * ((lane - (lanes - 1) / 2f) * PieceRun), heading, baseHeight, PieceRun, PieceRun, ground, mark);
+            AddPiece(plan, kit, kind, prefab, start + right * ((lane - (lanes - 1) / 2f) * PieceRun), heading, baseHeight, PieceRun, PieceRun, ground, mark, cut);
     }
 
     /// <summary>One piece whose back edge is centred on <paramref name="back"/>, its
     /// clearance and cuts, then a pillar column under it if it does not rest on the ground.</summary>
     private static void AddPiece(StairPlan plan, StairKit kit, StairPieceKind kind, string prefab, Vector2 back, float heading,
-        float baseHeight, float across, float depth, Func<float, float, float> ground, bool mark)
+        float baseHeight, float across, float depth, Func<float, float, float> ground, bool mark, bool cut = true)
     {
         Vector2 dir = Forward(heading);
+        Vector2 right = Right(heading);
         Vector2 centre = back + dir * (depth / 2f);
         var piece = new StairPiece { Kind = kind, Prefab = prefab };
         float underside;
@@ -870,6 +886,7 @@ public static partial class StairLayout
         }
         plan.Pieces.Add(piece);
         AddClearance(plan, stair, back, dir, heading, baseHeight, baseHeight - kit.FloorThickness, across, depth);
+        if (cut) AddCuts(plan, stair, back, dir, right, baseHeight, across, depth, ground);
 
         float g = ground(centre.x, centre.y);
         float gap = underside - g;

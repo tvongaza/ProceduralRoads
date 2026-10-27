@@ -16,6 +16,12 @@ public class StairLayoutTests
 {
     private static Func<float, float, float> PlaneAlongZ(float grade) => (x, z) => grade * z;
 
+    private sealed class EndGuardOff : IDisposable
+    {
+        public EndGuardOff() => StairLayout.EndGuardReach = 0f;
+        public void Dispose() => StairLayout.EndGuardReach = StairLayout.DefaultEndGuardReach;
+    }
+
     private static StairPiece[] Walked(StairPlan plan) =>
         plan.Pieces.Where(p => p.Kind == StairPieceKind.Stair || p.Kind == StairPieceKind.Landing).ToArray();
 
@@ -357,6 +363,45 @@ public class StairLayoutTests
         };
     }
 
+    /// <summary>Where the ground covers a walking surface, the plan lowers it to
+    /// just under the steps; where the stair stands on or above the ground,
+    /// nothing is cut (a small earthwork to expose a buried stretch).</summary>
+    [Fact]
+    public void BuriedStretchesGetASmallCutAndExposedOnesNone()
+    {
+        // The burial rule alone: the end guard (TreadsNearEitherEndAreKeptClearOfEarthwork) cuts every row near the ends.
+        using var guard = new EndGuardOff();
+        StairPlan onGround = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 20), (x, z) => 0.5f * z - 0.2f);
+        Assert.Empty(onGround.Cuts);
+
+        // A mound 0.6 m high across the fall line between z 8 and 12 buries part of the flight.
+        Func<float, float, float> mound = (x, z) => 0.5f * z + (z > 8f && z < 12f ? 0.6f : 0f);
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 20), mound);
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.NotEmpty(plan.Cuts);
+        Assert.All(plan.Cuts, c => Assert.InRange(c.z, 8f, 12f));
+        Assert.All(plan.Cuts, c => Assert.True(mound(c.x, c.z) > c.y, "a cut only lowers ground"));
+        Assert.InRange(plan.MaxCut, 0.6f, 0.6f + StairLayout.CutBelowSurface + 1e-3f);
+    }
+
+    /// <summary>Ground grazing one edge of a stair is fine; an edge buried
+    /// deeper than <see cref="StairLayout.EdgeCoverLimit"/> is dug out across the
+    /// row, even when most of the walkway is clear (it is fine if some of the stairs are covered, just not all of them;
+    /// too much terrain overlap is not wanted).</summary>
+    [Theory]
+    [InlineData(0.2f, false)]
+    [InlineData(0.6f, true)]
+    public void AnEdgeInTheSlopeIsDugOutOnlyWhenDeeplyBuried(float bank, bool dug)
+    {
+        // The burial rule alone: the end guard (TreadsNearEitherEndAreKeptClearOfEarthwork) cuts every row near the ends.
+        using var guard = new EndGuardOff();
+        // A bank along one side (x > 0.4) of a straight flight up +z.
+        Func<float, float, float> ground = (x, z) => 0.5f * z + (x > 0.4f ? bank : 0f);
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 20), ground);
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.Equal(dug, plan.Cuts.Count > 0);
+    }
+
     /// <summary>A gentle valley floor for 100 m, then a face steeper than 1:1:
     /// 230 m of climb over 300 m. Too long for one search; it follows a coarse
     /// route leg by leg (valley bottom to mountain top, with some flex).</summary>
@@ -432,4 +477,26 @@ public class StairLayoutTests
         Assert.NotEqual("", plan.Reason);
     }
 
+    /// <summary>A flight that reaches the ledge it climbs to does not end on a switchback: finishing on
+    /// the pad turned back the way it came, and the steps down off the top ran back down beside the
+    /// flight, two rows wide (MountainCave02 -2560,1536: the double stairs looked like
+    /// a bug).</summary>
+    [Fact]
+    public void AStaircaseDoesNotEndOnASwitchbackFacingBackDownItsFlight()
+    {
+        // Up a 0.5 face along z to 5 m at z = 10; past it, a ledge at 5 m to the left (x < -1) and a
+        // drop to 2 m straight ahead: the floor straight on overhangs the drop, the switchback's
+        // second floor stands on the ledge.
+        float Ground(float x, float z) => z <= 0f ? 0f : x < -1f && z > 8f ? 5f : z >= 9.9f ? 2f : 0.5f * z;
+        Vector2 from = new(0f, 0f), to = new(-3f, 14f);
+
+        // Held to the edge cover an approach is held to, nothing turned off the flight fits onto the ledge.
+        StairPlan plan = StairLayout.Build(from, to, Ground, maxBuried: StairLayout.EdgeCoverLimit, arriveWithin: 6f);
+
+        Assert.True(plan.Reached, plan.Reason);
+        float back = Mathf.Abs(StairLayout.Wrap(plan.EndHeading - StairLayout.Bearing(from, to) + 180f) - 180f);
+        Assert.True(back < 90f, $"ends facing {plan.EndHeading} after {plan.Switchbacks} switchback(s): "
+            + string.Join(" ", plan.Pieces.Where(p => p.Kind == StairPieceKind.Stair || p.Kind == StairPieceKind.Landing)
+                .Select(p => FormattableString.Invariant($"{p.Kind}({p.Position.x:F1},{p.Position.y:F1},{p.Position.z:F1})y{p.YawDegrees}"))));
+    }
 }

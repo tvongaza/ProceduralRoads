@@ -80,6 +80,25 @@ public class CantileverTests
             Assert.All(SwitchbackFloors(), p => Assert.True(p.Position.x > 0f, $"without the rule the pad was at x {p.Position.x}"));
     }
 
+    /// <summary>The wedge a turn opens is read where its filler lies: a turn left off a flight climbing +z on
+    /// ground rising to the west (left) at 2:1 has its wedge on the outside (east, downhill), clear; turned
+    /// right, its wedge lies uphill (west) and the ground covers it.</summary>
+    [Fact]
+    public void ATurnsWedgeIsReadWhereItsFillerLies()
+    {
+        float West(float x, float z) => -2f * x;
+        // The piece before ends at (0, 2), its top at 0.5 (the ground at its middle line is 0).
+        Vector2 edge = new(0f, 2f);
+        // Turned right 45 degrees: pivot on the right (east) corner, the wedge on the west.
+        Vector2 pivotRight = edge + StairLayout.Right(0f) * 1f, startRight = pivotRight - StairLayout.Right(45f) * 1f;
+        // Turned left 45: pivot on the west corner, the wedge on the east.
+        Vector2 pivotLeft = edge - StairLayout.Right(0f) * 1f, startLeft = pivotLeft + StairLayout.Right(-45f) * 1f;
+        float right = StairLayout.WedgeBuried(edge, 0.5f, pivotRight, startRight, West);
+        float left = StairLayout.WedgeBuried(edge, 0.5f, pivotLeft, startLeft, West);
+        Assert.True(right > 0.3f, $"wedge uphill buried {right:F2}");
+        Assert.True(left < 0f, $"wedge downhill buried {left:F2}");
+    }
+
     /// <summary>No switchback in a staircase's first five stairs from its foot (Hildir_cave 1664,768): up a narrow gully, the first
     /// switchback comes after five stairs; before, three.</summary>
     [Fact]
