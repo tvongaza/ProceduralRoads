@@ -486,10 +486,11 @@ public static class RoadNetworkPersistence
     }
 
     /// <summary>Set by the loader when the saved spawned-zone record was
-    /// written by an OLDER bridge layout. The zones are then not marked spawned,
-    /// and whoever owns the world (RoadNetworkGenerator.TryLoadGlobalRoadData)
-    /// destroys the old pieces so the current layout can replace them -- never
-    /// a bridge half old and half new.</summary>
+    /// written by an OLDER bridge layout. Its zones are still marked spawned
+    /// and their pieces stay as they are: a layout change reaches only zones
+    /// that have no pieces yet. A world's bridges are part of the world its
+    /// players have; this build does not rebuild them. A bridge whose zones
+    /// were only partly spawned can come out half old, half new.</summary>
     public static bool BridgeLayoutIsStale { get; private set; }
 
     private static void TryLoadBridgeZones(ZDO metadataZdo, HashSet<Vector2s> bridgeZones)
@@ -531,8 +532,7 @@ public static class RoadNetworkPersistence
             {
                 BridgeLayoutIsStale = true;
                 Log.LogInfo($"[BRIDGES] the saved bridges were laid out by layout {layout}; this build is layout {BridgeLayout.LayoutVersion}. " +
-                            $"Their {count} zone(s) are not marked spawned and their pieces will be replaced.");
-                return;
+                            $"Their {count} zone(s) keep the pieces they have; only zones without pieces get the new layout.");
             }
             for (int i = 0; i < count; i++)
                 bridgeZones.Add(new Vector2s((short)reader.ReadInt32(), (short)reader.ReadInt32()));

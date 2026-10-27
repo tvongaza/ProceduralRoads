@@ -582,7 +582,7 @@ public class BridgeRepairabilityTests
     // ---- migration ----
 
     [Fact]
-    public void ASavedNarrowLayoutIsRecognisedAndItsPiecesReplaced()
+    public void TheLayoutVersionIsPinned()
     {
         // This pin exists to FORCE the question on every geometry change, not
         // to record a number. Layout 4: the navigation gap went 20 m -> 16 m
@@ -590,10 +590,7 @@ public class BridgeRepairabilityTests
         // narrow ones again. If you are here because this failed, the question
         // is "did the emitted shape move?", and if it did the answer is a bump.
         Assert.Equal(4, BridgeLayout.LayoutVersion);
-        // The persistence round-trip itself is exercised in SpawnedZonesSurvive...;
-        // here the contract that matters: a record without the current layout
-        // id must not mark any zone spawned.
-        Assert.False(RoadNetworkPersistence.BridgeLayoutIsStale);
+        // What a bump does to a saved world: BridgeLayoutTests.AStaleLayoutLeavesSpawnedZonesAlone.
     }
 
     // ---- the two earlier policies, kept as arithmetic ----

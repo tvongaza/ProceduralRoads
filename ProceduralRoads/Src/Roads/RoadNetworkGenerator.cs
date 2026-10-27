@@ -1282,16 +1282,9 @@ public static class RoadNetworkGenerator
         {
             // Before anything may write: which zones this network must leave alone.
             NetworkCutoff.UseLoadedNetwork(RoadSpatialGrid.RoadNetworkVersion, RoadNetworkPersistence.LoadZonesWithNetwork());
+            // Zones whose pieces stand keep them, whatever layout made them
+            // (RoadNetworkPersistence.BridgeLayoutIsStale).
             BridgePlans.MarkSpawned(bridgeZones);
-            // A world whose bridges were laid out by an older build: their
-            // pieces are destroyed everywhere now, and since no zone is marked
-            // spawned, each gets the current layout when it next comes alive.
-            // Never one bridge half old, half new.
-            if (RoadNetworkPersistence.BridgeLayoutIsStale)
-            {
-                int gone = BridgePlacement.ClearSpawnedPieces();
-                Log.LogInfo($"[BRIDGES] replaced an older bridge layout: destroyed {gone} piece(s)");
-            }
         }
         return loaded;
     }
