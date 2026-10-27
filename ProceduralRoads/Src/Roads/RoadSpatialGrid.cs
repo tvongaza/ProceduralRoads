@@ -536,7 +536,32 @@ public static partial class RoadSpatialGrid
                     finalHeights[k] = Mathf.Max(finalHeights[k], minHeight);
 
             if (ShareNetworkHeights)
-                HoldToNetwork(densePoints, finalHeights, width, RoadGrade.Configured);
+            {
+                // Held to the roads it meets after its grade was limited, a road can be pulled steeper than any cap
+                // (at the top of a 59 m staircase at 1937.8,751.4 a 19 m
+                // road from the stair's top was held up to a road 9 m above it within 10 m). Where a held stretch cannot be
+                // reached within the cap its pitches allow, it is let go: the road keeps its own heights there and
+                // passes that road at its own level rather than climbing to it. If it is still too steep, it is refused.
+                var own = new List<float>(finalHeights);
+                var heldAt = new bool[densePoints.Count];
+                var letGo = new bool[densePoints.Count];
+                float cap = RoadPitches.LimitCap(RoadGrade.Configured, edgeGrades);
+                for (int attempt = 0; ; attempt++)
+                {
+                    for (int k = 0; k < own.Count; k++) finalHeights[k] = own[k];
+                    System.Array.Clear(heldAt, 0, heldAt.Length);
+                    HoldToNetwork(densePoints, finalHeights, width, RoadGrade.Configured, heldOut: heldAt, letGo: HeldPastCap ? letGo : null);
+                    if (!HeldPastCap || !RoadGrade.Capped(RoadGrade.Configured)) break;
+                    int worst = WorstOverCap(densePoints, finalHeights, cap, edgeGrades, heldAt);
+                    if (worst < 0) break;
+                    if (attempt >= HeldLetGoRounds || !LetGoAround(worst, heldAt, letGo) || LetGoOntoRoad(densePoints, letGo, width))
+                    {
+                        LastRefusal = "held to a road over the grade cap";
+                        Log.LogDebug($"Road refused: held to a road it meets, a step climbs over the {RoadGrade.Configured:P0} cap");
+                        return null;
+                    }
+                }
+            }
         }
 
         if (!followTerrain && turns != null && landings != null && landings.Contains(true) && !RoadSwitchbacks.Separated(densePoints, finalHeights, width,
@@ -822,6 +847,59 @@ public static partial class RoadSpatialGrid
 
     /// <summary>A road near another takes that road's height (<see cref="HoldToNetwork"/>). Settable for tests.</summary>
     internal static bool ShareNetworkHeights = true;
+    /// <summary>A road held to the roads it meets steeper than its cap lets those stretches go, or is refused. Settable for tests.</summary>
+    internal static bool HeldPastCap = true;
+    /// <summary>How many held stretches a road may let go before it is refused.</summary>
+    internal const int HeldLetGoRounds = 4;
+
+    /// <summary>The index of the steepest step of a held profile over its own cap (the edge's own grade where
+    /// pitches set one, else <paramref name="cap"/>) by more than <see cref="HeldCapMargin"/>, or -1. A step
+    /// between two points both held to other roads is theirs, built within their own limits, and not judged.</summary>
+    internal static int WorstOverCap(IReadOnlyList<Vector2> points, IReadOnlyList<float> heights, float cap, IReadOnlyList<float>? edgeGrades, bool[] held)
+    {
+        int worst = -1;
+        float steepest = 0f;
+        for (int i = 1; i < points.Count && i < heights.Count; i++)
+        {
+            if (held[i - 1] && held[i]) continue;
+            float run = Vector2.Distance(points[i - 1], points[i]);
+            if (run < 0.5f) continue;
+            float grade = Mathf.Abs(heights[i] - heights[i - 1]) / run;
+            float allowed = edgeGrades != null && i < edgeGrades.Count ? Mathf.Max(edgeGrades[i], RoadGrade.Configured) : cap;
+            if (grade > allowed + HeldCapMargin && grade > steepest) { steepest = grade; worst = i; }
+        }
+        return worst;
+    }
+
+    /// <summary>Whether a let-go point would lie on another road's surface (within the two half widths): a road kept at its
+    /// own height there would cross that one at a different level, two surfaces mixing, and is refused instead (seen
+    /// beside the mountain cave entry at 1950,705).</summary>
+    internal static bool LetGoOntoRoad(List<Vector2> points, bool[] letGo, float width)
+    {
+        for (int i = 0; i < points.Count; i++)
+            if (letGo[i] && TryGetRoadHeightWithin(points[i], width, out _, out float near, out float other) && near < (width + other) / 2f)
+                return true;
+        return false;
+    }
+
+    /// <summary>Let go of the held stretch nearest step <paramref name="i"/> (its whole run of held points): the one
+    /// the road's own profile was eased toward and could not reach. False when nothing is held.</summary>
+    private static bool LetGoAround(int i, bool[] held, bool[] letGo)
+    {
+        int at = -1;
+        for (int d = 0; d < held.Length && at < 0; d++)
+        {
+            if (i - 1 - d >= 0 && held[i - 1 - d]) at = i - 1 - d;
+            else if (i + d < held.Length && held[i + d]) at = i + d;
+        }
+        if (at < 0) return false;
+        for (int k = at; k >= 0 && held[k]; k--) letGo[k] = true;
+        for (int k = at; k < held.Length && held[k]; k++) letGo[k] = true;
+        return true;
+    }
+    /// <summary>Allowance over the cap for a step of a held road: the heights it is held to are other roads'
+    /// own, read from their nearest points, and jitter by a few centimetres a metre.</summary>
+    internal const float HeldCapMargin = 0.1f;
 
     /// <summary>
     /// Where a road comes within reach of a road already laid -- running along it, crossing it,
@@ -834,7 +912,10 @@ public static partial class RoadSpatialGrid
     /// between points 1.8 m apart at a junction, 4 m beside a road at a TrollCave
     /// (double roads, weird junctions).
     /// </summary>
-    internal static void HoldToNetwork(List<Vector2> points, List<float> heights, float width, float cap)
+    /// <param name="heldOut">Set to which points were held.</param>
+    /// <param name="letGo">Points let go (<see cref="LetGoAround"/>): they keep their own height.</param>
+    internal static void HoldToNetwork(List<Vector2> points, List<float> heights, float width, float cap,
+        bool[]? heldOut = null, bool[]? letGo = null)
     {
         if (!m_initialized || points.Count == 0) return;
         float band = width + 2f * RoadConstants.TerrainBlendMargin;
@@ -843,11 +924,12 @@ public static partial class RoadSpatialGrid
         bool any = false;
         for (int i = 0; i < n; i++)
         {
-            if (TryGetRoadHeightWithin(points[i], band, out float h))
+            if ((letGo == null || !letGo[i]) && TryGetRoadHeightWithin(points[i], band, out float h))
             {
                 heights[i] = h; held[i] = true; any = true;
             }
         }
+        if (heldOut != null) System.Array.Copy(held, heldOut, System.Math.Min(n, heldOut.Length));
         if (!any || !RoadGrade.Capped(cap)) return;
         // Ease the road's own stretches to the held ones, both ways, within the cap; its two ends
         // keep the heights they have to meet.
@@ -1211,9 +1293,16 @@ public static partial class RoadSpatialGrid
     /// <summary>Nearest actual road point within reach, without allocating a census.</summary>
     /// <summary>The stored height of the nearest existing road point within
     /// <paramref name="reach"/>; false when there is none.</summary>
-    public static bool TryGetRoadHeightWithin(Vector2 position, float reach, out float height)
+    public static bool TryGetRoadHeightWithin(Vector2 position, float reach, out float height) =>
+        TryGetRoadHeightWithin(position, reach, out height, out _, out _);
+
+    /// <param name="distance">How far the nearest road point is.</param>
+    /// <param name="width">That point's road width.</param>
+    public static bool TryGetRoadHeightWithin(Vector2 position, float reach, out float height, out float distance, out float width)
     {
         height = 0f;
+        distance = float.PositiveInfinity;
+        width = 0f;
         if (!m_initialized || reach < 0) return false;
         float best = reach * reach;
         bool found = false;
@@ -1225,10 +1314,11 @@ public static partial class RoadSpatialGrid
                     if (m_roadPoints.TryGetValue(new Vector2i(center.x+x,center.y+y), out var points))
                         foreach (var point in points)
                         {
-                            float distance = (point.p-position).sqrMagnitude;
-                            if (distance <= best && !point.paintOnly) { best=distance; height=point.h; found=true; }
+                            float d = (point.p-position).sqrMagnitude;
+                            if (d <= best && !point.paintOnly) { best=d; height=point.h; width=point.w; found=true; }
                         }
         }
+        if (found) distance = Mathf.Sqrt(best);
         return found;
     }
 

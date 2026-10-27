@@ -102,4 +102,83 @@ public class JunctionHeightTests
         Assert.InRange(WorstOnTrunk(new Hill { Gz = 0f, Ridge = 14f }, Line(0, -100, 0, 100),
             Line(60, -120, 30, -70, 6, -40, 0, -30, 0, 0, 0, 30, 0, 50)), 0f, 0.3f);
     }
+
+    /// <summary>A step in the ground: 70 m north of z = 0, 60 m south of z = -2.</summary>
+    private sealed class Step : WorldGenerator
+    {
+        public override float GetHeight(float x, float z) => 60f + 10f * Mathf.Clamp01((z + 2f) / 2f);
+        public override Heightmap.Biome GetBiome(float x, float z, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
+        public override void GetRiverWeight(float x, float z, out float weight, out float width) { weight = 0f; width = 0f; }
+    }
+
+    /// <summary>A road whose last metres run beside a road 10 m above it is held up to that road after its grade
+    /// was limited: it climbed 9 m in 10 m out of a 59 m staircase's top (at 1937.8,751.4). A held stretch it cannot reach within its cap is let go: the road keeps its own heights
+    /// and passes the other at its own level.</summary>
+    [Fact]
+    public void ARoadIsNeverHeldUpToAnotherSteeperThanTheCap()
+    {
+        var world = new Step();
+        RoadSpatialGrid.PlannedPath? Branch(bool rule)
+        {
+            RoadSpatialGrid.PlannedPath? b = null;
+            PlainRoads.WithModDefaults(() =>
+            {
+                RoadWiggle.Amplitude = 0f;
+                using var worldScope = new ValheimWorldScope().WithWorld(world);
+                RoadSpatialGrid.Clear();
+                bool before = RoadSpatialGrid.HeldPastCap;
+                RoadSpatialGrid.HeldPastCap = rule;
+                try
+                {
+                    var trunk = RoadSpatialGrid.PlanRoadPath(Line(-40f, 4f, 40f, 4f), 4f, world);
+                    Assert.NotNull(trunk);
+                    RoadSpatialGrid.Commit(trunk!);
+                    b = RoadSpatialGrid.PlanRoadPath(Line(0f, -30f, 0f, -3f), 4f, world);
+                }
+                finally
+                {
+                    RoadSpatialGrid.HeldPastCap = before;
+                    RoadSpatialGrid.Clear();
+                }
+            });
+            return b;
+        }
+        RoadSpatialGrid.PlannedPath? without = Branch(rule: false);
+        Assert.NotNull(without);
+        Assert.True(RoadGrade.SteepestStep(without!.Points, without.Heights) > RoadGrade.Configured + RoadSpatialGrid.HeldCapMargin,
+            $"without the rule it climbs at most {RoadGrade.SteepestStep(without.Points, without.Heights):P0}");
+        RoadSpatialGrid.PlannedPath? with = Branch(rule: true);
+        Assert.NotNull(with);
+        Assert.True(RoadGrade.SteepestStep(with!.Points, with.Heights) <= RoadGrade.Configured + RoadSpatialGrid.HeldCapMargin,
+            $"with the rule it climbs {RoadGrade.SteepestStep(with.Points, with.Heights):P0}");
+    }
+
+    /// <summary>A stretch let go that would lie on another road's surface (within the two half widths) is not let go:
+    /// kept at its own height it would cross that road at another level, two surfaces mixing; the road is refused instead. Beside the road, clear of its surface, it may be.</summary>
+    [Fact]
+    public void ARoadIsNotLetGoOntoAnotherRoadsSurface()
+    {
+        var world = new Step();
+        PlainRoads.WithModDefaults(() =>
+        {
+            RoadWiggle.Amplitude = 0f;
+            using var worldScope = new ValheimWorldScope().WithWorld(world);
+            RoadSpatialGrid.Clear();
+            try
+            {
+                var trunk = RoadSpatialGrid.PlanRoadPath(Line(-40f, 4f, 40f, 4f), 4f, world);
+                Assert.NotNull(trunk);
+                RoadSpatialGrid.Commit(trunk!);
+                var on = new List<Vector2> { new(0f, -10f), new(0f, 2.5f) };
+                var beside = new List<Vector2> { new(0f, -10f), new(0f, -1f) };
+                Assert.True(RoadSpatialGrid.LetGoOntoRoad(on, new[] { false, true }, 4f));
+                Assert.False(RoadSpatialGrid.LetGoOntoRoad(beside, new[] { false, true }, 4f));
+                Assert.False(RoadSpatialGrid.LetGoOntoRoad(on, new[] { false, false }, 4f));
+            }
+            finally
+            {
+                RoadSpatialGrid.Clear();
+            }
+        });
+    }
 }
