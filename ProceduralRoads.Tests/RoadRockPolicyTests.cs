@@ -204,4 +204,25 @@ public class RoadRockPolicyTests
         Assert.Equal(clears, RoadRockPolicy.Clears(mode));
         Assert.Equal(carves, RoadRockPolicy.Carves(mode));
     }
+
+    /// <summary>
+    /// Rocks in a zone explored before the road network are the players' landscape and are never carved or removed,
+    /// by the zone's own pass or by a neighbour's that reaches over the border. The physics pass itself
+    /// (RoadRockClearing, RoadRockProbe) asks this one question; it cannot run offline, so it is checked in game.
+    /// </summary>
+    [Fact]
+    public void ACutoffZoneKeepsItsRocks()
+    {
+        ZoneSystem.instance = new ZoneSystem();
+        NetworkCutoff.Forget();
+        try
+        {
+            NetworkCutoff.SnapshotWorld(new[] { new Vector2s(0, 0) });
+            NetworkCutoff.UseLoadedNetwork(7, null);
+            Assert.False(RoadRockPolicy.MayTouch(new UnityEngine.Vector3(10f, 30f, -20f)), "a boulder in the explored zone");
+            Assert.False(RoadRockPolicy.MayTouch(new UnityEngine.Vector3(-31f, 30f, 31f)), "its corner");
+            Assert.True(RoadRockPolicy.MayTouch(new UnityEngine.Vector3(70f, 30f, 0f)), "a boulder next door, generated with the network");
+        }
+        finally { NetworkCutoff.Forget(); ZoneSystem.instance = null; }
+    }
 }

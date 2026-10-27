@@ -57,7 +57,8 @@ public static class RoadRockClearing
             // A distant low-detail heightmap has no collider and no objects: nothing to probe.
             if (candidate.IsDistantLod) continue;
             zone = ZoneSystem.GetZone(candidate.transform.position);
-            if (RoadSpatialGrid.GetRoadPointsInZone(zone).Count == 0) { MarkDone(candidate, version); continue; }
+            if (RoadSpatialGrid.GetRoadPointsInZone(zone).Count == 0 || !RoadRockPolicy.MayTouch(candidate.transform.position))
+            { MarkDone(candidate, version); continue; }
             // Not yet: every saved object round the zone must have its instance
             // (the game creates them over several frames) and the terrain its
             // collider. Looked at again when it is ready; probing it before only

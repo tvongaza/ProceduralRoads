@@ -23,6 +23,13 @@ public static class RoadRockPolicy
     /// <summary>Whether this setting clears rocks at all.</summary>
     public static bool Clears(RockClearingMode mode) => mode != RockClearingMode.Off;
 
+    /// <summary>
+    /// Whether a rock standing here may be carved or removed at all: never in
+    /// a zone explored before the road network reached the world
+    /// (NetworkCutoff), where the rocks are the players' landscape.
+    /// </summary>
+    public static bool MayTouch(UnityEngine.Vector3 position) => !NetworkCutoff.Excludes(ZoneSystem.GetZone(position));
+
     /// <summary>Whether this setting carves rocks rather than removing them whole.</summary>
     public static bool Carves(RockClearingMode mode) => mode == RockClearingMode.Carve;
 

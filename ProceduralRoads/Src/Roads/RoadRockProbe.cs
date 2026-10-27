@@ -153,6 +153,13 @@ public static class RoadRockProbe
                     list.Add((point, surface));
                 }
                 if (hits.ContainsKey(root)) continue;
+                // A rock in a zone explored before the road network is left
+                // whole, even when a neighbouring zone's pass reaches it.
+                if (!RoadRockPolicy.MayTouch(root.transform.position))
+                {
+                    hits[root] = (root.name, "keep: zone explored before the road network", 0f);
+                    continue;
+                }
                 long judging = RoadRockStats.Now;
                 RoadRockStats.Judged++;
                 // A fractured rock's GameObject is renamed by MineRock5.Awake

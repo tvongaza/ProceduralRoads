@@ -13,9 +13,9 @@ namespace ProceduralRoads;
 /// or earlier, zones generated while the mod was not installed or was
 /// downgraded, and the explored part of a world whose network is generated
 /// now. Players may have built, dug and planted there. Those zones are left
-/// exactly as they are -- no road terrain, no paint, no bridge pieces -- by
-/// every automatic writer, on the server and on modded clients alike. Only
-/// never-generated zones, and zones generated
+/// exactly as they are -- no road terrain, no paint, no rock clearing, no
+/// bridge pieces -- by every automatic writer, on the server and on modded
+/// clients alike. Only never-generated zones, and zones generated
 /// in a session that already had this network, get the roads.
 ///
 /// The record that makes this hold across sessions is the set of zones that
