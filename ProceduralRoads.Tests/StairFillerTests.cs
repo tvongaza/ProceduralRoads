@@ -91,7 +91,7 @@ public class StairFillerTests
 
     public static IEnumerable<object[]> Turns()
     {
-        foreach (string kit in new[] { "stone" })
+        foreach (string kit in new[] { "stone", "wood", "blackmarble" })
             foreach (float width in new[] { 2f, 4f })
                 foreach (int steps in new[] { 1, 2, 3, 4, -1, -2, -3, -4 })
                     foreach (bool floor in new[] { false, true })
@@ -102,7 +102,7 @@ public class StairFillerTests
     [MemberData(nameof(Turns))]
     public void EveryWedgeIsCoveredOnTheGridAndShowsNoMoreThanTheFan(string kitName, float h0, int steps, float width, bool belowIsFloor)
     {
-        StairKit kit = StairKit.Stone;
+        StairKit kit = StairKit.Named(kitName)!;
         List<FillerPiece> chosen = StairFiller.Choose(Pivot, h0, steps, width, belowIsFloor, kit.Fillers);
 
         Assert.NotEmpty(chosen);
@@ -113,7 +113,7 @@ public class StairFillerTests
         Assert.All(chosen, f => Assert.Contains(f.Prefab, kit.Fillers.Select(k => k.Prefab)));
         // The fan of blocks the layout used before covers a 2 m wedge (not a 4 m one, whose
         // outer corner reaches past its 1 m blocks); what is chosen never shows more.
-        if (width == 2f)
+        if (width == 2f && kit != StairKit.Wood)
             Assert.True(Shows(chosen, h0, steps, width, belowIsFloor) <= Shows(Fan(h0, steps, width), h0, steps, width, belowIsFloor) + 0.02f);
     }
 
@@ -144,5 +144,62 @@ public class StairFillerTests
 /// <summary>Stairs are built of the biome's pieces.</summary>
 public class StairKitTests
 {
+    [Fact]
+    public void EachBiomeBuildsItsOwnMaterial()
+    {
+        Assert.Same(StairKit.Stone, StairKit.ForSite(Heightmap.Biome.Mountain, new Vector2(5000f, 0f), 1));
+        Assert.Same(StairKit.BlackMarble, StairKit.ForSite(Heightmap.Biome.Mistlands, new Vector2(5000f, 0f), 1));
+        Assert.Same(StairKit.Wood, StairKit.ForSite(Heightmap.Biome.Meadows, new Vector2(5000f, 0f), 1));
+    }
 
+    /// <summary>"the stone should resolve to 0 in the early centre game, just
+    /// wood stairs should never not resolve - probility just lowers".</summary>
+    [Fact]
+    public void TheBlackForestIsWoodAtTheCentreAndNeverAllStoneOutward()
+    {
+        int Stone(float radius)
+        {
+            int n = 0;
+            for (int i = 0; i < 400; i++)
+            {
+                float a = i * 0.0157f;
+                var at = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * radius;
+                if (StairKit.ForSite(Heightmap.Biome.BlackForest, at, 1234) == StairKit.Stone) n++;
+            }
+            return n;
+        }
+        Assert.Equal(0, Stone(800f));
+        Assert.Equal(0, Stone(StairKit.ForestStoneFrom));
+        int middle = Stone(2100f), outer = Stone(6000f);
+        Assert.InRange(middle, 80, 320);
+        Assert.InRange(outer, 280, 360); // about four in five; wood still turns up
+        Assert.True(outer > middle);
+    }
+
+    /// <summary>A staircase that starts in the Mistlands but is 90% in the mountains uses stone; black marble only if it is 50%+ in the
+    /// Mistlands, then 40%.</summary>
+    [Theory]
+    [InlineData(10f, "stone")]
+    [InlineData(35f, "stone")]
+    [InlineData(45f, "blackmarble")]
+    [InlineData(60f, "blackmarble")]
+    public void AStaircaseIsBuiltOfTheBiomeMostOfItLiesIn(float mistMetres, string kit)
+    {
+        var line = new List<Vector2> { new(0f, 0f), new(0f, 100f) };
+        Heightmap.Biome At(float x, float z) => z < mistMetres ? Heightmap.Biome.Mistlands : Heightmap.Biome.Mountain;
+
+        Assert.Equal(kit, StairKit.ForLine(line, At, 1).Name);
+    }
+
+    [Fact]
+    public void AWoodStaircasesFloorsAreBoardsAtTheWalkingSurface()
+    {
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 30), (x, z) => 0.3f * z, kit: StairKit.Wood);
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.All(plan.Pieces, p => Assert.StartsWith("wood_", p.Prefab));
+        StairPiece floor = plan.Pieces.First(p => p.Kind == StairPieceKind.Landing);
+        StairPiece stairBelow = plan.Pieces.Last(p => p.Kind == StairPieceKind.Stair && plan.Pieces.IndexOf(p) < plan.Pieces.IndexOf(floor));
+        // A board's origin is its walking surface: level with the top of the stair below.
+        Assert.Equal(stairBelow.Position.y + StairLayout.PieceRise, floor.Position.y, 3);
+    }
 }

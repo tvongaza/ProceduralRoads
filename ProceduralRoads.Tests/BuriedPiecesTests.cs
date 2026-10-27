@@ -118,7 +118,7 @@ public class BuriedPiecesTests : IDisposable
         Assert.False(BuriedPieces.Buried("no_such_piece", new Vector3(0f, -50f, 0f), 0f, slope));
         Assert.False(BuriedPieces.Buried("stone_pillar", new Vector3(0f, -50f, 0f), 0f, (x, z) => x > 0 ? float.NaN : 0f));
         // Every kit's pieces are known.
-        foreach (StairKit kit in new[] { StairKit.Stone })
+        foreach (StairKit kit in new[] { StairKit.Stone, StairKit.BlackMarble, StairKit.Wood })
         {
             Assert.True(BuriedPieces.Known(kit.Stair));
             Assert.True(BuriedPieces.Known(kit.Floor));
