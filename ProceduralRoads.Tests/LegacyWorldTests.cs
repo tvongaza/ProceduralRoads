@@ -78,8 +78,7 @@ public sealed class LegacyWorldTests : IDisposable
         for (float x = -150f; x <= 150f; x += 8f) path.Add(new Vector2(x, 4f));
         RoadSpatialGrid.AddRoadPath(path, 4f, WorldGenerator.instance!);
         RoadSpatialGrid.FinalizeRoadNetwork();
-        // 1.4.4's format (version 1) is still the one this build writes.
-        Blob = RoadSpatialGrid.SerializeAllRoadPoints()!;
+        Blob = Released144.BlobOfCurrentGrid();
         RoadNetworkPersistence.EnsureMetadataInstance();
         Metadata().Set(GlobalDataHash, Blob);
         RoadNetworkPersistence.Reset(); RoadSpatialGrid.Clear(); RoadNetworkGenerator.Reset();
