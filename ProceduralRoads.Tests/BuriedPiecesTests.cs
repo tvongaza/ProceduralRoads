@@ -19,6 +19,7 @@ public class BuriedPiecesTests : IDisposable
     public void Dispose()
     {
         RoadSpatialGrid.Clear();
+        StairStructures.Reset();
         _scope.Dispose();
     }
 
@@ -131,6 +132,23 @@ public class BuriedPiecesTests : IDisposable
                 Assert.True(BuriedPieces.Known(ck.Beside));
             }
         }
+    }
+
+    private sealed class SlopeWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy) => 30f + 0.25f * wy;
+    }
+
+    private sealed class FlatWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy) => 30f;
+    }
+
+    private static StairRun Pillar(float y, bool cantilevered = false)
+    {
+        var run = new StairRun { From = new Vector2(0f, 0f), To = new Vector2(0f, 4f), Width = 2f };
+        run.Pieces.Add(new StructurePiece { Kind = StructurePieceKind.StairSupport, Prefab = "stone_pillar", Position = new Vector3(0f, y, 0f), Cantilevered = cantilevered });
+        return run;
     }
 
 }

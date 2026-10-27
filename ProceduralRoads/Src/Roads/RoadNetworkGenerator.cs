@@ -685,6 +685,7 @@ public static partial class RoadNetworkGenerator
         LogSqueeze();
         LogGenerationStats(m_roadsGeneratedCount, elapsed);
 
+        StairStructures.SortCanonical();
         RoadSpatialGrid.FinalizeRoadNetwork();
         
         NetworkCutoff.UseNewNetwork();
@@ -2268,6 +2269,7 @@ public static partial class RoadNetworkGenerator
         // reported 0/0 destinations.
         CountDestinationsReached(selected);
 
+        StairStructures.SortCanonical();
         RoadSpatialGrid.FinalizeRoadNetwork();
         LogTerrainMemoCounters();
         NetworkCutoff.UseNewNetwork();
@@ -2325,6 +2327,7 @@ public static partial class RoadNetworkGenerator
         RoadSiteProtection.Reset();
         m_roadStartPoints.Clear();
         m_roadCrossings.Clear();
+        StairStructures.Reset();
         StructurePlans.Reset();
         VegetationClearing.Reset();
         RoadNetworkPersistence.Reset();

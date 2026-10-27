@@ -269,7 +269,7 @@ public sealed class RoadStatisticsTests : IDisposable
     [Fact]
     public void TheClientSnapshotCarriesTheFormat4GridUnderItsOwnVersion()
     {
-        Assert.Equal(3,ManualRoadNetworkSync.SnapshotVersion);
+        Assert.Equal(4,ManualRoadNetworkSync.SnapshotVersion);   // 3 is the format-4 grid; 4 adds the staircases
     }
     /// <summary>
     /// The staircase flag (cut-only) travels as geometry encoding 4 inside the v4 envelope, so one format number means

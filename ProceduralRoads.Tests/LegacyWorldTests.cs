@@ -280,13 +280,19 @@ public sealed class LegacyWorldTests : IDisposable
         TerrainAssert.Unchanged(before, compiler, "the client's 1.4.4 zone");
         Assert.Equal(0, compiler.m_nview.GetZDO().GetInt(RoadTerrainModifier.AppliedVersionHash));
 
-        // A version-1 snapshot carries no list: refused, so the client holds no network to write with.
+        // A version-1 snapshot carries no list, a version-2 one no staircases: both refused, so the client holds no network to write with.
         RoadNetworkGenerator.Reset(); RoadSpatialGrid.Clear(); NetworkCutoff.Forget();
-        var v1 = new ZPackage(sent);
-        v1.ReadInt();
-        var old1 = new ZPackage();
-        old1.Write(1); old1.Write(v1.ReadByteArray()); old1.Write(v1.ReadByteArray()); old1.Write(v1.ReadByteArray());
-        Assert.False(ManualRoadNetworkSync.Apply(new ZPackage(old1.GetArray())));
+        var read = new ZPackage(sent);
+        read.ReadInt();
+        byte[] grid = read.ReadByteArray(), starts = read.ReadByteArray(), crossings = read.ReadByteArray();
+        read.ReadByteArray(); // the staircases
+        byte[] excluded = read.ReadByteArray();
+        var v1 = new ZPackage();
+        v1.Write(1); v1.Write(grid); v1.Write(starts); v1.Write(crossings);
+        Assert.False(ManualRoadNetworkSync.Apply(new ZPackage(v1.GetArray())));
+        var v2 = new ZPackage();
+        v2.Write(2); v2.Write(grid); v2.Write(starts); v2.Write(crossings); v2.Write(excluded);
+        Assert.False(ManualRoadNetworkSync.Apply(new ZPackage(v2.GetArray())));
         Assert.False(RoadNetworkGenerator.RoadsAvailable);
     }
 }

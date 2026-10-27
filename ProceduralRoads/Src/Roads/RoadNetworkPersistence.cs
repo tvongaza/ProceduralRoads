@@ -51,6 +51,9 @@ public static class RoadNetworkPersistence
     /// </summary>
     private static readonly int AppendBridgesHash = "ProceduralRoads_AppendBridges".GetStableHashCode();
 
+    /// <summary>The network's staircases: their pieces and clearances (StairStructures).</summary>
+    private static readonly int StairRunsHash = "ProceduralRoads_StairRuns".GetStableHashCode();
+
     private static readonly int GlobalRoadDataHash = "ProceduralRoads_GlobalData".GetStableHashCode();
 
     /// <summary>
@@ -181,6 +184,7 @@ public static class RoadNetworkPersistence
         Log.LogDebug($"[SAVE] Saved {roadCrossings.Count} river crossings ({crossingsData.Length} bytes)");
         WriteBridgeZones(metadataZdo, bridgeZones);
         metadataZdo.Set(AppendBridgesHash, StructureAppendQueue.Serialize());
+        metadataZdo.Set(StairRunsHash, StairStructures.Serialize());
     }
 
     /// <summary>
@@ -199,6 +203,7 @@ public static class RoadNetworkPersistence
             metadataZdo.SetOwner(ZDOMan.instance.m_sessionID);
         WriteBridgeZones(metadataZdo, bridgeZones);
         metadataZdo.Set(AppendBridgesHash, StructureAppendQueue.Serialize());
+        metadataZdo.Set(StairRunsHash, StairStructures.Serialize());
     }
 
     /// <summary>
@@ -335,6 +340,13 @@ public static class RoadNetworkPersistence
                 bridgeZones.Clear();
                 LastLoadUnreadable = true;
                 return false;
+            }
+            // A damaged stair record must not cost the world its roads: drop the stairs and say so.
+            try { StairStructures.Load(metadataZdo.GetByteArray(StairRunsHash, null)); }
+            catch (Exception e) when (e is System.IO.InvalidDataException || e is System.IO.IOException)
+            {
+                Log.LogWarning($"[LOAD] Stair runs not loaded, saved data is damaged: {e.Message}");
+                StairStructures.Reset();
             }
 
             return true;

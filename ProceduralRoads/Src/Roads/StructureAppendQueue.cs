@@ -26,27 +26,33 @@ public static class StructureAppendQueue
     public static string Key(StructurePiece p) => p.Prefab + ":" + string.Join(":", new[] {
         p.Position.x, p.Position.y, p.Position.z, p.PitchDegrees, p.YawDegrees, p.RollDegrees }.Select(x => x.ToString("R", CultureInfo.InvariantCulture)));
 
-    internal static Dictionary<Vector2s, List<StructurePiece>> Prepare(IEnumerable<RoadCrossing> crossings)
+    internal static Dictionary<Vector2s, List<StructurePiece>> Prepare(IEnumerable<RoadCrossing> crossings) =>
+        Prepare(BridgeLayout.DistinctSites(crossings.ToList())
+            .SelectMany(crossing => BridgeLayout.Solve(crossing, WorldGenerator.instance, WorldGenerator.instance.GetSeed())));
+
+    /// <summary>New structure pieces, by zone, as the queue owes them: a zone not
+    /// yet built also gets its existing plan, since the zone is recorded as spawned
+    /// once the addition completes.</summary>
+    internal static Dictionary<Vector2s, List<StructurePiece>> Prepare(IEnumerable<StructurePiece> newPieces)
     {
         var result = new Dictionary<Vector2s, List<StructurePiece>>();
-        foreach (var crossing in BridgeLayout.DistinctSites(crossings.ToList()))
-            foreach (var piece in BridgeLayout.Solve(crossing, WorldGenerator.instance, WorldGenerator.instance.GetSeed()))
+        foreach (var piece in newPieces)
+        {
+            var zone = ZoneSystem.GetZone(piece.Position);
+            if (!result.TryGetValue(zone, out var pieces))
             {
-                var zone = ZoneSystem.GetZone(piece.Position);
-                if (!result.TryGetValue(zone, out var pieces))
+                pieces = new List<StructurePiece>(); result.Add(zone, pieces);
+                // An unspawned zone must receive its old plans too, since we
+                // will mark the zone spawned when this operation completes.
+                if (!StructurePlans.IsSpawned(zone) && !StructurePlans.ZoneHasLivePieces(zone))
                 {
-                    pieces = new List<StructurePiece>(); result.Add(zone, pieces);
-                    // An unspawned zone must receive its old plans too, since we
-                    // will mark the zone spawned when this operation completes.
-                    if (!StructurePlans.IsSpawned(zone) && !StructurePlans.ZoneHasLivePieces(zone))
-                    {
-                        // Not the pieces of a generated bridge withheld for reaching an explored zone.
-                        var old = StructurePlans.BuildablePlanFor(zone);
-                        if (old != null) pieces.AddRange(old);
-                    }
+                    // Not the pieces of a generated bridge withheld for reaching an explored zone.
+                    var old = StructurePlans.BuildablePlanFor(zone);
+                    if (old != null) pieces.AddRange(old);
                 }
-                pieces.Add(piece);
             }
+            pieces.Add(piece);
+        }
         return result;
     }
     internal static void Enqueue(Dictionary<Vector2s, List<StructurePiece>> additions)

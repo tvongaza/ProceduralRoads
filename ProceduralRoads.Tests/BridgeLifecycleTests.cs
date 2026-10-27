@@ -57,9 +57,9 @@ public sealed class BridgeLifecycleTests : IDisposable
     }
 
     /// <summary>
-    /// Bridge pieces never go into a zone explored before the network (NetworkCutoff): neither the append queue nor a
-    /// zone spawn puts them there, and the zone is not marked spawned, while every other zone of the same bridge gets
-    /// its pieces.
+    /// Pieces (bridges, staircases) never go into a zone explored before the network (NetworkCutoff): neither the
+    /// append queue nor a zone spawn puts them there, and the zone is not marked spawned, while every other zone of
+    /// the same structure gets its pieces.
     /// </summary>
     [Fact] public void AZoneExploredBeforeTheNetworkGetsNoPieces()
     {

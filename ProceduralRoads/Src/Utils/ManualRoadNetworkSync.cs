@@ -46,7 +46,8 @@ public static class ManualRoadNetworkSync
         private static void Postfix()
         {
             if (RoadLifecycleManager.IsGenerating) return;
-            if (RoadSpatialGrid.AppendCount == 0 || Time.realtimeSinceStartup < nextRetry) return;
+            // A staircase with no cuts adds structure pieces but no road points.
+            if ((RoadSpatialGrid.AppendCount == 0 && StructureAppendQueue.Count == 0) || Time.realtimeSinceStartup < nextRetry) return;
             nextRetry = Time.realtimeSinceStartup + 2f;
             try
             {
@@ -91,8 +92,11 @@ public static class ManualRoadNetworkSync
     /// (no such list) is refused, so a client never writes on a guess.
     /// Version 3 carries the grid in format 4 (the committed path length): a version-2 peer cannot read that grid,
     /// so the two refuse each other by version instead of failing inside the grid.
+    /// Version 4 adds the staircases: a client clears rock and keeps vegetation
+    /// off the stairs in the zones it owns, so it needs them as the server has
+    /// them. A version-3 snapshot (no staircases) is refused too.
     /// </summary>
-    internal const int SnapshotVersion = 3;
+    internal const int SnapshotVersion = 4;
 
     private static void Send(long peer)
     {
@@ -110,6 +114,7 @@ public static class ManualRoadNetworkSync
         package.Write(data);
         package.Write(RoadNetworkPersistence.SerializeRoadStartPoints(RoadNetworkGenerator.GetRoadStartPoints()));
         package.Write(RoadNetworkPersistence.SerializeRoadCrossings(RoadNetworkGenerator.GetRoadCrossings()));
+        package.Write(StairStructures.Serialize());
         package.Write(NetworkCutoff.ClientList(RoadSpatialGrid.GetZonesWithRoadPoints()));
         return package;
     }
@@ -126,11 +131,11 @@ public static class ManualRoadNetworkSync
         {
             if (package.ReadInt() != SnapshotVersion) throw new InvalidOperationException("Unknown manual road snapshot version.");
             byte[] grid = package.ReadByteArray(), starts = package.ReadByteArray(), crossings = package.ReadByteArray(),
-                excluded = package.ReadByteArray();
+                stairs = package.ReadByteArray(), excluded = package.ReadByteArray();
             if (grid.Length > 64 * 1024 * 1024 || starts.Length > 1024 * 1024 || crossings.Length > 16 * 1024 * 1024 ||
-                excluded.Length > 16 * 1024 * 1024)
+                stairs.Length > 64 * 1024 * 1024 || excluded.Length > 16 * 1024 * 1024)
                 throw new InvalidOperationException("Manual road snapshot is too large.");
-            RoadNetworkGenerator.AcceptManualSnapshot(grid, starts, crossings, excluded);
+            RoadNetworkGenerator.AcceptManualSnapshot(grid, starts, crossings, excluded, stairs);
             ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug($"Manual road snapshot applied: version={RoadSpatialGrid.RoadNetworkVersion}, additions={RoadSpatialGrid.AppendCount}, stored-records={RoadSpatialGrid.StoredPointRecords}, excluded zones={NetworkCutoff.ExcludedCount}");
             RoadTerrainModifier.ApplyAdditionsToLoadedZones();
             return true;

@@ -227,11 +227,37 @@ public static partial class RoadNetworkGenerator
 
 public static partial class RoadNetworkGenerator
 {
-    internal static void AcceptManualSnapshot(byte[] data, byte[] starts, byte[] crossings, byte[] excluded)
+    /// <summary>
+    /// Add a staircase to the network: its pieces as a structure source's run,
+    /// owed through the append queue to every zone it touches (as a manual
+    /// road's bridges are), its cuts as one cut-only append. Rock, cuts and pieces then reach
+    /// each zone as it loads, like a manual road and its bridges.
+    /// </summary>
+    internal static void AppendStairRun(StairRun run, IReadOnlyList<Vector3> cuts, int expectedVersion)
+    {
+        if (ManualRoads.Busy || IsGenerating) throw new InvalidOperationException("Road generation is busy.");
+        ManualRoads.RefuseOnReleasedNetwork();
+        RoadNetworkPersistence.EnsureMetadataInstance();
+        RoadSpatialGrid.CommitAppendCuts(cuts, StairLayout.CutRadius * 2f, expectedVersion);
+        var additions = StructureAppendQueue.Prepare(run.Pieces);
+        StairStructures.Add(run);
+        StructureAppendQueue.Enqueue(additions);
+        m_roadsGenerated = true; // A loaded network is now dirty and must be saved in full.
+        m_roadsLoadedFromZDO = false;
+        StructurePlans.InvalidatePlans();
+        RoadClearAreaManager.ClearCache();
+    }
+
+    internal static void AcceptManualSnapshot(byte[] data, byte[] starts, byte[] crossings, byte[] excluded, byte[]? stairs = null)
     {
         if (IsGenerating) throw new InvalidOperationException("Road generation is busy.");
         var newStarts = new List<(Vector2 position, string label)>();
         var newCrossings = new List<RoadCrossing>();
+        // Parsed first: a damaged stair record throws here, before anything is replaced.
+        List<StairRun> newStairs;
+        try { newStairs = StairStructures.Parse(stairs); }
+        catch (System.IO.IOException e) { throw new InvalidOperationException($"Incomplete road snapshot: {e.Message}"); }
+        catch (System.IO.InvalidDataException e) { throw new InvalidOperationException($"Incomplete road snapshot: {e.Message}"); }
         if (!NetworkCutoff.TryReadClientList(excluded, out HashSet<Vector2s> excludedZones) ||
             !RoadNetworkPersistence.DeserializeRoadStartPoints(starts, newStarts) ||
             !RoadNetworkPersistence.DeserializeRoadCrossings(crossings, newCrossings) ||
@@ -241,6 +267,7 @@ public static partial class RoadNetworkGenerator
         NetworkCutoff.UseServerList(excludedZones);
         m_roadStartPoints = newStarts;
         m_roadCrossings.Clear(); m_roadCrossings.AddRange(newCrossings);
+        StairStructures.Replace(newStairs);
         m_roadsLoadedFromZDO = true;
         m_roadsGenerated = false;
         StructurePlans.InvalidatePlans(); RoadClearAreaManager.ClearCache();

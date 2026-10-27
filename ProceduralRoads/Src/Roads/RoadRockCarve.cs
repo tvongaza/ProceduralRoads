@@ -4,6 +4,22 @@ using UnityEngine;
 
 namespace ProceduralRoads;
 
+/// <summary>One box of space a walker needs clear, standing on a walking
+/// surface at <see cref="Surface"/>: a road's clearance at a road point, or a
+/// stretch of a staircase.</summary>
+public readonly struct RockClearance
+{
+    public readonly Vector3 Centre;
+    public readonly Vector3 Half;
+    public readonly Quaternion Turn;
+    public readonly float Surface;
+
+    public RockClearance(Vector3 centre, Vector3 half, Quaternion turn, float surface)
+    {
+        Centre = centre; Half = half; Turn = turn; Surface = surface;
+    }
+}
+
 /// <summary>
 /// Carving: remove only the chunks of a rock that stand in the road, the way a
 /// pickaxe does, instead of the whole rock, and leave no materials behind.
@@ -117,7 +133,7 @@ public static class RoadRockCarve
         // rock touched: the fractured mesh is not the same shape, and the
         // automatic pass only looks 46 m round a zone's centre (measured: 4 of
         // 24 carved rocks still clipped the road at points outside both).
-        var near = PointsNear(rock);
+        var near = RoadClearances(rock);
         var take = ChooseChunks(rock, near, out var hanging);
         var removed = new List<int>();
         float size = 0f;
@@ -274,11 +290,30 @@ public static class RoadRockCarve
         rock.UpdateMesh();
     }
 
-    /// <summary>Every solid road point within the rock's reach, with the ground under it.</summary>
-    private static (List<(RoadSpatialGrid.RoadPoint point, float surface)> at, List<RoadSpatialGrid.RoadPoint> all) PointsNear(MineRock5 rock)
+    /// <summary>The road's clearance at every road point the rock reaches, and
+    /// every staircase box within its reach (StructurePlans): a boulder in a
+    /// stair's way loses the chunks in the stair, as one in a road does.</summary>
+    private static List<RockClearance> RoadClearances(MineRock5 rock)
     {
-        var at = new List<(RoadSpatialGrid.RoadPoint, float)>();
-        var all = new List<RoadSpatialGrid.RoadPoint>();
+        var (at, all) = PointsNear(rock);
+        var boxes = new List<RockClearance>(at.Count);
+        foreach (var (point, surface) in at)
+        {
+            RoadRockProbe.RoadClearance(point, surface, all, out var centre, out var half, out var turn);
+            boxes.Add(new RockClearance(centre, half, turn, surface));
+        }
+        if (RockBounds(rock) is Bounds bounds)
+        {
+            float reach = new Vector2(bounds.extents.x, bounds.extents.z).magnitude + 4f;
+            foreach (StructureClearance s in StructurePlans.ClearancesNear(bounds.center, reach))
+                if (s.IsBox) boxes.Add(new RockClearance(s.Centre, s.Half, Quaternion.Euler(0f, s.YawDegrees, 0f), s.Surface));
+        }
+        return boxes;
+    }
+
+    /// <summary>The bounds of a rock's live chunks, or null when none are left.</summary>
+    private static Bounds? RockBounds(MineRock5 rock)
+    {
         Bounds? bounds = null;
         foreach (var area in rock.m_hitAreas)
             if (area.m_health > 0f && area.m_collider != null)
@@ -286,6 +321,15 @@ public static class RoadRockCarve
                 if (bounds == null) bounds = area.m_collider.bounds;
                 else { var b = bounds.Value; b.Encapsulate(area.m_collider.bounds); bounds = b; }
             }
+        return bounds;
+    }
+
+    /// <summary>Every solid road point within the rock's reach, with the ground under it.</summary>
+    private static (List<(RoadSpatialGrid.RoadPoint point, float surface)> at, List<RoadSpatialGrid.RoadPoint> all) PointsNear(MineRock5 rock)
+    {
+        var at = new List<(RoadSpatialGrid.RoadPoint, float)>();
+        var all = new List<RoadSpatialGrid.RoadPoint>();
+        Bounds? bounds = RockBounds(rock);
         if (bounds == null) return (at, all);
         var box = bounds.Value;
         // Reach: the rock's horizontal half-diagonal plus the widest road's half-width.
@@ -343,8 +387,7 @@ public static class RoadRockCarve
     /// wide), then those hanging over that way below the headroom.
     /// <paramref name="hanging"/> is the second kind.
     /// </summary>
-    private static HashSet<int> ChooseChunks(MineRock5 rock,
-        (List<(RoadSpatialGrid.RoadPoint point, float surface)> at, List<RoadSpatialGrid.RoadPoint> all) near, out HashSet<int> hanging)
+    private static HashSet<int> ChooseChunks(MineRock5 rock, List<RockClearance> near, out HashSet<int> hanging)
     {
         var index = new Dictionary<Collider, int>();
         for (int i = 0; i < rock.m_hitAreas.Count; i++)
@@ -356,9 +399,11 @@ public static class RoadRockCarve
         hanging = new HashSet<int>();
         var blockers = new List<IReadOnlyCollection<int>>(Strips);
         var held = new List<bool>(Strips);
-        foreach (var (point, surface) in near.at)
+        foreach (var box in near)
         {
-            RoadRockProbe.RoadClearance(point, surface, near.all, out var centre, out var half, out var turn);
+            Vector3 centre = box.Centre, half = box.Half;
+            Quaternion turn = box.Turn;
+            float surface = box.Surface;
             float allowance = RoadRockPolicy.EdgeAllowance(2f * half.x);
             bool ours = false;
             foreach (var c in Physics.OverlapBox(centre, half, turn, ~0, QueryTriggerInteraction.Ignore))
