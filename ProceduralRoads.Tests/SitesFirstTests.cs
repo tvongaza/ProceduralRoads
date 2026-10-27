@@ -102,6 +102,160 @@ public partial class SitesFirstTests : IDisposable
         Assert.True(aim.x < -10f, $"aimed at {aim}");
     }
 
+    /// <summary>A road ending 58 m from a placed place's landing is still carried on onto it (a ring point
+    /// at the side of a Dvergr entrance is 41 m out, its landing 24 m in); an approach keeps its 40 m.</summary>
+    [Fact]
+    public void AWayOntoAPlacedPlacesLandingReachesFurtherThanAnApproach()
+    {
+        PlacedSite cave = Cave();
+        Vector2 end = cave.Shape.Landing + new Vector2(0f, 58f);
+        RoadSpatialGrid.PlannedPath? From(float reach, out string why)
+        {
+            var request = new SiteApproachRequest
+            {
+                RoadEnd = end, RoadHeight = 50f, Arriving = 180f, Centre = cave.Centre,
+                RoadTail = new List<Vector2> { end + new Vector2(0f, 20f), end }, Reach = reach,
+            };
+            return RoadSiteEntry.Plan(request, cave.Shape, 4f, cave.Ground, _world, out why);
+        }
+
+        Assert.True(From(RoadNetworkGenerator.PlacedSiteReach, out string placed) != null, placed);
+        Assert.True(From(RoadStairRuns.SiteReach, out string approach) == null && approach.Contains("too far"), approach);
+    }
+
+    /// <summary>A road to a placed place goes onto its landing as part of the road, and nothing is left to lay
+    /// later; without the place placed it stops at the ring, metres short.</summary>
+    [Fact]
+    public void ARoadToAPlacedPlaceGoesOntoItsLanding()
+    {
+        foreach (bool placed in new[] { false, true })
+        {
+            RoadNetworkGenerator.Reset();
+            RoadSpatialGrid.Clear();
+            StairStructures.Reset();
+            PlacedSites.Reset();
+            PlacedSite cave = Cave();
+            PlacedSites.Ready(cave);
+            PlacedSites.Enabled = placed;
+            LocationLevelling.Source = c => c.magnitude < 0.5f ? CaveFloor : null;
+            SetPathfinder(new RoadPathfinder(_world) { Stairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f });
+
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(0f, 120f), 0f, new Vector2(0f, 0f), 10f, 4f, "to the cave"));
+
+            var walked = RoadSpatialGrid.GetRoadPointsNearPosition(Vector3.zero, 60f).Where(p => p.IsRoad).Select(p => p.p)
+                .Concat(StairStructures.Runs.SelectMany(r => r.Pieces).Select(p => new Vector2(p.Position.x, p.Position.z))).ToList();
+            float toLanding = walked.Min(p => Vector2.Distance(p, cave.Shape.Landing));
+            string outcomes = "last refusal: " + (RoadSpatialGrid.LastRefusal ?? "none");
+            if (placed)
+            {
+                // A road keeps its own reach (half its width and its blend) off the entrance's pit, so it
+                // stops a little short of the shape's nominal landing, but inside the place's footprint.
+                Assert.True(toLanding <= 6f, $"placed: nearest the landing {cave.Shape.Landing} is {toLanding:F1} m off; {outcomes}");
+                Assert.Contains(walked, p => p.magnitude < Footprint);
+                // Reached because it was carried on onto the landing, wherever on it that ended.
+                Assert.True(PlacedSites.Landed(cave.Centre));
+                Assert.True(RoadNetworkGenerator.AlreadyServedByNetwork(Vector3.zero, 10f));
+            }
+            else Assert.True(toLanding > 10f, $"not placed: nearest the landing is {toLanding:F1} m off");
+        }
+    }
+
+    /// <summary>A regeneration forgets which places the old network landed on (its roads are gone), not the
+    /// places placed: they are the world's.</summary>
+    [Fact]
+    public void ARegenerationForgetsWhichPlacesTheOldNetworkLandedOn()
+    {
+        PlacedSite cave = Cave();
+        PlacedSites.Remember(cave.Record);
+        PlacedSites.MarkLanded(cave.Centre);
+        RoadNetworkGenerator.Reset();
+        Assert.False(PlacedSites.Landed(cave.Centre));
+        Assert.True(PlacedSites.TryGet(cave.Centre, out _));
+    }
+
+    /// <summary>Where nothing gets from the ring onto a placed place's landing, the road is refused, not left at
+    /// the outskirts: the planner tries its other candidates.</summary>
+    [Fact]
+    public void ARoadThatCannotGetOntoAPlacedPlacesLandingIsRefused()
+    {
+        foreach (bool placed in new[] { false, true })
+        {
+            RoadNetworkGenerator.Reset();
+            RoadSpatialGrid.Clear();
+            StairStructures.Reset();
+            PlacedSites.Reset();
+            PlacedSite cave = Cave();
+            // The placed ground a sheer wall 40 m high everywhere but the ring the road ends on.
+            Func<float, float, float> wall = (x, z) => new Vector2(x, z).magnitude < 22f ? 90f : 50f;
+            PlacedSites.Ready(new PlacedSite { Record = cave.Record, Ground = wall, Shape = PlacedSiteShape.Of(cave.Centre, 90f, CaveFloor[0], 0f, null, wall, false, 90f) });
+            PlacedSites.Enabled = placed;
+            LocationLevelling.Source = c => c.magnitude < 0.5f ? CaveFloor : null;
+            SetPathfinder(new RoadPathfinder(_world) { Stairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f });
+
+            bool built = RoadNetworkGenerator.GenerateRoad(new Vector2(0f, 120f), 0f, new Vector2(0f, 0f), 10f, 4f, "to the cave");
+
+            Assert.Equal(!placed, built);
+            if (placed)
+            {
+                Assert.Equal("no way onto a placed place's landing", RoadSpatialGrid.LastRefusal);
+                Assert.Empty(RoadSpatialGrid.GetRoadPointsNearPosition(Vector3.zero, 60f));
+            }
+        }
+    }
+
+    /// <summary>Where the landing's side cannot be reached from beyond the ring, the road still comes in as
+    /// near that side as it can, further round the ring, not wherever a search to the place arrives (three Dvergr
+    /// entrances on one test world found no route to their landing's side, and one then came in on
+    /// the far side, too far from its landing).</summary>
+    [Fact]
+    public void ARoadThatCannotReachAPlacedPlacesLandingSideComesInFurtherRoundTheRing()
+    {
+        var sea = new SeaOnTheLandingsSide();
+        _scope.WithWorld(sea);
+        PlacedSite cave = Cave();
+        Func<float, float, float> ground = PlacedSiteGround.Sampler(cave.Record.Ground((x, z) => sea.GetHeight(x, z)), cave.Record.X0, cave.Record.Z0, cave.Record.W, cave.Record.H);
+        PlacedSites.Ready(new PlacedSite { Record = cave.Record, Ground = ground, Shape = PlacedSiteShape.Of(cave.Centre, 90f, CaveFloor[0], 0f, null, ground, false, cave.Record.Root) });
+        LocationLevelling.Source = c => c.magnitude < 0.5f ? CaveFloor : null;
+        SetPathfinder(new RoadPathfinder(sea) { Stairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f });
+
+        Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-20f, 120f), 0f, new Vector2(0f, 0f), 10f, 4f, "to the cave"));
+
+        Vector2 nearest = RoadSpatialGrid.GetRoadPointsNearPosition(Vector3.zero, 60f).Where(p => p.IsRoad && p.p.magnitude > Footprint)
+            .OrderBy(p => p.p.magnitude).First().p;
+        float offLanding = Mathf.Abs(Mathf.Atan2(nearest.y, nearest.x) * Mathf.Rad2Deg);
+        string outcomes = "last refusal: " + (RoadSpatialGrid.LastRefusal ?? "none");
+        Assert.True(offLanding <= 60f, $"the road's nearest point outside the cave is {nearest}, {offLanding:F0} deg round from its landing's side; {outcomes}");
+    }
+
+    /// <summary>A staircase onto a placed place's landing that could not be laid is not laid out again from
+    /// the same start, and a place gets no more than EntryStairsPerPlace of them: the slowest islands took
+    /// 570 and 537 s, most of it laying the same failing staircases for each road tried to a place.</summary>
+    [Fact]
+    public void AFailedStaircaseOntoAPlacedPlacesLandingIsNotLaidOutAgain()
+    {
+        int perPlace = RoadNetworkGenerator.EntryStairsPerPlace;
+        try
+        {
+            PlacedSite cave = Cave();
+            Func<float, float, float> wall = (x, z) => new Vector2(x, z).magnitude < 22f ? 90f : 50f;
+            PlacedSites.Ready(new PlacedSite { Record = cave.Record, Ground = wall, Shape = PlacedSiteShape.Of(cave.Centre, 90f, CaveFloor[0], 0f, null, wall, false, 90f) });
+            LocationLevelling.Source = c => c.magnitude < 0.5f ? CaveFloor : null;
+            SetPathfinder(new RoadPathfinder(_world) { Stairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f });
+            RoadNetworkGenerator.EntryStairLayouts = 0;
+
+            Assert.False(RoadNetworkGenerator.GenerateRoad(new Vector2(0f, 120f), 0f, new Vector2(0f, 0f), 10f, 4f, "to the cave"));
+            int first = RoadNetworkGenerator.EntryStairLayouts;
+            Assert.True(first > 0);
+            Assert.False(RoadNetworkGenerator.GenerateRoad(new Vector2(0f, 120f), 0f, new Vector2(0f, 0f), 10f, 4f, "to the cave again"));
+            Assert.Equal(first, RoadNetworkGenerator.EntryStairLayouts);
+
+            RoadNetworkGenerator.EntryStairsPerPlace = 0;
+            Assert.False(RoadNetworkGenerator.GenerateRoad(new Vector2(120f, 60f), 0f, new Vector2(0f, 0f), 10f, 4f, "from elsewhere"));
+            Assert.Equal(first, RoadNetworkGenerator.EntryStairLayouts);
+        }
+        finally { RoadNetworkGenerator.EntryStairsPerPlace = perPlace; }
+    }
+
     /// <summary>The level ground with the cave on an islet: deep sea from 30 to 80 m out all round.</summary>
     private sealed class Islet : WorldGenerator
     {

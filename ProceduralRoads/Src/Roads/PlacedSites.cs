@@ -70,6 +70,7 @@ public static class PlacedSites
     {
         s_known.Clear();
         s_ready.Clear();
+        s_landed.Clear();
     }
 
     /// <summary>The places ready for the roads, by centre: <see cref="Prepare"/>d from the records.</summary>
@@ -130,6 +131,19 @@ public static class PlacedSites
     }
 
     public static int ReadyCount => s_ready.Count;
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, int), byte> s_landed = new();
+
+    /// <summary>A road or staircase was carried on onto the place's landing (one of the level landings in
+    /// front of its mouth, <see cref="PlacedSiteShape.Landings"/>): it is reached, wherever on its landing that
+    /// ended. Its pieces may stop short of the shape's own landing point, the flight's foot then walked over the
+    /// level ground (the staircase onto a Dvergr entrance's landing at 5440,4800 ended
+    /// on it, its last piece 9.0 m from the shape's point; a frost cave's 9.3 m).</summary>
+    public static void MarkLanded(Vector2 centre) => s_landed[Key(centre)] = 0;
+    /// <summary>Forget which places the network lands on: with the network they were landed by. The places
+    /// placed stay: they are the world's.</summary>
+    public static void ForgetLanded() => s_landed.Clear();
+    public static bool Landed(Vector2 centre) => s_landed.ContainsKey(Key(centre));
 
     /// <summary>Whether a place's placement is the player's to make: unique, or shown on the map once placed or always.</summary>
     /// <remarks>Not Hildir's quest sites while roads go to them (<see cref="RoadNetworkOptions.HildirQuestSites"/>): placed

@@ -9,6 +9,9 @@ namespace ProceduralRoads;
 /// (<see cref="RoadStairRuns.PlanPlacedSiteApproach"/>).</summary>
 public sealed class SiteApproachRequest
 {
+    /// <summary>How much of a road's end is kept in <see cref="RoadTail"/> to keep the staircase off it: about 40 m at the 8 m cell.</summary>
+    public const int TailPoints = 6;
+
     public Vector2 RoadEnd;
     public float RoadHeight;
     /// <summary>The heading the road arrives at its end on.</summary>
@@ -61,6 +64,11 @@ public static partial class RoadStairRuns
 
     /// <summary>How many aims an approach tries.</summary>
     public const int AimTries = 5;
+
+    /// <summary>A staircase onto a placed place's landing: its cuts outside every footprint, which the terrain writer
+    /// leaves to the place's own levelling.</summary>
+    internal static List<Vector3> CutsOutsideFootprints(StairPlan plan) =>
+        plan.Cuts.FindAll(c => !RoadSiteProtection.Contains(new Vector2(c.x, c.z)));
 
     /// <summary>Search steps the last in-play approach laid out on this thread spent, every layout together (log, tests).</summary>
     [ThreadStatic] internal static int LastApproachSteps;

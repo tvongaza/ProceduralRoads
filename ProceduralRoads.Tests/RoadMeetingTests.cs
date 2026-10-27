@@ -115,4 +115,83 @@ public class RoadMeetingTests : IDisposable
         var besideToTheEnd = new List<RoadSpatialGrid.PlannedPath> { Road(z => z < -20f ? Mathf.Min(20f, 3f + (-20f - z) * 0.6f) : 3f) };
         Assert.True(RoadNetworkGenerator.BraidsNetwork(besideToTheEnd, out _), "beside it to its end, not joining");
     }
+
+    /// <summary>A strip of level ground at 40 m between the sea north of z = 11 and south of z = -40.</summary>
+    private sealed class Strip : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy) => Mathf.Abs(wx) > 200f || wy > 11f || wy < -40f ? 0f : 40f;
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
+        public override void GetRiverWeight(float x, float z, out float weight, out float width) { weight = 0f; width = 0f; }
+        public override int GetSeed() => 77;
+    }
+
+    /// <summary>An earthwork re-route is taken only where the network takes it: one that crosses another road is not,
+    /// and the first plan stands. Here the road's straight line passes
+    /// 7 m from a short road on a 3.5 m fill and is held up to it (a stretch held over 3 m off its profile, which is
+    /// re-routed but never refused); the only way round, south, crosses a road that runs from just south of the line to
+    /// the sea. Taken, the re-route was refused for the crossing and the road with it.</summary>
+    [Fact]
+    public void AnEarthworkReRouteThatCrossesAnotherRoadIsNotTaken()
+    {
+        float cap = RoadNetworkGenerator.EarthworkCap;
+        try
+        {
+            bool Build()
+            {
+                RoadNetworkGenerator.Reset();
+                var world = new Strip();
+                _scope.WithWorld(world);
+                SetPathfinder(new RoadPathfinder(world) { TerrainVarianceThreshold = 1000f, Meander = 0f, Fords = false, Bridges = false });
+                RoadNetworkGenerator.EarthworkCap = 8f;
+                RoadSpatialGrid.PlannedPath Laid(float x0, float z0, float x1, float z1, float h)
+                {
+                    var points = new List<Vector2>();
+                    int n = Mathf.CeilToInt(Vector2.Distance(new Vector2(x0, z0), new Vector2(x1, z1)));
+                    for (int i = 0; i <= n; i++) points.Add(Vector2.Lerp(new Vector2(x0, z0), new Vector2(x1, z1), i / (float)n));
+                    return new RoadSpatialGrid.PlannedPath(points, points.Select(_ => h).ToList(), points.Select(_ => default(RoadPointDebugInfo)).ToList(), 4f, n, false);
+                }
+                RoadSpatialGrid.Commit(Laid(-4f, 7f, 4f, 7f, 43.5f));
+                RoadSpatialGrid.Commit(Laid(-6f, -8f, -6f, -40f, 40f));
+                RoadSpatialGrid.FinalizeRoadNetwork();
+                return RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(80f, 0f), 0f, 4f, "along");
+            }
+            Assert.True(Build(), "refused: " + RoadSpatialGrid.LastRefusal);
+            // The road built is the first plan: it does not cross the road to the south.
+            Assert.Empty(RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(-6f, 0f, -20f), 3f).Where(p => Mathf.Abs(p.p.x + 6f) > 1f));
+        }
+        finally { RoadNetworkGenerator.EarthworkCap = cap; }
+    }
+
+    /// <summary>An earthwork re-route passed over for crossing another road prices that crossing up for the next attempt,
+    /// which goes round it: here past the end of the short road to the south. Without it the next attempt searched the same
+    /// way, was passed over again, and the road kept its first plan, held 3.5 m up to the road on a fill beside it.</summary>
+    [Fact]
+    public void AnEarthworkReRoutePassedOverForACrossingGoesRoundItNextTime()
+    {
+        float cap = RoadNetworkGenerator.EarthworkCap;
+        try
+        {
+            RoadNetworkGenerator.Reset();
+            var world = new Strip();
+            _scope.WithWorld(world);
+            SetPathfinder(new RoadPathfinder(world) { TerrainVarianceThreshold = 1000f, Meander = 0f, Fords = false, Bridges = false });
+            RoadNetworkGenerator.EarthworkCap = 8f;
+            RoadSpatialGrid.PlannedPath Laid(float x0, float z0, float x1, float z1, float h)
+            {
+                var points = new List<Vector2>();
+                int n = Mathf.CeilToInt(Vector2.Distance(new Vector2(x0, z0), new Vector2(x1, z1)));
+                for (int i = 0; i <= n; i++) points.Add(Vector2.Lerp(new Vector2(x0, z0), new Vector2(x1, z1), i / (float)n));
+                return new RoadSpatialGrid.PlannedPath(points, points.Select(_ => h).ToList(), points.Select(_ => default(RoadPointDebugInfo)).ToList(), 4f, n, false);
+            }
+            RoadSpatialGrid.Commit(Laid(-4f, 7f, 4f, 7f, 43.5f));
+            // A short road south of the line, ending 20 m short of the sea.
+            RoadSpatialGrid.Commit(Laid(-6f, -8f, -6f, -20f, 40f));
+            RoadSpatialGrid.FinalizeRoadNetwork();
+
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(80f, 0f), 0f, 4f, "along"), "refused: " + RoadSpatialGrid.LastRefusal);
+            // Built round the south road's end, clear of the road on the fill: nothing of it within 9 m of that road.
+            Assert.Empty(RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(0f, 0f, 7f), 9f).Where(p => p.p.y < 5f));
+        }
+        finally { RoadNetworkGenerator.EarthworkCap = cap; }
+    }
 }
