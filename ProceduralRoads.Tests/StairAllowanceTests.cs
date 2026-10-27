@@ -28,7 +28,7 @@ public class StairAllowanceTests : IDisposable
     private static StairPlan Plan(Vector2 a, Vector2 b, Func<float, float, float> ground, float? arriving, bool retried = false) =>
         (StairPlan)typeof(RoadStairRuns).GetMethod("Plan", BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, new object?[]
         {
-            a, b, StairKit.Stone, ground, arriving, null, null, StairLayout.MaxBuriedDepth, RoadStairRuns.TopLandings, null, null, retried, true, null,
+            a, b, StairKit.Stone, ground, arriving, null, null, StairLayout.MaxBuriedDepth, RoadStairRuns.TopLandings, null, null, retried, true, null, null,
         })!;
 
     /// <summary>A stretch longer than any staircase laid is refused at once, not searched (the 19 tried over

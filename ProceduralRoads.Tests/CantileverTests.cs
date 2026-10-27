@@ -465,6 +465,40 @@ public class CantileverTests
         finally { StairLayout.RulesOff = SteepRules.None; }
     }
 
+    /// <summary>A road staircase top at 6468.3,-1522.5: its top edge at 162.3, climbing toward 202.5, the
+    /// surface past it rising 1.1-1.5 m over the next 5 m, the road carrying on that way. The top goes a bit out
+    /// and does the double stair ridge to land on the surface: one more stair out, then (a floor where the
+    /// surface is about level, the ridge only higher) a floor onto the surface, and the road starts past it. Without the
+    /// rule the road starts at the top, under the lip.</summary>
+    [Fact]
+    public void ARoadStaircaseTopGoesOutAndCrestsOntoTheSurface()
+    {
+        Vector2 edge = new(6467.936f, -1523.402f), dir = StairLayout.Forward(202.5f);
+        float[] ds = { 0f, 1f, 2f, 3f, 5f, 8f }, hs = { 162.2f, 162.6f, 163.2f, 163.4f, 163.8f, 163.9f };
+        float Ground(float x, float z)
+        {
+            float d = Vector2.Dot(new Vector2(x, z) - edge, dir);
+            if (d <= 0f) return hs[0] + 0.5f * d;
+            for (int i = 1; i < ds.Length; i++) if (d <= ds[i]) return Mathf.Lerp(hs[i - 1], hs[i], (d - ds[i - 1]) / (ds[i] - ds[i - 1]));
+            return hs[hs.Length - 1];
+        }
+        StairPlan Top() => new() { Kit = StairKit.Stone.Name, Reached = true, End = new Vector3(edge.x, 162.326f, edge.y), EndHeading = 202.5f };
+        var path = new List<Vector2> { edge - dir * 10f, edge, edge + dir * 12f };
+        StairPlan plan = Top();
+        Assert.True(RoadStairRuns.TopOntoSurface(plan, path, 2, Ground, out Vector2 past, out float pastHeight));
+        // One stair out, then (the surface there within the floor's band of the new top) a floor onto it.
+        Assert.Equal(1, plan.Pieces.Count(p => p.Kind == StairPieceKind.Stair));
+        Assert.Single(plan.Pieces, p => p.Prefab == "stone_floor_2x2");
+        Assert.True(Math.Abs(pastHeight - Ground(past.x, past.y)) <= StairLayout.TopFloorBand && pastHeight > 163f, $"road starts at {pastHeight:F2}");
+        int pieces = plan.Pieces.Count;
+        // Called again for the next road that walks it: the same, nothing added.
+        Assert.True(RoadStairRuns.TopOntoSurface(plan, path, 2, Ground, out _, out _));
+        Assert.Equal(pieces, plan.Pieces.Count);
+        StairLayout.RulesOff = SteepRules.Crest;
+        try { Assert.False(RoadStairRuns.TopOntoSurface(Top(), path, 2, Ground, out _, out _)); }
+        finally { StairLayout.RulesOff = SteepRules.None; }
+    }
+
     /// <summary>A road arriving heading north at the foot of a slope that climbs south, behind it: set off freely, the
     /// staircase started straight back across the road and on up the slope (at 1948.1,691.7, 180 degrees opposite the
     /// direction of road travel and blocking the actual road to the stair start). Held to the road's
@@ -536,6 +570,23 @@ public class CantileverTests
         Assert.True(free != 0f, "without the rule it set off along the road anyway");
     }
 
+    /// <summary>At the top of the 41 m staircase at 5669.6,4239.7: the flight came in facing away from the way
+    /// the road leaves its top (it should face the other direction). Held to the
+    /// road's departure, the top arrives within 90 degrees of it; free, it came straight up the slope, 135 degrees off.</summary>
+    [Fact]
+    public void AStaircaseTopArrivesFacingTheWayItsRoadLeaves()
+    {
+        float North(float x, float z) => Mathf.Max(0f, 0.5f * z);
+        StairPlan Lay() => StairLayout.Build(new Vector2(0f, 0f), new Vector2(0f, 24f), North, sunkFoot: true, topFacing: 135f);
+        float Off(StairPlan p) => Math.Abs(StairLayout.Wrap(p.EndHeading - 135f + 180f) - 180f);
+        StairPlan plan = Lay();
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.True(Off(plan) <= 90.01f, $"arrived on {plan.EndHeading}");
+        StairLayout.RulesOff = SteepRules.TopFacing;
+        try { Assert.True(Off(Lay()) > 90.01f, "without the rule it arrived facing the road anyway"); }
+        finally { StairLayout.RulesOff = SteepRules.None; }
+    }
+
     /// <summary>A foot at the 41 m staircase (5629.9,4266.0): two stairs set off along the road (yaw 247.5,
     /// climbing 67.5, the road arriving on about 53), then a bend to 112.5; set beside the road by its settled flight, it
     /// started off to the side. Straight on at its first stairs, it stays in the road's middle; turned at both, beside.</summary>
@@ -555,6 +606,25 @@ public class CantileverTests
         RoadStairRuns.CentreAlignedFirstStair = false;
         try { Assert.True(RoadStairRuns.SetsOffTurned(plan, foot, 53f), "without the rule its bend set it beside the road anyway"); }
         finally { RoadStairRuns.CentreAlignedFirstStair = true; }
+    }
+
+    /// <summary>A black marble top (463.6,6503.4): its 2x2 stood 0.2-0.7 m over the road past it, high enough that a
+    /// player can get stuck on it briefly. A top floor is laid only where the ground across its whole far
+    /// edge is within a step of it; a road falling away from the top meets the top itself.</summary>
+    [Fact]
+    public void ATopFloorIsNotLaidProudOfTheGroundPastIt()
+    {
+        StairPlan Top() => new() { Kit = StairKit.BlackMarble.Name, Reached = true, End = new Vector3(0f, 10f, 0f), EndHeading = 0f,
+            LastRowKind = StairPieceKind.Stair, LastRowPieces = 0 };
+        // Past the top the ground falls 0.25 m per metre, and across it 0.3 m per metre to the left: 0.6-1 m under the floor's far corners.
+        float Falling(float x, float z) => 10f - Mathf.Max(0f, z) * 0.25f + Mathf.Min(0f, x) * 0.3f;
+        Assert.Equal(0, StairLayout.AddTopFloor(Top(), Falling, 2f).pieces);
+        // Level with it across: laid.
+        float Level(float x, float z) => 10f - Mathf.Max(0f, z) * 0.05f;
+        Assert.True(StairLayout.AddTopFloor(Top(), Level, 2f).pieces > 0);
+        StairLayout.RulesOff = SteepRules.ProudFloor;
+        try { Assert.True(StairLayout.AddTopFloor(Top(), Falling, 2f).pieces > 0, "without the rule the floor was not laid anyway"); }
+        finally { StairLayout.RulesOff = SteepRules.None; }
     }
 
     /// <summary>A foot at -3187.2,-27.5: the road arriving heading north, the flight set off at 225 from the
@@ -580,6 +650,22 @@ public class CantileverTests
         RoadStairRuns.OneSideWhenTurned = false;
         try { Assert.Equal(new[] { -1, 1 }, RoadStairRuns.BesideSides(-48.5f, -1)); }
         finally { RoadStairRuns.OneSideWhenTurned = true; }
+    }
+
+    /// <summary>A top at 6495.5,-1464.9: the last flight curled round over the road it hands to and lay on its
+    /// surface for several pieces, taking over the road itself. At a top, as at a foot, only the joining piece
+    /// (within JoiningStep) may stand on the road: a stair 4 m on along the road at its level lies on it.</summary>
+    [Fact]
+    public void AStaircasesTopTakesNoMoreOfItsRoadThanTheJoiningPiece()
+    {
+        float Ground(float x, float z) => 0.5f * Mathf.Max(0f, x);
+        var path = new List<Vector2> { new(-16f, 0f), new(-8f, 0f), new(0f, 0f), new(8f, 0f), new(16f, 0f), new(24f, 0f), new(32f, 0f) };
+        StairPlan Top(float x) => new() { Reached = true, Pieces = { new StairPiece { Kind = StairPieceKind.Stair, Position = new Vector3(x, 7f, 0.5f), YawDegrees = 270f } } };
+        Assert.True(RoadStairRuns.OverRoad(Top(20f), path, 2, 4, Ground), "4 m on along the road, at its level");
+        Assert.False(RoadStairRuns.OverRoad(Top(17.5f), path, 2, 4, Ground), "the joining piece");
+        RoadStairRuns.TopJoinsOnly = false;
+        try { Assert.False(RoadStairRuns.OverRoad(Top(20f), path, 2, 4, Ground), "without the rule it lay on the road anyway"); }
+        finally { RoadStairRuns.TopJoinsOnly = true; }
     }
 
     /// <summary>At -5853,5918: a flight running beside its road a few metres off, both climbing, mostly floors

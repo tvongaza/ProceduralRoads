@@ -151,7 +151,7 @@ public static partial class RoadStairRuns
         System.Threading.Interlocked.Increment(ref s_generation);
         s_plans.Clear();
         s_laid.Clear();
-        FeetBeside = FeetBesideRefused = FeetLowered = FeetFacedFreely = FootAprons = SpurFeet = 0;
+        FeetBeside = FeetBesideRefused = RoadTopsCrested = TopFloors = FeetLowered = FeetFacedFreely = TopsBeside = FootAprons = SpurFeet = 0;
     }
 
     /// <summary>
@@ -310,9 +310,9 @@ public static partial class RoadStairRuns
                     kit = merged.Kit;
                     var line = new List<Vector2>(path.GetRange(start, to - start + 1)) { b };
                     float mergedArriving = StairLayout.Bearing(start > 0 ? path[start - 1] : a, start > 0 ? a : path[start + 1]);
-                    float? mergedFacing = FootFacing(path, start, to, Ground);
-                    plan = Plan(a, b, kit, Ground, mergedArriving, leaving, line, retried: true, facing: mergedFacing);
-                    if (!Usable(plan, path, start, to, world, spans)) plan = Plan(a, b, kit, Ground, null, null, line, retried: mergedFacing.HasValue, facing: mergedFacing);
+                    float? mergedFacing = FootFacing(path, start, to, Ground), mergedTop = TopFacing(path, start, to, Ground);
+                    plan = Plan(a, b, kit, Ground, mergedArriving, leaving, line, retried: true, facing: mergedFacing, topFacing: mergedTop);
+                    if (!Usable(plan, path, start, to, world, spans)) plan = Plan(a, b, kit, Ground, null, null, line, retried: mergedFacing.HasValue, facing: mergedFacing, topFacing: mergedTop);
                     if (mergedFacing.HasValue && !Usable(plan, path, start, to, world, spans))
                     {
                         System.Threading.Interlocked.Increment(ref FeetFacedFreely);
@@ -343,14 +343,23 @@ public static partial class RoadStairRuns
                 // set off freely, the foot at Hildir_cave 1664,768 climbed back alongside the road that had arrived heading
                 // the other way.
                 float? facing = FootFacing(path, start, to, Ground);
+                // And its top arrives within 90 degrees of the way the road leaves it, straight on preferred.
+                float? topFacing = TopFacing(path, start, to, Ground);
                 int tops = TopLandings;
-                plan = Plan(a, b, kit, Ground, arriving, leaving, corridor, topLandings: tops, retried: true, facing: facing);
-                if (!Usable(plan, path, start, to, world, spans)) plan = Plan(a, b, kit, Ground, null, null, corridor, topLandings: tops, retried: true, facing: facing);
+                plan = Plan(a, b, kit, Ground, arriving, leaving, corridor, topLandings: tops, retried: true, facing: facing, topFacing: topFacing);
+                if (!Usable(plan, path, start, to, world, spans)) plan = Plan(a, b, kit, Ground, null, null, corridor, topLandings: tops, retried: true, facing: facing, topFacing: topFacing);
                 // Its own way between the ends: kept to the road's cells, a layout
                 // that stalls, or comes back onto its road or another staircase,
                 // cost the whole road its stairs (540 roads on RoadSeedA at 35/25, though 4777 of 5900 layouts were laid).
-                if (!Usable(plan, path, start, to, world, spans)) plan = Plan(a, b, kit, Ground, null, null, null, topLandings: tops, retried: facing.HasValue, facing: facing);
-                if (facing.HasValue && !Usable(plan, path, start, to, world, spans))
+                if (!Usable(plan, path, start, to, world, spans)) plan = Plan(a, b, kit, Ground, null, null, null, topLandings: tops, retried: facing.HasValue || topFacing.HasValue, facing: facing, topFacing: topFacing);
+                // Its top on the road it hands to (only the joining piece may stand there, TopJoinsOnly): laid again to
+                // beside the road's start past it, on the side it comes in from, the road carrying on from there.
+                if (!Usable(plan, path, start, to, world, spans) && TopJoinsOnly && LastRefusal == Refusal.OnItsRoad)
+                {
+                    StairPlan? besideTop = TopBesideItsRoad(path, start, to, a, b, kit, Ground, corridor, tops, facing, topFacing, world, spans);
+                    if (besideTop != null) plan = besideTop;
+                }
+                if ((facing.HasValue || topFacing.HasValue) && !Usable(plan, path, start, to, world, spans))
                 {
                     System.Threading.Interlocked.Increment(ref FeetFacedFreely);
                     plan = Plan(a, b, kit, Ground, null, null, null, topLandings: tops);
@@ -366,7 +375,7 @@ public static partial class RoadStairRuns
                     // and BesideItsRoad puts it beside the road where that turns off it.
                     if (!plan.Reversed && SwingsAtItsFoot(plan, a))
                     {
-                        StairPlan own = Plan(a, b, kit, Ground, null, leaving, corridor, topLandings: tops, facing: facing);
+                        StairPlan own = Plan(a, b, kit, Ground, null, leaving, corridor, topLandings: tops, facing: facing, topFacing: topFacing);
                         if (Usable(own, path, start, to, world, spans)) plan = own;
                     }
                     plan = BesideItsRoad(plan, path, start, to, kit, Ground, corridor, world, spans);
@@ -376,6 +385,9 @@ public static partial class RoadStairRuns
             // The plan climbs from the lower end, exactly, to its own end near the higher.
             Vector2 end = new Vector2(plan.End.x, plan.End.z);
             float endHeight = plan.End.y;
+            // Under ground that stands over its top, out over the lip and a crest onto it; the road starts on the surface past it.
+            if (existing == null && TopOntoSurface(plan, path, plan.Reversed ? start - 1 : to + 1, Ground, out Vector2 past, out float pastHeight))
+                (end, endHeight) = (past, pastHeight);
             // Its foot over a road that cannot climb to it within the cap: stairs on down toward the road.
             Vector2 footAt = plan.Reversed ? b : a;
             float footHeight = Ground(footAt.x, footAt.y);
@@ -419,7 +431,7 @@ public static partial class RoadStairRuns
 
     private static StairPlan Plan(Vector2 a, Vector2 b, StairKit kit, Func<float, float, float> ground, float? arriving, float? leaving, List<Vector2>? corridor,
         float maxBuried = StairLayout.MaxBuriedDepth, int topLandings = TopLandings, float? footHeight = null, StairContinuation? after = null,
-        bool retried = false, bool relayPads = true, float? facing = null)
+        bool retried = false, bool relayPads = true, float? facing = null, float? topFacing = null)
     {
         int Key(float? h) => h.HasValue ? Mathf.RoundToInt(StairLayout.SnapHeading(h.Value) / StairLayout.HeadingStep) : -1;
         int Row(int h)
@@ -443,7 +455,7 @@ public static partial class RoadStairRuns
             }
         }
         var key = (Mathf.RoundToInt(a.x * 10f), Mathf.RoundToInt(a.y * 10f), Mathf.RoundToInt(b.x * 10f), Mathf.RoundToInt(b.y * 10f), kit.Name,
-            Key(arriving) * 64 + Key(leaving) + (relayPads ? 0 : 1 << 20) + ((Key(facing) + 1) << 22), Line());
+            Key(arriving) * 64 + Key(leaving) + (relayPads ? 0 : 1 << 20) + ((Key(facing) + 1) << 22) + ((Key(topFacing) + 1) << 27), Line());
         if (s_plans.TryGetValue(key, out StairPlan? cached)) return cached;
         // A stretch longer than any staircase laid is not laid out: none over 133 m was on the
         // layouts offline (208 m on RoadSeedD), and the 19 over 150 m that were tried (to 878 m, the road's
@@ -459,7 +471,7 @@ public static partial class RoadStairRuns
         int share = retried ? HeldShare : 1;
         LastAllowance = GenerationTotalExpansions / share;
         StairPlan plan = StairLayout.Build(a, b, ground, Width, kit, GenerationExpansions / share, arriving, leaving, corridor, GenerationTotalExpansions / share,
-            GenerationStall / share, topLandings, sunkFoot: true, maxBuried: maxBuried, footHeight: footHeight, after: after, relayPads: relayPads, facing: facing);
+            GenerationStall / share, topLandings, sunkFoot: true, maxBuried: maxBuried, footHeight: footHeight, after: after, relayPads: relayPads, facing: facing, topFacing: topFacing);
         return s_plans[key] = plan;
     }
 
@@ -597,8 +609,12 @@ public static partial class RoadStairRuns
             // Only the step that joins the road (and the sunk step under it) may stand on it: further up a foot that turned
             // across the road walled it off (stairs must not fully block the road).
             // At its foot (the low end) only; its top meets the road on its landing as before.
-            float joinsA = !plan.Reversed ? JoiningStep : JunctionReach,
-                joinsB = plan.Reversed ? JoiningStep : JunctionReach;
+            // At its top too, only the piece that joins the road may stand on it: a last flight that curled round over the
+            // road within the old 6 m took the road over (top at 6495.5,-1464.9: it entered the road on the wrong side and took
+            // over the road itself).
+            float topJoins = TopJoinsOnly ? JoiningStep : JunctionReach;
+            float joinsA = !plan.Reversed ? JoiningStep : topJoins,
+                joinsB = plan.Reversed ? JoiningStep : topJoins;
             // A foot that set off back (StairLayout.MostSetOffBack) runs beside the road, never on it: only its sunk step,
             // under the road's level, stands there (at 1948.1,691.7 a stair set off 180 degrees opposite the direction of road
             // travel blocked the actual road to the stair start).

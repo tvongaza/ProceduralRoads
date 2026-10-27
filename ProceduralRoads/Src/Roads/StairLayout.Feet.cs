@@ -149,6 +149,7 @@ public static partial class StairLayout
         if (plan.SunkPieces <= 0) return;
         plan.Pieces.RemoveRange(0, plan.SunkPieces);
         plan.Clearances.RemoveRange(0, plan.SunkClearances);
+        if (plan.LastRowPieces >= 0) { plan.LastRowPieces -= plan.SunkPieces; plan.LastRowClearances -= plan.SunkClearances; }
         plan.SunkPieces = plan.SunkClearances = 0;
     }
 

@@ -96,8 +96,8 @@ public static partial class RoadStairRuns
             // of the road).
             float? holdTo = BesideHold(plan, travel);
             StairPlan again = plan.Reversed
-                ? Plan(path[from], beside, kit, ground, null, StairLayout.Wrap(plan.StartHeading + 180f), line, footHeight: roadHeight, facing: holdTo)
-                : Plan(beside, path[to], kit, ground, plan.StartHeading, null, line, footHeight: roadHeight, facing: holdTo);
+                ? Plan(path[from], beside, kit, ground, null, StairLayout.Wrap(plan.StartHeading + 180f), line, footHeight: roadHeight, facing: holdTo, topFacing: TopFacing(path, from, to, ground))
+                : Plan(beside, path[to], kit, ground, plan.StartHeading, null, line, footHeight: roadHeight, facing: holdTo, topFacing: TopFacing(path, from, to, ground));
             if (Usable(again, path, from, to, world, spans))
             {
                 System.Threading.Interlocked.Increment(ref FeetBeside);
