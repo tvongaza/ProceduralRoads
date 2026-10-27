@@ -203,6 +203,23 @@ public static partial class RoadStairRuns
         return false;
     }
 
+    /// <summary>The path indices round the stair steps on path[from..to] steeper than <see cref="RoadPathfinder.StairMaxGrade"/>
+    /// (first to last), or null where none is.</summary>
+    internal static (int from, int to)? TooSteepFor(List<Vector2> path, int from, int to, IReadOnlyList<(Vector2 from, Vector2 to)> steps,
+        Func<float, float, float> ground)
+    {
+        int first = -1, last = -1;
+        for (int i = from + 1; i <= to; i++)
+        {
+            float run = Vector2.Distance(path[i - 1], path[i]);
+            if (run < 0.5f || !OnAStep(path[i - 1], path[i], steps)) continue;
+            if (Mathf.Abs(ground(path[i].x, path[i].y) - ground(path[i - 1].x, path[i - 1].y)) / run <= RoadPathfinder.StairMaxGrade + 0.01f) continue;
+            if (first < 0) first = i - 1;
+            last = i;
+        }
+        return first < 0 ? null : (first, last);
+    }
+
     private static float DistanceToSegment(Vector2 p, Vector2 a, Vector2 b)
     {
         Vector2 ab = b - a;
@@ -231,6 +248,7 @@ public static partial class RoadStairRuns
         for (int k = 0; k < stretches.Count; k++)
         {
             var (from, to) = stretches[k];
+            LastFailedStretch = (from, to);
             foreach (RoadCrossing c in crossings)
                 if (c.FromIndex < to && c.ToIndex > from) return null;
             Vector2 a = path[from], b = path[to];
@@ -265,6 +283,15 @@ public static partial class RoadStairRuns
             else
             {
                 kit = StairKit.ForLine(path.GetRange(from, to - from + 1), (x, z) => world.GetBiome(x, z), world.GetSeed());
+                // The steps it climbs are within its kit's grade: a kit that cannot hold a flight out on
+                // cantilevers (wood) is not laid over a step the search bought steeper than RoadPathfinder.StairMaxGrade by
+                // another biome's limit (a Mountain face clipped by a Meadows climb). Those steps' cells are closed to stairs
+                // and the road searched again, rather than the layout spending its allowance and failing.
+                if (kit.Cantilever == null && TooSteepFor(path, from, to, steps, Ground) is (int, int) steep)
+                {
+                    LastFailedStretch = steep;
+                    return null;
+                }
                 // The road's own headings at the two ends: the staircase lines up with them
                 // (within reason), and failing that is laid as it falls; either way none of
                 // it may lie on the road it joins.
@@ -277,6 +304,7 @@ public static partial class RoadStairRuns
                     RoadStairSpan merged = spans[spans.Count - 1];
                     spans.RemoveAt(spans.Count - 1);
                     start = merged.FromIndex;
+                    LastFailedStretch = (start, to);
                     a = path[start];
                     kit = merged.Kit;
                     var line = new List<Vector2>(path.GetRange(start, to - start + 1)) { b };
@@ -441,6 +469,9 @@ public static partial class RoadStairRuns
     [ThreadStatic] private static Refusal t_lastRefusal;
     internal static Refusal LastRefusal { get => t_lastRefusal; private set => t_lastRefusal = value; }
 
+    /// <summary>The path indices of the stretch whose staircase the last failed <see cref="Lay"/>
+    /// on this thread could not lay (a merge's whole stretch where it was merging).</summary>
+    [ThreadStatic] internal static (int from, int to) LastFailedStretch;
 
     /// <summary>A road end this close to a walked piece of a laid staircase is on it.</summary>
     public const float OnStairReach = 4f;

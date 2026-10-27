@@ -121,6 +121,41 @@ public class RoadPathfinder
     /// <summary>The stair steps of the last path found, from cell centre to cell centre.</summary>
     public List<(Vector2 from, Vector2 to)> LastStairSteps { get; } = new();
 
+    /// <summary>Cells closed to stairs for the road being built: a staircase the search bought
+    /// there could not be laid, so the road is searched again with stairs open everywhere else
+    /// (RoadNetworkGenerator.GenerateRoad). Cleared, with <see cref="m_stairOpen"/>, when that road is done.</summary>
+    private readonly HashSet<Vector2i> m_noStairs = new(RoadGridComparer.Instance);
+    public int NoStairCells => m_noStairs.Count;
+    public void ClearNoStairs() { m_noStairs.Clear(); m_stairOpen.Clear(); }
+
+    /// <summary>Cells opened to stairs for the road being built: its switchback turns there were
+    /// too close to fit their curves, so the road is searched again climbing that stretch on stairs
+    /// and back to road beyond it. In them a staircase is offered on any step steep
+    /// enough for one, not only where road cannot climb, with no entry price and at
+    /// <see cref="OpenStairPrice"/> of the rest: at half its price, entry included, the search kept
+    /// the switchbacks it had (the 1000 entry outweighs a 24 m climb of road).</summary>
+    private readonly HashSet<Vector2i> m_stairOpen = new(RoadGridComparer.Instance);
+    public int OpenStairCells => m_stairOpen.Count;
+    /// <summary>A staircase's price in cells opened to stairs, entry aside, as a share of its price elsewhere.</summary>
+    internal const float OpenStairPrice = 0.5f;
+    private bool OpenToStairsAt(Vector2i from, Vector2i to) =>
+        m_stairOpen.Count > 0 && (m_stairOpen.Contains(from) || m_stairOpen.Contains(to));
+    /// <summary>Open the cells of these points, and <paramref name="reachCells"/> round each, to stairs.</summary>
+    public void OpenToStairs(IEnumerable<Vector2> points, int reachCells) => MarkCells(m_stairOpen, points, reachCells);
+    /// <summary>Close the cells of these points, and <paramref name="reachCells"/> round each, to stairs.</summary>
+    public void CloseToStairs(IEnumerable<Vector2> points, int reachCells) => MarkCells(m_noStairs, points, reachCells);
+
+    private void MarkCells(HashSet<Vector2i> cells, IEnumerable<Vector2> points, int reachCells)
+    {
+        foreach (Vector2 p in points)
+        {
+            Vector2i c = WorldToGrid(p);
+            for (int dx = -reachCells; dx <= reachCells; dx++)
+                for (int dz = -reachCells; dz <= reachCells; dz++)
+                    cells.Add(new Vector2i(c.x + dx, c.y + dz));
+        }
+    }
+
     /// <summary>Ground a crossing may land on: the shallow-water line plus the bank clearance.</summary>
     public const float LandingFloor = RoadConstants.ShallowWaterHeight + RoadConstants.BankClearance;
 
@@ -822,7 +857,7 @@ public class RoadPathfinder
         // broke into short staircases a cell of road apart, which piled into
         // each other on switchback legs (RoadSeedA kept 36 of them),
         // and the long runs were lost.
-        stair = (tooSteep || arriving != 0) && stairCost < road ? climb : 0;
+        stair = (tooSteep || arriving != 0 || OpenToStairsAt(from, to)) && stairCost < road ? climb : 0;
         return stair != 0 ? stairCost : road;
     }
 
@@ -870,13 +905,16 @@ public class RoadPathfinder
         // the two as two staircases. A staircase an earlier road laid here is
         // walked on at the reuse share, like road.
         climb = h2 >= h1 ? 1 : -1;
-        if (Stairs && wadeCost == 0f && riverWeight <= 0f && slope >= StairMinGrade && slope <= StairGradeLimit(m_terrain.Biome(to)))
+        if (Stairs && wadeCost == 0f && riverWeight <= 0f && slope >= StairMinGrade && slope <= StairGradeLimit(m_terrain.Biome(to))
+            && (m_noStairs.Count == 0 || !(m_noStairs.Contains(from) || m_noStairs.Contains(to))))
         {
             bool laid = StairStructures.OnLaidStair(from.x, from.y) && StairStructures.OnLaidStair(to.x, to.y);
             float biomePrice = StairBiomeFactor(m_terrain.Biome(to));
+            bool open = OpenToStairsAt(from, to);
             stairCost = BaseCost * dist + biomePrice * (StairCostPerMeterClimbed * SteepStairFactor(slope) * Mathf.Abs(h2 - h1)
-                + (arriving != 0 || laid ? 0f : StairEntryCost(from)));
+                + (arriving != 0 || laid || open ? 0f : StairEntryCost(from)));
             if (laid) stairCost *= ReuseFactor;
+            if (open) stairCost *= OpenStairPrice;
             if (m_earthworkPenalty.Count > 0 && m_earthworkPenalty.Contains(to)) stairCost += EarthworkPenalty;
         }
 

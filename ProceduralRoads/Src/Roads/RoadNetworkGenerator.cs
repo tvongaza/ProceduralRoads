@@ -876,10 +876,39 @@ public static partial class RoadNetworkGenerator
         float width, string? label = null) =>
         GenerateRoad(startCenter, startRadius, endCenter, endRadius, width, label, null);
 
+    /// <summary>How many stretches whose staircase could not be laid a road closes to stairs, one at a time,
+    /// searched again after each with stairs open everywhere else, before it is refused. One stretch that
+    /// would not lay cost the whole road its stairs: 65 of 96 roads, and 12 of
+    /// the 16 Mistlands staircases lost to the ledge price were the other staircases of four such roads
+    /// (no collateral). Offline, on RoadSeedA-E: 80 staircases and 3883
+    /// build searches with no retry, 96 and 4075 with one, 98 and 4247 with two; destinations the same.</summary>
+    public const int StairStretchRetries = 3;
+    /// <summary>Cells round a failed stretch also closed, so the search does not lay the same
+    /// staircase one column over.</summary>
+    internal const int StairStretchReachCells = 1;
+    /// <summary>Cells round switchback turns too close to fit their curves opened to stairs when the
+    /// road is searched again (<see cref="RoadPathfinder.OpenToStairs"/>).</summary>
+    internal const int TightTurnStairReachCells = 3;
+    [System.ThreadStatic] private static bool t_inRoad;
+
     internal static bool GenerateRoad(
         Vector2 startCenter, float startRadius,
         Vector2 endCenter, float endRadius,
         float width, string? label, List<Vector2>? networkHints)
+    {
+        // The cells a retry closes to stairs belong to this road alone.
+        if (t_inRoad || Finder == null)
+            return GenerateRoadCore(startCenter, startRadius, endCenter, endRadius, width, label, networkHints, 0);
+        t_inRoad = true;
+        Finder.ClearNoStairs();
+        try { return GenerateRoadCore(startCenter, startRadius, endCenter, endRadius, width, label, networkHints, 0); }
+        finally { Finder?.ClearNoStairs(); t_inRoad = false; }
+    }
+
+    private static bool GenerateRoadCore(
+        Vector2 startCenter, float startRadius,
+        Vector2 endCenter, float endRadius,
+        float width, string? label, List<Vector2>? networkHints, int stretchRetry)
     {
         if (Finder == null)
         {
@@ -897,8 +926,30 @@ public static partial class RoadNetworkGenerator
         {
             var noStairs = Finder!;
             noStairs.Stairs = false;
-            try { return GenerateRoad(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints); }
+            try { return GenerateRoadCore(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints, stretchRetry); }
             finally { noStairs.Stairs = RoadPathfinder.ConfiguredStairs; }
+        }
+        // A staircase that could not be laid: its stretch is closed to stairs and the road searched again with them open
+        // everywhere else, each failing stretch in turn, up to StairStretchRetries; then the road is refused. The road
+        // keeps every staircase that lays: it is never searched again without stairs.
+        bool WithoutThatStaircase(RoadPathfinder finder, List<Vector2> laidOn)
+        {
+            if (stretchRetry >= StairStretchRetries)
+            {
+                m_refusalReasons.AddOrUpdate("a staircase could not be laid", 1, (_, n) => n + 1);
+                NoteFailure(startCenter, endCenter, "refused: a staircase could not be laid");
+                System.Threading.Interlocked.Increment(ref m_roadsRefusedForGrade);
+                return false;
+            }
+            var (from, to) = RoadStairRuns.LastFailedStretch;
+            from = Mathf.Clamp(from, 0, laidOn.Count - 1);
+            to = Mathf.Clamp(to, from, laidOn.Count - 1);
+            var stretch = laidOn.GetRange(from, to - from + 1);
+            // The search's own steps on that stretch too: the path may have been moved onto a road there.
+            foreach (var (a, b) in finder.LastStairSteps)
+                if (stretch.Exists(p => (p - a).sqrMagnitude < 144f || (p - b).sqrMagnitude < 144f)) { stretch.Add(a); stretch.Add(b); }
+            finder.CloseToStairs(stretch, StairStretchReachCells);
+            return GenerateRoadCore(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints, stretchRetry + 1);
         }
 
         Vector2 pathStart = RoadEndpoint.FindGround(GenerationWorld, startCenter, startRadius);
@@ -966,7 +1017,7 @@ public static partial class RoadNetworkGenerator
         SnapToExistingCrossings(crossings);
         foreach (var c in crossings) c.Road = label;
         if (!TryLayStairs(finder, path, crossings, out List<RoadStairSpan> stairs))
-            return WithoutStairs("a staircase could not be laid");
+            return WithoutThatStaircase(finder, path);
         // The heights to meet are asked for at the road's OWN ends, after
         // trimming - not at the locations' centres. A road stops at the
         // exterior radius, which on a hillside is metres below the middle of
@@ -1005,8 +1056,18 @@ public static partial class RoadNetworkGenerator
             endGround = ApproachGround(path[path.Count - 1], endCenter, endRadius);
             RoadSpatialGrid.LastRefusal = null;
             if (!TryLayStairs(finder, path, crossings, out stairs))
-                return WithoutStairs("a staircase could not be laid");
+                return WithoutThatStaircase(finder, path);
             plans = PlanRoadPathWithCrossings(path, crossings, width, startGround, endGround, stairs);
+        }
+        // Switchback turns too close to fit their curves, even tightened: the search climbs that
+        // stretch on stairs instead, once, and carries on as road beyond it. On the five offline
+        // worlds it was tried 11 times and built none with stairs (one road was built without them):
+        // their staircases there could not be laid. One test world refused 22 roads for these turns.
+        if (plans == null && finder.Stairs && stretchRetry == 0
+            && RoadSpatialGrid.LastRefusal == "switchback: turns too close to fit their curves" && RoadSwitchbacks.LastRefusalAt is Vector2 tight)
+        {
+            finder.OpenToStairs(new[] { tight }, TightTurnStairReachCells);
+            return GenerateRoadCore(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints, stretchRetry + 1);
         }
         if (plans == null && stairs.Count > 0)
             return WithoutStairs("road round the stairs: " + (RoadSpatialGrid.LastRefusal ?? "refused"));

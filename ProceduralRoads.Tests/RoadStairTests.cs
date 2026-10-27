@@ -105,6 +105,28 @@ public class RoadStairTests : IDisposable
         public override int GetSeed() => 77;
     }
 
+    /// <summary>Cells opened to stairs (the generator opens them round switchback turns too close
+    /// to fit) are climbed on stairs where road would switch back; elsewhere the road keeps its
+    /// switchbacks (swap to stairs for tight switchbacks, then back to roads).</summary>
+    [Fact]
+    public void CellsOpenedToStairsAreClimbedOnStairsWhereRoadWouldSwitchBack()
+    {
+        var world = new SwitchbackFaceWorld();
+        _scope.WithWorld(world);
+        var finder = new RoadPathfinder(world) { Stairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f };
+        Assert.NotNull(finder.FindPath(new Vector2(-60f, 0f), new Vector2(100f, 0f)));
+        Assert.Empty(finder.LastStairSteps);
+
+        finder.OpenToStairs(new[] { new Vector2(20f, 0f) }, 3);
+        Assert.NotNull(finder.FindPath(new Vector2(-60f, 0f), new Vector2(100f, 0f)));
+
+        Assert.NotEmpty(finder.LastStairSteps);
+        foreach (var (from, to) in finder.LastStairSteps)
+            Assert.True(Mathf.Abs(from.x - 20f) <= 4 * RoadPathfinder.CellSize && Mathf.Abs(to.x - 20f) <= 4 * RoadPathfinder.CellSize, $"stair step {from}->{to} outside the opened cells");
+        finder.ClearNoStairs();
+        Assert.Equal(0, finder.OpenStairCells);
+    }
+
     /// <summary>East along z = 0, a last search step in from the north-west, then east up a face of 0.45: the
     /// road as a player sees it runs the staircase's way, though its last 8 m step is 45 degrees off it.</summary>
     private (List<Vector2> path, List<(Vector2, Vector2)> steps) EastWithAJogIn()
@@ -117,6 +139,36 @@ public class RoadStairTests : IDisposable
         for (int x = 0; x <= 32; x += 8) path.Add(new Vector2(x, 0f));
         var steps = new List<(Vector2, Vector2)> { (new Vector2(0f, 0f), new Vector2(8f, 0f)), (new Vector2(8f, 0f), new Vector2(16f, 0f)), (new Vector2(16f, 0f), new Vector2(24f, 0f)) };
         return (path, steps);
+    }
+
+    /// <summary>A stretch whose staircase could not be laid is closed to stairs and the road
+    /// searched again: the staircase moves off it, stairs still open elsewhere. Closing the whole
+    /// face leaves what a search without stairs finds (none here). Cleared, the first route is back.</summary>
+    [Fact]
+    public void A_stretch_closed_to_stairs_moves_the_staircase_off_it()
+    {
+        RoadPathfinder finder = Finder(stairs: true);
+        Vector2 from = new(-80f, 0f), to = new(100f, 0f);
+        List<Vector2> first = finder.FindPath(from, to)!;
+        var firstSteps = finder.LastStairSteps.ToList();
+        Assert.NotEmpty(firstSteps);
+
+        finder.CloseToStairs(firstSteps.SelectMany(s => new[] { s.from, s.to }), RoadNetworkGenerator.StairStretchReachCells);
+        Assert.NotNull(finder.FindPath(from, to));
+        Assert.NotEmpty(finder.LastStairSteps);
+        float Off(Vector2 p) => firstSteps.Min(s => Mathf.Min(Vector2.Distance(p, s.from), Vector2.Distance(p, s.to)));
+        foreach (var (a, b) in finder.LastStairSteps)
+            Assert.True(Off(a) > RoadPathfinder.CellSize && Off(b) > RoadPathfinder.CellSize,
+                $"stair step {a}->{b} is in a closed cell");
+
+        var face = new List<Vector2>();
+        for (float y = -200f; y <= 200f; y += RoadPathfinder.CellSize)
+            for (float x = -8f; x <= 32f; x += RoadPathfinder.CellSize) face.Add(new Vector2(x, y));
+        finder.CloseToStairs(face, 0);
+        Assert.Null(finder.FindPath(from, to));
+
+        finder.ClearNoStairs();
+        Assert.Equal(first, finder.FindPath(from, to));
     }
 
     /// <summary>A face too steep for road, then 40 m of slope a road can climb:
