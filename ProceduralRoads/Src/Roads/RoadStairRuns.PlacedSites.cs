@@ -224,9 +224,13 @@ public static partial class RoadStairRuns
                 if (!plan.Reached && around == null && !from.HasValue && left > 0)
                 {
                     System.Threading.Interlocked.Increment(ref FeetFacedFreely);
+                    string faced = plan.Reason ?? "";
                     plan = Spent(StairLayout.Build(roadEnd, goal, ground, Width, kit, Leg(), null,
                         flats ? null : inward, corridor, Total(), request.Stall, apron < request.RoadHeight && !flats ? TopLandings : 0, sunkFoot: sunk,
                         maxBuried: StairLayout.EdgeCoverLimit, arriveWithin: area || flats ? LedgeReach : null, allowed: allowed, after: from));
+                    if (RoadNetworkGenerator.RoadsLog)
+                        ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(FormattableString.Invariant(
+                            $"[STAIRS] approach to {request.Centre} from ({roadEnd.x:F1}, {roadEnd.y:F1}), road arriving {request.Arriving:F0}: no layout facing it ({faced}); laid any way: {(plan.Reached ? "reached" : "not reached")}, setting off {plan.StartHeading:F1}"));
                 }
             }
             string Refused(StairPlan laid)
@@ -286,12 +290,22 @@ public static partial class RoadStairRuns
             bool topAtPlace = turn.HasValue ? !turn.Value.crest : !plan.Reversed;
             if (topAtPlace)
             {
-                bool Fits(StairPlan p) =>
-                    !OnFlat(p, flatCentre, pit, front)
-                    && !p.Pieces.Exists(pc => pc.Kind != StairPieceKind.Support && !Allowed(new Vector2(pc.Position.x, pc.Position.z), 0f))
-                    // Climbed on, its top stays within reach of the landing it was aimed at, not past it onto the place's rim.
-                    && Vector2.Distance(new Vector2(p.End.x, p.End.z), target) <= LedgeReach + FinishReach + 0.01f;
-                FinishOverLedge(plan, ground, Width, Fits);
+                var misfits = RoadNetworkGenerator.RoadsLog ? new List<string>() : null;
+                bool Fits(StairPlan p)
+                {
+                    string m = OnFlat(p, flatCentre, pit, front) ? "onto the flat"
+                        : p.Pieces.Exists(pc => pc.Kind != StairPieceKind.Support && !Allowed(new Vector2(pc.Position.x, pc.Position.z), 0f)) ? "in the place's rock"
+                        // Climbed on, its top stays within reach of the landing it was aimed at, not past it onto the place's rim.
+                        : Vector2.Distance(new Vector2(p.End.x, p.End.z), target) > LedgeReach + FinishReach + 0.01f ? "past the landing"
+                        : "";
+                    if (m != "") misfits?.Add(m);
+                    return m == "";
+                }
+                float lip = misfits != null ? StairLayout.TopLip(plan, ground) - plan.End.y : 0f;
+                LedgeFinish finish = FinishOverLedge(plan, ground, Width, Fits);
+                if (misfits != null)
+                    ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(FormattableString.Invariant(
+                        $"[STAIRS] approach to {request.Centre}: top at ({plan.End.x:F1}, {plan.End.y:F2}, {plan.End.z:F1}), lip {lip:F2}, finished {finish}{(misfits.Count > 0 ? "; refused: " + string.Join(", ", misfits) : "")}"));
             }
             LastApproachSteps = request.Allowance - left;
             return Span(plan, roadEnd, request.RoadHeight, target, apron, kit, request.RoadTail.Count - 1);

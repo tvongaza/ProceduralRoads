@@ -30,6 +30,7 @@ namespace ProceduralRoads;
 /// Then, on the main thread, what a staircase would run into is checked and the
 /// approach joins the network. Legacy: the places placed before their roads are reached
 /// by them (the just in time stair/road generation is to be removed); this serves only the places left for a player to find.
+/// With PROCEDURALROADS_ROADS_LOG each approach is logged, with where its time went.
 /// </summary>
 public static class SiteApproachRunner
 {
@@ -49,6 +50,8 @@ public static class SiteApproachRunner
         public int X0, Z0, W, H, Next;
         public float[] Heights = null!;
         public int Version, Epoch;
+        public double SampleMs, SampleMaxMs, ModelMs, PlanMs;
+        public int SampleFrames;
         /// <summary>For a rebuild: each zone's road points, read on the main thread.</summary>
         public Dictionary<Vector2s, List<RoadSpatialGrid.RoadPoint>>? RoadPoints;
         /// <summary>The place's own boulders, read on the main thread.</summary>
@@ -130,13 +133,19 @@ public static class SiteApproachRunner
         if (PlacedSiteReader.Placed(zone, request.Centre, out ZDO? proxy))
         {
             // Which of the place's parts this placement kept: the game's draw, replayed here.
+            long began = System.Diagnostics.Stopwatch.GetTimestamp();
             IReadOnlyList<LevelOp>? kept = PlacedSiteReader.KeptOps(request.Centre, proxy!);
+            double ms = Ms(began);
             if (kept == null) return false;
-            Begin(request, "rebuilt", proxy!.GetRotation().eulerAngles.y, proxy.GetPosition().y, kept);
+            Begin(request, "rebuilt", proxy!.GetRotation().eulerAngles.y, proxy.GetPosition().y, kept, ms);
             return s_jobs.Exists(j => j.job.Request == request);
         }
         return false;
     }
+
+    /// <summary>A placement's parts, compactly, for the log.</summary>
+    private static string Parts(IReadOnlyList<LevelOp> ops) => "[" + string.Join(" ", ops.Select(op =>
+        FormattableString.Invariant($"({op.OffsetX:F1},{op.OffsetZ:F1}){(op.Radius > 0f ? "L" : "S")}{Mathf.Max(op.Radius, op.SmoothRadius):F0}"))) + "]";
 
     private static bool Loaded(SiteApproachRequest request, out Location? place)
     {
@@ -155,6 +164,8 @@ public static class SiteApproachRunner
         return ZoneSystem.instance.IsZoneLoaded(new Vector3(x0 + w, 0f, z0 + h));
     }
 
+    private static double Ms(long began) => (System.Diagnostics.Stopwatch.GetTimestamp() - began) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+
     /// <summary>The ground read or rebuilt: round the road's end, and round the place out past
     /// its rock, where a staircase led round it goes.</summary>
     private static void Bounds(SiteApproachRequest r, out int x0, out int z0, out int w, out int h)
@@ -168,7 +179,7 @@ public static class SiteApproachRunner
     }
 
     private static void Begin(SiteApproachRequest request, string ground, float yaw, float root,
-        IReadOnlyList<LevelOp>? kept = null)
+        IReadOnlyList<LevelOp>? kept = null, double replayMs = 0)
     {
         s_firstSeen.Remove(request);
         IReadOnlyList<LevelOp>? ops = kept ?? LocationLevelling.OpsAt(request.Centre);
@@ -196,6 +207,7 @@ public static class SiteApproachRunner
         });
         if (ground == "loaded") { s_sampling = job; return; }
         // A rebuild: the road points of every zone it covers, read here on the main thread.
+        long began = System.Diagnostics.Stopwatch.GetTimestamp();
         job.RoadPoints = new Dictionary<Vector2s, List<RoadSpatialGrid.RoadPoint>>();
         for (int z = z0; z <= z0 + h + 64; z += 64)
             for (int x = x0; x <= x0 + w + 64; x += 64)
@@ -204,6 +216,9 @@ public static class SiteApproachRunner
                 if (!job.RoadPoints.ContainsKey(zone))
                     job.RoadPoints[zone] = new List<RoadSpatialGrid.RoadPoint>(RoadSpatialGrid.GetRoadPointsInZone(zone));
             }
+        job.SampleMs = Ms(began) + replayMs;
+        job.SampleFrames = 1;
+        job.SampleMaxMs = job.SampleMs;
         Start(job);
     }
 
@@ -221,6 +236,17 @@ public static class SiteApproachRunner
     }
 
     private static void Sample(Job s)
+    {
+        long began = System.Diagnostics.Stopwatch.GetTimestamp();
+        try { SampleSome(s); }
+        finally
+        {
+            double ms = Ms(began);
+            s.SampleMs += ms; s.SampleMaxMs = Math.Max(s.SampleMaxMs, ms); s.SampleFrames++;
+        }
+    }
+
+    private static void SampleSome(Job s)
     {
         int end = Mathf.Min(s.Heights.Length, s.Next + SamplesPerFrame);
         for (; s.Next < end; s.Next++)
@@ -246,6 +272,7 @@ public static class SiteApproachRunner
         int seed = world.GetSeed();
         var task = System.Threading.Tasks.Task.Run(() =>
         {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
             if (s.Ground == "rebuilt")
             {
                 var fills = new Dictionary<Vector2s, float[]?>();
@@ -260,6 +287,8 @@ public static class SiteApproachRunner
                         return s.RoadPoints!.TryGetValue(zone, out var points) && points.Count > 0
                             ? RoadTerrainModifier.ModelledHeight(points, new Vector2(x, z), here, fills[zone]) : here;
                     });
+                s.ModelMs = clock.Elapsed.TotalMilliseconds;
+                clock.Restart();
             }
             var ground = PlacedSiteGround.Sampler(s.Heights, s.X0, s.Z0, s.W, s.H);
             var layout = new Layout();
@@ -280,27 +309,37 @@ public static class SiteApproachRunner
                     ground, (x, z) => world.GetBiome(x, z), seed, out why, s.Rock, RoadSiteProtection.Contains, s.Rocks, s.KeepSmallRocks, s.Root, s.Top);
                 layout.Why = layout.NoRoad + "; stairs: " + why;
             }
+            s.PlanMs = clock.Elapsed.TotalMilliseconds;
             return layout;
         });
         s_jobs.Add((s, task));
     }
 
+    /// <summary>Where the time went, for the log.</summary>
+    private static string Timing(Job s, double finishMs) => FormattableString.Invariant(
+        $"ground {s.Ground}; main thread: {(s.Ground == "loaded" ? $"reading the ground {s.SampleMs:F1} ms over {s.SampleFrames} frame(s), {s.SampleMaxMs:F1} ms at most in one" : $"replaying its parts and road points {s.SampleMs:F1} ms")}, checking and adding {finishMs:F1} ms; worker: {(s.Ground == "rebuilt" ? $"rebuilding the ground {s.ModelMs:F0} ms, " : "")}layout {s.PlanMs:F0} ms; {s.Heights.Length} vertices");
+
     private static void Finish(Job s, System.Threading.Tasks.Task<Layout> task)
     {
+        long began = System.Diagnostics.Stopwatch.GetTimestamp();
         SiteApproachRequest r = s.Request;
 
         if (task.IsFaulted) { Drop(r, "planning failed: " + task.Exception?.GetBaseException().Message); return; }
         if (s.Epoch != ManualRoads.WorldEpoch) return;
         Layout layout = task.Result;
-        if (layout.Road != null) { AddRoad(s, layout); return; }
+        if (layout.Road != null) { AddRoad(s, layout, began); return; }
         RoadStairSpan? span = layout.Stairs;
-        if (span == null) { Drop(r, layout.Why); return; }
+        if (span == null) { Drop(r, layout.Why + (RoadNetworkGenerator.RoadsLog ? "; ground written to " + WriteGround(s) : "") + "; " + Timing(s, Ms(began))); return; }
         float Ground(float x, float z) =>
             ZoneSystem.instance.GetGroundHeight(new Vector3(x, 0f, z), out float g) ? g : WorldGenerator.instance.GetHeight(x, z);
+        var steps = new List<string>();
+        double mark = 0;
+        void Step(string name) { double now = Ms(began); steps.Add(FormattableString.Invariant($"{name} {now - mark:F1}")); mark = now; }
         string conflict = RoadStairRuns.SiteConflict(span.Plan, r.Centre, r.RoadTail, r.RoadTail.Count - 1,
             s.Ground == "rebuilt" ? PlacedSiteGround.Sampler(s.Heights, s.X0, s.Z0, s.W, s.H) : Ground,
             WorldGenerator.instance, new List<RoadStairSpan>(), s.OnStairs ? r.RoadEnd : null);
-        if (conflict != "") { Drop(r, conflict); return; }
+        Step("check");
+        if (conflict != "") { Drop(r, conflict + "; " + Timing(s, Ms(began))); return; }
         try
         {
             // Its cuts outside every footprint (the terrain writer skips the others anyway).
@@ -309,43 +348,84 @@ public static class SiteApproachRunner
             run.KeepsSiteRocks = true;
             RoadNetworkGenerator.AppendStairRun(run, cuts, s.Version);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException e)
         {
             // The network changed while it was planned: plan it again on the next check.
+            if (RoadNetworkGenerator.RoadsLog) ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo($"[STAIRS] site approach at {r.Centre} not added yet: {e.Message}");
             return;
         }
+        Step("append");
         SiteApproachQueue.Remove(r);
         // Not saved here: the world's own save writes the network with the staircase and
         // the queue without it (RoadLifecycleManager.OnPrepareSave), as it writes the pieces.
         // Two saves here held the main thread most of 641 ms.
         ManualRoadNetworkSync.Publish();
         RoadTerrainModifier.ApplyAdditionsToLoadedZones();
+        Step("publish");
         RoadRockClearing.Reset();
+        Step("rocks");
         StructurePlacement.ApplyPendingAppends();
+        Step("pieces");
+        double total = Ms(began);
+        if (RoadNetworkGenerator.RoadsLog) ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo(
+            $"[STAIRS] site approach at {r.Centre}: {span.Kit.Name} {span.Plan.Rise:F1} m {(span.Plan.Reversed ? "down" : "up")}, " +
+            $"{span.Plan.Pieces.Count} pieces, from {span.FromPoint} to {span.ToPoint}, turn {s.Yaw:F1}, parts {Parts(s.Ops)}, {s.Rocks.Count} of its rock(s) kept clear ({s.Rocks.Count(k => k.Top != null)} by their real top), {s.WorldRocks} world boulder(s) left to the road's rules; " +
+            $"no road ({layout.NoRoad}); {SiteApproachQueue.Count} still owed; " +
+            Timing(s, total) + " (ms: " + string.Join(", ", steps) + ")");
     }
 
     /// <summary>The road carried on onto the landing: one append, its points into the site.</summary>
-    private static void AddRoad(Job s, Layout layout)
+    private static void AddRoad(Job s, Layout layout, long began)
     {
         SiteApproachRequest r = s.Request;
         RoadSpatialGrid.PlannedPath road = layout.Road!;
         try { RoadNetworkGenerator.AppendSiteEntryRoad(road, s.Version); }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException e)
         {
-            // The network changed while it was planned: plan it again on the next check.
+            if (RoadNetworkGenerator.RoadsLog) ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo($"[STAIRS] site approach road at {r.Centre} not added yet: {e.Message}");
             return;
         }
         SiteApproachQueue.Remove(r);
         ManualRoadNetworkSync.Publish();
         RoadTerrainModifier.ApplyAdditionsToLoadedZones();
         RoadRockClearing.Reset();
+        double total = Ms(began);
+        float rise = road.Heights[road.Heights.Count - 1] - road.Heights[0];
+        if (RoadNetworkGenerator.RoadsLog) ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo(FormattableString.Invariant(
+            $"[STAIRS] site approach at {r.Centre}: road {road.TotalLength:F1} m, {rise:F1} m {(rise >= 0f ? "up" : "down")}, {road.Width:F1} m wide, earthwork {layout.RoadEarthwork:F1} m at worst, ") +
+            $"from {r.RoadEnd} to {road.Points[road.Points.Count - 1]}, turn {s.Yaw:F1}, parts {Parts(s.Ops)}, {s.Rocks.Count} of its rock(s) kept clear ({s.Rocks.Count(k => k.Top != null)} by their real top), {s.WorldRocks} world boulder(s) left to the road's rules; {SiteApproachQueue.Count} still owed; " +
+            Timing(s, total));
     }
 
-    /// <summary>No staircase here, for <paramref name="why"/>: the road stays as it is.</summary>
+    /// <summary>The ground a refused approach was laid out on, for reproducing it offline:
+    /// a header line with the request, the grid's corner and size, the place's turn and
+    /// boulders (name@x;z;halfX;halfZ;yaw;minY;maxY), the road's width and <see cref="ApproachGroundHeader.Extras"/>,
+    /// then one row of heights per metre of z.</summary>
+    private static string WriteGround(Job s)
+    {
+        SiteApproachRequest r = s.Request;
+        string path = System.IO.Path.Combine(BepInEx.Paths.ConfigPath,
+            FormattableString.Invariant($"ProceduralRoads.approach_{r.Centre.x:F0}_{r.Centre.y:F0}.csv"));
+        var sb = new System.Text.StringBuilder();
+        sb.Append(FormattableString.Invariant(
+            $"x0={s.X0},z0={s.Z0},w={s.W},h={s.H},yaw={s.Yaw:F2},roadEnd={r.RoadEnd.x:F3};{r.RoadEnd.y:F3},roadHeight={r.RoadHeight:F3},arriving={r.Arriving:F2},centre={r.Centre.x:F3};{r.Centre.y:F3},ground={s.Ground},parts={Parts(s.Ops).Replace(',', ';')},rocks=[{string.Join(" ", s.Rocks.Select(k => FormattableString.Invariant($"{k.Name}@{k.At.x:F2};{k.At.y:F2};{k.HalfX:F2};{k.HalfZ:F2};{k.Yaw:F1};{k.MinY:F1};{k.MaxY:F1}")))}],roadWidth={s.RoadWidth:F2},onStairs={s.OnStairs},"));
+        sb.Append(ApproachGroundHeader.Extras(s.Root, s.Rock, s.KeepSmallRocks,
+            RoadSiteProtection.NearestFootprint(r.Centre, 0f, out RoadSiteProtection.Footprint footprint) ? footprint.Radius : 0f, s.Ops, s.Top)).Append('\n');
+        for (int k = 0; k < s.H; k++)
+        {
+            for (int i = 0; i < s.W; i++) sb.Append(i == 0 ? "" : ",").Append(s.Heights[k * s.W + i].ToString("F3", CultureInfo.InvariantCulture));
+            sb.Append('\n');
+        }
+        try { System.IO.File.WriteAllText(path, sb.ToString()); return path; }
+        catch (Exception e) { return "nowhere (" + e.Message + ")"; }
+    }
+
+    /// <summary>No staircase here: said once, and the road stays as it is.</summary>
     private static void Drop(SiteApproachRequest r, string why)
     {
         // Saved with the world, as a laid one is.
         SiteApproachQueue.Remove(r);
+        if (RoadNetworkGenerator.RoadsLog) ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo($"[STAIRS] site approach at {r.Centre} not laid: {why}; {SiteApproachQueue.Count} still owed");
     }
 
     /// <summary>Forget the approaches in hand with the network they were planned on.</summary>

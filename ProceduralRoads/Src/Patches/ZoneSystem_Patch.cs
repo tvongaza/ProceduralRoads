@@ -86,6 +86,9 @@ public static class ZoneSystem_Patch
             foreach (ZNetPeer peer in ZNet.instance.GetPeers()) references.Add(peer.GetRefPos());
             List<Vector3> shown = HiddenSiteIcons.Reveal(references, zones.m_simulationDistance.TotalSimulationDistance, zones.m_simulationDistance.IsClassic);
             if (shown.Count == 0) return;
+            if (RoadNetworkGenerator.RoadsLog)
+                foreach (Vector3 p in shown)
+                    ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo($"[SITES] icon at {p} on the map: a player came near enough for the game to have placed it");
             zones.SendLocationIcons(0L);
         }
     }

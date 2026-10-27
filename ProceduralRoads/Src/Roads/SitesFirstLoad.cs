@@ -54,11 +54,14 @@ public static class SitesFirstLoad
         if (ZNet.instance == null || !ZNet.instance.IsServer() || ZoneSystem.instance == null || WorldGenerator.instance == null) yield break;
         var selected = work.AllSelected.ToList();
         preparation.BeginStage(ListingStage, selected.Count, "destinations"); yield return true;
+        int already = 0, decided = 0;
         foreach (var (_, position, _) in selected)
         {
-            List(position);
+            List(position, ref already, ref decided);
             if (preparation.Checkpoint()) yield return true;
         }
+        if (RoadNetworkGenerator.RoadsLog) ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo(
+            $"[SITES] before the roads: {s_pending.Count} place(s) to place, {already} already placed, {decided} left for a player to find");
 
         if (s_pending.Count > 0)
         {
@@ -79,17 +82,21 @@ public static class SitesFirstLoad
             s_pending.Clear();
         }
 
-        if (s_placing.Count > 0) { preparation.BeginStage(ReadingStage, s_placing.Count, "places"); yield return true; }
+        long began = System.Diagnostics.Stopwatch.GetTimestamp();
+        int read = 0, count = s_placing.Count;
+        if (count > 0) { preparation.BeginStage(ReadingStage, count, "places"); yield return true; }
         foreach (var (centre, zone) in s_placing.ToList())
         {
-            Read(centre, zone);
+            if (Read(centre, zone)) read++;
             preparation.Checkpoint(); yield return true;
         }
+        if (RoadNetworkGenerator.RoadsLog) ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo(FormattableString.Invariant(
+            $"[SITES] before the roads: read {read} of {count} placed place(s) (turn, root, parts, rocks) in {Ms(began):F0} ms"));
         s_placing.Clear();
     }
 
     /// <summary>One destination: placed first, already placed (read only), left for a player to find, or none of these.</summary>
-    private static void List(Vector3 position)
+    private static void List(Vector3 position, ref int already, ref int decided)
     {
         var centre = new Vector2(position.x, position.z);
         Vector2s zone = ZoneSystem.GetZone(position);
@@ -103,10 +110,13 @@ public static class SitesFirstLoad
                 WorldGenerator.instance.GetBiome(position.x, position.z), LocationLevelling.OpsAt(centre))) return;
         if (PlacedSites.PlayerDecides(location.m_prefab.Name, location.m_unique, location.m_iconPlaced, location.m_iconAlways))
         {
+            decided++;
             PlacedSites.MarkPlayerDecided(centre);
+            if (RoadNetworkGenerator.RoadsLog) ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo(FormattableString.Invariant(
+                $"[SITES] {location.m_prefab.Name} at {centre} left for a player to find ({(location.m_unique ? "unique" : location.m_iconAlways ? "always on the map" : "on the map once placed")}): not placed before its roads"));
             return;
         }
-        if (PlacedSiteReader.Placed(zone, centre, out _)) { s_placing.Add((centre, zone)); return; }
+        if (PlacedSiteReader.Placed(zone, centre, out _)) { already++; s_placing.Add((centre, zone)); return; }
         if (instance.m_placed || ZoneSystem.instance.IsZoneGenerated(zone)) return;
         // Shown on the map once placed (Hildir's quest sites): off the map until a player comes as near as
         // the game would have placed it from. Hidden first: placing sends the icons at once.
