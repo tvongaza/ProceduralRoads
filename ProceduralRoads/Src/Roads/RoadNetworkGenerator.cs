@@ -863,7 +863,7 @@ public static partial class RoadNetworkGenerator
         }
         if (CorridorSnap > RoadSnap)
             Log.LogInfo($"  Corridor snap (a road alongside another merges onto it, within {CorridorSnap:F0} m): {m_corridorSnapped} waypoint(s) moved, {m_chainsShared} chain(s) of crossings shared, candidates included");
-        if (ViaductLog)
+        if (RoadsLog)
             Log.LogInfo($"  Viaducts: {m_viaductsLaid} Mistlands viaduct(s) laid over dry valleys (DvergrViaduct)");
         if (RoadWiggle.Enabled)
             Log.LogInfo($"  Sway (planned pieces, candidates included): kept {RoadSpatialGrid.SwayKept}, dropped as refused {RoadSpatialGrid.SwayRefused}, dropped for more earth {RoadSpatialGrid.SwayMoreEarth}; full sway to {RoadWiggle.Flat:P0} ground grade, {RoadWiggle.SlopeFloor:P0} of it at the {RoadGrade.Configured:P0} cap, meander fades out at {RoadPathfinder.MeanderFlat:P0}");
@@ -1629,7 +1629,7 @@ public static partial class RoadNetworkGenerator
             if (!c.ValleyJump || c.Shared) continue;
             DvergrViaduct.MarkStanding(c);
             System.Threading.Interlocked.Increment(ref m_viaductsLaid);
-            if (ViaductLog) Log.LogInfo($"[VIADUCT] road {label ?? "(unlabelled)"}: {DvergrViaduct.Describe(c, GenerationWorld)}");
+            if (RoadsLog) Log.LogInfo($"[VIADUCT] road {label ?? "(unlabelled)"}: {DvergrViaduct.Describe(c, GenerationWorld)}");
         }
         foreach (var c in crossings)
             if (c.Shallow && c.ShallowNote != null) Log.LogDebug("  " + c.ShallowNote);
@@ -2359,9 +2359,6 @@ public static partial class RoadNetworkGenerator
         return crossings;
     }
 
-    /// <summary>PROCEDURALROADS_ROADS_LOG: say where each viaduct was laid (the switch rel/16-preload's
-    /// road log reads too). Off by default.</summary>
-    internal static readonly bool ViaductLog = DebugSwitches.Flag("ROADS_LOG", false);
     private static int m_viaductsLaid;
     /// <summary>Mistlands viaducts the roads of this generation laid over dry valleys.</summary>
     public static int ViaductsLaid => m_viaductsLaid;

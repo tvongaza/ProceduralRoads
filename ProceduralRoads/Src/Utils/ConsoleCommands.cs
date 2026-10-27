@@ -54,6 +54,7 @@ public static class ConsoleCommands
         {
             StairCommands.Register();
             SiteCommands.Register();
+            ViaductCommands.Register();
         }
         new Terminal.ConsoleCommand(
             "road_bake",
