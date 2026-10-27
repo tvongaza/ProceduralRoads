@@ -1343,6 +1343,42 @@ public static partial class RoadSpatialGrid
         return found;
     }
 
+    /// <summary>The ground a road meeting the network is judged on (at grade, arriving level, branching off a trunk): the
+    /// ground the game renders (<see cref="BiomeBlendedHeight"/>), which the roads are planned and their junctions measured
+    /// over. One owner for the join search (RoadPathfinder) and the trunk branch (RoadNetworkGenerator.TrunkBranch): the
+    /// search read the world generator's raw height, which differs near biome borders.</summary>
+    internal static float JunctionGround(Vector2 p, WorldGenerator world) => BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
+
+    /// <summary>
+    /// The nearest road point within <paramref name="reach"/> whose surface is within
+    /// <paramref name="maxStep"/> of <paramref name="groundHere"/>, the ground a road arriving here
+    /// stands on: a junction a road can join at grade. One on a fill or in a cut beside it is not
+    /// (a junction at 896,4416 created a large earthwork ridge that
+    /// looked bad: junctions are planned where the terrain can support them).
+    /// </summary>
+    public static bool TryGetRoadAtGradeWithin(Vector2 position, float reach, float groundHere, float maxStep, out Vector2 nearest,
+        System.Func<Vector2, bool>? allowed = null)
+    {
+        nearest = position;
+        if (!m_initialized || reach < 0) return false;
+        float best = reach * reach;
+        bool found = false;
+        int radius = Mathf.CeilToInt(reach / GridSize) + 1;
+        Vector2i center = GetRoadGrid(position.x, position.y);
+        {
+            for (int x = -radius; x <= radius; x++)
+                for (int y = -radius; y <= radius; y++)
+                    if (m_roadPoints.TryGetValue(new Vector2i(center.x+x,center.y+y), out var points))
+                        foreach (var point in points)
+                        {
+                            float distance = (point.p-position).sqrMagnitude;
+                            if (distance <= best && !point.paintOnly && Mathf.Abs(point.h - groundHere) <= maxStep
+                                && (allowed == null || allowed(point.p))) { best=distance; nearest=point.p; found=true; }
+                        }
+        }
+        return found;
+    }
+
     public static List<RoadPoint> GetRoadPointsNearPosition(Vector3 worldPos, float radius)
     {
         List<RoadPoint> result = new List<RoadPoint>();

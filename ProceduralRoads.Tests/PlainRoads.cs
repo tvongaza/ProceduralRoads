@@ -39,6 +39,7 @@ internal static class PlainRoads
         ("road snap", () => RoadNetworkGenerator.RoadSnap, v => RoadNetworkGenerator.RoadSnap = (float)v, 0f),
         ("corridor snap", () => RoadNetworkGenerator.CorridorSnap, v => RoadNetworkGenerator.CorridorSnap = (float)v, 0f),
         ("one branch", () => RoadNetworkGenerator.OneBranch, v => RoadNetworkGenerator.OneBranch = (bool)v, false),
+        ("junction step", () => RoadPathfinder.JunctionStep, v => RoadPathfinder.JunctionStep = (float)v, 0f),
         ("earthwork cap", () => RoadNetworkGenerator.EarthworkCap, v => RoadNetworkGenerator.EarthworkCap = (float)v, 0f),
         ("bridge ends to water", () => RoadCrossingDetector.ToWater, v => RoadCrossingDetector.ToWater = (bool)v, false),
         ("decline tall climbs", () => RoadCrossingDetector.DeclineTallClimbs, v => RoadCrossingDetector.DeclineTallClimbs = (float)v, 0f),

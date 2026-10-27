@@ -55,6 +55,12 @@ public class RoadPathfinder
     public float BridgeCostFixed = ConfiguredBridgeCostFixed;
     public float BridgeCostPerMeter = ConfiguredBridgeCostPerMeter;
 
+    /// <summary>Largest step between a network road's surface and the ground a road joining it
+    /// arrives on (<see cref="RoadSpatialGrid.TryGetRoadAtGradeWithin"/>). 0 joins anywhere:
+    /// settable for tests (the unit suite's plain roads).</summary>
+    internal static float JunctionStep = DefaultJunctionStep;
+    public const float DefaultJunctionStep = 1.5f;
+
     /// <summary>Ground a crossing may land on: the shallow-water line plus the bank clearance.</summary>
     public const float LandingFloor = RoadConstants.ShallowWaterHeight + RoadConstants.BankClearance;
 
@@ -284,9 +290,31 @@ public class RoadPathfinder
             return Mathf.Max(0f, Mathf.Sqrt(best) - reach);
         }
 
-        bool AtNetwork(Vector2i cell) => RoadSpatialGrid.TryGetRoadWithin(GridToWorld(cell), reach, out _, targetAllowed);
+        // A road joins the network where the road there stands within JunctionStep of the ground it
+        // arrives on; where the network is on a fill or in a cut, the search carries on along it.
+        // The cheap lookup first: most cells have no road in reach, and the ground is only read where
+        // one is, once a cell per search. Read for every cell, the world generator's height made in-game
+        // join searches twice as slow. The ground is the one every junction rule reads
+        // (RoadSpatialGrid.JunctionGround), not the search's raw height: near a biome border the two
+        // differ, and a trunk the branch rule (TrunkBranch) called at grade the search did not.
+        var grounds = new Dictionary<Vector2i, float>(RoadGridComparer.Instance);
+        float Ground(Vector2i cell)
+        {
+            if (!grounds.TryGetValue(cell, out float h)) grounds[cell] = h = RoadSpatialGrid.JunctionGround(GridToWorld(cell), m_worldGen);
+            return h;
+        }
+        bool Join(Vector2i cell, out Vector2 junction)
+        {
+            Vector2 at = GridToWorld(cell);
+            if (!RoadSpatialGrid.TryGetRoadWithin(at, reach, out junction, targetAllowed)) return false;
+            return JunctionStep <= 0f
+                || RoadSpatialGrid.TryGetRoadAtGradeWithin(at, reach, Ground(cell), JunctionStep, out junction, targetAllowed);
+        }
+        bool ArrivesLevel(Vector2 junction, Vector2i before) =>
+            !RoadSpatialGrid.TryGetRoadHeightWithin(junction, 1f, out float surface)
+            || Mathf.Abs(surface - Ground(before)) <= 2f * JunctionStep;
 
-        if (AtNetwork(startGrid))
+        if (Join(startGrid, out _))
         {
             // Already within reach. This is not a failure, and returning null
             // for it made the caller build a road to a place the network
@@ -325,10 +353,13 @@ public class RoadPathfinder
             openSet.Remove(current);
             Vector2i currentPos = current.pos;
 
-            if (AtNetwork(currentPos))
+            // At the network, and arriving level with it: the cell before the junction, within the
+            // band the new road is held to the network's height over, at grade too (the junctions
+            // still pulled furthest were roads arriving over sloping ground).
+            if (Join(currentPos, out Vector2 junction)
+                && (JunctionStep <= 0f || !cameFrom.TryGetValue(currentPos, out Vector2i before) || ArrivesLevel(junction, before)))
             {
                 LastPathCost = gCosts.TryGetValue(currentPos, out float cost) ? cost : 0f;
-                RoadSpatialGrid.TryGetRoadWithin(GridToWorld(currentPos), reach, out Vector2 junction, targetAllowed);
                 return ReconstructPath(cameFrom, currentPos, start, junction);
             }
 

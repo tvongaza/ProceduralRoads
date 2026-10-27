@@ -1136,10 +1136,18 @@ public static partial class RoadNetworkGenerator
         // access, and left a steep 40-60 m connector the grade refused (9
         // roads on one measured world).
         int first = startReached ? MergeWithin(path, +1) : -1, last = endReached ? MergeWithin(path, -1) : -1;
+        // Running alongside the road already serving the place instead, never touching it: the two
+        // share one trunk, this one branching off where the trunk stands at its ground's height.
+        Vector2? firstOn = null, lastOn = null;
+        if (first < 0 && startReached && TrunkBranch(path, +1, out Vector2 a) is int fa && fa >= 0) { first = fa; firstOn = a; }
+        if (last < 0 && endReached && TrunkBranch(path, -1, out Vector2 b) is int lb && lb >= 0) { last = lb; lastOn = b; }
         if (first < 0 && last < 0) return path;
         int from = first < 0 ? 0 : first, to = last < 0 ? path.Count - 1 : last;
         if (to - from < 1) return path;
-        return path.GetRange(from, to - from + 1);
+        var kept = path.GetRange(from, to - from + 1);
+        if (firstOn is Vector2 fo && Vector2.Distance(fo, kept[0]) > 0.5f) kept.Insert(0, fo);
+        if (lastOn is Vector2 lo && Vector2.Distance(lo, kept[kept.Count - 1]) > 0.5f) kept.Add(lo);
+        return kept;
     }
 
     public const float StubLength = 80f;
@@ -1166,6 +1174,45 @@ public static partial class RoadNetworkGenerator
             if (RoadSpatialGrid.TryGetRoadWithin(path[i], 1f, out _)) return i;
         }
         return -1;
+    }
+
+    /// <summary>How far in from a place a road may branch off a trunk serving it.</summary>
+    public const float TrunkReach = 120f;
+    /// <summary>The trunk must come alongside within this far of the place.</summary>
+    public const float TrunkNear = 30f;
+
+    /// <summary>
+    /// Where a road, near its <paramref name="step"/> end at a place another road already serves,
+    /// runs within that road's terrain reach (the band RoadSpatialGrid.HoldToNetwork holds to its
+    /// height) without touching it: the waypoint furthest from the place, along that stretch, where
+    /// the other road stands within <see cref="RoadPathfinder.JunctionStep"/> of the ground, and the
+    /// road point there (<paramref name="onTrunk"/>); else -1. The road then ends on the trunk there,
+    /// at grade, instead of running beside it to the place at another height: two roads leaving one
+    /// place side by side were the largest junction earthworks (so they share a trunk).
+    /// </summary>
+    private static int TrunkBranch(List<Vector2> path, int step, out Vector2 onTrunk)
+    {
+        onTrunk = default;
+        var world = GenerationWorld;
+        if (RoadPathfinder.JunctionStep <= 0f || world == null) return -1;
+        float band = RoadWidth + 2f * RoadConstants.TerrainBlendMargin;
+        int start = step > 0 ? 0 : path.Count - 1, best = -1;
+        bool alongside = false;
+        float along = 0f;
+        for (int i = start; i >= 0 && i < path.Count; i += step)
+        {
+            if (i != start) along += Vector2.Distance(path[i - step], path[i]);
+            if (along > TrunkReach) break;
+            if (RoadSpatialGrid.TryGetRoadHeightWithin(path[i], band, out float h))
+            {
+                if (!alongside && along > TrunkNear) break;
+                alongside = true;
+                if (i != start && Mathf.Abs(h - RoadSpatialGrid.JunctionGround(path[i], world)) <= RoadPathfinder.JunctionStep
+                    && RoadSpatialGrid.TryGetRoadWithin(path[i], band, out Vector2 q)) { best = i; onTrunk = q; }
+            }
+            else if (alongside) break;
+        }
+        return best;
     }
 
     /// <summary>A road's ends pulled back to road ground: the trim at a site's
