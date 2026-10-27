@@ -152,6 +152,9 @@ public static partial class RoadStairRuns
         s_plans.Clear();
         s_laid.Clear();
         FeetBeside = FeetBesideRefused = Crests = ClimbedOn = RoadTopsCrested = TopFloors = FeetLowered = FeetFacedFreely = RidgesBridged = RidgesSnapped = TopsBeside = ValleysMet = FootAprons = SpurFeet = RidgesSnappedOffCrest = CrestStubs = CrestStubsJoined = ValleysSpanned = 0;
+        Rejections.Clear();
+        LayFailures.Clear();
+        s_described = 0;
     }
 
     /// <summary>
@@ -316,7 +319,7 @@ public static partial class RoadStairRuns
             bool valleyMeet = false;
             LastFailedStretch = (from, to);
             foreach (RoadCrossing c in crossings)
-                if (c.FromIndex < to && c.ToIndex > from) return null;
+                if (c.FromIndex < to && c.ToIndex > from) return Fail("over a river crossing");
             Vector2 a = path[from], b = path[to];
             StairPlan plan = null!;
             int start = from;
@@ -341,7 +344,7 @@ public static partial class RoadStairRuns
             if (existing != null)
             {
                 // Walked as the earlier road laid it: the same plan, so the same heights to meet.
-                if (!s_laid.TryGetValue(existing, out (StairPlan plan, StairKit kit) laid)) return null;
+                if (!s_laid.TryGetValue(existing, out (StairPlan plan, StairKit kit) laid)) return Fail("walks a staircase not laid this generation");
                 bool same = Vector2.Distance(existing.From, a) <= SameRunReach;
                 a = same ? existing.From : existing.To;
                 b = same ? existing.To : existing.From;
@@ -398,7 +401,7 @@ public static partial class RoadStairRuns
                     for (int i = prev.ToIndex + 1; i <= from; i++) gap += Vector2.Distance(path[i - 1], path[i]);
                     if (gap < SteepGapReach && Mathf.Abs(Ground(a.x, a.y) - prev.ToHeight) > RoadGrade.Configured * SteepGapShare * Mathf.Max(gap, 1f))
                     {
-                        if (!Merge()) return null;
+                        if (!Merge()) return Fail("merged over a steep gap: ", LastRefusal);
                         goto Laid;
                     }
                 }
@@ -492,6 +495,9 @@ public static partial class RoadStairRuns
                         valleyMeet = true;
                         // The step sunk under the first's foot would stand in the shared floor.
                         StairLayout.DropSunkFoot(below);
+                        if (RoadNetworkGenerator.RoadsLog)
+                            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(FormattableString.Invariant(
+                                $"[STAIRS] valley at ({foot.x:F1}, {foot.y:F1}): shared floor on {floor:F1} at {valleyHeight:F2}, the second off it on {row.Heading:F1}{(second ? " past a second floor" : "")}"));
                         a = foot;
                         // Higher up, a straight span of floors from one flight to the other in line with both, the bottom
                         // and its turn cut off (a valley should avoid a switchback: smoother, with no 180 degree turn).
@@ -506,6 +512,9 @@ public static partial class RoadStairRuns
                         System.Threading.Interlocked.Increment(ref ValleysMet);
                         break;
                     }
+                    if (!valleyMeet && RoadNetworkGenerator.RoadsLog)
+                        ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(FormattableString.Invariant(
+                            $"[STAIRS] valley at ({foot.x:F1}, {foot.y:F1}): from a shared floor, {(up != null && up.Reached ? "refused: " + Said(LastRefusal) : "not reached: " + up?.Reason)}; laid from the first's foot instead"));
                 }
                 // Searched down from that top stair's edge: its own top stair back to back with it, exactly (just one stair up and
                 // another down); where that finds no way down, laid up to it and a floor across the gap.
@@ -524,7 +533,12 @@ public static partial class RoadStairRuns
                     System.Threading.Interlocked.Increment(ref RidgesSnappedOffCrest);
                 }
                 else
+                {
+                    if (plan != null && RoadNetworkGenerator.RoadsLog)
+                        ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(FormattableString.Invariant(
+                            $"[STAIRS] ridge at ({crestRow!.Value.Edge.x:F1}, {crestRow.Value.Edge.y:F1}): searched down, {(plan.Reached ? "refused: " + Said(LastRefusal) : "not reached: " + plan.Reason)}; laid up to it instead"));
                     plan = crestRow.HasValue ? Plan(crestRow.Value.Edge, b, kit, Ground, null, null, corridor, after: crestRow, retried: true, relayPads: false) : null!;
+                }
                 if (plan == null || !Usable(plan, path, start, to, world, spans, meet))
                     plan = Plan(a, b, kit, Ground, arriving, leaving, corridor, topLandings: tops, retried: true, relayPads: meet == null, facing: facing, topFacing: topFacing);
                 if (!Usable(plan, path, start, to, world, spans, meet)) plan = Plan(a, b, kit, Ground, null, null, corridor, topLandings: tops, retried: true, relayPads: meet == null, facing: facing, topFacing: topFacing);
@@ -542,12 +556,16 @@ public static partial class RoadStairRuns
                 if ((facing.HasValue || topFacing.HasValue) && !Usable(plan, path, start, to, world, spans, meet))
                 {
                     System.Threading.Interlocked.Increment(ref FeetFacedFreely);
+                    string? faced = RoadNetworkGenerator.RoadsLog ? Said(LastRefusal) + " (" + plan.Reason + ")" : null;
                     plan = Plan(a, b, kit, Ground, null, null, null, topLandings: tops, relayPads: meet == null);
+                    if (faced != null)
+                        ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(FormattableString.Invariant(
+                            $"[STAIRS] foot facing {(facing.HasValue ? facing.Value.ToString("F0") : "-")}, top facing {(topFacing.HasValue ? topFacing.Value.ToString("F0") : "-")} at ({a.x:F1}, {a.y:F1}) -> ({b.x:F1}, {b.y:F1}): no layout facing the road usable: {faced}; laid any way, setting off {plan.StartHeading:F1}"));
                 }
                 // Into the staircase before it, or onto the road between: one
                 // staircase over both stretches instead. On a steep road with
                 // short switchback legs, runs a leg apart piled into each other.
-                if (!Usable(plan, path, start, to, world, spans, meet) && !Merge()) return null;
+                if (!Usable(plan, path, start, to, world, spans, meet) && !Merge()) return Fail("", LastRefusal, spans.Count > 0 ? ", merge too" : "");
                 else if (meet == null && start == from && !valleyFirst)
                 {
                     // Held to the road's last heading, a flight whose own way lay well off it swung
@@ -574,10 +592,15 @@ public static partial class RoadStairRuns
                         // over both stretches instead, or none.
                         // Floors across at its top's height, up to CrestStubJoinReach and a step apart in height; else one
                         // staircase over both stretches instead, or none.
+                        (float stub, float apart) = RoadNetworkGenerator.RoadsLog
+                            ? (Vector2.Distance(new Vector2(plan.End.x, plan.End.z), crest), plan.End.y - spans[spans.Count - 1].ToHeight) : (0f, 0f);
                         bool joined = NoCrestStubs && StairLayout.BridgeTopTo(plan, crest, spans[spans.Count - 1].ToHeight, Ground, Width, kit,
                             CrestStubJoinReach, StairLayout.StepUp);
                         System.Threading.Interlocked.Increment(ref joined ? ref CrestStubsJoined : ref CrestStubs);
-                        if (NoCrestStubs && !joined && !Merge()) return null;
+                        if (RoadNetworkGenerator.RoadsLog)
+                            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(FormattableString.Invariant(
+                                $"[STAIRS] ridge at ({crest.x:F1}, {crest.y:F1}): tops {stub:F1} m apart, {apart:F2} m over it, {(joined ? "joined by floors" : NoCrestStubs ? "not joined; merged or refused" : "not joined; a road between")}"));
+                        if (NoCrestStubs && !joined && !Merge()) return Fail("a road stub between its top and the staircase before it over the ridge, merge too");
                     }
                 }
             }
@@ -793,7 +816,55 @@ public static partial class RoadStairRuns
             : OverRoad(plan, path, from, to, (x, z) => GroundAt(x, z, world)) ? Refusal.OnItsRoad : OverStairs(plan, before, meet) ? Refusal.OnAnotherStaircase
             : BesideARoad(plan, path, from, to, (x, z) => GroundAt(x, z, world)) ? Refusal.BesideARoad : Refusal.None;
         if (why != Refusal.None) LastRefusal = why;
+        if (RoadNetworkGenerator.RoadsLog) Rejections.AddOrUpdate(why == Refusal.NotReached ? "not reached: " + ReasonKind(plan.Reason) : Said(why), 1, (_, n) => n + 1);
         return why == Refusal.None;
+    }
+
+    /// <summary>A refusal in words, for the log.</summary>
+    internal static string Said(Refusal why) => why switch
+    {
+        Refusal.None => "laid",
+        Refusal.NotReached => "not reached",
+        Refusal.WaterOrPlace => "water or a place",
+        Refusal.OnItsRoad => "on its road",
+        Refusal.OnAnotherStaircase => "on another staircase",
+        _ => "beside a road",
+    };
+
+    /// <summary>With RoadNetworkGenerator.RoadsLog: layouts tried this generation, by what became of them.</summary>
+    public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> Rejections = new();
+
+    /// <summary>With RoadNetworkGenerator.RoadsLog: roads that gave up all their stairs this generation, by the staircase
+    /// that stopped them.</summary>
+    public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> LayFailures = new();
+
+    /// <summary>With RoadNetworkGenerator.RoadsLog: the first refusals of a generation, described, for the log.</summary>
+    private static int s_described;
+    private static void Describe(string what)
+    {
+        if (System.Threading.Interlocked.Increment(ref s_described) <= 25)
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug("[STAIRS] refused: " + what);
+    }
+
+    /// <summary>Lay gives up the road's stairs: <paramref name="what"/>, then the refusal and <paramref name="after"/>,
+    /// tallied with RoadNetworkGenerator.RoadsLog (no string is built without it).</summary>
+    private static List<RoadStairSpan>? Fail(string what, Refusal? why = null, string after = "")
+    {
+        if (RoadNetworkGenerator.RoadsLog) LayFailures.AddOrUpdate(what + (why is Refusal r ? Said(r) : "") + after, 1, (_, n) => n + 1);
+        return null;
+    }
+
+    /// <summary>A layout's reason for not reaching, without its numbers, and
+    /// whether it gave up on the last leg (the goal's height and heading) or on
+    /// the way: the tally that says which rule loses a road its stairs.</summary>
+    internal static string ReasonKind(string reason)
+    {
+        if (reason.Length == 0) return "no reason";
+        var m = System.Text.RegularExpressions.Regex.Match(reason, @"\(waypoint (\d+) of (\d+)\)");
+        string where = !m.Success ? "one leg" : m.Groups[1].Value == m.Groups[2].Value ? "last leg" : "on the way";
+        string kind = System.Text.RegularExpressions.Regex.Replace(reason, @"\s*\(waypoint \d+ of \d+\)", "");
+        kind = System.Text.RegularExpressions.Regex.Replace(kind, @"\d+", "#");
+        return $"{kind}, {where}";
     }
 
     /// <summary>Settable for tests: false lets a staircase run beside a road at its height.</summary>
@@ -885,11 +956,17 @@ public static partial class RoadStairRuns
             if (meet.HasValue && Vector2.Distance(at, meet.Value) <= MeetReach) continue;
             foreach (Vector3 o in others)
                 if (Vector2.Distance(at, new Vector2(o.x, o.z)) < StairOverlap && Mathf.Abs(o.y - piece.Position.y) < 2f)
+                {
+                    if (RoadNetworkGenerator.RoadsLog) Describe($"{piece.Kind} at {piece.Position} inside this road's earlier staircase piece at {o} ({before.Count} before, meet {meet})");
                     return true;
+                }
             foreach (StructurePiece o in laid)
                 if (o.Kind != StructurePieceKind.StairSupport && Mathf.Abs(o.Position.y - piece.Position.y) < 2f
                     && Vector2.Distance(at, new Vector2(o.Position.x, o.Position.z)) < StairOverlap)
+                {
+                    if (RoadNetworkGenerator.RoadsLog) Describe($"{piece.Kind} at {piece.Position} inside laid staircase piece {o.Kind} at {o.Position}");
                     return true;
+                }
         }
         return false;
     }
@@ -948,11 +1025,20 @@ public static partial class RoadStairRuns
             for (int i = 1; i < path.Count; i++)
             {
                 if (i > from && i <= to) continue; // the stretch the staircase replaces
-                if (DistanceToSegment(p, path[i - 1], path[i]) < OnRoad) return true;
+                if (DistanceToSegment(p, path[i - 1], path[i]) < OnRoad)
+                {
+                    if (RoadNetworkGenerator.RoadsLog)
+                        Describe($"{piece.Kind} at {p} y {piece.Position.y:F2} on road {path[i - 1]}->{path[i]} (segment {i}, stair {from}..{to} of {path.Count}, ends {a} {ha:F2} {b} {hb:F2})");
+                    return true;
+                }
             }
             // Nor on a road already in the network: checked against its own road
             // only, a staircase was laid across another (broken stairs, overlapping roads).
-            if (RoadSpatialGrid.IsInitialized && RoadSpatialGrid.TryGetRoadWithin(p, OnRoad, out _)) return true;
+            if (RoadSpatialGrid.IsInitialized && RoadSpatialGrid.TryGetRoadWithin(p, OnRoad, out Vector2 other))
+            {
+                if (RoadNetworkGenerator.RoadsLog) Describe($"{piece.Kind} at {p} on a network road at {other}");
+                return true;
+            }
         }
         return false;
     }

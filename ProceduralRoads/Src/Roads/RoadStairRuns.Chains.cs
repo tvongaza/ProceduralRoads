@@ -58,19 +58,20 @@ public static partial class RoadStairRuns
         var second = Rows(up, bottom);
         float half = Mathf.Max(StairLayout.PieceRun, width) / 2f - 0.1f;
         (int k, Vector2 l1, Vector2 l2, float turn)? best = null;
+        List<string>? why = RoadNetworkGenerator.RoadsLog ? new List<string>() : null;
         for (int k = 1; k <= 6; k++)
         {
-            if (!first.TryGetValue(k, out var f) || !second.TryGetValue(k, out var g)) continue;
+            if (!first.TryGetValue(k, out var f) || !second.TryGetValue(k, out var g)) { why?.Add($"{k}: no stair in {(first.ContainsKey(k) ? "the second" : "the first")}"); continue; }
             float h = bottom + k * StairLayout.PieceRise;
             Vector2 l1 = f.at + StairLayout.Forward(f.down) * (StairLayout.PieceRun / 2f);
             Vector2 l2 = g.at + StairLayout.Forward(g.down) * (StairLayout.PieceRun / 2f);
             float across = Vector2.Distance(l1, l2);
-            if (across < StairLayout.PieceRun / 2f || across > ValleySpanReach) continue;
+            if (across < StairLayout.PieceRun / 2f || across > ValleySpanReach) { why?.Add(FormattableString.Invariant($"{k}: {across:F1} m across")); continue; }
             float heading = StairLayout.SnapHeading(StairLayout.Bearing(l1, l2));
             float aside = Vector2.Dot(l2 - l1, StairLayout.Right(heading));
-            if (Mathf.Abs(aside) > StairLayout.TopJoinAside) continue;
+            if (Mathf.Abs(aside) > StairLayout.TopJoinAside) { why?.Add(FormattableString.Invariant($"{k}: {aside:F1} m aside")); continue; }
             float off1 = Off(heading, f.down), off2 = Off(heading, StairLayout.Wrap(g.down + 180f));
-            if (off1 > ValleySpanTurn + 0.01f || off2 > ValleySpanTurn + 0.01f) continue;
+            if (off1 > ValleySpanTurn + 0.01f || off2 > ValleySpanTurn + 0.01f) { why?.Add(FormattableString.Invariant($"{k}: turns {off1:F1}/{off2:F1}")); continue; }
             // Floors over the valley, on columns: buried nowhere deeper than a staircase's piece may be (their earthwork
             // cuts them out where they meet the slope at either end: at 34.5 off the slope the hand-built floors were in it).
             bool buried = false;
@@ -79,12 +80,18 @@ public static partial class RoadStairRuns
                 foreach (float side in new[] { -half, 0f, half })
                 {
                     Vector2 q = l1 + dir * t + right * side;
-                    if (ground(q.x, q.y) > h + StairLayout.MaxBuriedDepth) { buried = true; break; }
+                    if (ground(q.x, q.y) > h + StairLayout.MaxBuriedDepth) { buried = true; why?.Add(FormattableString.Invariant($"{k}: buried {ground(q.x, q.y) - h:F2} m at ({q.x:F1}, {q.y:F1})")); break; }
                 }
             if (buried) continue;
             if (best == null || off1 + off2 < best.Value.turn - 0.01f) best = (k, l1, l2, off1 + off2);
         }
-        if (best is not { } span) return false;
+        if (best is not { } span)
+        {
+            if (why != null)
+                ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(FormattableString.Invariant(
+                    $"[STAIRS] valley at {(below.Foot is Vector3 f0 ? $"({f0.x:F1}, {f0.z:F1}) " : "")}{bottom:F2}: not spanned ({string.Join("; ", why)})"));
+            return false;
+        }
         float height = bottom + span.k * StairLayout.PieceRise;
         var keepBelow = new StairLayout.PlanSnapshot(below);
         var keepUp = new StairLayout.PlanSnapshot(up);
@@ -105,10 +112,16 @@ public static partial class RoadStairRuns
         below.Foot = new Vector3(span.l1.x, height, span.l1.y);
         if (!usable(up, span.l1))
         {
+            if (RoadNetworkGenerator.RoadsLog)
+                ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(FormattableString.Invariant(
+                    $"[STAIRS] valley span at ({span.l1.x:F1}, {span.l1.y:F1}) -> ({span.l2.x:F1}, {span.l2.y:F1}) at {height:F2}: refused: {Said(LastRefusal)}"));
             keepBelow.Restore(below);
             keepUp.Restore(up);
             return false;
         }
+        if (RoadNetworkGenerator.RoadsLog)
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(FormattableString.Invariant(
+                $"[STAIRS] valley spanned at {height:F2}, {span.k} rise(s) over the bottom: ({span.l1.x:F1}, {span.l1.y:F1}) -> ({span.l2.x:F1}, {span.l2.y:F1}) on {spanHeading:F1}, {floors} floor(s), turning {span.turn:F1}"));
         System.Threading.Interlocked.Increment(ref ValleysSpanned);
         from = span.l1;
         return true;
@@ -150,6 +163,9 @@ public static partial class RoadStairRuns
             up.ToPoint = row.Edge;
             a = row.Edge;
             meet = row.Edge;
+            if (RoadNetworkGenerator.RoadsLog)
+                ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(FormattableString.Invariant(
+                    $"[STAIRS] ridge at ({crest.Edge.x:F1}, {crest.Edge.y:F1}): snapped off the crest {(second ? "past a second floor" : "from its floor's side, on " + row.Heading.ToString("F1"))}"));
             return down;
         }
         return null;

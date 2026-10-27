@@ -237,7 +237,8 @@ public static partial class RoadNetworkGenerator
             string last = m_builtTo.ContainsKey(key)
                 ? "a road was built to it but stops short" + (m_lastFailure.TryGetValue(key, out string? f0) ? $" (a refused attempt: {f0})" : "")
                 : m_lastFailure.TryGetValue(key, out string? f) ? f : "never attempted";
-            Log.LogInfo(FormattableString.Invariant($"  unconnected: {d.name} at ({d.position.x:F0}, {d.position.z:F0}): {last}"));
+            string stairs = m_stairsFailed.TryGetValue(key, out string? st) ? $"; stairs tried: {st}" : "; stairs not tried";
+            Log.LogInfo(FormattableString.Invariant($"  unconnected: {d.name} at ({d.position.x:F0}, {d.position.z:F0}): {last}{stairs}"));
         }
     }
 
@@ -379,6 +380,13 @@ public static partial class RoadNetworkGenerator
         try { built = GenerateRoad(road.StartCenter, road.StartRadius, road.EndCenter, road.EndRadius, road.Width, road.Label, road.Hints); }
         finally { t_lastResort = false; }
         if (built) m_lastResortServed[key] = road.Under;
+        if (RoadsLog)
+        {
+            System.Threading.Interlocked.Increment(ref m_lastResortTried);
+            if (built) System.Threading.Interlocked.Increment(ref m_lastResortBuilt);
+            Log.LogInfo(FormattableString.Invariant(
+                $"  Road {road.Label}: last resort for a place no other road reaches, ending {road.Under:F0} m under it: {(built ? "built" : "refused")}"));
+        }
         return built;
     }
     /// <summary>Read the crossing registry under the same gate used by commits.
@@ -617,6 +625,7 @@ public static partial class RoadNetworkGenerator
         m_roadsRefusedForGrade = 0;
         m_refusalReasons.Clear();
         m_lastFailure.Clear();
+        ClearStairNotes();
         m_builtTo.Clear();
         m_roadsWithNoRoute = 0;
         m_earthworkReroutes = 0;
@@ -788,6 +797,7 @@ public static partial class RoadNetworkGenerator
         if (SearchStats.Enabled)
             foreach (string line in SearchStats.Describe())
                 Log.LogInfo("  " + line);
+        if (RoadsLog && RoadPathfinder.ConfiguredStairs) LogStairs();
         LogSqueeze();
         LogGenerationStats(m_roadsGeneratedCount, elapsed);
 
@@ -877,6 +887,47 @@ public static partial class RoadNetworkGenerator
         if (!RoadsLog) return;
         m_builtTo[PlaceKey(a)] = true;
         m_builtTo[PlaceKey(b)] = true;
+    }
+
+    /// <summary>Per place (rounded centre), with <see cref="RoadsLog"/>: the staircase that failed where a road to it gave
+    /// up its stairs.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, int), string> m_stairsFailed = new();
+    /// <summary>With <see cref="RoadsLog"/>: why roads were tried again without stairs, and how often.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> m_stairFallbacks = new();
+    /// <summary>With <see cref="RoadsLog"/>: road ends at a place, by what became of an approach staircase there.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> m_siteApproaches = new();
+    /// <summary>With <see cref="RoadsLog"/>: the generation's staircase tallies for the summary.</summary>
+    private static int m_stairRuns, m_stairRoadsUnlaid, m_stretchRetries, m_stretchRetriesKept, m_tightTurnStairs, m_tightTurnStairsBuilt,
+        m_lastResortTried, m_lastResortBuilt;
+    /// <summary>Staircases laid by this thread, with <see cref="RoadsLog"/>: a retry reads it to know whether it kept the road's stairs.</summary>
+    [System.ThreadStatic] private static int t_stairRunsLaidHere;
+
+    private static void ClearStairNotes()
+    {
+        m_stairsFailed.Clear();
+        m_stairFallbacks.Clear();
+        m_siteApproaches.Clear();
+        m_stairRuns = m_stairRoadsUnlaid = m_stretchRetries = m_stretchRetriesKept = m_tightTurnStairs = m_tightTurnStairsBuilt = 0;
+        m_lastResortTried = m_lastResortBuilt = 0;
+    }
+
+    /// <summary>The summary's staircase lines, with <see cref="RoadsLog"/>.</summary>
+    private static void LogStairs()
+    {
+        static string ByCount(IEnumerable<KeyValuePair<string, int>> tally) =>
+            string.Join("; ", tally.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Value} {kv.Key}"));
+        Log.LogInfo($"  Staircases: {m_stairRuns} laid on roads; {m_stretchRetries} search(es) again with a staircase's stretch closed, " +
+                    $"{m_stretchRetriesKept} of them built with stairs; {RoadStairRuns.FeetBeside} set beside their road ({RoadStairRuns.FeetBesideRefused} could not be); " +
+                    $"{m_tightTurnStairs} search(es) again with stairs open at switchback turns too close to fit, {m_tightTurnStairsBuilt} of them built with stairs; " +
+                    $"{m_lastResortTried} place(s) given their last-resort road ending past an approach's {MaxApproachClimb:F0} m climb, {m_lastResortBuilt} built; " +
+                    $"{RoadStairRuns.Crests} top(s) crested onto a lip; {m_stairRoadsUnlaid} road(s) tried again without stairs" +
+                    (m_stairFallbacks.IsEmpty ? "" : ": " + ByCount(m_stairFallbacks)));
+        if (!m_siteApproaches.IsEmpty)
+            Log.LogInfo("  Site approach staircases, by road end at a place: " + ByCount(m_siteApproaches));
+        if (!RoadStairRuns.Rejections.IsEmpty)
+            Log.LogInfo("  Staircase layouts, by what became of them: " + ByCount(RoadStairRuns.Rejections));
+        if (!RoadStairRuns.LayFailures.IsEmpty)
+            Log.LogInfo("  Roads that gave up their stairs, by the staircase that stopped them: " + ByCount(RoadStairRuns.LayFailures));
     }
 
     /// <summary>
@@ -1029,6 +1080,14 @@ public static partial class RoadNetworkGenerator
         // be built.
         bool WithoutStairs(string why)
         {
+            if (RoadsLog)
+            {
+                System.Threading.Interlocked.Increment(ref m_stairRoadsUnlaid);
+                m_stairFallbacks.AddOrUpdate(why, 1, (_, n) => n + 1);
+                m_stairsFailed[PlaceKey(startCenter)] = why;
+                m_stairsFailed[PlaceKey(endCenter)] = why;
+                if (label != null) Log.LogDebug($"Road {label}: built without stairs ({why})");
+            }
             var noStairs = Finder!;
             noStairs.Stairs = false;
             try { return GenerateRoadCore(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints, stretchRetry); }
@@ -1054,7 +1113,14 @@ public static partial class RoadNetworkGenerator
             foreach (var (a, b) in finder.LastStairSteps)
                 if (stretch.Exists(p => (p - a).sqrMagnitude < 144f || (p - b).sqrMagnitude < 144f)) { stretch.Add(a); stretch.Add(b); }
             finder.CloseToStairs(stretch, StairStretchReachCells);
-            return GenerateRoadCore(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints, stretchRetry + 1);
+            if (!RoadsLog) return GenerateRoadCore(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints, stretchRetry + 1);
+            System.Threading.Interlocked.Increment(ref m_stretchRetries);
+            if (label != null)
+                Log.LogDebug($"Road {label}: staircase on path {from}..{to} could not be laid ({RoadStairRuns.Said(RoadStairRuns.LastRefusal)}); searched again with {finder.NoStairCells} cell(s) closed to stairs");
+            int before = t_stairRunsLaidHere;
+            bool built = GenerateRoadCore(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints, stretchRetry + 1);
+            if (built && t_stairRunsLaidHere > before) System.Threading.Interlocked.Increment(ref m_stretchRetriesKept);
+            return built;
         }
 
         Vector2 pathStart = RoadEndpoint.FindGround(GenerationWorld, startCenter, startRadius);
@@ -1174,7 +1240,13 @@ public static partial class RoadNetworkGenerator
             && RoadSpatialGrid.LastRefusal == "switchback: turns too close to fit their curves" && RoadSwitchbacks.LastRefusalAt is Vector2 tight)
         {
             finder.OpenToStairs(new[] { tight }, TightTurnStairReachCells);
-            return GenerateRoadCore(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints, stretchRetry + 1);
+            if (!RoadsLog) return GenerateRoadCore(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints, stretchRetry + 1);
+            System.Threading.Interlocked.Increment(ref m_tightTurnStairs);
+            int before = t_stairRunsLaidHere;
+            bool built = GenerateRoadCore(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints, stretchRetry + 1);
+            if (built && t_stairRunsLaidHere > before) System.Threading.Interlocked.Increment(ref m_tightTurnStairsBuilt);
+            if (label != null) Log.LogDebug($"Road {label}: switchback turns at {tight} too close to fit; searched again with {finder.OpenStairCells} cell(s) open to stairs: {(built ? "built" : "not built")}");
+            return built;
         }
         if (plans == null && stairs.Count > 0)
             return WithoutStairs("road round the stairs: " + (RoadSpatialGrid.LastRefusal ?? "refused"));
@@ -1238,6 +1310,7 @@ public static partial class RoadNetworkGenerator
         if (plans != null && !t_lastResort && EndOutOfClimb(path, plans, stairs, startCenter, askedStartRadius, endCenter, askedEndRadius,
                 startAtPlace, endAtPlace, out Vector2 shortOf, out float shortBy) is string climb)
         {
+            if (RoadsLog && label != null) Log.LogDebug($"Road {label}: {climb}");
             if (LastResortUnder)
             {
                 float length = 0f;
@@ -1305,6 +1378,12 @@ public static partial class RoadNetworkGenerator
             StairStructures.Add(run);
             StairStructures.MarkStanding(run);
             RoadStairRuns.Laid(run, approach.Plan, approach.Kit);
+            if (RoadsLog)
+            {
+                System.Threading.Interlocked.Increment(ref m_stairRuns);
+                t_stairRunsLaidHere++;
+                if (label != null) Log.LogDebug($"Road {label}: site approach staircase, {approach.Kit.Name} {approach.Plan.Rise:F0} m {(approach.Plan.Reversed ? "down" : "up")}");
+            }
         }
         foreach (RoadStairSpan stair in stairs)
         {
@@ -1316,6 +1395,11 @@ public static partial class RoadNetworkGenerator
             StairStructures.Add(run);
             StairStructures.MarkStanding(run);
             RoadStairRuns.Laid(run, stair.Plan, stair.Kit);
+            if (RoadsLog)
+            {
+                System.Threading.Interlocked.Increment(ref m_stairRuns);
+                t_stairRunsLaidHere++;
+            }
         }
         if (RoadCrossingDetector.ToWater)
         {
@@ -1358,6 +1442,8 @@ public static partial class RoadNetworkGenerator
         }
         if (crossings.Count > 0 && label != null)
             Log.LogDebug($"Road {label}: {crossings.Count} river crossing(s)");
+        if (RoadsLog && stairs.Count > 0 && label != null)
+            Log.LogDebug($"Road {label}: {stairs.Count} staircase(s), {string.Join(", ", stairs.ConvertAll(st => $"{st.Kit.Name} {st.Plan.Rise:F0} m up"))}");
 
         if (label != null)
             Log.LogDebug($"Generated road: {label} ({path.Count} waypoints)");
@@ -2120,7 +2206,11 @@ public static partial class RoadNetworkGenerator
     {
         WorldGenerator? world = WorldGenerator.instance;
         if (world == null || StairStructures.Runs.Count == 0) return;
-        StairStructures.SettleOnFinishedGround(RoadTerrainModifier.FinishedGround((x, z) => BiomeBlendedHeight.GetBlendedHeight(x, z, world)));
+        var byPrefab = RoadsLog ? new SortedDictionary<string, int>(StringComparer.Ordinal) : null;
+        var (carried, dropped) = StairStructures.SettleOnFinishedGround(RoadTerrainModifier.FinishedGround((x, z) => BiomeBlendedHeight.GetBlendedHeight(x, z, world)), byPrefab);
+        if (byPrefab != null)
+            Log.LogInfo($"  Staircases on the finished ground: {carried} pillar(s) carried down under earthwork; pieces wholly under it, not placed: {dropped}" +
+                (byPrefab.Count == 0 ? "" : " (" + string.Join(", ", byPrefab.Select(kv => $"{kv.Value} {kv.Key}")) + ")"));
     }
 
     /// <summary>
@@ -2163,8 +2253,9 @@ public static partial class RoadNetworkGenerator
             var both = new List<RoadStairSpan>(stairs);
             both.AddRange(laid);
             RoadStairSpan? span = RoadStairRuns.LaySiteApproach(end, height, StairLayout.Bearing(inner, end), centre,
-                LocationLevelling.CentreHeight(centre, world), LocationLevelling.OpsAt(centre), path, index, both, world, out _);
+                LocationLevelling.CentreHeight(centre, world), LocationLevelling.OpsAt(centre), path, index, both, world, out string why);
             if (span != null) laid.Add(span);
+            if (RoadsLog) m_siteApproaches.AddOrUpdate(span != null ? "laid" : why, 1, (_, n) => n + 1);
         }
         At(true, startCenter, askedStartRadius, startAtPlace);
         At(false, endCenter, askedEndRadius, endAtPlace);
@@ -2573,6 +2664,7 @@ public static partial class RoadNetworkGenerator
         m_roadsRefusedForGrade = 0;
         m_refusalReasons.Clear();
         m_lastFailure.Clear();
+        ClearStairNotes();
         m_builtTo.Clear();
         m_roadsWithNoRoute = 0;
         m_earthworkReroutes = 0;
@@ -2653,6 +2745,7 @@ public static partial class RoadNetworkGenerator
         m_roadsRefusedForGrade = 0;
         m_refusalReasons.Clear();
         m_lastFailure.Clear();
+        ClearStairNotes();
         m_builtTo.Clear();
         m_roadsWithNoRoute = 0;
         m_earthworkReroutes = 0;
