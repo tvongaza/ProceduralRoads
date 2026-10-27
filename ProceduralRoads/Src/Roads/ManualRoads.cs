@@ -120,8 +120,9 @@ public static class ManualRoads
         bool OnIsland(Vector2 p) => island.ContainsPoint(p.x, p.y);
         if (points.Any(p => !OnIsland(p))) throw new ArgumentException("All waypoints must be on the same island.");
         var plan = new Plan { Epoch = worldEpoch, Version = RoadSpatialGrid.RoadNetworkVersion, Start = points[0] };
-        // Manual roads are laid as drawn: no staircases on them.
-        var finder = new RoadPathfinder(world) { SiteClearance = width * 0.5f + 2f, Stairs = false };
+        // Manual roads are laid as drawn; staircases on them are road_stairs' job, and a
+        // viaduct is the generator's (its crossings come from the search that bought it).
+        var finder = new RoadPathfinder(world) { SiteClearance = width * 0.5f + 2f, Stairs = false, Viaducts = false };
         var path = new List<Vector2>();
         if (connect)
         {

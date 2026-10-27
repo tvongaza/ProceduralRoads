@@ -863,6 +863,8 @@ public static partial class RoadNetworkGenerator
         }
         if (CorridorSnap > RoadSnap)
             Log.LogInfo($"  Corridor snap (a road alongside another merges onto it, within {CorridorSnap:F0} m): {m_corridorSnapped} waypoint(s) moved, {m_chainsShared} chain(s) of crossings shared, candidates included");
+        if (ViaductLog)
+            Log.LogInfo($"  Viaducts: {m_viaductsLaid} Mistlands viaduct(s) laid over dry valleys (DvergrViaduct)");
         if (RoadWiggle.Enabled)
             Log.LogInfo($"  Sway (planned pieces, candidates included): kept {RoadSpatialGrid.SwayKept}, dropped as refused {RoadSpatialGrid.SwayRefused}, dropped for more earth {RoadSpatialGrid.SwayMoreEarth}; full sway to {RoadWiggle.Flat:P0} ground grade, {RoadWiggle.SlopeFloor:P0} of it at the {RoadGrade.Configured:P0} cap, meander fades out at {RoadPathfinder.MeanderFlat:P0}");
             Log.LogInfo($"  Sway on slopes (kept plans, over {RoadWiggle.Flat:P0} grade and more than 1 m off the plain line): {RoadSpatialGrid.SlopeSwayPlans} plan(s), metres by grade band 12-20%: {RoadSpatialGrid.SlopeSwayMillimetres[0] / 1000}, 20-28%: {RoadSpatialGrid.SlopeSwayMillimetres[1] / 1000}, over 28%: {RoadSpatialGrid.SlopeSwayMillimetres[2] / 1000}");
@@ -1326,9 +1328,7 @@ public static partial class RoadNetworkGenerator
         // fords (or on a road that crossed no river) the whole path is one
         // road as before.
         var finder = Finder!;
-        List<RoadCrossing> crossings = finder.Fords || finder.Bridges
-            ? RoadCrossingDetector.Detect(path, GenerationWorld, finder.Bridges, finder.Fords)
-            : new List<RoadCrossing>();
+        List<RoadCrossing> crossings = DetectCrossings(finder, path);
         // A crossing a few metres from one an earlier road made is the same
         // site: it takes that site's banks, so this road is painted up to
         // the one bridge built there instead of pointing at water beside it.
@@ -1367,9 +1367,7 @@ public static partial class RoadNetworkGenerator
             // The stubs put back: both ends are on their places' rings again.
             startAtPlace = endAtPlace = true;
             path = ShortenForApproaches(withStubs, startCenter, endCenter, true, true);
-            crossings = finder.Fords || finder.Bridges
-                ? RoadCrossingDetector.Detect(path, GenerationWorld, finder.Bridges, finder.Fords)
-                : new List<RoadCrossing>();
+            crossings = DetectCrossings(finder, path);
             SnapToExistingCrossings(crossings);
             foreach (var c in crossings) c.Road = label;
             startGround = ApproachGround(path[0], startCenter, startRadius);
@@ -1625,6 +1623,13 @@ public static partial class RoadNetworkGenerator
         {
             m_roadCrossings.AddRange(crossings);
             roadNumber = ++m_roadsGeneratedCount;
+        }
+        foreach (var c in crossings)
+        {
+            if (!c.ValleyJump || c.Shared) continue;
+            DvergrViaduct.MarkStanding(c);
+            System.Threading.Interlocked.Increment(ref m_viaductsLaid);
+            if (ViaductLog) Log.LogInfo($"[VIADUCT] road {label ?? "(unlabelled)"}: {DvergrViaduct.Describe(c, GenerationWorld)}");
         }
         foreach (var c in crossings)
             if (c.Shallow && c.ShallowNote != null) Log.LogDebug("  " + c.ShallowNote);
@@ -2292,9 +2297,7 @@ public static partial class RoadNetworkGenerator
         // the cap".
         bool startAtPlace = path[0] == beforeStart, endAtPlace = path[path.Count - 1] == beforeEnd;
         path = ShortenForApproaches(path, startCenter, endCenter, startAtPlace, endAtPlace);
-        var crossings = finder.Fords || finder.Bridges
-            ? RoadCrossingDetector.Detect(path, GenerationWorld, finder.Bridges, finder.Fords)
-            : new List<RoadCrossing>();
+        var crossings = DetectCrossings(finder, path);
         SnapToExistingCrossings(crossings);
         if (!TryLayStairs(finder, path, crossings, out List<RoadStairSpan> stairs)) return null;
         float? startGround = startAtPlace ? ApproachGround(path[0], startCenter, startRadius) : null;
@@ -2343,6 +2346,26 @@ public static partial class RoadNetworkGenerator
     }
 
     private static int m_shallowFordsWalked;
+    /// <summary>The crossings of a finished path: its river crossings (RoadCrossingDetector) and
+    /// the Mistlands viaducts its search bought over dry valleys (DvergrViaduct.AddJumps), in path
+    /// order.</summary>
+    private static List<RoadCrossing> DetectCrossings(RoadPathfinder finder, List<Vector2> path)
+    {
+        List<RoadCrossing> crossings = finder.Fords || finder.Bridges
+            ? RoadCrossingDetector.Detect(path, GenerationWorld, finder.Bridges, finder.Fords)
+            : new List<RoadCrossing>();
+        if (finder.Viaducts && finder.Bridges)
+            DvergrViaduct.AddJumps(path, finder.LastViaductJumps, GenerationWorld, crossings);
+        return crossings;
+    }
+
+    /// <summary>PROCEDURALROADS_ROADS_LOG: say where each viaduct was laid (the switch rel/16-preload's
+    /// road log reads too). Off by default.</summary>
+    internal static readonly bool ViaductLog = DebugSwitches.Flag("ROADS_LOG", false);
+    private static int m_viaductsLaid;
+    /// <summary>Mistlands viaducts the roads of this generation laid over dry valleys.</summary>
+    public static int ViaductsLaid => m_viaductsLaid;
+
 
     private static List<RoadSpatialGrid.PlannedPath>? PlanPieces(
         List<Vector2> path, List<RoadCrossing> crossings, float width, float? startGround, float? endGround,
@@ -3352,6 +3375,8 @@ public static partial class RoadNetworkGenerator
         m_roadStartPoints.Clear();
         m_roadCrossings.Clear();
         StairStructures.Reset();
+        DvergrViaduct.ResetStanding();
+        m_viaductsLaid = 0;
         RoadStairRuns.ResetCache();
         m_underRoads.Clear();
         m_lastResortServed.Clear();
