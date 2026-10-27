@@ -272,7 +272,7 @@ public static class RoadRockProbe
                     if (r.outcome != RoadRockCarve.Outcome.NotCarvable)
                     {
                         line += System.FormattableString.Invariant(
-                            $"; carve: {r.outcome}, {r.onRoad} of {r.chunks} chunks in the road (mean {r.chunkSize:F1} m) + {r.hanging} hanging + {r.unsupported} unsupported{(r.swapped ? ", swapped for the fractured copy" : "")}{(r.note.Length > 0 ? " (" + r.note + ")" : "")}");
+                            $"; carve: {r.outcome}, {r.onRoad} of {r.chunks} chunks in the road (mean {r.chunkSize:F1} m) + {r.hanging} hanging + {r.unsupported} unsupported ({r.floating} floating){(r.swapped ? ", swapped for the fractured copy" : "")}{(r.note.Length > 0 ? " (" + r.note + ")" : "")}");
                         if (r.outcome == RoadRockCarve.Outcome.Carved && r.rock != null) carvedRocks.Add((r.rock, lines.Count));
                         lines.Add(line);
                         // A rock the pass looked at and left alone is logged once: the

@@ -164,6 +164,28 @@ public class RoadRockPolicyTests
     }
 
     [Fact]
+    public void ACarveLeavesTheSmallestWayAPlayerFitsThrough()
+    {
+        // The smallest possible hole in the rock the player can
+        // reliably fit through. The player is 0.98 m wide; the way left is 1.5 m.
+        Assert.True(RoadRockPolicy.MinOpening > RoadRockPolicy.PlayerWidth + 0.4f);
+        Assert.True(RoadRockPolicy.ClearanceHeight > RoadRockPolicy.PlayerHeight);
+        // A 4 m road's clearance is its solid paint, 3.4 m: of 10 strips, a rock
+        // keeps all but 5 (1.7 m), where it kept all but 7 under the old 30%.
+        float road = 4f * RoadConstants.RoadPaintOuterRatio;
+        var rock = new int[10][];
+        for (int s = 0; s < 10; s++) rock[s] = new[] { s };
+        var taken = Open(RoadRockPolicy.EdgeAllowance(road), null, rock);
+        taken.Sort();
+        Assert.Equal(5, taken.Count);
+        Assert.Equal(taken[0] + 4, taken[4]);   // one run, from the middle out
+        Assert.InRange(taken[0], 2, 3);
+        // A clearance no wider than the way is opened in full.
+        Assert.Equal(0f, RoadRockPolicy.EdgeAllowance(1.5f));
+        Assert.Equal(0f, RoadRockPolicy.EdgeAllowance(1f));
+    }
+
+    [Fact]
     public void AnEdgeIntrusionWithinTheAllowanceStays()
     {
         // Chunk 1 covers the left 3 of 10 strips: 30% is allowed, nothing goes.

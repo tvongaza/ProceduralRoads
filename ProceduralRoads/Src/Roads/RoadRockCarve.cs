@@ -25,11 +25,8 @@ public static class RoadRockCarve
 {
     public enum Outcome { Carved, Removed, Untouched, NotCarvable }
 
-    /// <summary>Share of the road's clearance a carved rock may keep, from
-    /// either or both sides, as long as the rest is one open run. 0 clears the
-    /// whole width.</summary>
-    internal static float EdgeAllowance = 0.3f;
-    /// <summary>Strips across the clearance the allowance is counted in.</summary>
+    /// <summary>Strips across the clearance the allowance
+    /// (<see cref="RoadRockPolicy.EdgeAllowance(float)"/>) is counted in.</summary>
     public const int Strips = 10;
     /// <summary>Chunks hanging over the road up to this height are taken too:
     /// the game calls a chunk supported if its bounding box meets a neighbour's,
@@ -45,6 +42,7 @@ public static class RoadRockCarve
         public int chunks;        // chunks in the rock
         public int onRoad;        // removed because they stand in the road
         public int unsupported;   // removed because nothing held them up afterwards
+        public int floating;      // of those, the ones the game's own test called held (RemoveFloating)
         public int hanging;       // removed because they hung over the road below the headroom
         public bool swapped;      // an intact boulder was swapped for its fractured copy
         public float chunkSize;   // mean bounds diagonal of the removed road chunks, m
@@ -159,6 +157,8 @@ public static class RoadRockCarve
         // until nothing more comes loose (each pass sees the colliders the last
         // one switched off).
         result.unsupported += Resupport(rock);
+        result.floating = RemoveFloating(rock);
+        result.unsupported += result.floating;
         result.rock = rock;
 
         if (rock.AllDestroyed())
@@ -206,6 +206,64 @@ public static class RoadRockCarve
             Commit(rock, loose);
         }
         return removed;
+    }
+
+    /// <summary>How far under a chunk's box something else may be and still hold it up.</summary>
+    public const float RestReach = 0.3f;
+
+    /// <summary>
+    /// Chunks of a carved rock that still float after the game's own test: it calls a chunk
+    /// held when its bounding box meets a neighbour's, so a chunk touching another only at a
+    /// box corner, or off it altogether, stayed in the air (a floating rock was seen beside a 107 m
+    /// staircase).
+    /// Here a chunk rests on the ground (or on anything that is not this rock) when the real
+    /// shape of that thing enters its box or comes within <see cref="RestReach"/> under it, and two chunks are
+    /// joined only when each one's real shape enters the other's box. Every chunk not joined,
+    /// chunk to chunk, to one at rest goes, quietly, as the game's test's do.
+    /// </summary>
+    public static int RemoveFloating(MineRock5 rock)
+    {
+        if (rock == null || rock.m_nview == null || !rock.m_nview.IsValid()) return 0;
+        var areas = rock.m_hitAreas;
+        var live = new List<int>();
+        var index = new Dictionary<Collider, int>();
+        for (int i = 0; i < areas.Count; i++)
+            if (areas[i].m_health > 0f && areas[i].m_collider != null && areas[i].m_collider.enabled)
+            { live.Add(i); index[areas[i].m_collider] = i; }
+        if (live.Count == 0) return 0;
+        var held = new HashSet<int>();
+        var touches = new Dictionary<int, HashSet<int>>();
+        foreach (int i in live)
+        {
+            Bounds b = areas[i].m_collider.bounds;
+            var mine = new HashSet<int>();
+            foreach (var c in Physics.OverlapBox(b.center, b.extents + new Vector3(0.05f, 0.05f, 0.05f), Quaternion.identity, ~0, QueryTriggerInteraction.Ignore))
+                if (c != null && index.TryGetValue(c, out int j) && j != i) mine.Add(j);
+            touches[i] = mine;
+            // Its box and RestReach under it: the terrain is a surface, so a chunk sunk in the
+            // ground meets it inside its own box, not under it.
+            var rest = new Vector3(b.center.x, (b.max.y + b.min.y - RestReach) / 2f, b.center.z);
+            foreach (var c in Physics.OverlapBox(rest, new Vector3(b.extents.x, (b.size.y + RestReach) / 2f, b.extents.z), Quaternion.identity, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (c == null || index.ContainsKey(c) || c.transform.IsChildOf(rock.transform)) continue;
+                if (c.GetComponentInParent<Character>() != null || c.GetComponentInParent<ItemDrop>() != null) continue;
+                held.Add(i);
+                break;
+            }
+        }
+        // Joined both ways, then out from the chunks at rest.
+        var queue = new Queue<int>(held);
+        while (queue.Count > 0)
+        {
+            int i = queue.Dequeue();
+            foreach (int j in touches[i])
+                if (!held.Contains(j) && touches[j].Contains(i)) { held.Add(j); queue.Enqueue(j); }
+        }
+        var loose = new List<int>();
+        foreach (int i in live)
+            if (!held.Contains(i)) { areas[i].m_health = 0f; loose.Add(i); }
+        if (loose.Count > 0) Commit(rock, loose);
+        return loose.Count;
     }
 
     private static void Commit(MineRock5 rock, List<int> zeroed)
@@ -278,10 +336,11 @@ public static class RoadRockCarve
     }
 
     /// <summary>
-    /// The chunks to take: at every road point, those the edge allowance
-    /// requires (<see cref="RoadRockPolicy.ChunksToOpen"/>, strips across the
-    /// clearance, player height), then those hanging over the road below the
-    /// headroom. <paramref name="hanging"/> is the second kind.
+    /// The chunks to take: at every road point, the fewest that open a way a
+    /// player fits through (<see cref="RoadRockPolicy.ChunksToOpen"/>, strips
+    /// across the clearance, player height, <see cref="RoadRockPolicy.MinOpening"/>
+    /// wide), then those hanging over that way below the headroom.
+    /// <paramref name="hanging"/> is the second kind.
     /// </summary>
     private static HashSet<int> ChooseChunks(MineRock5 rock,
         (List<(RoadSpatialGrid.RoadPoint point, float surface)> at, List<RoadSpatialGrid.RoadPoint> all) near, out HashSet<int> hanging)
@@ -299,6 +358,7 @@ public static class RoadRockCarve
         foreach (var (point, surface) in near.at)
         {
             RoadRockProbe.RoadClearance(point, surface, near.all, out var centre, out var half, out var turn);
+            float allowance = RoadRockPolicy.EdgeAllowance(2f * half.x);
             bool ours = false;
             foreach (var c in Physics.OverlapBox(centre, half, turn, ~0, QueryTriggerInteraction.Ignore))
                 if (c != null && index.TryGetValue(c, out int i) && !removed.Contains(i)) { ours = true; break; }
@@ -322,7 +382,7 @@ public static class RoadRockCarve
                     }
                     blockers.Add(mine); held.Add(other);
                 }
-                RoadRockPolicy.ChunksToOpen(blockers, held, EdgeAllowance, removed);
+                RoadRockPolicy.ChunksToOpen(blockers, held, allowance, removed);
             }
             // Headroom: what of this rock hangs over the road above the
             // clearance and below the headroom, with the same edge allowance
@@ -349,7 +409,7 @@ public static class RoadRockCarve
                     roofBlockers.Add(mine); roofHeld.Add(false);
                 }
                 if (any)
-                    foreach (int i in RoadRockPolicy.ChunksToOpen(roofBlockers, roofHeld, EdgeAllowance, removed))
+                    foreach (int i in RoadRockPolicy.ChunksToOpen(roofBlockers, roofHeld, allowance, removed))
                         hanging.Add(i);
             }
         }

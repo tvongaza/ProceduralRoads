@@ -17,8 +17,25 @@ public enum RockClearingMode
 /// <summary>Known natural boulders only, never ore, fragments or arbitrary destructibles.</summary>
 public static class RoadRockPolicy
 {
-    /// <summary>Height of the clearance over a walking surface: a player's.</summary>
+    /// <summary>Height of the clearance over a walking surface: a player's
+    /// (<see cref="PlayerHeight"/>) with a little room over the head.</summary>
     public const float ClearanceHeight = 2f;
+
+    /// <summary>The player's collision capsule, read from the Player prefab:
+    /// 1.85 m tall, 0.49 m radius, standing on its feet.</summary>
+    public const float PlayerHeight = 1.85f;
+    public const float PlayerWidth = 0.98f;
+    /// <summary>The narrowest way a carve leaves through a rock: the player's
+    /// width and about a quarter metre either side, so walking it never catches
+    /// (the smallest possible hole in the rock the player can
+    /// reliably fit through).</summary>
+    public const float MinOpening = 1.5f;
+
+    /// <summary>Share of a clearance <paramref name="width"/> metres wide that a
+    /// carved rock may keep, from either side or both, so that
+    /// <see cref="MinOpening"/> stays open. A clearance no wider than that is
+    /// opened in full.</summary>
+    public static float EdgeAllowance(float width) => width <= MinOpening ? 0f : 1f - MinOpening / width;
 
     public const Heightmap.Biome SupportedBiomes = Heightmap.Biome.Mountain |
         Heightmap.Biome.Plains | Heightmap.Biome.BlackForest | Heightmap.Biome.Meadows | Heightmap.Biome.Swamp;
@@ -71,9 +88,9 @@ public static class RoadRockPolicy
     /// Which chunks to take at one road point so the road stays passable: the
     /// clearance is cut into strips across the road; a rock may keep chunks in
     /// the edge strips as long as one open run covers at least
-    /// (1 - <paramref name="edgeAllowance"/>) of the strips: a rock may overlap
-    /// the road by 30% as long as both sides are not blocked so the road cannot
-    /// be passed. Chunks go centre-first, one at a
+    /// (1 - <paramref name="edgeAllowance"/>) of the strips: a rock may keep all
+    /// of the road but a way through a player fits (<see cref="EdgeAllowance(float)"/>).
+    /// Chunks go centre-first, one at a
     /// time, until the run is long enough or nothing removable is left (a strip
     /// held by something else -- a tree, a rock that is not ours -- never opens).
     /// </summary>
