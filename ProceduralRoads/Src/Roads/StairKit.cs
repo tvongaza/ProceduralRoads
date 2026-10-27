@@ -19,6 +19,61 @@ public readonly struct FillerKind
 }
 
 /// <summary>
+/// The pieces that hold a flight out from a steep face instead of standing it
+/// on columns down to the ground below (a hand-built reference at
+/// -2300.4, 278.6, 1554.5: two 1x1x2 pillars clipped into the wall as the
+/// foundation, arches out from them to support the stairs, the stairs placed
+/// on those arches, and a horizontal 2x1x1 block next to the stair as filler so it looks better).
+/// The flight's wall side stands <see cref="Strip"/> off the face: in that strip
+/// a <see cref="Pillar"/> per metre of flight, clipped into the face, its top at
+/// the piece's underside; from each, an <see cref="Arch"/> a metre wide out
+/// under the piece, its tall end against the pillar and its top under the
+/// piece; on the pillars, <see cref="Beside"/> laid along the flight, its top
+/// at the piece's top edge. Measured extents from the reference's snap points.
+///
+/// What holds it is the pillars sunk into the face: Valheim grounds a piece that touches
+/// terrain, and the rest takes its support from them. Read in game (cli_piece_support)
+/// on a 6:1 face: stone with the arches' tall ends against the face, pillars and
+/// arches 1000, stair 848; with the arches 1.6 m clear of it, arches 720, stair 610, all
+/// holding (minimum 100); black marble 0.9 m clear, columns 1500, arches 415, stair 684.
+/// </summary>
+public sealed class CantileverKit
+{
+    /// <summary>1 x 1 m, <see cref="PillarHeight"/> tall, origin at its centre.</summary>
+    public readonly string Pillar;
+    public readonly float PillarHeight;
+    /// <summary><see cref="ArchLength"/> along its local x (across the flight), a metre
+    /// along the flight, <see cref="ArchHeight"/> tall at its tall end and thin at the
+    /// other, flat on top; origin at the centre of its bounds.</summary>
+    public readonly string Arch;
+    public readonly float ArchLength, ArchHeight;
+    /// <summary>The local x end (+1 or -1) of the arch that is tall: it goes against the pillar.</summary>
+    public readonly float ArchTallEnd;
+    /// <summary>A block <see cref="BesideLength"/> along its local x, 1 m tall and deep,
+    /// origin at its centre: laid on the pillars beside the piece.</summary>
+    public readonly string Beside;
+    public readonly float BesideLength;
+    /// <summary>The support strip between the face and the flight's wall side.</summary>
+    public const float Strip = 1f;
+    /// <summary>The pillars in the strip reach at least this far under the piece's underside ...</summary>
+    public const float StripDepth = 2f;
+    /// <summary>... and are stacked on down until sunk into the face or the ground below, at most this far
+    /// (hand-built turn examples: where the top pillars did not reach the face, the stacks were carried on
+    /// down to the ground, up to four stone pillars). The support each pillar passes on falls with the height
+    /// of the stack (WearNTear verticalLoss 0.125 a metre): four stone pillars leave about 400 at the top, and
+    /// the arch and stair over it about 290 and 250, over stone's minimum of 100; black marble's 1 m columns
+    /// lose more per metre of their 1500, so six.</summary>
+    public readonly float MaxDepth;
+
+    public CantileverKit(string pillar, float pillarHeight, string arch, float archLength, float archHeight, float archTallEnd, string beside, float besideLength,
+        float maxDepth)
+    {
+        Pillar = pillar; PillarHeight = pillarHeight; Arch = arch; ArchLength = archLength; ArchHeight = archHeight;
+        ArchTallEnd = archTallEnd; Beside = beside; BesideLength = besideLength; MaxDepth = maxDepth;
+    }
+}
+
+/// <summary>
 /// The pieces one staircase is built of. Every kit's stair is the same 2 x 2 m
 /// with a 1 m rise, so the layout is the same whatever it is built of; the
 /// floors, fillers and supports differ in thickness and height. Sizes from
@@ -43,23 +98,34 @@ public sealed class StairKit
     public readonly string Support;
     public readonly float SupportHeight;
 
-    private StairKit(string name, string stair, string floor, float floorTop, float floorThickness, FillerKind[] fillers, string support, float supportHeight)
+    /// <summary>How a flight along a steep face is held out from it, or null where the
+    /// kit has no such pieces: then it stands on <see cref="Support"/> columns as ever.</summary>
+    public readonly CantileverKit? Cantilever;
+
+    private StairKit(string name, string stair, string floor, float floorTop, float floorThickness, FillerKind[] fillers, string support, float supportHeight,
+        CantileverKit? cantilever = null)
     {
         Name = name; Stair = stair; Floor = floor; FloorTop = floorTop; FloorThickness = floorThickness;
-        Fillers = fillers; Support = support; SupportHeight = supportHeight;
+        Fillers = fillers; Support = support; SupportHeight = supportHeight; Cantilever = cantilever;
     }
 
     public static readonly StairKit Stone = new("stone", "stone_stair", "stone_floor_2x2", 0.5f, 1f,
         new[] { new FillerKind("stone_wall_2x1", 2f, 1f), new FillerKind("stone_wall_1x1", 1f, 1f), new FillerKind("stone_floor_2x2", 2f, 2f) },
-        "stone_pillar", 2f);
+        "stone_pillar", 2f,
+        new CantileverKit("stone_pillar", 2f, "stone_arch", 2f, 1f, 1f, "stone_wall_2x1", 2f, maxDepth: 8f));
 
     /// <summary>Mistlands. Every piece here is a 1 m thick block like stone's;
-    /// the 1 m column stacks where stone stacks a 2 m pillar.</summary>
+    /// the 1 m column stacks where stone stacks a 2 m pillar. Its cantilever (cli_piece_geometry):
+    /// blackmarble_arch is 2 m long, 2 m tall at its local -x end (snaps top and bottom
+    /// there, only the top at +x), a metre deep; two 1 m columns per metre clip into the face.</summary>
     public static readonly StairKit BlackMarble = new("blackmarble", "blackmarble_stair", "blackmarble_floor", 0.5f, 1f,
         new[] { new FillerKind("blackmarble_2x1x1", 2f, 1f), new FillerKind("blackmarble_1x1", 1f, 1f), new FillerKind("blackmarble_floor", 2f, 2f) },
-        "blackmarble_column_1", 1f);
+        "blackmarble_column_1", 1f,
+        new CantileverKit("blackmarble_column_1", 1f, "blackmarble_arch", 2f, 2f, -1f, "blackmarble_2x1x1", 2f, maxDepth: 6f));
 
-    /// <summary>Meadows, and the Black Forest's centre. A wood floor is a 13 cm
+    /// <summary>Meadows, and the Black Forest's centre. No cantilever: there is no wood_arch;
+    /// darkwood_arch and the beams are not a bracket off a clipped pillar, so wood
+    /// flights stand on poles as ever. A wood floor is a 13 cm
     /// board whose origin is its walking surface (it snaps level with the
     /// stair's top edge); wood has no 2 x 1 floor, so wedges take 1 x 1s.</summary>
     public static readonly StairKit Wood = new("wood", "wood_stair", "wood_floor", 0f, 0.13f,

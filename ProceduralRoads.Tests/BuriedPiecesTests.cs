@@ -124,6 +124,12 @@ public class BuriedPiecesTests : IDisposable
             Assert.True(BuriedPieces.Known(kit.Floor));
             Assert.True(BuriedPieces.Known(kit.Support));
             foreach (FillerKind f in kit.Fillers) Assert.True(BuriedPieces.Known(f.Prefab));
+            if (kit.Cantilever is CantileverKit ck)
+            {
+                Assert.True(BuriedPieces.Known(ck.Pillar));
+                Assert.True(BuriedPieces.Known(ck.Arch));
+                Assert.True(BuriedPieces.Known(ck.Beside));
+            }
         }
     }
 

@@ -6,7 +6,7 @@ namespace ProceduralRoads;
 
 /// <summary>The rules for steep ground a test may switch off (StairLayout.RulesOff).</summary>
 [Flags]
-internal enum SteepRules { None = 0, TurnSteepness = 2, WedgeBurial = 8, FirstFlight = 8192 }
+internal enum SteepRules { None = 0, Cantilevers = 1, TurnSteepness = 2, Overhang = 4, WedgeBurial = 8, TurnCantilever = 32, Hug = 64, FirstFlight = 8192 }
 
 public enum StairPieceKind
 {
@@ -23,6 +23,9 @@ public sealed class StairPiece
     public string Prefab = "";
     public Vector3 Position;
     public float YawDegrees;
+    /// <summary>A walked piece held out from a face, or part of what holds it (StairLayout.AddCantilever):
+    /// a support so marked is clipped into the face beside its piece, not a column down to the ground.</summary>
+    public bool Cantilevered;
 }
 
 /// <summary>
@@ -100,10 +103,16 @@ public sealed class StairPlan
     public int Switchbacks;
     public float Rise;
     public float WalkedLength;
-    /// <summary>Largest gap between a piece's underside and the ground below its centre, before supports.</summary>
+    /// <summary>Largest gap between a piece's underside and the ground below its centre, before supports
+    /// (pieces held out from a face on cantilevers aside).</summary>
     public float MaxFloat;
     /// <summary>Largest depth the ground stands above a walking surface anywhere it was sampled.</summary>
     public float MaxBuried;
+    /// <summary>Walked rows held out from a steep face on a cantilever (pillars, arches, a block
+    /// beside), not stood on columns.</summary>
+    public int Cantilevered;
+    /// <summary>The steepest face a cantilevered row crosses (rise over run across the flight).</summary>
+    public float SteepestFace;
     public Vector3 End;
 }
 
@@ -148,7 +157,12 @@ public sealed class StairPlan
 /// * Every piece is supported down to the ground: stone loses its support
 ///   within a metre sideways, so a piece not sunk into the ground stands on
 ///   a column of pillars driven into it.
-/// * A switchback's pad is priced by the steepness round it, so the search turns on benches.
+/// * Or, on a face of 2:1 and steeper, held out from it (as in a hand-built cantilever reference):
+///   pillars clipped into the face, arches out under the piece, a
+///   block beside it (<see cref="AddCantilever"/>), priced by the face's grade up to
+///   a maximum. Turns too: their wedge rests on an arch and a strip column
+///   (<see cref="AddTurnSupport"/>, from hand-built turns). A switchback's pad stands on
+///   columns, and is priced by the steepness round it, so the search turns on benches.
 ///
 /// The search is best-first over whole pieces. A partial staircase is scored by
 /// the length walked so far, how badly its pieces fit the ground, and how
@@ -274,6 +288,10 @@ public static partial class StairLayout
         public float Score;
         public float Float;
         public float Buried;
+        /// <summary>0, or the side (+1 right, -1 left) of the face a cantilevered piece is held out from.</summary>
+        public int Cantilever;
+        /// <summary>The face's grade across a cantilevered piece.</summary>
+        public float Face;
     }
 
     /// <summary>A staircase from <paramref name="from"/> to <paramref name="to"/>, built
@@ -652,7 +670,17 @@ public static partial class StairLayout
                 // cuts its fillers out, as before: read there, the 82 m climb up the real face found no way up.
                 if (turn != 0 && !first && !floorOnFloor && !NoWedgeBurial && route.MaxBuried < MaxBuriedDepth) buried = Mathf.Max(buried, WedgeBuried(node.Edge, node.Height, pivot, start, ground));
                 if (buried > route.MaxBuried) continue; // the stair would disappear into the slope
-                if (CrossesItself(node, middle, heading, width)) continue;
+                // Held out from a steep face straight on and through turns (hand-built turn examples;
+                // AddTurnSupport holds the wedge); the flight leaving a switchback's pad, and floors turned
+                // over floors, stand on ordinary support.
+                float underside = node.Height - (kind == StairPieceKind.Stair ? 0f : route.Kit.FloorThickness);
+                float face = 0f;
+                int cantilever = node.Switchback == 0 && !floorOnFloor && (first || turn == 0 || !NoTurnCantilever) && width <= PieceRun + 0.01f && floatGap >= CantileverDrop / 9f
+                    ? CantileverSide(start, dir, Right(heading), half, underside, route.Kit, ground, out face, node.Height, rise, route.MaxBuried) : 0;
+                // Columns where they are the cheaper (lesser grades, little air under the piece); held out
+                // where the air under it would cost more than the face's price.
+                if (cantilever != 0 && CantileverPrice(face) >= FloatWeight * floatGap) cantilever = 0;
+                if (CrossesItself(node, middle, heading, width, underside, cantilever, route.Kit)) continue;
                 var child = new Node
                 {
                     Parent = node,
@@ -668,9 +696,15 @@ public static partial class StairLayout
                     Depth = node.Depth + 1,
                     Float = floatGap,
                     Buried = buried,
+                    Cantilever = cantilever,
+                    Face = face,
                 };
-                child.Cost = node.Cost + PieceRun
-                    + FloatWeight * floatGap + BuriedWeight * buried
+                // A cantilevered piece is priced by the face it crosses, not by the air under it, and by how
+                // much of its strip stands out of the face.
+                float hug = cantilever != 0 && !NoHug
+                    ? HugWeight * StripExposed(start, dir, Right(heading) * cantilever, half, underside + 1f, ground) : 0f;
+                child.Cost = node.Cost + PieceRun + hug
+                    + (cantilever != 0 ? CantileverPrice(face) : FloatWeight * floatGap) + BuriedWeight * buried
                     + TurnWeight * Mathf.Abs(first ? 0 : turn)
                     + (kind == StairPieceKind.Landing ? LandingWeight : 0f);
                 child.Goal = route.Advance(node.Goal, child.Edge);
@@ -686,8 +720,9 @@ public static partial class StairLayout
             // Floor A continues the lane; floor B lies beside it; the next flight leaves B heading back.
             Vector2 returnStart = node.Edge + right * (side * width);
             Vector2 centre = node.Edge + forward * (PieceRun / 2f) + right * (side * width / 2f);
-            if (CrossesItself(node, node.Edge + forward * (PieceRun / 2f), node.Heading, width)
-                || CrossesItself(node, centre + right * (side * width / 2f), node.Heading, width)
+            float padUnderside = node.Height - route.Kit.FloorThickness;
+            if (CrossesItself(node, node.Edge + forward * (PieceRun / 2f), node.Heading, width, padUnderside, 0, route.Kit)
+                || CrossesItself(node, centre + right * (side * width / 2f), node.Heading, width, padUnderside, 0, route.Kit)
                 || !route.InCorridor(centre + right * (side * width / 2f))) continue;
             Fit(node.Edge, forward, right, half, node.Height, 0f, ground, out float floatA, out float buriedA);
             Fit(returnStart, forward, right, half, node.Height, 0f, ground, out float floatB, out float buriedB);
@@ -728,6 +763,28 @@ public static partial class StairLayout
         return (pivot - Right(heading) * (side * half), pivot);
     }
 
+    /// <summary>Tests: a flight of stairs laid out on the given headings from a foot, every stair held out from the
+    /// face on its <paramref name="side"/>, emitted as a search would emit it.</summary>
+    internal static StairPlan LayFlight(Vector2 foot, float footHeight, IReadOnlyList<float> headings, StairKit kit, Func<float, float, float> ground, int side)
+    {
+        var plan = new StairPlan { Kit = kit.Name, Reached = true };
+        Node node = new() { Edge = foot, Start = foot, Heading = headings[0], Height = footHeight };
+        foreach (float h in headings)
+        {
+            bool first = node.Parent == null;
+            int turn = first ? 0 : Mathf.RoundToInt((Wrap(h - node.Heading + 180f) - 180f) / HeadingStep);
+            (Vector2 start, Vector2 pivot) = first ? (node.Edge, node.Edge) : TurnOff(node.Edge, node.Heading, h, turn, PieceRun / 2f, false);
+            node = new Node
+            {
+                Parent = node, Kind = StairPieceKind.Stair, Start = start, Edge = start + Forward(h) * PieceRun, Heading = h,
+                Height = node.Height + PieceRise, TurnSteps = turn, Pivot = pivot, Centre = start + Forward(h) * (PieceRun / 2f),
+                Depth = node.Depth + 1, Cantilever = side,
+            };
+        }
+        Emit(plan, node, ground, PieceRun, kit);
+        return plan;
+    }
+
     /// <summary>How far the walking surface of a piece stands above the ground
     /// (mean over its samples) and how deep the ground buries it (worst sample).</summary>
     private static void Fit(Vector2 start, Vector2 dir, Vector2 right, float half, float baseHeight, float rise,
@@ -754,35 +811,75 @@ public static partial class StairLayout
 
     /// <summary>Whether a piece of <paramref name="width"/> across and a piece's run
     /// along, centred at <paramref name="centre"/> facing <paramref name="heading"/>,
-    /// overlaps any piece laid before <paramref name="node"/>, seen from above. A piece
-    /// on columns may pass over nothing: its columns stand in whatever is below.</summary>
-    private static bool CrossesItself(Node node, Vector2 centre, float heading, float width)
+    /// overlaps any piece laid before <paramref name="node"/>, seen from above, where it
+    /// may not. A piece held out from the face (<paramref name="cantilever"/> its wall side)
+    /// drops nothing into what lies below it, so it may pass over a lower piece of the same
+    /// staircase where its lowest part, arch or pillar, keeps <see cref="ClearanceHeight"/>
+    /// of headroom over that piece's top (with a cantilever design, a switchback can run under itself more easily, without
+    /// supports dropping into the stairs below it). A piece on columns may pass over nothing: its columns stand in
+    /// whatever is below. Earlier cantilevers' strips count as their pieces do.</summary>
+    private static bool CrossesItself(Node node, Vector2 centre, float heading, float width, float underside = 0f, int cantilever = 0, StairKit? kit = null)
     {
-        bool Clash(Vector2 c, float h, float across) => Overlap(centre, heading, width, c, h, across);
+        CantileverKit? ck = kit?.Cantilever;
+        bool held = cantilever != 0 && ck != null;
+        float stripReach = width / 2f + CantileverKit.Strip / 2f;
+        Vector2 strip = centre + Right(heading) * (cantilever * stripReach);
+        // Lowest part under the piece, and in the strip beside it.
+        float pieceLow = held ? underside - ck!.ArchHeight : float.NegativeInfinity;
+        float stripLow = held ? underside - CantileverKit.StripDepth : float.NegativeInfinity;
+        bool Clash(Vector2 c, float h, float across, float top)
+        {
+            if (Overlap(centre, heading, width, c, h, across) && !Clears(pieceLow, top)) return true;
+            return held && Overlap(strip, heading, CantileverKit.Strip, c, h, across) && !Clears(stripLow, top);
+        }
         for (Node? earlier = node.Parent; earlier != null && earlier.Parent != null; earlier = earlier.Parent)
         {
-            if (Vector2.Distance(earlier.Centre, centre) > 2f * (width + PieceRun)) continue;
+            if (Vector2.Distance(earlier.Centre, centre) > 2f * (width + PieceRun) + CantileverKit.Strip) continue;
             if (earlier.Switchback != 0)
             {
                 // Its two floors, at the heading of the flight that arrived on them.
                 float h = earlier.Parent.Heading;
                 Vector2 a = earlier.Start + Forward(h) * (PieceRun / 2f);
                 Vector2 b = a + Right(h) * (earlier.Switchback * width);
-                if (Clash(a, h, width) || Clash(b, h, width)) return true;
+                if (Clash(a, h, width, earlier.Height) || Clash(b, h, width, earlier.Height)) return true;
                 continue;
             }
-            if (Clash(earlier.Centre, earlier.Heading, width)) return true;
+            if (Clash(earlier.Centre, earlier.Heading, width, earlier.Height)) return true;
+            // Its strip: pillars under, a block on top level with the piece's top edge.
+            if (earlier.Cantilever != 0
+                && Clash(earlier.Centre + Right(earlier.Heading) * (earlier.Cantilever * stripReach), earlier.Heading, CantileverKit.Strip, earlier.Height))
+                return true;
         }
         return false;
     }
+
+    /// <summary>Tests: <see cref="CrossesItself"/> for a new piece after <paramref name="laid"/> (oldest
+    /// first; each a piece's centre, heading, top surface and cantilever side), the last of which it
+    /// carries on from and is never checked against.</summary>
+    internal static bool CrossesLaid(IReadOnlyList<(Vector2 centre, float heading, float top, int cantilever)> laid, Vector2 centre, float heading,
+        float underside, int cantilever, StairKit kit, float width = 2f)
+    {
+        var node = new Node();
+        foreach (var p in laid) node = new Node { Parent = node, Centre = p.centre, Heading = p.heading, Height = p.top, Cantilever = p.cantilever };
+        return CrossesItself(node, centre, heading, width, underside, cantilever, kit);
+    }
+
+    /// <summary>Whether a part whose lowest point is <paramref name="low"/> leaves walking headroom
+    /// over a surface at <paramref name="top"/>: only a cantilever, and only with the overhang allowed.</summary>
+    private static bool Clears(float low, float top) => !NoOverhang && low - top >= ClearanceHeight;
 
     /// <summary>Switches for tests, per thread (the search runs on the thread that asks): with one
     /// set, that rule is as before it was made. Never set in the game.</summary>
     [ThreadStatic] private static SteepRules t_off;
     internal static SteepRules RulesOff { get => t_off; set => t_off = value; }
+    private static bool NoCantilevers => (t_off & SteepRules.Cantilevers) != 0;
     private static bool NoTurnSteepness => (t_off & SteepRules.TurnSteepness) != 0;
+    private static bool NoOverhang => (t_off & SteepRules.Overhang) != 0;
     private static bool NoWedgeBurial => (t_off & SteepRules.WedgeBurial) != 0;
     private static bool NoFirstFlight => (t_off & SteepRules.FirstFlight) != 0;
+
+    private static bool NoTurnCantilever => (t_off & SteepRules.TurnCantilever) != 0;
+    private static bool NoHug => (t_off & SteepRules.Hug) != 0;
 
     /// <summary>Two pieces, <paramref name="acrossA"/> by a run, overlap by more than
     /// <see cref="OverlapTolerance"/> seen from above (separating axes).</summary>
@@ -828,13 +925,23 @@ public static partial class StairLayout
             }
             else if (step.TurnSteps != 0)
             {
-                // The wedge, filled with flat pieces level with the top of the piece before.
+                // The wedge, filled with flat pieces level with the top of the piece before; off a cantilevered
+                // piece, held by an arch and a strip column, not stood on columns down the drop.
+                bool heldWedge = parent.Cantilever != 0 && kit.Cantilever != null && lanes == 1 && !NoCantilevers && !NoTurnCantilever;
+                if (heldWedge) AddTurnSupport(plan, kit, parent.Start, parent.Heading, parent.Height, parent.Cantilever, step.TurnSteps, width, ground);
                 foreach (FillerPiece filler in StairFiller.Choose(step.Pivot, parent.Heading, step.TurnSteps, width, parent.Kind == StairPieceKind.Landing, kit.Fillers))
-                    AddPiece(plan, kit, StairPieceKind.Filler, filler.Prefab, filler.Back, filler.Heading, parent.Height, filler.Across, filler.Depth, ground, mark: false);
+                    AddPiece(plan, kit, StairPieceKind.Filler, filler.Prefab, filler.Back, filler.Heading, parent.Height, filler.Across, filler.Depth, ground, mark: false,
+                        held: heldWedge);
                 plan.Turns++;
                 plan.TurnSteps += System.Math.Abs(step.TurnSteps);
             }
-            AddRow(plan, kit, step.Kind, step.Kind == StairPieceKind.Stair ? kit.Stair : kit.Floor, step.Start, step.Heading, parent.Height, lanes, ground, mark: true);
+            AddRow(plan, kit, step.Kind, step.Kind == StairPieceKind.Stair ? kit.Stair : kit.Floor, step.Start, step.Heading, parent.Height, lanes, ground, mark: true,
+                cantilever: lanes == 1 ? step.Cantilever : 0);
+            if (step.Cantilever != 0 && lanes == 1 && kit.Cantilever != null)
+            {
+                plan.Cantilevered++;
+                plan.SteepestFace = Mathf.Max(plan.SteepestFace, step.Face);
+            }
             if (step.Kind == StairPieceKind.Stair) plan.Stairs += lanes; else plan.Landings += lanes;
             plan.WalkedLength += PieceRun;
         }
@@ -854,17 +961,18 @@ public static partial class StairLayout
 
     /// <summary>One row of pieces across the stair.</summary>
     private static void AddRow(StairPlan plan, StairKit kit, StairPieceKind kind, string prefab, Vector2 start, float heading,
-        float baseHeight, int lanes, Func<float, float, float> ground, bool mark, bool cut = true)
+        float baseHeight, int lanes, Func<float, float, float> ground, bool mark, bool cut = true, int cantilever = 0)
     {
         Vector2 right = Right(heading);
         for (int lane = 0; lane < lanes; lane++)
-            AddPiece(plan, kit, kind, prefab, start + right * ((lane - (lanes - 1) / 2f) * PieceRun), heading, baseHeight, PieceRun, PieceRun, ground, mark, cut);
+            AddPiece(plan, kit, kind, prefab, start + right * ((lane - (lanes - 1) / 2f) * PieceRun), heading, baseHeight, PieceRun, PieceRun, ground, mark, cut, cantilever);
     }
 
     /// <summary>One piece whose back edge is centred on <paramref name="back"/>, its
-    /// clearance and cuts, then a pillar column under it if it does not rest on the ground.</summary>
+    /// clearance and cuts, then a pillar column under it if it does not rest on the ground,
+    /// or, held out from a face on its <paramref name="cantilever"/> side, its cantilever.</summary>
     private static void AddPiece(StairPlan plan, StairKit kit, StairPieceKind kind, string prefab, Vector2 back, float heading,
-        float baseHeight, float across, float depth, Func<float, float, float> ground, bool mark, bool cut = true)
+        float baseHeight, float across, float depth, Func<float, float, float> ground, bool mark, bool cut = true, int cantilever = 0, bool held = false)
     {
         Vector2 dir = Forward(heading);
         Vector2 right = Right(heading);
@@ -891,7 +999,17 @@ public static partial class StairLayout
 
         float g = ground(centre.x, centre.y);
         float gap = underside - g;
-        if (mark) plan.MaxFloat = Mathf.Max(plan.MaxFloat, gap);
+        CantileverKit? holder = cantilever != 0 ? kit.Cantilever : null;
+        // A piece held out from a face stands over the drop by design: not counted as floating.
+        if (mark && holder == null && !held) plan.MaxFloat = Mathf.Max(plan.MaxFloat, gap);
+        if (holder != null)
+        {
+            piece.Cantilevered = true;
+            AddCantilever(plan, holder, back, heading, underside, cantilever, across, ground);
+            return;
+        }
+        // A turn's filler off a cantilevered piece rests on the turn's arch (AddTurnSupport).
+        if (held) { piece.Cantilevered = true; return; }
         // A piece stands on the ground only sunk into it: one planned to sit on
         // the surface hovers a few centimetres above it in game (the terrain is
         // not the plan's to the centimetre, and the road levels the ground at a

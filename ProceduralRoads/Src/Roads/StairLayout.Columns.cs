@@ -30,7 +30,8 @@ public static partial class StairLayout
         var bottoms = new Dictionary<(int, int), (Vector3 at, float yaw)>();
         foreach (StairPiece p in plan.Pieces)
         {
-            if (p.Kind != StairPieceKind.Support) continue;
+            // A cantilever's pillars are clipped into the face, not stood on the ground below.
+            if (p.Kind != StairPieceKind.Support || p.Cantilevered) continue;
             var key = (Mathf.RoundToInt(p.Position.x * 100f), Mathf.RoundToInt(p.Position.z * 100f));
             if (!bottoms.TryGetValue(key, out var lowest) || p.Position.y < lowest.at.y) bottoms[key] = (p.Position, p.YawDegrees);
         }
