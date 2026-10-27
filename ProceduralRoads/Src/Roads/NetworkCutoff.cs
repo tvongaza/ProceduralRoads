@@ -27,7 +27,9 @@ namespace ProceduralRoads;
 /// sends them the excluded zones with the road snapshot.
 ///
 /// Explicit operator commands (road_generate, road_regen_island) may still
-/// write the zones they are run in; nothing automatic may.
+/// write the zones they are run in; nothing automatic may. A manual road
+/// (road_mark, road_path, road_connect) is built in full: the explored zones
+/// it crosses become the network's (see Admit).
 /// </summary>
 public static class NetworkCutoff
 {
@@ -140,6 +142,29 @@ public static class NetworkCutoff
         s_hadNetwork = true;
         // Zones an operator wrote stay written (a write still pending for them comes from that command).
         Log($"new network: {s_excluded.Count} zone(s) generated before it are left as they are");
+    }
+
+    /// <summary>
+    /// An operator's manual road crosses these zones: it is built in full there, so every writer (terrain, rocks,
+    /// vegetation, bridge pieces) may write them from now on, and the record saves them as the network's. Returns the
+    /// zones that were excluded until now, in a stable order, so the operator can be told which explored zones the
+    /// road reshapes.
+    /// </summary>
+    public static List<Vector2s> Admit(IEnumerable<Vector2s> zones)
+    {
+        var admitted = new List<Vector2s>();
+        if (!Current) return admitted;
+        foreach (Vector2s zone in zones)
+            if (s_excluded.Remove(zone)) admitted.Add(zone);
+        admitted.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x) : a.y.CompareTo(b.y));
+        return admitted;
+    }
+
+    /// <summary>Undo <see cref="Admit"/> when the road it was for was not added after all.</summary>
+    internal static void Readmit(IEnumerable<Vector2s> zones)
+    {
+        if (!Current) return;
+        foreach (Vector2s zone in zones) s_excluded.Add(zone);
     }
 
     /// <summary>A client: the server's excluded zones, received with the road snapshot.</summary>

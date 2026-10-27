@@ -40,7 +40,8 @@ public static class BridgeAppendQueue
                     // will mark the zone spawned when this operation completes.
                     if (!BridgePlans.IsSpawned(zone) && !BridgePlans.ZoneHasLivePieces(zone))
                     {
-                        var old = BridgePlans.PlanFor(zone);
+                        // Not the pieces of a generated bridge withheld for reaching an explored zone.
+                        var old = BridgePlans.BuildablePlanFor(zone);
                         if (old != null) pieces.AddRange(old);
                     }
                 }

@@ -32,7 +32,43 @@ public static class ManualRoads
         public float Length => Paths.Sum(p => p.TotalLength);
         public bool AlreadyConnected { get; internal set; }
         public Vector2 Start { get; internal set; }
+        /// <summary>After Commit: the zones explored before the network that this road was built through.</summary>
+        public IReadOnlyList<Vector2s> ExploredZonesWritten { get; internal set; } = Array.Empty<Vector2s>();
     }
+
+    /// <summary>
+    /// Every zone a manual road writes: each zone its levelling reaches (as RoadSpatialGrid.GetRoadPointsInZone
+    /// gathers points for a zone) and each zone its new bridges put pieces in.
+    /// </summary>
+    internal static HashSet<Vector2s> ZonesReached(IEnumerable<RoadSpatialGrid.PlannedPath> paths, IEnumerable<RoadCrossing> crossings)
+    {
+        var zones = new HashSet<Vector2s>();
+        foreach (RoadSpatialGrid.PlannedPath path in paths)
+            for (int i = 0; i < path.Points.Count; i++)
+            {
+                // The width the append stores for every point (RoadSpatialGrid.CommitAppend).
+                float width = path.Width;
+                float reach = Mathf.Max(width, RoadTerrainModifier.GatherRadius(width));
+                Vector2 p = path.Points[i];
+                Vector2s low = ZoneSystem.GetZone(new Vector3(p.x - reach, 0f, p.y - reach));
+                Vector2s high = ZoneSystem.GetZone(new Vector3(p.x + reach, 0f, p.y + reach));
+                for (int x = low.x; x <= high.x; x++)
+                    for (int y = low.y; y <= high.y; y++)
+                        zones.Add(new Vector2s((short)x, (short)y));
+            }
+        var world = WorldGenerator.instance;
+        if (world != null)
+            foreach (RoadCrossing crossing in BridgeLayout.DistinctSites(crossings.ToList()))
+                foreach (BridgePiece piece in BridgeLayout.Solve(crossing, world, world.GetSeed()))
+                    zones.Add(ZoneSystem.GetZone(piece.Position));
+        return zones;
+    }
+
+    /// <summary>What the operator is told when a manual road is built through zones explored before the network.</summary>
+    public static string ExploredZonesWarning(IReadOnlyList<Vector2s> zones) =>
+        $"Warning: this road crosses {zones.Count} zone(s) explored before the road network. They are now treated " +
+        "like land explored after it: every road there is built in full, over whatever stands on its line. Zones: " +
+        string.Join(", ", zones.Select(z => $"({z.x}, {z.y})")) + ".";
 
     public static Plan Prepare(IReadOnlyList<Vector2> points, bool connect,
         IReadOnlyList<Island>? knownIslands = null)
@@ -148,7 +184,7 @@ public static class ManualRoads
             throw new InvalidOperationException("The world or road network changed; plan the road again.");
         if (plan.AlreadyConnected) return;
         Busy = true;
-        try { RoadNetworkGenerator.AppendManualRoad(plan.Paths, plan.Crossings, plan.Start, plan.Version); }
+        try { plan.ExploredZonesWritten = RoadNetworkGenerator.AppendManualRoad(plan.Paths, plan.Crossings, plan.Start, plan.Version); }
         finally { Busy = false; }
     }
 }
@@ -156,13 +192,28 @@ public static class ManualRoads
 public static partial class RoadNetworkGenerator
 {
     public static bool IsGenerating => m_pathfinder != null;
-    internal static void AppendManualRoad(IReadOnlyList<RoadSpatialGrid.PlannedPath> paths,
+    /// <summary>Returns the zones explored before the network that the road is built through (see NetworkCutoff.Admit).</summary>
+    internal static List<Vector2s> AppendManualRoad(IReadOnlyList<RoadSpatialGrid.PlannedPath> paths,
         List<RoadCrossing> crossings, Vector2 start, int expectedVersion)
     {
         ManualRoads.RefuseOnReleasedNetwork();
-        var bridgeAdditions = BridgeAppendQueue.Prepare(crossings);
-        RoadNetworkPersistence.EnsureMetadataInstance();
-        RoadSpatialGrid.CommitAppend(paths, expectedVersion);
+        // An explicit manual road is built in full, explored zones included; before the bridge plans are read, so
+        // a bridge this makes whole is built whole.
+        List<Vector2s> explored = NetworkCutoff.Admit(ManualRoads.ZonesReached(paths, crossings));
+        Dictionary<Vector2s, List<BridgePiece>> bridgeAdditions;
+        try
+        {
+            bridgeAdditions = BridgeAppendQueue.Prepare(crossings);
+            RoadNetworkPersistence.EnsureMetadataInstance();
+            RoadSpatialGrid.CommitAppend(paths, expectedVersion);
+        }
+        catch
+        {
+            NetworkCutoff.Readmit(explored);
+            throw;
+        }
+        if (explored.Count > 0)
+            Log.LogWarning(ManualRoads.ExploredZonesWarning(explored));
         BridgeAppendQueue.Enqueue(bridgeAdditions);
         m_roadCrossings.AddRange(crossings);
         m_roadStartPoints.Add((start, $"Manual road {RoadSpatialGrid.AppendCount}"));
@@ -170,6 +221,7 @@ public static partial class RoadNetworkGenerator
         m_roadsLoadedFromZDO = false;
         BridgePlans.InvalidatePlans();
         RoadClearAreaManager.ClearCache();
+        return explored;
     }
 }
 

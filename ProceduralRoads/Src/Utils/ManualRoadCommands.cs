@@ -79,6 +79,7 @@ public static class ManualRoadCommands
             RoadNetworkGenerator.SaveGlobalRoadData();
             if (clearDraft) { args.Context.AddString(draft.Command); draft.Clear(); }
             args.Context.AddString($"Road added: {plan.Length:F0} m. Existing roads retained. Terrain applies as its zones and owners become ready; normal world saves preserve this addition.");
+            if (plan.ExploredZonesWritten.Count > 0) args.Context.AddString(ManualRoads.ExploredZonesWarning(plan.ExploredZonesWritten));
             ManualRoadNetworkSync.Publish();
             RoadTerrainModifier.ApplyAdditionsToLoadedZones();
             BridgePlacement.ApplyPendingAppends();

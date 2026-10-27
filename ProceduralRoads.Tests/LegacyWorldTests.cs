@@ -223,6 +223,12 @@ public sealed class LegacyWorldTests : IDisposable
         Assert.Throws<InvalidOperationException>(() =>
             RoadNetworkGenerator.AppendManualRoad(new List<RoadSpatialGrid.PlannedPath>(), new List<RoadCrossing>(),
                 new Vector2(0f, 0f), RoadSpatialGrid.RoadNetworkVersion));
+        // A road through an explored zone is refused before it can make that zone the network's.
+        var through = RoadSpatialGrid.PlanRoadPath(new List<Vector2> { new(-20f, 10f), new(20f, 10f) }, 4f, WorldGenerator.instance!)!;
+        Assert.Throws<InvalidOperationException>(() =>
+            RoadNetworkGenerator.AppendManualRoad(new List<RoadSpatialGrid.PlannedPath> { through }, new List<RoadCrossing>(),
+                new Vector2(-20f, 10f), RoadSpatialGrid.RoadNetworkVersion));
+        Assert.True(NetworkCutoff.Excludes(OldZone));
         RoadLifecycleManager.OnPrepareSave();
         Assert.Equal(Blob, Metadata().GetByteArray(GlobalDataHash));
 
