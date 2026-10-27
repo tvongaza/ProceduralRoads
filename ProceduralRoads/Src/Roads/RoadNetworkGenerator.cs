@@ -2308,9 +2308,10 @@ public static partial class RoadNetworkGenerator
     }
 
     /// <summary>
-    /// The network's staircases settled on the ground the terrain writer will leave (natural, the roads' earthwork and
-    /// the staircases' cuts): columns carried down where it lies lower than their layout read, then pieces wholly under
-    /// it not placed, which the game breaks once it weighs them and drops their resources (<see cref="BuriedPieces"/>).
+    /// The network's staircases settled on the ground the terrain writer will leave (natural, a placed place's own
+    /// levelling, the roads' earthwork and the staircases' cuts): columns carried down where it lies lower than their layout
+    /// read, then pieces wholly under it not placed, which the game breaks once it weighs them and drops their resources
+    /// (<see cref="BuriedPieces"/>).
     /// Once, after every island is built.
     /// </summary>
     private static void DropBuriedPieces()

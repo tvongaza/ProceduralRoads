@@ -272,9 +272,9 @@ public sealed class RoadStatisticsTests : IDisposable
         Assert.Equal(4,ManualRoadNetworkSync.SnapshotVersion);   // 3 is the format-4 grid; 4 adds the staircases
     }
     /// <summary>
-    /// The staircase flag (cut-only) travels as geometry encoding 4 inside the v4 envelope, so one format number means
-    /// one thing. Every encoding round-trips byte for byte with its flags; an encoding or envelope this build does not
-    /// know is refused (and the world then takes the unreadable path: nothing generated over it).
+    /// The staircase flags (cut-only, into-site) travel as geometry encodings 4 and 5 inside the v4 envelope, so one
+    /// format number means one thing. Every encoding round-trips byte for byte with its flags; an encoding or envelope
+    /// this build does not know is refused (and the world then takes the unreadable path: nothing generated over it).
     /// </summary>
     [Fact]
     public void EveryEncodingRoundTrips()
@@ -287,8 +287,8 @@ public sealed class RoadStatisticsTests : IDisposable
             RoadSpatialGrid.Clear(); Assert.True(RoadSpatialGrid.DeserializeAllRoadPoints(saved));
             Assert.Equal(saved,Bytes()); Assert.Equal(version,RoadSpatialGrid.RoadNetworkVersion);
             if(flag!=null) Assert.Contains(RoadSpatialGrid.SnapshotAllRoadPoints(),p=>flag(p));
-            byte[] unknown=(byte[])saved.Clone(); Array.Copy(BitConverter.GetBytes(5),0,unknown,4,4);
-            Assert.False(RoadSpatialGrid.DeserializeAllRoadPoints(unknown),"encoding 5");
+            byte[] unknown=(byte[])saved.Clone(); Array.Copy(BitConverter.GetBytes(6),0,unknown,4,4);
+            Assert.False(RoadSpatialGrid.DeserializeAllRoadPoints(unknown),"encoding 6");
             byte[] envelope=(byte[])saved.Clone(); Array.Copy(BitConverter.GetBytes(5),0,envelope,0,4);
             Assert.False(RoadSpatialGrid.DeserializeAllRoadPoints(envelope),"envelope 5");
             Assert.Equal(saved,Bytes());
@@ -299,6 +299,9 @@ public sealed class RoadStatisticsTests : IDisposable
         RoundTrip(3,p=>p.addition>0);
         RoadSpatialGrid.CommitAppendCuts(new[]{new Vector3(32,39,1)},2f,RoadSpatialGrid.RoadNetworkVersion);
         RoundTrip(4,p=>p.cutOnly);
+        RoadSpatialGrid.CommitAppend(new[]{Plan()},RoadSpatialGrid.RoadNetworkVersion,intoSite:true);
+        RoundTrip(5,p=>p.intoSite);
+        Assert.Contains(RoadSpatialGrid.SnapshotAllRoadPoints(),p=>p.cutOnly);
     }
     /// <summary>
     /// A generated network with a staircase's cuts and nothing appended: encoding 4 with an empty append block, the

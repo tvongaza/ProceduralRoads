@@ -7,8 +7,9 @@ namespace ProceduralRoads;
 /// <summary>
 /// What the game placed, read off the saved world: a place's placement (its LocationProxy: root, turn
 /// and seed), the levelling its placement kept (<see cref="LocationPrefabLevelling.PlacedOps"/>, the
-/// game's draw replayed) and its own rocks. One owner for the places placed before their roads
-/// (<see cref="SitesFirstLoad"/>).
+/// game's draw replayed), its own rocks, and the ground it leaves. One owner for the places placed
+/// before their roads (<see cref="SitesFirstLoad"/>) and the terrain writer, which levels a road onto a place's
+/// landing against the ground the place leaves (<see cref="RoadTerrainModifier.PlacedGround"/>).
 /// Main thread.
 /// </summary>
 public static class PlacedSiteReader
@@ -18,8 +19,12 @@ public static class PlacedSiteReader
     public const float Margin = 16f;
     private static readonly int ProxyHash = "LocationProxy".GetStableHashCode();
 
-    /// <summary>Forget what was read with the network.</summary>
-    public static void Install() => RoadNetworkGenerator.OnReset += Reset;
+    /// <summary>Wire the terrain writer to the ground placed places leave, and forget it with the network.</summary>
+    public static void Install()
+    {
+        RoadTerrainModifier.PlacedGround = PlacedGroundAt;
+        RoadNetworkGenerator.OnReset += Reset;
+    }
 
     /// <summary>The place's saved placement, its LocationProxy: root, turn and seed.</summary>
     internal static bool Placed(Vector2s zone, Vector2 centre, out ZDO? proxy)
@@ -41,6 +46,8 @@ public static class PlacedSiteReader
 
     /// <summary>The parts each placed place kept, by its centre: replayed once a session.</summary>
     private static readonly Dictionary<Vector2, IReadOnlyList<LevelOp>> s_opsBySite = new();
+    /// <summary>Each place's ground as it leaves it, rebuilt once a session, by its centre (null: cannot be rebuilt).</summary>
+    private static readonly Dictionary<Vector2, Func<float, float, float>?> s_siteGround = new();
 
     /// <summary>
     /// The terrain modifiers the placement at <paramref name="proxy"/> kept: the game's draw replayed
@@ -54,6 +61,39 @@ public static class PlacedSiteReader
         IReadOnlyList<LevelOp>? ops = LocationPrefabLevelling.PlacedOps(centre, proxy.GetInt(ZDOVars.s_seed), proxy.GetPosition(), proxy.GetRotation());
         if (ops != null) s_opsBySite[centre] = ops;
         return ops;
+    }
+
+    /// <summary>
+    /// The ground a placed place leaves at <paramref name="p"/>, inside its footprint: the terrain's
+    /// natural height with the place's kept terrain modifiers applied (<see cref="PlacedSiteGround"/>),
+    /// whether or not the place is in the scene. The road terrain writer measures a road into a site
+    /// against it (RoadTerrainModifier.PlacedGround): measured against the terrain it was written on,
+    /// the server's temporary terrain without the cave, the road's earthwork came on top of the
+    /// cave's own levelling in play, 5 m too high at one frost cave's landing (the road's earthwork
+    /// added to the place's). Main thread: a place not yet replayed this
+    /// session is replayed here. Null outside a footprint or where it cannot be rebuilt.
+    /// </summary>
+    public static float? PlacedGroundAt(Vector2 p)
+    {
+        if (ZoneSystem.instance == null || WorldGenerator.instance == null
+            || !RoadSiteProtection.NearestFootprint(p, 0f, out RoadSiteProtection.Footprint site)) return null;
+        if (!s_siteGround.TryGetValue(site.Centre, out Func<float, float, float>? ground))
+            s_siteGround[site.Centre] = ground = BuildSiteGround(site);
+        return ground?.Invoke(p.x, p.y);
+    }
+
+    private static Func<float, float, float>? BuildSiteGround(RoadSiteProtection.Footprint site)
+    {
+        Vector2s zone = ZoneSystem.GetZone(new Vector3(site.Centre.x, 0f, site.Centre.y));
+        if (!Placed(zone, site.Centre, out ZDO? proxy)) return null;
+        IReadOnlyList<LevelOp>? ops = KeptOps(site.Centre, proxy!);
+        if (ops == null) return null;
+        WorldGenerator world = WorldGenerator.instance;
+        int reach = Mathf.CeilToInt(site.Radius) + 2;
+        int x0 = Mathf.FloorToInt(site.Centre.x) - reach, z0 = Mathf.FloorToInt(site.Centre.y) - reach, w = 2 * reach + 2, h = 2 * reach + 2;
+        float[] heights = PlacedSiteGround.Build(x0, z0, w, h, site.Centre, proxy!.GetPosition().y, proxy.GetRotation().eulerAngles.y, ops,
+            (x, z) => BiomeBlendedHeight.GetBlendedHeight(x, z, world));
+        return PlacedSiteGround.Sampler(heights, x0, z0, w, h);
     }
 
     /// <summary>The place's exterior radius: its rock, for leading a staircase round it.</summary>
@@ -246,5 +286,6 @@ public static class PlacedSiteReader
     public static void Reset()
     {
         s_opsBySite.Clear();
+        s_siteGround.Clear();
     }
 }

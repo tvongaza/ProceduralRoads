@@ -52,6 +52,7 @@
         <Compile Include="../ProceduralRoads/Src/Roads/PlacedSiteGround.cs" Link="ModSrc/PlacedSiteGround.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/PlacedSites.cs" Link="ModSrc/PlacedSites.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/HiddenSiteIcons.cs" Link="ModSrc/HiddenSiteIcons.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadSiteEntry.cs" Link="ModSrc/RoadSiteEntry.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadBeside.cs" Link="ModSrc/RoadBeside.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/ManualRoadDraft.cs" Link="ModSrc/ManualRoadDraft.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/ManualRoads.cs" Link="ModSrc/ManualRoads.cs"/>

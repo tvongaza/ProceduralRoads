@@ -40,7 +40,7 @@ public static partial class RoadSpatialGrid
 
     /// <summary>Plan first; publish the union once. Old arrays are retained until
     /// the new dictionary is complete, so an allocation failure cannot publish half a route.</summary>
-    public static void CommitAppend(IReadOnlyList<PlannedPath> plans, int expectedVersion) =>
+    public static void CommitAppend(IReadOnlyList<PlannedPath> plans, int expectedVersion, bool intoSite = false) =>
         PublishAppend(expectedVersion, plans.Count == 0 ? "No road plans to commit." : null, (addition, newPoints) =>
         {
             float? length = 0f;
@@ -48,7 +48,7 @@ public static partial class RoadSpatialGrid
             {
                 length=AddCommittedLength(length,plan.TotalLength);
                 for (int i = 0; i < plan.Points.Count; i++)
-                    AddRoadPoint(newPoints, plan.Points[i], plan.Width, plan.Heights[i], plan.FollowTerrain, addition);
+                    AddRoadPoint(newPoints, plan.Points[i], plan.Width, plan.Heights[i], plan.FollowTerrain, addition, intoSite: intoSite);
             }
             return length;
         });

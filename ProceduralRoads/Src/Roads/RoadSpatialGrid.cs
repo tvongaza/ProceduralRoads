@@ -43,8 +43,13 @@ public static partial class RoadSpatialGrid
         /// painted (StairLayout's cuts). Everything that asks where the ROAD is
         /// skips these points, as it skips paint-only ones.</summary>
         public bool cutOnly;
+        /// <summary>Into a site: a road's last stretch onto the landing in front of a place
+        /// (RoadSiteEntry). The terrain writer levels and paints toward these points inside
+        /// a place's footprint too, which it leaves alone for every other point, and only
+        /// within <see cref="RoadSiteEntry.InsideReach"/> of them there.</summary>
+        public bool intoSite;
 
-        public RoadPoint(Vector2 position, float width, float height, bool paintOnly = false, int addition = 0, bool cutOnly = false)
+        public RoadPoint(Vector2 position, float width, float height, bool paintOnly = false, int addition = 0, bool cutOnly = false, bool intoSite = false)
         {
             p = position;
             w = width;
@@ -53,6 +58,7 @@ public static partial class RoadSpatialGrid
             this.paintOnly = paintOnly;
             this.addition = addition;
             this.cutOnly = cutOnly;
+            this.intoSite = intoSite;
         }
 
         /// <summary>A point a road runs through: not a ford's paint-only point, not a stair's cut.</summary>
@@ -258,6 +264,12 @@ public static partial class RoadSpatialGrid
     // is comparison-only; the chosen candidate still uses PlanRoadPath.
     internal static PlannedPath? PlanComparisonProfile(List<Vector2> path, float width, WorldGenerator worldGen,
         float? startGround, float? endGround, System.Func<Vector2, float> terrainHeight) =>
+        PlanRoadPath(path, width, worldGen, startGround, endGround, false, float.NegativeInfinity, terrainHeight, checkSites: false);
+
+    /// <summary>A road's last stretch onto a place's landing (RoadSiteEntry): every rule of a
+    /// road but the site clearance, which it checks itself against the place's shape.</summary>
+    internal static PlannedPath? PlanSiteEntry(List<Vector2> path, float width, WorldGenerator worldGen,
+        float startGround, float endGround, System.Func<Vector2, float> terrainHeight) =>
         PlanRoadPath(path, width, worldGen, startGround, endGround, false, float.NegativeInfinity, terrainHeight, checkSites: false);
 
     private static PlannedPath? PlanRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
@@ -635,12 +647,13 @@ public static partial class RoadSpatialGrid
 
     /// <summary>Store a planned road. Nothing here can fail; every decision
     /// was made in PlanRoadPath.</summary>
-    public static void Commit(PlannedPath plan, int addition = 0)
+    /// <param name="intoSite">A road carried on into a place's footprint onto its landing: its points level and paint there.</param>
+    public static void Commit(PlannedPath plan, int addition = 0, bool intoSite = false)
     {
         Dictionary<Vector2i, List<RoadPoint>> tempPoints = new Dictionary<Vector2i, List<RoadPoint>>();
         for (int i = 0; i < plan.Points.Count; i++)
         {
-            AddRoadPoint(tempPoints, plan.Points[i], plan.Widths != null && i < plan.Widths.Count ? plan.Widths[i] : plan.Width, plan.Heights[i], plan.FollowTerrain, addition);
+            AddRoadPoint(tempPoints, plan.Points[i], plan.Widths != null && i < plan.Widths.Count ? plan.Widths[i] : plan.Width, plan.Heights[i], plan.FollowTerrain, addition, intoSite: intoSite);
 
             if (!RecordPointDebugInfo) continue;
             RoadPointDebugInfo debugInfo = plan.DebugInfos[i];
@@ -737,7 +750,7 @@ public static partial class RoadSpatialGrid
                 Mix(ref hash, rp.w.GetHashCode());
                 Mix(ref hash, rp.h.GetHashCode());
                 // A road-only network mixes exactly what it always did.
-                Mix(ref hash, rp.paintOnly ? 1 : rp.cutOnly ? 2 : 0);
+                Mix(ref hash, rp.paintOnly ? 1 : rp.cutOnly ? 2 : rp.intoSite ? 3 : 0);
             }
         }
 
@@ -762,7 +775,9 @@ public static partial class RoadSpatialGrid
         c = a.h.CompareTo(b.h);
         if (c != 0) return c;
         c = a.paintOnly.CompareTo(b.paintOnly);
-        return c != 0 ? c : a.cutOnly.CompareTo(b.cutOnly);
+        if (c != 0) return c;
+        c = a.cutOnly.CompareTo(b.cutOnly);
+        return c != 0 ? c : a.intoSite.CompareTo(b.intoSite);
     }
 
     /// <summary>FNV-1a step over the four bytes of value, then an avalanche so neighbouring records do not cancel.</summary>
@@ -1142,7 +1157,7 @@ public static partial class RoadSpatialGrid
         }
     }
 
-    private static void AddRoadPoint(Dictionary<Vector2i, List<RoadPoint>> roadPoints, Vector2 p, float width, float height, bool paintOnly, int addition = 0, bool cutOnly = false)
+    private static void AddRoadPoint(Dictionary<Vector2i, List<RoadPoint>> roadPoints, Vector2 p, float width, float height, bool paintOnly, int addition = 0, bool cutOnly = false, bool intoSite = false)
     {
         Vector2i grid = GetRoadGrid(p.x, p.y);
         int radius = Mathf.CeilToInt(width / GridSize);
@@ -1159,7 +1174,7 @@ public static partial class RoadSpatialGrid
                         list = new List<RoadPoint>();
                         roadPoints.Add(cellGrid, list);
                     }
-                    list.Add(new RoadPoint(p, width, height, paintOnly, addition, cutOnly));
+                    list.Add(new RoadPoint(p, width, height, paintOnly, addition, cutOnly, intoSite));
                 }
             }
         }
@@ -1681,11 +1696,11 @@ public static partial class RoadSpatialGrid
 
     /// <summary>
     /// Serialize the entire road network to a byte array for global persistence.
-    /// Version 4: [4][geometry encoding 2-4][the old geometry payload after its version]
+    /// Version 4: [4][geometry encoding 2-5][the old geometry payload after its version]
     /// [known-length byte 0 or 1][committed planned-path length:float]. Geometry/hash inputs are unchanged.
     /// Older Roads readers reject v4; this reader also accepts legacy v1-v3 with unknown nonempty length.
-    /// Geometry encoding 4 (the cut-only flag) occurs only inside the v4 envelope. Encodings 3 and up carry
-    /// the append block ([count][parent ids]); under encoding 4 it is written even when empty (count 0).
+    /// Geometry encodings 4 (the cut-only flag) and 5 (the into-site flag) occur only inside the v4 envelope. Encodings 3
+    /// and up carry the append block ([count][parent ids]); under encodings 4 and 5 it is written even when empty (count 0).
     /// </summary>
     public static byte[]? SerializeAllRoadPoints()
     {
@@ -1698,15 +1713,19 @@ public static partial class RoadSpatialGrid
             using var writer = new BinaryWriter(ms);
             
             // Version 2 adds the paint-only flag per point (waded fords), 3 the
-            // append id, 4 the cut-only flag (staircase earthwork). Each is
+            // append id, 4 the cut-only flag (staircase earthwork), 5 the
+            // into-site flag (a road onto a place's landing). Each is
             // written only when the network needs it, so a road-only network
             // saves exactly as before.
             bool appended = s_appendParents.Count > 0;
-            bool cuts = false;
+            bool cuts = false, intoSite = false;
             foreach (var cell in m_roadPoints.Values)
                 foreach (var rp in cell)
+                {
                     cuts |= rp.cutOnly;
-            int format = cuts ? 4 : appended ? 3 : 2;
+                    intoSite |= rp.intoSite;
+                }
+            int format = intoSite ? 5 : cuts ? 4 : appended ? 3 : 2;
             writer.Write(4);
             writer.Write(format);
             
@@ -1730,6 +1749,7 @@ public static partial class RoadSpatialGrid
                     writer.Write(rp.h);
                     writer.Write(rp.paintOnly);
                     if (format >= 4) writer.Write(rp.cutOnly);
+                    if (format >= 5) writer.Write(rp.intoSite);
                     if (format >= 3) writer.Write(rp.addition);
                 }
             }
@@ -1782,8 +1802,8 @@ public static partial class RoadSpatialGrid
             
             envelope=reader.ReadInt32();
             version=envelope==4 ? reader.ReadInt32() : envelope;
-            if ((envelope==4 && (version < 2 || version > 4)) || (envelope!=4 && (version < 1 || version > 3)))
-                return Refuse("a format this build does not know (it reads envelope 4 with encodings 2-4, and formats 1-3 bare)");
+            if ((envelope==4 && (version < 2 || version > 5)) || (envelope!=4 && (version < 1 || version > 3)))
+                return Refuse("a format this build does not know (it reads envelope 4 with encodings 2-5, and formats 1-3 bare)");
             
             int cellCount = reader.ReadInt32();
             if (cellCount < 0 || cellCount > 1000000)
@@ -1815,6 +1835,7 @@ public static partial class RoadSpatialGrid
                     float h = reader.ReadSingle();
                     bool paintOnly = version >= 2 && reader.ReadBoolean();
                     bool cutOnly = version >= 4 && reader.ReadBoolean();
+                    bool intoSite = version >= 5 && reader.ReadBoolean();
                     int addition = version >= 3 ? reader.ReadInt32() : 0;
                     if (!ManualRoadDraft.IsFinite(px) || !ManualRoadDraft.IsFinite(py) ||
                         !ManualRoadDraft.IsFinite(w) || w <= 0 || !ManualRoadDraft.IsFinite(h) || addition < 0)
@@ -1825,7 +1846,7 @@ public static partial class RoadSpatialGrid
                         dropped++;
                         continue;
                     }
-                    points.Add(new RoadPoint(new Vector2(px, py), w, h, paintOnly, addition, cutOnly));
+                    points.Add(new RoadPoint(new Vector2(px, py), w, h, paintOnly, addition, cutOnly, intoSite));
                 }
                 
                 var key=new Vector2i(gridX,gridY);

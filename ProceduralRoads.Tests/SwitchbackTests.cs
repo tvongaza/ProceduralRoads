@@ -39,7 +39,7 @@ public class SwitchbackTests
         foreach(var point in plan.Points)
         {
             float ground=world.GetHeight(point.x,point.y);
-            var fit=method.Invoke(null,new object?[]{points,point,ground,null})!;
+            var fit=method.Invoke(null,new object?[]{points,point,ground,null,false})!;
             float target=(float)fit.GetType().GetField("TargetHeight")!.GetValue(fit)!;
             float blend=(float)fit.GetType().GetField("MaxBlend")!.GetValue(fit)!;
             heights.Add(ground+Mathf.Clamp(Mathf.Lerp(ground,target,blend)-ground,-8,8));

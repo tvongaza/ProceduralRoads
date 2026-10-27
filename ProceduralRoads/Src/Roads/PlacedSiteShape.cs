@@ -104,8 +104,9 @@ public readonly struct SiteRock
 }
 
 /// <summary>
-/// Where an approach to a placed place may go, for a staircase to it
-/// (<see cref="RoadStairRuns.PlanPlacedSiteApproach"/>): the landing in front of
+/// Where an approach to a placed place may go, for a road onto its landing
+/// (<see cref="RoadSiteEntry"/>) and a staircase to it
+/// (<see cref="RoadStairRuns.PlanPlacedSiteApproach"/>) alike: the landing in front of
 /// its floor, the entrance pit (the floor and its smoothing), the rock round it (its
 /// exterior radius, but for a cone in front of its floor) and its own boulders. Pure.
 /// </summary>
