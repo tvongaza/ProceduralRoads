@@ -212,6 +212,7 @@ public static partial class RoadNetworkGenerator
     {
         bool[] served = ServedDestinations(selected);
         int reached = 0; foreach (bool s in served) if (s) reached++;
+        if (RoadsLog) LogUnconnected(selected);
         IslandActivity?.Measured(served);
         System.Threading.Interlocked.Add(ref m_destinationsSelected, selected.Count);
         System.Threading.Interlocked.Add(ref m_destinationsConnected, reached);
@@ -224,6 +225,20 @@ public static partial class RoadNetworkGenerator
         if(activity==null || index<0 || index>=locations.Count) return;
         var d=locations[index];
         activity.Settled(index, AlreadyServedByNetwork(d.position,d.radius));
+    }
+
+    /// <summary>With <see cref="RoadsLog"/>: every destination the network does not reach, and how its last road attempt failed.</summary>
+    private static void LogUnconnected(List<(string name, Vector3 position, float radius)> selected)
+    {
+        foreach (var d in selected)
+        {
+            if (AlreadyServedByNetwork(d.position, d.radius)) continue;
+            var key = PlaceKey(new Vector2(d.position.x, d.position.z));
+            string last = m_builtTo.ContainsKey(key)
+                ? "a road was built to it but stops short" + (m_lastFailure.TryGetValue(key, out string? f0) ? $" (a refused attempt: {f0})" : "")
+                : m_lastFailure.TryGetValue(key, out string? f) ? f : "never attempted";
+            Log.LogInfo(FormattableString.Invariant($"  unconnected: {d.name} at ({d.position.x:F0}, {d.position.z:F0}): {last}"));
+        }
     }
 
     private static void RefreshDestinationsReached(List<(string name, Vector3 position, float radius)> selected)
@@ -498,6 +513,8 @@ public static partial class RoadNetworkGenerator
         m_roadsGeneratedCount = 0;
         m_roadsRefusedForGrade = 0;
         m_refusalReasons.Clear();
+        m_lastFailure.Clear();
+        m_builtTo.Clear();
         m_roadsWithNoRoute = 0;
         m_earthworkReroutes = 0;
         m_pullReroutes = 0;
@@ -731,6 +748,28 @@ public static partial class RoadNetworkGenerator
     /// one across water, so the two are counted apart.</summary>
     private static int m_roadsWithNoRoute;
 
+    /// <summary>PROCEDURALROADS_ROADS_LOG: say where each road was refused for crossing or running beside
+    /// another, and list every destination left unconnected with how its last road attempt failed.
+    /// Off by default: off, nothing is noted or logged.</summary>
+    internal static readonly bool RoadsLog = DebugSwitches.Flag("ROADS_LOG", false);
+    /// <summary>Per place (rounded centre), with <see cref="RoadsLog"/>: how its last road attempt failed,
+    /// and whether a road was built to it.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, int), string> m_lastFailure = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, int), bool> m_builtTo = new();
+    private static (int, int) PlaceKey(Vector2 c) => (Mathf.RoundToInt(c.x), Mathf.RoundToInt(c.y));
+    private static void NoteFailure(Vector2 a, Vector2 b, string why)
+    {
+        if (!RoadsLog) return;
+        m_lastFailure[PlaceKey(a)] = why;
+        m_lastFailure[PlaceKey(b)] = why;
+    }
+    private static void NoteBuilt(Vector2 a, Vector2 b)
+    {
+        if (!RoadsLog) return;
+        m_builtTo[PlaceKey(a)] = true;
+        m_builtTo[PlaceKey(b)] = true;
+    }
+
     /// <summary>
     /// The height a road has to arrive at for a location: the ground under the
     /// location's centre, which is what the game reads when it places the
@@ -860,6 +899,7 @@ public static partial class RoadNetworkGenerator
         {
             if (label != null)
                 Log.LogDebug($"Could not find path: {label}");
+            NoteFailure(startCenter, endCenter, "no route");
             System.Threading.Interlocked.Increment(ref m_roadsWithNoRoute);
             return false;
         }
@@ -880,6 +920,7 @@ public static partial class RoadNetworkGenerator
             // decided here: it is measured once the island is built.
             if (label != null)
                 Log.LogDebug($"Nothing to lay between the two sites once their footprints were cleared: {label}");
+            NoteFailure(startCenter, endCenter, "nothing between the two footprints");
             System.Threading.Interlocked.Increment(ref m_roadsRefusedForGrade);
             return false;
         }
@@ -924,6 +965,7 @@ public static partial class RoadNetworkGenerator
         {
             if (label != null)
                 Log.LogDebug($"Road refused: preparation was incomplete for it, destination left unconnected: {label}");
+            NoteFailure(startCenter, endCenter, "refused: preparation incomplete");
             System.Threading.Interlocked.Increment(ref m_roadsRefusedForGrade);
             return false;
         }
@@ -1008,18 +1050,20 @@ public static partial class RoadNetworkGenerator
         }
         // No road crosses another: it meets one at a junction, at its ends or along a stretch it shares, or it is not
         // built, even if that rejects a POI.
-        if (plans != null && NoCrossings && CrossesNetwork(plans, out _))
+        if (plans != null && NoCrossings && CrossesNetwork(plans, out Vector2 crossedAt))
         {
             plans = null;
             RoadSpatialGrid.LastRefusal = "crosses another road";
+            if (RoadsLog) Log.LogDebug(FormattableString.Invariant($"Road {label ?? "(unlabelled)"}: crosses another road at ({crossedAt.x:F1}, {crossedAt.y:F1}); refused"));
         }
         // Nor runs beside one at its height: where its search did not put it on the other road (snapped onto the trunk it
         // shares), it braids beside it (roads at 3354,6308 and -5487,5808 were a
         // mess).
-        if (plans != null && NoBraids && BraidsNetwork(plans, out _))
+        if (plans != null && NoBraids && BraidsNetwork(plans, out Vector2 braidAt))
         {
             plans = null;
             RoadSpatialGrid.LastRefusal = "runs beside another road";
+            if (RoadsLog) Log.LogDebug(FormattableString.Invariant($"Road {label ?? "(unlabelled)"}: runs beside another road at its height from ({braidAt.x:F1}, {braidAt.y:F1}); refused"));
         }
         if (plans == null)
         {
@@ -1027,6 +1071,7 @@ public static partial class RoadNetworkGenerator
             m_refusalReasons.AddOrUpdate(why, 1, (_, n) => n + 1);
             if (label != null)
                 Log.LogDebug($"Road could not be built ({why}), destination left unconnected: {label}");
+            NoteFailure(startCenter, endCenter, "refused: " + why);
             System.Threading.Interlocked.Increment(ref m_roadsRefusedForGrade);
             return false;
         }
@@ -1081,6 +1126,7 @@ public static partial class RoadNetworkGenerator
 
         if (label != null)
             Log.LogDebug($"Generated road: {label} ({path.Count} waypoints)");
+        NoteBuilt(startCenter, endCenter);
 
         return true;
     }
@@ -2184,6 +2230,8 @@ public static partial class RoadNetworkGenerator
         m_roadsGeneratedCount = 0;
         m_roadsRefusedForGrade = 0;
         m_refusalReasons.Clear();
+        m_lastFailure.Clear();
+        m_builtTo.Clear();
         m_roadsWithNoRoute = 0;
         m_earthworkReroutes = 0;
         m_pullReroutes = 0;
@@ -2260,6 +2308,8 @@ public static partial class RoadNetworkGenerator
         m_roadsGeneratedCount = 0;
         m_roadsRefusedForGrade = 0;
         m_refusalReasons.Clear();
+        m_lastFailure.Clear();
+        m_builtTo.Clear();
         m_roadsWithNoRoute = 0;
         m_earthworkReroutes = 0;
         m_pullReroutes = 0;
