@@ -175,7 +175,11 @@ public static partial class RoadLifecycleManager
             {
                 // Loaded-zone application can already have written terrain or spawned bridge ZDOs.
                 // Keep its finalized network so those effects retain their identity and can be saved/reapplied.
-                ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError($"Road network completed, but application to loaded zones failed; network retained: {error}");
+                // RoadsGenerated is set before the last steps of finalizing (metadata, pending registrations), so
+                // this does not claim which step failed.
+                ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError(
+                    "Road network was completed and kept, but a later step failed " +
+                    $"(the loaded zones may lack some or all of its terrain and bridges); network retained: {error}");
                 End(run, "ApplicationFailed", error.GetBaseException().Message);
             }
             else
@@ -283,6 +287,9 @@ public static partial class RoadLifecycleManager
             ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo($"  {completed} of {work.Islands.Count} done - {detail}");
         }
     }
+    /// <summary>The synchronous generation already reported "Complete" when a step after it failed: say so.</summary>
+    internal static void ReportApplicationFailed(Exception error) =>
+        SetProgress("ApplicationFailed", Progress.Completed, Progress.Total, error.GetBaseException().Message);
     private static void End(Generation run, string phase, string? failure = null)
     {
         DisposePreparation(run);

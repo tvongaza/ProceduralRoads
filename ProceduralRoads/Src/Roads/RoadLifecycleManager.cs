@@ -171,7 +171,19 @@ public static partial class RoadLifecycleManager
         try { RoadNetworkGenerator.GenerateRoadsOnLoad(); }
         catch (System.Exception error)
         {
-            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError($"Road generation after spawn failed; no network was published: {error}");
+            // GenerateRoadsOnLoad completes the network (RoadsGenerated), then applies it to the loaded zones. A
+            // failure after completion can follow terrain already written and bridge pieces already spawned: the
+            // network stays, so those effects keep its identity and are saved with it. Either way nothing is retried.
+            if (RoadNetworkGenerator.RoadsGenerated)
+            {
+                // The synchronous generation reported "Complete" before the step that failed.
+                ReportApplicationFailed(error);
+                ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError(
+                    "Road network generated after spawn was completed and kept, but a later step failed " +
+                    $"(the loaded zones may lack some or all of its terrain and bridges); network retained: {error}");
+            }
+            else
+                ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError($"Road generation after spawn failed; no network was published: {error}");
         }
     }
 

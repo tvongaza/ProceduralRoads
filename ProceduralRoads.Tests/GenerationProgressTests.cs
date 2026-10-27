@@ -614,6 +614,52 @@ public sealed class GenerationProgressTests : IDisposable
         RoadLifecycleManager.OnPrepareSave();
         Assert.Equal(version, RoadSpatialGrid.RoadNetworkVersion);
     }
+    /// <summary>The spawn fallback (no world-load hook): synchronous generation when the host's player spawns.</summary>
+    private static void SpawnWithoutWorldLoad()
+    {
+        ZoneSystem.instance!.LocationsGenerated = true;
+        RoadLifecycleManager.OnPlayerSpawn(Vector3.zero);
+    }
+    [Fact]
+    public void SpawnFallbackFailingBeforePublicationSaysNoNetworkWasPublished()
+    {
+        int attempts = 0;
+        LocationLevelling.PrimeIncremental=_=>{ attempts++; return new FaultingPrime(); };
+        var log = scope.CaptureLog();
+        SpawnWithoutWorldLoad();
+        Assert.Contains(log, l => l.Contains("Road generation after spawn failed; no network was published"));
+        Assert.Equal("Failed", RoadLifecycleManager.Progress.Phase);
+        Assert.DoesNotContain(log, l => l.Contains("network retained"));
+        Assert.False(RoadNetworkGenerator.RoadsAvailable);
+        Assert.Equal(0, RoadSpatialGrid.TotalRoadPoints);
+        Assert.Equal(1, attempts);
+        // Once per world: a failed attempt is not retried.
+        SpawnWithoutWorldLoad();
+        Assert.Equal(1, attempts);
+        Assert.False(RoadNetworkGenerator.RoadsAvailable);
+    }
+    [Fact]
+    public void SpawnFallbackFailingWhileApplyingKeepsThePublishedNetworkAndSaysSo()
+    {
+        RoadNetworkGenerator.GenerateRoads();
+        var zones = RoadSpatialGrid.GetZonesWithRoadPoints().Take(2).ToArray();
+        Assert.Equal(2, zones.Length);
+        RoadNetworkGenerator.Reset();
+        scope.RegisterHeightmap(zones[0], 64, withCompiler: false);
+        var broken = scope.RegisterHeightmap(zones[1], 64);
+        broken.m_terrainComp!.m_nview = null!; // fails after the first loaded zone has created its compiler
+        var log = scope.CaptureLog();
+        SpawnWithoutWorldLoad();
+        Assert.Contains(log, l => l.Contains("was completed and kept, but a later step failed") && l.Contains("network retained"));
+        Assert.DoesNotContain(log, l => l.Contains("no network was published"));
+        Assert.Equal("ApplicationFailed", RoadLifecycleManager.Progress.Phase);   // not "Complete"
+        Assert.True(RoadNetworkGenerator.RoadsAvailable);
+        Assert.True(RoadSpatialGrid.TotalRoadPoints > 0);
+        Assert.True(ZDOMan.instance!.CountWithPrefab(TerrainComp.PrefabName) >= 2);
+        int version = RoadSpatialGrid.RoadNetworkVersion;
+        RoadLifecycleManager.OnPrepareSave();
+        Assert.Equal(version, RoadSpatialGrid.RoadNetworkVersion);
+    }
     [Fact]
     public void ReverseIslandCompletionCountsFinishedWorkAndSnapshotsStayImmutable()
     {
