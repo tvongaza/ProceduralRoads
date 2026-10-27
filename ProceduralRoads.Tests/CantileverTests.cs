@@ -259,6 +259,46 @@ public class CantileverTests
         public override int GetSeed() => 77;
     }
 
+    [Fact]
+    public void TheRoadSearchOffersStairsUpFacesSteeperThan1To1WhereTheyCanBeHeldOut()
+    {
+        var world = new SheerScarp();
+        using var worldScope = new ValheimWorldScope().WithWorld(world);
+        RoadNetworkGenerator.Reset();
+        try
+        {
+            RoadPathfinder Finder(bool cantilevers) => new(world) { Stairs = true, CantileverStairs = cantilevers, TerrainVarianceThreshold = 1000f, Meander = 0f };
+            Assert.Null(Finder(cantilevers: false).FindPath(new Vector2(-80f, 0f), new Vector2(100f, 0f)));
+            RoadPathfinder finder = Finder(cantilevers: true);
+            Assert.NotNull(finder.FindPath(new Vector2(-80f, 0f), new Vector2(100f, 0f)));
+            Assert.Contains(finder.LastStairSteps, s =>
+                Mathf.Abs(world.GetHeight(s.to.x, s.to.y) - world.GetHeight(s.from.x, s.from.y)) / Vector2.Distance(s.from, s.to) > RoadPathfinder.StairMaxGrade);
+            // In the Meadows (wood) the search is as it was before cantilevers.
+            var wood = new SheerScarp { Biome = Heightmap.Biome.Meadows };
+            worldScope.WithWorld(wood);
+            RoadNetworkGenerator.Reset();
+            RoadPathfinder meadows = new(wood) { Stairs = true, CantileverStairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f };
+            RoadPathfinder before = new(wood) { Stairs = true, CantileverStairs = false, TerrainVarianceThreshold = 1000f, Meander = 0f };
+            List<Vector2>? a = meadows.FindPath(new Vector2(-80f, 0f), new Vector2(100f, 0f)), b = before.FindPath(new Vector2(-80f, 0f), new Vector2(100f, 0f));
+            Assert.Equal(b, a);
+            Assert.Equal(before.LastStairSteps, meadows.LastStairSteps);
+        }
+        finally
+        {
+            RoadNetworkGenerator.Reset();
+        }
+    }
+
+    /// <summary>The price per metre climbed rises from 1:1 to its maximum at the steepest step offered.</summary>
+    [Fact]
+    public void AStairStepsPriceRisesWithItsGrade()
+    {
+        Assert.Equal(1f, RoadPathfinder.SteepStairFactor(0.5f));
+        Assert.Equal(1f, RoadPathfinder.SteepStairFactor(RoadPathfinder.StairMaxGrade));
+        Assert.True(RoadPathfinder.SteepStairFactor(2f) > RoadPathfinder.SteepStairFactor(1.5f));
+        Assert.Equal(RoadPathfinder.SteepStairPriceMax, RoadPathfinder.SteepStairFactor(RoadPathfinder.StairCantileverMaxGrade), 3);
+    }
+
     /// <summary>The wedge a turn opens is read where its filler lies: a turn left off a flight climbing +z on
     /// ground rising to the west (left) at 2:1 has its wedge on the outside (east, downhill), clear; turned
     /// right, its wedge lies uphill (west) and the ground covers it.</summary>

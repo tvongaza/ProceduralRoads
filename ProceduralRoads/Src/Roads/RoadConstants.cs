@@ -79,6 +79,14 @@ public static class RoadConstants
     public const float MaxBridgeBankDelta = 2.5f;
     public const float DefaultBridgeCostFixed = 60000f;
     public const float DefaultBridgeCostPerMeter = 600f;
+    /// <summary>Starting a staircase in the Mountains (other biomes multiply it,
+    /// RoadPathfinder.StairBiomeFactor): about a 1 km detour of easy road. Swept
+    /// on RoadSeedA with stairs only where road cannot climb:
+    /// 300/6 gave 457 staircases, 1000/10 371, 2000/10 243, 3000/20 183;
+    /// 1000/10 was picked.</summary>
+    public const float DefaultStairCostFixed = 1000f;
+    /// <summary>Per metre a staircase climbs, in the Mountains.</summary>
+    public const float DefaultStairCostPerMeterClimbed = 10f;
 
     // A ford may also be SPANNED (Fords/SpanWeight): a short low footbridge
     // with a step at each end, where the crossing is at least

@@ -50,13 +50,53 @@ public sealed class StairRun
 public sealed class StairStructures : IStructureSource
 {
     private static readonly List<StairRun> s_runs = new();
+    /// <summary>Pathfinding cells a generated road climbed on a staircase, so a
+    /// later road over the same ground walks that staircase instead of laying a
+    /// second beside it. Generation only: never saved.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, int), byte> s_cells = new();
 
     public static IReadOnlyList<StairRun> Runs => s_runs;
 
     public static void Reset()
     {
         s_runs.Clear();
+        s_cells.Clear();
+        s_standing.Clear();
     }
+
+    /// <summary>Mark the pathfinding cells (world / <see cref="RoadPathfinder.CellSize"/>, rounded) a road climbed on a staircase.</summary>
+    public static void MarkLaid(IEnumerable<Vector2> points)
+    {
+        foreach (Vector2 p in points)
+            s_cells[(Mathf.RoundToInt(p.x / RoadPathfinder.CellSize), Mathf.RoundToInt(p.y / RoadPathfinder.CellSize))] = 0;
+    }
+
+    // Every step of every road search asks these two, on every worker. ContainsKey alone: in the
+    // game's Mono, ConcurrentDictionary.IsEmpty takes every one of the dictionary's locks (up to
+    // 1024) on each call, and an IsEmpty guard here tripled in-game generation.
+    // .NET 10 reads it without locks, so offline never showed it.
+    public static bool OnLaidStair(int cellX, int cellZ) => s_cells.ContainsKey((cellX, cellZ));
+
+    /// <summary>Pathfinding cells a laid staircase stands on, its end cells apart:
+    /// no road is built through them. Generation only.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, int), byte> s_standing = new();
+
+    /// <summary>Mark the cells under a laid run's walked pieces as closed to road,
+    /// but for the cells of its two ends, where roads meet it.</summary>
+    public static void MarkStanding(StairRun run)
+    {
+        (int, int) Cell(float x, float z) => (Mathf.RoundToInt(x / RoadPathfinder.CellSize), Mathf.RoundToInt(z / RoadPathfinder.CellSize));
+        var ends = new HashSet<(int, int)> { Cell(run.From.x, run.From.y), Cell(run.To.x, run.To.y) };
+        foreach (StructurePiece p in run.Pieces)
+        {
+            if (p.Kind == StructurePieceKind.StairSupport) continue;
+            var cell = Cell(p.Position.x, p.Position.z);
+            if (!ends.Contains(cell)) s_standing[cell] = 0;
+        }
+    }
+
+    /// <summary>Whether a staircase stands on this pathfinding cell (generation only).</summary>
+    public static bool Standing(int cellX, int cellZ) => s_standing.ContainsKey((cellX, cellZ));
 
     /// <summary>Pieces of the network's staircases within <paramref name="reach"/> across of a point.</summary>
     public static List<StructurePiece> PiecesNear(Vector3 point, float reach)
