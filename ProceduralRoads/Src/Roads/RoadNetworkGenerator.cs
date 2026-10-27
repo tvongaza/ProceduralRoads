@@ -276,7 +276,110 @@ public static partial class RoadNetworkGenerator
         float reach = radius > 0f
             ? RoadSiteProtection.RadiusAt(flat, radius) + RoadWidth * 0.5f + 2f
             : radius;
-        return RoadSpatialGrid.TryGetRoadWithin(flat, reach + RoadPathfinder.CellSize, out _);
+        // Only network an approach could climb from counts (MaxApproachClimb): a staircase
+        // 45 m under Hildir's cave was counted as reaching it.
+        float? place = radius > 0f ? PlaceHeight(flat) : null;
+        // A staircase is the network too: a road that reaches a place by one ends on its top or foot,
+        // with no road there (MountainCave02 -2560,1536: its staircase's top 38.8 m out, the
+        // nearest road 52 m, counted unreached).
+        // A place whose own road was built as its last resort (BuildLastResort) is reached by it:
+        // the planner built it on purpose as the best the network has, so the count says what the
+        // planner did, and the summary tallies how many places that serves.
+        float lowest = place.HasValue && !m_lastResortServed.ContainsKey(PlaceKey(flat)) ? place.Value - MaxApproachClimb : float.NegativeInfinity;
+        return RoadSpatialGrid.TryGetRoadWithin(flat, reach + RoadPathfinder.CellSize, out _, minHeight: lowest)
+            || StairStructures.PiecesNear(centre, reach + RoadPathfinder.CellSize).Exists(p => p.Kind != StructurePieceKind.StairSupport
+                && p.Position.y >= lowest);
+    }
+
+    /// <summary>
+    /// The most a road's end at a place may stand under the place's own ground and still reach it: what an approach staircase can climb from there. Its reach is
+    /// <see cref="RoadStairRuns.SiteReach"/> (40 m) at a flight's 0.5 grade, 20 m straight up;
+    /// the 56 approaches laid in runs 51-57 climbed at most 16-18 m (Hildir's cave 11 m in run
+    /// 55, the frost cave at -2560,1536 needs about 15 m). Settable for tests.
+    /// </summary>
+    internal static float MaxApproachClimb = 20f;
+
+    /// <summary>The ground a place's approach arrives at (its platform, never below its root), or
+    /// null where its levelling is not known.</summary>
+    internal static float? PlaceHeight(Vector2 centre)
+    {
+        var world = GenerationWorld;
+        if (world == null) return null;
+        IReadOnlyList<LevelOp>? ops = LocationLevelling.OpsAt(centre);
+        return ops == null ? null : LocationLevelling.ApproachHeight(LocationLevelling.CentreHeight(centre, world), ops);
+    }
+
+    /// <summary>Why a road's end at one of its places stands further under the place than an
+    /// approach climbs, or null. The end is where walking ends: the last road point, or the staircase the road ends on.</summary>
+    private static string? EndOutOfClimb(List<Vector2> path, List<RoadSpatialGrid.PlannedPath> plans, List<RoadStairSpan> stairs,
+        Vector2 startCenter, float startRadius, Vector2 endCenter, float endRadius, bool startAtPlace, bool endAtPlace,
+        out Vector2 shortOf, out float shortBy)
+    {
+        Vector2 at = default;
+        float by = 0f;
+        string? At(bool atStart, Vector2 centre, float radius, bool atPlace)
+        {
+            if (!atPlace || radius <= 0f || plans.Count == 0) return null;
+            if (PlaceHeight(centre) is not float place) return null;
+            float height;
+            RoadStairSpan? last = stairs.Find(s => atStart ? s.FromIndex == 0 : s.ToIndex == path.Count - 1);
+            if (last != null) height = atStart ? last.FromHeight : last.ToHeight;
+            else
+            {
+                var piece = atStart ? plans[0] : plans[plans.Count - 1];
+                if (piece.Heights.Count == 0) return null;
+                height = atStart ? piece.Heights[0] : piece.Heights[piece.Heights.Count - 1];
+            }
+            // Under only: a road ending over its place (22-23 m over sunken Mistlands entrances on
+            // RoadSeedB) arrives at another kind of ground, and refusing those lost four places.
+            float under = place - height;
+            if (under <= MaxApproachClimb) return null;
+            (at, by) = (centre, under);
+            return FormattableString.Invariant($"ends {under:F0} m under its place, past an approach's {MaxApproachClimb:F0} m climb");
+        }
+        string? why = At(true, startCenter, startRadius, startAtPlace) ?? At(false, endCenter, endRadius, endAtPlace);
+        (shortOf, shortBy) = (at, by);
+        return why;
+    }
+
+    /// <summary>
+    /// A road refused only for ending further under one of its places than an approach climbs is the
+    /// place's last resort: kept here, by that place, the one ending least far under (then the
+    /// shortest), and built after all when the planner would otherwise leave the place unconnected
+    /// (Hildir's cave at -2304,1536 lost its 100 m staircase to the 20 m rule). Off: the refusal is final. Settable for tests.
+    /// </summary>
+    internal static bool LastResortUnder = true;
+
+    private sealed class UnderRoad
+    {
+        public Vector2 StartCenter, EndCenter;
+        public float StartRadius, EndRadius, Width, Under, Length;
+        public string? Label;
+        public List<Vector2>? Hints;
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, int), UnderRoad> m_underRoads = new();
+    /// <summary>Places reached by their last-resort road, and how far under them it ends.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, int), float> m_lastResortServed = new();
+    /// <summary>Set while a last-resort road is built: its end is not refused for standing under its place.</summary>
+    [System.ThreadStatic] private static bool t_lastResort;
+
+    private static void RememberUnder(Vector2 place, UnderRoad road) =>
+        m_underRoads.AddOrUpdate(PlaceKey(place), road, (_, kept) =>
+            road.Under < kept.Under - 0.5f || (road.Under <= kept.Under + 0.5f && road.Length < kept.Length) ? road : kept);
+
+    /// <summary>The place's last-resort road (<see cref="LastResortUnder"/>), built now; false where it
+    /// has none or it no longer builds.</summary>
+    internal static bool BuildLastResort(Vector3 position)
+    {
+        var key = PlaceKey(new Vector2(position.x, position.z));
+        if (!LastResortUnder || !m_underRoads.TryRemove(key, out var road)) return false;
+        bool built;
+        t_lastResort = true;
+        try { built = GenerateRoad(road.StartCenter, road.StartRadius, road.EndCenter, road.EndRadius, road.Width, road.Label, road.Hints); }
+        finally { t_lastResort = false; }
+        if (built) m_lastResortServed[key] = road.Under;
+        return built;
     }
     /// <summary>Read the crossing registry under the same gate used by commits.
     /// Another island may append while this road looks for shared banks.</summary>
@@ -518,6 +621,8 @@ public static partial class RoadNetworkGenerator
         m_roadsWithNoRoute = 0;
         m_earthworkReroutes = 0;
         m_pullReroutes = 0;
+        m_underRoads.Clear();
+        m_lastResortServed.Clear();
         m_offLandEnds = 0;
         RoadPitches.ResetCounters();
         m_corridorSnapped = 0;
@@ -1124,6 +1229,24 @@ public static partial class RoadNetworkGenerator
                     : ridge ? $"a junction ridge: held to a road on more than {JunctionFillLimit:F0} m of fill"
                     : $"earthwork past the {EarthworkCap:F0} m terrain limit";
             }
+        }
+        // A road whose end at its place stands further under (or over) the place's own ground than
+        // an approach can climb does not reach it: counted connected, the planner stopped looking,
+        // and a 100 m staircase ended 45 m under Hildir's cave with a stub of road on top
+        // (a staircase that ends short of the goal and adds a little stub road looks terrible). Refused, the planner tries
+        // its other candidates, and reached the cave from the west with an 11 m approach.
+        if (plans != null && !t_lastResort && EndOutOfClimb(path, plans, stairs, startCenter, askedStartRadius, endCenter, askedEndRadius,
+                startAtPlace, endAtPlace, out Vector2 shortOf, out float shortBy) is string climb)
+        {
+            if (LastResortUnder)
+            {
+                float length = 0f;
+                for (int i = 1; i < path.Count; i++) length += Vector2.Distance(path[i - 1], path[i]);
+                RememberUnder(shortOf, new UnderRoad { StartCenter = startCenter, StartRadius = askedStartRadius, EndCenter = endCenter,
+                    EndRadius = askedEndRadius, Width = width, Under = shortBy, Length = length, Label = label, Hints = networkHints });
+            }
+            plans = null;
+            RoadSpatialGrid.LastRefusal = $"end past an approach's {MaxApproachClimb:F0} m climb of its place";
         }
         if (plans != null && DanglingBridge(plans, crossings, path[0], path[path.Count - 1], out var dangling))
         {
@@ -2543,6 +2666,8 @@ public static partial class RoadNetworkGenerator
         m_roadCrossings.Clear();
         StairStructures.Reset();
         RoadStairRuns.ResetCache();
+        m_underRoads.Clear();
+        m_lastResortServed.Clear();
         StructurePlans.Reset();
         VegetationClearing.Reset();
         RoadNetworkPersistence.Reset();

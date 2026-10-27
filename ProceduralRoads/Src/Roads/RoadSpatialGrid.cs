@@ -1454,7 +1454,9 @@ public static partial class RoadSpatialGrid
         return found;
     }
 
-    public static bool TryGetRoadWithin(Vector2 position, float reach, out Vector2 nearest, System.Func<Vector2, bool>? allowed = null)
+    /// <param name="minHeight">Only road whose surface stands this high or higher.</param>
+    public static bool TryGetRoadWithin(Vector2 position, float reach, out Vector2 nearest, System.Func<Vector2, bool>? allowed = null,
+        float minHeight = float.NegativeInfinity)
     {
         nearest = position;
         if (!m_initialized || reach < 0) return false;
@@ -1469,7 +1471,7 @@ public static partial class RoadSpatialGrid
                         foreach (var point in points)
                         {
                             float distance = (point.p-position).sqrMagnitude;
-                            if (distance <= best && !point.cutOnly && (allowed == null || allowed(point.p))) { best=distance; nearest=point.p; found=true; }
+                            if (distance <= best && !point.cutOnly && point.h >= minHeight && (allowed == null || allowed(point.p))) { best=distance; nearest=point.p; found=true; }
                         }
         }
         return found;

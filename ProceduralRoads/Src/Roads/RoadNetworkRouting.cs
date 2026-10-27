@@ -64,7 +64,8 @@ public static partial class RoadNetworkGenerator
         RoadConnectionPlanner.Connect(places,Price,Build,Join,GetLocationPriority,
             (place,result)=>Log.LogDebug($"Road destination {place.Name} at {place.Position}: {result}"),
             index => { SettleDestination(locations,index-1); RefreshDestinationsReached(locations); },
-            total => activity?.Pricing(total), () => activity?.Priced(), () => activity?.Stage("Connecting"));
+            total => activity?.Pricing(total), () => activity?.Priced(), () => activity?.Stage("Connecting"),
+            place=>BuildLastResort(place.Position));
         // These are thrown away at the end of this island, so their memo
         // counters have to be collected before they go.
         foreach (var pricer in pricers.Values) pricer.FoldTerrainMemoCounters();
