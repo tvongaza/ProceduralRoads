@@ -19,7 +19,7 @@ public sealed class BridgeStructures : IStructureSource
     {
         foreach (RoadCrossing crossing in BridgeLayout.DistinctSites(RoadNetworkGenerator.GetRoadCrossings()))
         {
-            List<StructurePiece> bridge = BridgeLayout.Solve(crossing, world, seed);
+            List<StructurePiece> bridge = Solve(crossing, world, seed);
             var bridgeZones = new HashSet<Vector2s>();
             foreach (StructurePiece piece in bridge)
             {
@@ -33,9 +33,18 @@ public sealed class BridgeStructures : IStructureSource
         }
     }
 
+    /// <summary>
+    /// The pieces of one crossing, in its kit: a Dvergr viaduct where
+    /// <see cref="DvergrViaduct.Applies"/> (the Mistlands, a deck 6 m or more up, piers under the
+    /// ceiling), else the wooden bridge. The one place the kit is chosen: the plan, the append
+    /// queue and the counts all come through here.
+    /// </summary>
+    public static List<StructurePiece> Solve(RoadCrossing crossing, WorldGenerator world, int seed) =>
+        DvergrViaduct.Applies(crossing, world) ? DvergrViaduct.Solve(crossing, world, seed) : BridgeLayout.Solve(crossing, world, seed);
+
     /// <summary>Pieces the plan puts at a crossing (0 for a ford that is not spanned).</summary>
     public static int PiecesAt(RoadCrossing crossing) =>
-        WorldGenerator.instance == null ? 0 : BridgeLayout.Solve(crossing, WorldGenerator.instance, WorldGenerator.instance.GetSeed()).Count;
+        WorldGenerator.instance == null ? 0 : Solve(crossing, WorldGenerator.instance, WorldGenerator.instance.GetSeed()).Count;
 
     /// <summary>
     /// Clear-areas around the plan so vegetation does not spawn through the
@@ -50,7 +59,8 @@ public sealed class BridgeStructures : IStructureSource
                 continue;
             // Wide enough for a two-lane deck: pieces sit up to DeckHalfWidth
             // either side of the crossing line, and the clearing has to keep
-            // trees out of BOTH lanes, not just the centreline.
+            // trees out of BOTH lanes, not just the centreline. A viaduct's
+            // pieces reach a metre further (its course and arches, 3 m out).
             areas.Add((piece.Position, BridgeLayout.DeckHalfWidth + 1.5f));
             last = piece.Position;
         }

@@ -28,7 +28,7 @@ public static class StructureAppendQueue
 
     internal static Dictionary<Vector2s, List<StructurePiece>> Prepare(IEnumerable<RoadCrossing> crossings) =>
         Prepare(BridgeLayout.DistinctSites(crossings.ToList())
-            .SelectMany(crossing => BridgeLayout.Solve(crossing, WorldGenerator.instance, WorldGenerator.instance.GetSeed())));
+            .SelectMany(crossing => BridgeStructures.Solve(crossing, WorldGenerator.instance, WorldGenerator.instance.GetSeed())));
 
     /// <summary>New structure pieces, by zone, as the queue owes them: a zone not
     /// yet built also gets its existing plan, since the zone is recorded as spawned

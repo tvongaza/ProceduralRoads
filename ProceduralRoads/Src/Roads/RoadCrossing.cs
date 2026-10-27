@@ -50,6 +50,10 @@ public sealed class RoadCrossing
     public string? ShallowNote;
     /// <summary>The road that built this crossing, for logs and road_crossings.</summary>
     public string? Road;
+    /// <summary>A Mistlands viaduct the search bought over a dry valley (DvergrViaduct.ValleyCrossing),
+    /// not a river jump. Generation only: not persisted (a loaded one is planned the same way, by
+    /// DvergrViaduct.Applies, from its banks and bed).</summary>
+    public bool ValleyJump;
 
     /// <summary>Midpoint between the banks.</summary>
     public Vector2 Center;
@@ -113,6 +117,7 @@ public sealed class RoadCrossing
         Shallow = existing.Shallow;
         Invalid = existing.Invalid;
         ShallowNote = existing.ShallowNote;
+        ValleyJump = existing.ValleyJump;
     }
 
     /// <summary>A crossing between two banks with its derived fields filled in.</summary>

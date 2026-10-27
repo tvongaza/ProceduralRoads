@@ -1,0 +1,660 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace ProceduralRoads;
+
+/// <summary>
+/// Mistlands road bridges in the style of the game's own Dvergr viaduct
+/// (Mistlands_Viaduct1). Pure logic; the game places the plan
+/// through the bridges' structure source (<see cref="BridgeStructures"/>), so
+/// the old-world cutoff, the spawned-zone record and the append queue are the
+/// wooden bridges' own.
+///
+/// <para><b>The template is the vanilla viaduct.</b> Every offset below was read
+/// off the 377 build pieces of one Mistlands_Viaduct1 (location centre
+/// (-7804.310, 41.698, 4351.460), yaw 135), rotated onto the bridge's
+/// own axes: u along the deck, v across it (to the left of the way the deck
+/// runs, as <see cref="BridgeLayout"/>'s side), y up from the deck's walking
+/// surface D, which is the top of the deck's black marble course. Its middle
+/// pier, the one with every piece, is the pattern.</para>
+///
+/// <para><b>Piers</b>: 16 m centre to centre as in vanilla.
+/// Off a known river, one at the crossing's midpoint and then every 16 m
+/// outward while inside the gap; a short crossing still gets the middle one.
+/// On a known river (<see cref="BridgeLayout.FairwayGap"/>'s fairway, the
+/// wooden kit's one test of "sailable"), the navigation bay first: piers at
+/// the fairway centre +-8 m with <see cref="NavigationGap"/> of deck missing
+/// between them, then every 16 m outward. Each pier is four shafts in a
+/// diamond, (u +-2, v 0) and (u 0, v +-1): a blackmarble_column_3 footing, then
+/// blackmarble_2x2x2 stacks with a blackmarble_2x2_enforced band every 8 m,
+/// then the corbel band of the top 8 m (out_1, outcorner, 2x2x1 and the
+/// spreading 2x2x2s) under the deck, and an iron_wall_2x2 screen through the
+/// pier at u +-1 from the footing to the deck, as vanilla has it.</para>
+///
+/// <para><b>The deck</b> is 2 m modules on the piers' grid: two iron_floor_2x2
+/// abreast (4 m), a course of blackmarble_2x2x2 on them (three across, 6 m;
+/// over a pier two, with a head either side), and blackmarble_arch along both
+/// edges every 2 m. It runs bank to bank: the remainder past the outer piers
+/// goes onto the banks. A bank lower than the deck is walked off on
+/// blackmarble_stair steps, the wooden kit's own stair run
+/// (<see cref="BridgeLayout.EmitSteps"/>).</para>
+///
+/// <para><b>Ruin</b> is the wooden kit's rule (<see cref="BridgeLayout.Ruin"/>,
+/// <see cref="BridgeLayout.SpanSurvival"/>, <see cref="BridgeLayout.PierSurvival"/>):
+/// fixed per crossing and world seed, survival falling toward mid-span, piers
+/// outliving the deck. Marble and iron take only a share of wood's decay
+/// (<see cref="DeckRuinShare"/>, <see cref="ArchRuinShare"/>), which is about
+/// what the vanilla viaduct shows: 3 of 48 floors and 7 of 32 arches missing.
+/// A pier's core (footing, shafts, bands, the corbel's 2x2x2s) never goes.
+/// The deck keeps a way across: no two modules running are both open.</para>
+///
+/// <para><b>Every piece is grounded or rests on one that is, by
+/// construction</b>, and no piece is wholly under the ground (the game breaks
+/// one there: <see cref="BuriedPieces"/>). Whether the game's support holds
+/// them has to be measured in game: the support formula puts one marble column at
+/// about 18.8 m, the vanilla piers stand about 21 m, and
+/// <see cref="PierCeiling"/> is a guess between them until it is measured.</para>
+/// </summary>
+public static class DvergrViaduct
+{
+    // ---------------------------------------------------------------- pieces
+    // Sizes from cli_piece_geometry where it was read:
+    // column_3 2 x 8 x 2, out_1 and arch 2 x 2 x 1, origin at the centre of their bounds.
+    // The others are read off the vanilla layout (their neighbours' spacing), not measured.
+    public const string Footing = "blackmarble_column_3";
+    public const string Band = "blackmarble_2x2_enforced";
+    public const string Block = "blackmarble_2x2x2";
+    public const string Filler = "blackmarble_2x2x1";
+    public const string Corbel = "blackmarble_out_1";
+    public const string CorbelCorner = "blackmarble_outcorner";
+    public const string Floor = "iron_floor_2x2";
+    public const string Screen = "iron_wall_2x2";
+    public const string Arch = "blackmarble_arch";
+    public const string HeadLeft = "blackmarble_head_big01";
+    public const string HeadRight = "blackmarble_head_big02";
+    public const string StepPrefab = "blackmarble_stair";
+
+    // ------------------------------------------------------------- the rules
+
+    /// <summary>Pier centre to pier centre, as the vanilla viaduct.</summary>
+    public const float PierSpacing = 16f;
+    /// <summary>One deck module: an iron floor's length.</summary>
+    public const float Module = 2f;
+    /// <summary>A crossing whose deck stands less than this over the ground or the water keeps
+    /// the wooden kit.</summary>
+    public const float MinClearance = 6f;
+    /// <summary>
+    /// The tallest pier, deck surface to the ground under its lowest shaft, a viaduct is built
+    /// on; taller, the crossing keeps the wooden kit (on a river) or the road keeps its stairs
+    /// (over a dry valley). NOT MEASURED: by WearNTear's rule one marble column holds about
+    /// 18.8 m and the vanilla piers stand about 21 m (four shafts, enforced bands and iron
+    /// screens); the same arithmetic for wood came out 5 m short of what the game held. It
+    /// has to be measured in game (cli_piece_support on the tallest generated pier) before this is trusted.
+    /// </summary>
+    public const float PierCeiling = 20f;
+    /// <summary>The navigation bay over a known river: one 16 m bay centred on the fairway ...</summary>
+    public const float NavigationBay = 16f;
+    /// <summary>... with this much deck missing in it: five modules, leaving 3 m of deck on each
+    /// pier's side (a gap of about 10-12 m, stubs of 2-3 m).</summary>
+    public const float NavigationGap = 10f;
+    /// <summary>A pier stands only this far or more inside each bank (half its corbelled length
+    /// along the deck is 6 m; its shafts reach 3 m).</summary>
+    public const float PierBankMargin = 3f;
+    /// <summary>A pier shorter than this under the deck is the bank itself: its band is left out.</summary>
+    public const float MinPier = 2f;
+
+    /// <summary>Marble and iron keep this share of the wooden kit's losses: deck floors and course.</summary>
+    public const float DeckRuinShare = 0.15f;
+    /// <summary>... and arches, which vanilla is missing more of.</summary>
+    public const float ArchRuinShare = 0.5f;
+
+    /// <summary>Heights relative to the deck surface D (the course's top).</summary>
+    public const float FloorDrop = 2f, CourseDrop = 1f, ArchRise = 1f;
+    /// <summary>The corbel band's lowest level; the shafts stand below it.</summary>
+    private const float ShaftTop = -8f;
+
+    // Ruin roles, apart from the wooden kit's own (1-10) so a key never means two things.
+    private const int RoleFloor = 21, RoleCourse = 22, RoleArch = 23, RoleOrnament = 24, RoleScreen = 25, RoleHead = 26;
+    private const int RoleFloorHealth = 31, RoleCourseHealth = 32, RoleArchHealth = 33, RoleOrnamentHealth = 34;
+
+    /// <summary>One piece of the pier pattern: offsets from the pier's centre on the deck line
+    /// (du along, v across), its centre's height under D, its turn from the deck's heading, and
+    /// whether it is the pier's core (never ruined).</summary>
+    private readonly struct Part
+    {
+        public readonly string Prefab;
+        public readonly float Du, V, Dy, Turn;
+        public readonly bool Core;
+        public Part(string prefab, float du, float v, float dy, float turn, bool core = false)
+        {
+            Prefab = prefab; Du = du; V = v; Dy = dy; Turn = turn; Core = core;
+        }
+    }
+
+    /// <summary>The four shafts of a pier, (du, v), and the turn of each one's footing (vanilla's).</summary>
+    private static readonly (float du, float v, float footingTurn)[] Shafts =
+    {
+        (-2f, 0f, 180f), (2f, 0f, 180f), (0f, -1f, 90f), (0f, 1f, 270f),
+    };
+
+    /// <summary>The corbel band, the top 8 m of the pier under the deck: vanilla's middle pier, piece for piece.</summary>
+    private static readonly Part[] CorbelBand =
+    {
+        // 9-7 m under the deck: two blocks between the shafts' heads, corbels stepping out.
+        new(Block, -1f, 0f, -7f, 90f, core: true), new(Block, 1f, 0f, -7f, 90f, core: true),
+        new(Corbel, -3f, -0.5f, -7f, 90f), new(Corbel, -3f, 0.5f, -7f, 90f),
+        new(Corbel, -1f, -1.5f, -7f, 90f), new(Corbel, -1f, 1.5f, -7f, 90f),
+        new(Corbel, 1f, -1.5f, -7f, 270f), new(Corbel, 1f, 1.5f, -7f, 270f),
+        new(Corbel, 3f, -0.5f, -7f, 270f), new(Corbel, 3f, 0.5f, -7f, 270f),
+        // 7-5 m: three blocks, fillers either side of the middle one, corbels a metre further out.
+        new(Block, -2f, 0f, -5f, 90f, core: true), new(Block, 0f, 0f, -5f, 90f, core: true), new(Block, 2f, 0f, -5f, 90f, core: true),
+        new(Filler, 0f, -1.5f, -5f, 90f), new(Filler, 0f, 1.5f, -5f, 90f),
+        new(Corbel, -4f, -0.5f, -5f, 90f), new(Corbel, -4f, 0.5f, -5f, 90f),
+        new(Corbel, -2f, -1.5f, -5f, 90f), new(Corbel, -2f, 1.5f, -5f, 90f),
+        new(Corbel, 2f, -1.5f, -5f, 270f), new(Corbel, 2f, 1.5f, -5f, 270f),
+        new(Corbel, 4f, -0.5f, -5f, 270f), new(Corbel, 4f, 0.5f, -5f, 270f),
+        // 4-2 m: four blocks under the floors, fillers, corner pieces, the outermost corbels.
+        new(Block, -3f, 0f, -3f, 90f, core: true), new(Block, -1f, 0f, -3f, 90f, core: true),
+        new(Block, 1f, 0f, -3f, 90f, core: true), new(Block, 3f, 0f, -3f, 90f, core: true),
+        new(Filler, 0f, -1.5f, -3f, 90f), new(Filler, 0f, 1.5f, -3f, 90f),
+        new(Corbel, -5f, -0.5f, -3f, 90f), new(Corbel, -5f, 0.5f, -3f, 90f),
+        new(Corbel, 5f, -0.5f, -3f, 270f), new(Corbel, 5f, 0.5f, -3f, 270f),
+        new(CorbelCorner, -3f, -2f, -3f, 90f), new(CorbelCorner, -3f, 2f, -3f, 180f),
+        new(CorbelCorner, -1f, -2f, -3f, 0f), new(CorbelCorner, -1f, 2f, -3f, 270f),
+        new(CorbelCorner, 1f, 2f, -3f, 180f), new(CorbelCorner, 1f, -2f, -3f, 90f),
+        new(CorbelCorner, 3f, -2f, -3f, 0f), new(CorbelCorner, 3f, 2f, -3f, 270f),
+    };
+
+    /// <summary>Half-extents of a piece's bounds along the deck, across it and up, at the turns
+    /// this layout gives it.</summary>
+    public static (float u, float v, float y) Extents(string prefab) => prefab switch
+    {
+        Footing => (1f, 1f, 4f),
+        Band or Block => (1f, 1f, 1f),
+        Filler or Corbel or Arch => (1f, 0.5f, 1f),
+        CorbelCorner => (0.5f, 0.5f, 1f),
+        Floor => (1f, 1f, 0.1f),
+        Screen => (0.1f, 1f, 1f),
+        HeadLeft or HeadRight => (0.5f, 1f, 1f),
+        StepPrefab => (1f, 1f, 0.5f),
+        _ => (0.5f, 0.5f, 0.5f),
+    };
+
+    // --------------------------------------------------------------- choice
+
+    /// <summary>
+    /// Whether a crossing is built as a Dvergr viaduct rather than the wooden kit: a bridge
+    /// (never a ford) in the Mistlands whose deck stands <see cref="MinClearance"/> or more over
+    /// the ground or the water, on piers no taller than <see cref="PierCeiling"/>. The one owner
+    /// of that choice: the plan, the search's valley jumps and the dev command all ask it.
+    /// </summary>
+    public static bool Applies(RoadCrossing crossing, WorldGenerator world) => Refusal(crossing, world) == null;
+
+    /// <summary>Why <see cref="Applies"/> says no, or null.</summary>
+    public static string? Refusal(RoadCrossing crossing, WorldGenerator world)
+    {
+        if (crossing == null || world == null) return "no crossing";
+        if (crossing.Kind != CrossingKind.Bridge) return "a ford";
+        if (world.GetBiome(crossing.Center.x, crossing.Center.y) != Heightmap.Biome.Mistlands) return "not in the Mistlands";
+        float clearance = Clearance(crossing, world);
+        if (clearance < MinClearance) return FormattableString.Invariant($"deck {clearance:F1} m over the ground or water, under {MinClearance:F0} m");
+        float tallest = TallestPier(crossing, world);
+        if (tallest > PierCeiling) return FormattableString.Invariant($"a pier {tallest:F1} m tall, over the {PierCeiling:F0} m ceiling");
+        return null;
+    }
+
+    /// <summary>The deck's walking surface: the wooden kit's deck height (the higher bank, lifted
+    /// clear of any water), so a road meets either kit at the same height.</summary>
+    public static float DeckHeight(RoadCrossing crossing, WorldGenerator world) => BridgeLayout.DeckHeight(crossing, world);
+
+    /// <summary>How far the deck stands over the lowest ground between the banks, or over the
+    /// water where there is any (the rule's "above the ground or water").</summary>
+    public static float Clearance(RoadCrossing crossing, WorldGenerator world) =>
+        DeckHeight(crossing, world) - Mathf.Max(crossing.RiverbedHeight, crossing.WaterLevel);
+
+    /// <summary>Whether the crossing is over a known, sailable river: the wooden kit's test
+    /// (<see cref="BridgeLayout.FairwayGap"/> reads the same field), not a second one.</summary>
+    public static bool OverKnownRiver(RoadCrossing crossing) =>
+        crossing.Kind == CrossingKind.Bridge && crossing.FairwayWidth > 0f && BridgeLayout.FairwayGap(crossing) > 0f;
+
+    // ---------------------------------------------------------------- piers
+
+    /// <summary>
+    /// Where the piers stand, metres along the crossing from its near bank, nearest first.
+    /// <paramref name="fairway"/>: the fairway centre along the crossing on a known river, else null.
+    /// Off a river, the midpoint and then every <see cref="PierSpacing"/> outward while inside the
+    /// gap, at least the midpoint. On a river, the navigation bay's two piers at the fairway +- 8 m
+    /// first, then every 16 m outward; a bay pier that falls outside the gap is left out.
+    /// </summary>
+    public static List<float> PierAlongs(float width, float? fairway)
+    {
+        var piers = new List<float>();
+        bool Inside(float a) => a >= PierBankMargin - 1e-3f && a <= width - PierBankMargin + 1e-3f;
+        if (fairway is float f)
+        {
+            float half = NavigationBay * 0.5f;
+            for (float a = f - half; a >= -1e-3f; a -= PierSpacing)
+                if (Inside(a)) piers.Add(a);
+            for (float a = f + half; a <= width + 1e-3f; a += PierSpacing)
+                if (Inside(a)) piers.Add(a);
+        }
+        else
+        {
+            float mid = width * 0.5f;
+            piers.Add(mid);
+            for (float a = mid - PierSpacing; Inside(a); a -= PierSpacing) piers.Add(a);
+            for (float a = mid + PierSpacing; Inside(a); a += PierSpacing) piers.Add(a);
+        }
+        piers.Sort();
+        return piers;
+    }
+
+    /// <summary>The fairway centre along the crossing on a known river, else null.</summary>
+    public static float? FairwayAlong(RoadCrossing crossing) =>
+        OverKnownRiver(crossing) ? crossing.Along(crossing.FairwayCenter) : null;
+
+    public static List<float> PierAlongs(RoadCrossing crossing) => PierAlongs(crossing.Width, FairwayAlong(crossing));
+
+    /// <summary>The lowest ground under a pier's four shafts.</summary>
+    public static float PierGround(RoadCrossing crossing, float along, WorldGenerator world)
+    {
+        Vector2 dir = crossing.Direction, side = new(-dir.y, dir.x);
+        Vector2 at = crossing.FromBank + dir * along;
+        float lowest = float.MaxValue;
+        foreach (var (du, v, _) in Shafts)
+        {
+            Vector2 p = at + dir * du + side * v;
+            lowest = Mathf.Min(lowest, Ground(p, world));
+        }
+        return lowest;
+    }
+
+    /// <summary>The tallest pier, deck surface to the ground under its lowest shaft (0 with none).</summary>
+    public static float TallestPier(RoadCrossing crossing, WorldGenerator world)
+    {
+        float deck = DeckHeight(crossing, world), tallest = 0f;
+        foreach (float a in PierAlongs(crossing))
+            tallest = Mathf.Max(tallest, deck - PierGround(crossing, a, world));
+        return tallest;
+    }
+
+    // --------------------------------------------------------------- valleys
+
+    /// <summary>The longest dry valley a viaduct is laid over (six bays).</summary>
+    public const float MaxValleySpan = 96f;
+    /// <summary>The shortest: two search cells.</summary>
+    public const float MinValleySpan = 16f;
+    /// <summary>Ground this far over the deck pokes through it.</summary>
+    public const float DeckClip = 0.25f;
+
+    /// <summary>
+    /// A viaduct straight across a dry Mistlands valley from <paramref name="from"/> to
+    /// <paramref name="to"/>, the deck at the higher bank, or null with <paramref name="reason"/>.
+    /// What makes the search offer it (RoadPathfinder's valley jump) and the generator record
+    /// it: one predicate, so the two cannot disagree. Refused: a span outside
+    /// <see cref="MinValleySpan"/>..<see cref="MaxValleySpan"/>, a heading the hammer cannot
+    /// build, banks further apart in height than a bridge's (<see cref="RoadConstants.MaxBridgeBankDelta"/>),
+    /// water or a river under it (a river is a bridge's crossing), ground over the deck, and
+    /// whatever <see cref="Refusal"/> refuses (not the Mistlands, under 6 m, piers too tall).
+    /// </summary>
+    public static RoadCrossing? ValleyCrossing(Vector2 from, Vector2 to, WorldGenerator world, out string reason)
+    {
+        float length = Vector2.Distance(from, to);
+        if (length < MinValleySpan - 1e-3f || length > MaxValleySpan + 1e-3f) { reason = "span"; return null; }
+        Vector2 dir = (to - from) * (1f / length);
+        if (!BridgeLayout.HeadingIsPlaceable(BridgeLayout.YawDegrees(dir), 0.5f)) { reason = "heading"; return null; }
+        float hFrom = Ground(from, world), hTo = Ground(to, world);
+        if (Mathf.Abs(hFrom - hTo) > RoadConstants.MaxBridgeBankDelta) { reason = "banks apart"; return null; }
+        float deck = Mathf.Max(hFrom, hTo);
+        float lowest = float.MaxValue;
+        int samples = Mathf.CeilToInt(length);
+        for (int i = 0; i <= samples; i++)
+        {
+            Vector2 p = Vector2.Lerp(from, to, i / (float)samples);
+            float g = Ground(p, world);
+            lowest = Mathf.Min(lowest, g);
+            if (g < RoadPathfinder.LandingFloor) { reason = "water"; return null; }
+            if (i % 2 == 0)
+            {
+                world.GetRiverWeight(p.x, p.y, out float river, out _);
+                if (river > 0f) { reason = "river"; return null; }
+            }
+            if (g > deck + DeckClip) { reason = "ground over the deck"; return null; }
+        }
+        var crossing = RoadCrossing.Between(from, to, lowest, (from + to) * 0.5f, 0f, CrossingKind.Bridge);
+        crossing.ValleyJump = true;
+        string? refused = Refusal(crossing, world);
+        if (refused != null) { reason = refused; return null; }
+        reason = "";
+        return crossing;
+    }
+
+    /// <summary>
+    /// The viaducts a search bought (RoadPathfinder.LastViaductJumps) as crossings of the finished
+    /// path: a segment whose two ends lie on a jump's (either way round, within a metre) is one,
+    /// judged again at the path's own points. Added to <paramref name="crossings"/> in path order;
+    /// a segment another crossing already covers is left to it.
+    /// </summary>
+    public static void AddJumps(List<Vector2> path, IReadOnlyList<(Vector2 from, Vector2 to)> jumps, WorldGenerator world, List<RoadCrossing> crossings)
+    {
+        if (jumps.Count == 0 || path.Count < 2) return;
+        bool added = false;
+        for (int i = 1; i < path.Count; i++)
+        {
+            Vector2 a = path[i - 1], b = path[i];
+            bool onJump = false;
+            foreach (var (from, to) in jumps)
+                if ((Vector2.Distance(a, from) <= 1f && Vector2.Distance(b, to) <= 1f) || (Vector2.Distance(a, to) <= 1f && Vector2.Distance(b, from) <= 1f))
+                { onJump = true; break; }
+            if (!onJump) continue;
+            bool taken = false;
+            foreach (RoadCrossing c in crossings)
+                if (c.FromIndex < i && c.ToIndex > i - 1) { taken = true; break; }
+            if (taken) continue;
+            RoadCrossing? viaduct = ValleyCrossing(a, b, world, out _);
+            if (viaduct == null) continue;
+            viaduct.FromIndex = i - 1;
+            viaduct.ToIndex = i;
+            crossings.Add(viaduct);
+            added = true;
+        }
+        if (added) crossings.Sort((x, y) => x.FromIndex.CompareTo(y.FromIndex));
+    }
+
+    // ------------------------------------------- what later roads keep clear of
+
+    /// <summary>Pathfinding cells under the viaducts laid this generation, their bank cells apart:
+    /// no later road is built through a pier or under a deck. Generation only, like the stairs'.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, int), byte> s_standing = new();
+    private static volatile bool s_anyStanding;
+    /// <summary>Cells within this of a viaduct's line stand under it.</summary>
+    public const float StandingReach = 6f;
+
+    public static void ResetStanding()
+    {
+        s_standing.Clear();
+        s_anyStanding = false;
+    }
+
+    /// <summary>Mark the cells under a viaduct closed to road, but for its two bank cells.</summary>
+    public static void MarkStanding(RoadCrossing crossing)
+    {
+        float cell = RoadPathfinder.CellSize;
+        (int, int) Cell(Vector2 p) => (Mathf.RoundToInt(p.x / cell), Mathf.RoundToInt(p.y / cell));
+        var ends = new HashSet<(int, int)> { Cell(crossing.FromBank), Cell(crossing.ToBank) };
+        Vector2 a = crossing.FromBank, b = crossing.ToBank;
+        int x0 = Mathf.FloorToInt((Mathf.Min(a.x, b.x) - StandingReach) / cell), x1 = Mathf.CeilToInt((Mathf.Max(a.x, b.x) + StandingReach) / cell);
+        int z0 = Mathf.FloorToInt((Mathf.Min(a.y, b.y) - StandingReach) / cell), z1 = Mathf.CeilToInt((Mathf.Max(a.y, b.y) + StandingReach) / cell);
+        for (int x = x0; x <= x1; x++)
+            for (int z = z0; z <= z1; z++)
+            {
+                if (ends.Contains((x, z))) continue;
+                var p = new Vector2(x * cell, z * cell);
+                if (DistanceToSegment(p, a, b) <= StandingReach) s_standing[(x, z)] = 0;
+            }
+        s_anyStanding = true;
+    }
+
+    /// <summary>Whether a viaduct laid this generation stands over this pathfinding cell.</summary>
+    public static bool Standing(int cellX, int cellZ) => s_anyStanding && s_standing.ContainsKey((cellX, cellZ));
+
+    private static float DistanceToSegment(Vector2 p, Vector2 a, Vector2 b)
+    {
+        Vector2 ab = b - a;
+        float t = ab.sqrMagnitude < 1e-6f ? 0f : Mathf.Clamp01(Vector2.Dot(p - a, ab) / ab.sqrMagnitude);
+        return Vector2.Distance(p, a + ab * t);
+    }
+
+    // ---------------------------------------------------------------- solve
+
+    /// <summary>The viaduct as built: ruined, the navigation gap open.</summary>
+    public static List<StructurePiece> Solve(RoadCrossing crossing, WorldGenerator world, int worldSeed) =>
+        Solve(crossing, world, worldSeed, ruin: true);
+
+    /// <summary>The viaduct with nothing missing but the navigation gap's deck (a diagnostic, and
+    /// the tests' reference).</summary>
+    internal static List<StructurePiece> SolveComplete(RoadCrossing crossing, WorldGenerator world, int worldSeed) =>
+        Solve(crossing, world, worldSeed, ruin: false);
+
+    private static List<StructurePiece> Solve(RoadCrossing crossing, WorldGenerator world, int worldSeed, bool ruin)
+    {
+        var pieces = new List<StructurePiece>();
+        if (crossing == null || world == null || crossing.Width < Module) return pieces;
+
+        var r = new BridgeLayout.Ruin(worldSeed, crossing);
+        Vector2 dir = crossing.Direction, side = new(-dir.y, dir.x);
+        float yaw = BridgeLayout.YawDegrees(dir);
+        float deck = DeckHeight(crossing, world);
+        float width = crossing.Width;
+        float? fairway = FairwayAlong(crossing);
+        List<float> piers = PierAlongs(width, fairway);
+        // Every module, pier and arch hangs on one grid: the piers' (vanilla's modules are centred on its piers).
+        float anchor = piers.Count > 0 ? piers[0] : fairway ?? width * 0.5f;
+        // The first module reaches onto the near bank (its centre within a metre of it, or behind it), the last onto the far.
+        float first = anchor - Module * Mathf.CeilToInt((anchor - 1f) / Module - 1e-4f);
+        float last = anchor + Module * Mathf.CeilToInt((width - 1f - anchor) / Module - 1e-4f);
+        int modules = Mathf.RoundToInt((last - first) / Module) + 1;
+        float Mid(float along) => width <= 0f ? 0f : Mathf.Clamp01(1f - Mathf.Abs(along - width * 0.5f) / (width * 0.5f));
+        float Survives(float along, float share) => 1f - (1f - BridgeLayout.SpanSurvival(Mid(along))) * share;
+
+        Vector2 At(float along, float v) => crossing.FromBank + dir * along + side * v;
+        void Add(StructurePieceKind kind, string prefab, float along, float v, float y, float turn, float health)
+        {
+            Vector2 p = At(along, v);
+            if (WhollyBuried(prefab, p, dir, side, y, world)) return;
+            pieces.Add(new StructurePiece
+            {
+                Kind = kind, Prefab = prefab, Position = new Vector3(p.x, y, p.y),
+                YawDegrees = Wrap(yaw + turn), HealthFraction = health,
+            });
+        }
+
+        // ----- piers
+        var pierTops = new List<float>();
+        for (int k = 0; k < piers.Count; k++)
+        {
+            float a = piers[k];
+            float pierSurvival = BridgeLayout.PierSurvival(BridgeLayout.SpanSurvival(Mid(a)));
+            if (deck - PierGround(crossing, a, world) < MinPier) continue;   // the bank itself: nothing to stand
+            pierTops.Add(a);
+            foreach (Part part in CorbelBand)
+            {
+                int key = PartKey(part);
+                if (ruin && !part.Core && r.Roll(k, key, RoleOrnament) >= pierSurvival) continue;
+                Add(StructurePieceKind.ViaductPier, part.Prefab, a + part.Du, part.V, deck + part.Dy, part.Turn,
+                    part.Core || !ruin ? 1f : Worn(r, k, key, RoleOrnamentHealth, pierSurvival));
+            }
+            foreach (var (du, v, footingTurn) in Shafts)
+            {
+                float ground = Ground(At(a + du, v), world);
+                float bottom = deck + ShaftTop;
+                // Down from under the corbel band, a band every 8 m (vanilla's two at 9 and 17 m under the deck).
+                for (int level = 0; ; level++)
+                {
+                    float centre = deck + ShaftTop - 1f - level * 2f;
+                    if (centre - 1f <= ground) break;
+                    Add(StructurePieceKind.ViaductPier, level % 4 == 0 ? Band : Block, a + du, v, centre, 90f, 1f);
+                    bottom = centre - 1f;
+                }
+                // The footing, its top under the lowest block or the corbel band (at most 2 m over the
+                // ground), sunk 8 m: through the ground's surface, so the game grounds it.
+                if (bottom > ground + 0.01f)
+                    Add(StructurePieceKind.ViaductPier, Footing, a + du, v, bottom - 4f, footingTurn, 1f);
+            }
+            // The iron screens through the pier, from the deck down until one is in the ground.
+            foreach (float du in new[] { -1f, 1f })
+            {
+                float ground = Ground(At(a + du, 0f), world);
+                for (int level = 0; ; level++)
+                {
+                    float centre = deck - FloorDrop - level * 2f;
+                    if (centre + 1f <= ground) break;
+                    if (!ruin || level == 0 || r.Roll(k, du < 0 ? -1 : 1, RoleScreen, level) < pierSurvival)
+                        Add(StructurePieceKind.ViaductPier, Screen, a + du, 0f, centre, du < 0 ? 0f : 180f, 1f);
+                    if (centre <= ground) break;
+                }
+            }
+        }
+
+        // ----- deck: which floors stand
+        var floor = new bool[modules, 2];
+        var gap = new bool[modules];
+        for (int m = 0; m < modules; m++)
+        {
+            float c = first + m * Module;
+            gap[m] = fairway is float f && Mathf.Abs(c - f) <= NavigationGap * 0.5f - Module * 0.5f + 1e-3f;
+            bool end = m == 0 || m == modules - 1;
+            for (int lane = 0; lane < 2; lane++)
+                floor[m, lane] = !gap[m] && (!ruin || end || r.Roll(m, lane == 0 ? -1 : 1, RoleFloor) < Survives(c, DeckRuinShare));
+        }
+        // A way across: never two modules running open from side to side (but where the river's gap is).
+        for (int m = 1; m < modules; m++)
+            if (!gap[m] && !gap[m - 1] && !floor[m, 0] && !floor[m, 1] && !floor[m - 1, 0] && !floor[m - 1, 1])
+                floor[m, r.Roll(m, 0, RoleFloor, 1) < 0.5f ? 0 : 1] = true;
+        // Every floor joined, floor to floor, to one a pier's corbel or the ground carries.
+        var carried = new bool[modules, 2];
+        var queue = new Queue<(int m, int lane)>();
+        for (int m = 0; m < modules; m++)
+        {
+            float c = first + m * Module;
+            bool onPier = pierTops.Exists(p => Mathf.Abs(c - p) <= 4f + 1e-3f);
+            bool grounded = deck - FloorDrop - 0.1f <= Ground(At(c, 0f), world) + 0.05f;
+            for (int lane = 0; lane < 2; lane++)
+            {
+                bool laneGrounded = grounded || deck - FloorDrop - 0.1f <= Ground(At(c, lane == 0 ? -1f : 1f), world) + 0.05f;
+                if (floor[m, lane] && (onPier || laneGrounded)) { carried[m, lane] = true; queue.Enqueue((m, lane)); }
+            }
+        }
+        while (queue.Count > 0)
+        {
+            var (m, lane) = queue.Dequeue();
+            foreach (var (nm, nl) in new[] { (m - 1, lane), (m + 1, lane), (m, 1 - lane) })
+            {
+                if (nm < 0 || nm >= modules || !floor[nm, nl] || carried[nm, nl]) continue;
+                carried[nm, nl] = true;
+                queue.Enqueue((nm, nl));
+            }
+        }
+
+        // ----- deck pieces
+        var course = new bool[modules, 3];   // v = -2, 0, +2
+        for (int m = 0; m < modules; m++)
+        {
+            float c = first + m * Module;
+            bool overPier = pierTops.Exists(p => Mathf.Abs(c - p) < 0.01f);
+            for (int lane = 0; lane < 2; lane++)
+            {
+                if (!carried[m, lane]) continue;
+                int sideKey = lane == 0 ? -1 : 1;
+                Add(StructurePieceKind.ViaductDeck, Floor, c, sideKey * 1f, deck - FloorDrop, 0f, 1f);
+            }
+            if (overPier)
+            {
+                // Over a pier: two blocks on the floors, a head either side (vanilla's).
+                for (int lane = 0; lane < 2; lane++)
+                {
+                    if (!carried[m, lane]) continue;
+                    int sideKey = lane == 0 ? -1 : 1;
+                    if (ruin && r.Roll(m, sideKey, RoleCourse) >= Survives(c, DeckRuinShare)) continue;
+                    course[m, lane == 0 ? 0 : 2] = true;
+                    Add(StructurePieceKind.ViaductDeck, Block, c, sideKey * 1f, deck - CourseDrop, 90f, ruin ? Worn(r, m, sideKey, RoleCourseHealth, Survives(c, DeckRuinShare)) : 1f);
+                    if (!ruin || r.Roll(m, sideKey, RoleHead) < BridgeLayout.PierSurvival(Survives(c, ArchRuinShare)))
+                        Add(StructurePieceKind.ViaductParapet, sideKey > 0 ? HeadLeft : HeadRight, c, sideKey * 3f, deck - CourseDrop,
+                            sideKey > 0 ? 270f : 90f, 1f);
+                }
+                continue;
+            }
+            for (int slot = 0; slot < 3; slot++)
+            {
+                int v = (slot - 1) * 2;
+                bool under = v < 0 ? carried[m, 0] : v > 0 ? carried[m, 1] : carried[m, 0] || carried[m, 1];
+                if (!under) continue;
+                if (ruin && v != 0 && r.Roll(m, v, RoleCourse) >= Survives(c, DeckRuinShare)) continue;
+                course[m, slot] = true;
+                Add(StructurePieceKind.ViaductDeck, Block, c, v, deck - CourseDrop, 90f, ruin ? Worn(r, m, v, RoleCourseHealth, Survives(c, DeckRuinShare)) : 1f);
+            }
+        }
+        // Arches along both edges every 2 m, between module centres, each on the course of at
+        // least one of the two modules it stands across; vanilla pairs them, tall ends together
+        // every 4 m from a pier.
+        for (int m = 0; m + 1 < modules; m++)
+        {
+            float a = first + m * Module + Module * 0.5f;
+            int phase = ((Mathf.RoundToInt(a - anchor) % 4) + 4) % 4;
+            foreach (int sideKey in new[] { -1, 1 })
+            {
+                int slot = sideKey < 0 ? 0 : 2;
+                // Over a pier the course is at v +-1: its outer face carries the arch there.
+                if (!course[m, slot] && !course[m + 1, slot]) continue;
+                if (ruin && r.Roll(m, sideKey, RoleArch) >= Survives(a, ArchRuinShare)) continue;
+                Add(StructurePieceKind.ViaductParapet, Arch, a, sideKey * 2.5f, deck + ArchRise, phase == 1 ? 270f : 90f,
+                    ruin ? Worn(r, m, sideKey, RoleArchHealth, Survives(a, ArchRuinShare)) : 1f);
+            }
+        }
+
+        // ----- ends: a bank lower than the deck is walked off on marble steps, the wooden kit's run.
+        foreach (var (edge, inward, key) in new[] { (first - Module * 0.5f, dir, 0), (last + Module * 0.5f, -dir, modules) })
+        {
+            Vector2 anchorPoint = crossing.FromBank + dir * edge;
+            Vector2 beyond = anchorPoint - inward * BridgeLayout.StairHalfRun;
+            if (deck - Ground(beyond, world) <= BridgeLayout.StairRise * 0.5f) continue;
+            var steps = new List<StructurePiece>();
+            BridgeLayout.EmitSteps(steps, world, anchorPoint, inward, side, deck, r, key, StepPrefab, Block);
+            foreach (StructurePiece s in steps)
+            {
+                if (!ruin) s.HealthFraction = 1f;
+                pieces.Add(s);
+            }
+        }
+        return pieces;
+    }
+
+    /// <summary>
+    /// A surviving piece's health: worn (the wooden kit's <see cref="BridgeLayout.Ruin.Health"/>,
+    /// 5-70 %) about twice as often as one like it is missing, else whole. Wood wears every
+    /// piece; vanilla's viaduct stands mostly whole.
+    /// </summary>
+    private static float Worn(BridgeLayout.Ruin r, int key, int side, int role, float survival) =>
+        r.Roll(key, side, role) < 2f * (1f - survival) ? r.Health(key, side, role, 1) : 1f;
+
+    /// <summary>A stable small number per pier part, for its ruin key.</summary>
+    private static int PartKey(Part part) =>
+        Mathf.RoundToInt(part.Du * 2f) * 1000 + Mathf.RoundToInt(part.V * 2f) * 10 + Mathf.RoundToInt(-part.Dy);
+
+    private static float Wrap(float deg)
+    {
+        deg %= 360f;
+        return deg < 0f ? deg + 360f : deg;
+    }
+
+    /// <summary>The ground the layout stands on: the game's blended terrain, as the wooden kit's.</summary>
+    internal static float Ground(Vector2 p, WorldGenerator world) => BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
+
+    /// <summary>Whether a piece would be wholly under the ground: its top at or under the ground
+    /// over its whole footprint grown by <see cref="BuriedPieces.Growth"/> (the game breaks such a
+    /// piece: it touches no terrain triangle, so it is not grounded).</summary>
+    internal static bool WhollyBuried(string prefab, Vector2 centre, Vector2 dir, Vector2 side, float y, WorldGenerator world)
+    {
+        var (hu, hv, hy) = Extents(prefab);
+        float top = y + hy + BuriedPieces.Growth;
+        hu += BuriedPieces.Growth; hv += BuriedPieces.Growth;
+        foreach (float su in new[] { -1f, 0f, 1f })
+            foreach (float sv in new[] { -1f, 0f, 1f })
+                if (Ground(centre + dir * (su * hu) + side * (sv * hv), world) < top)
+                    return false;
+        return true;
+    }
+
+    // ----------------------------------------------------------- describing
+
+    /// <summary>One line about a viaduct: where, how long, how high, its piers. For the dev
+    /// command and the generation log.</summary>
+    public static string Describe(RoadCrossing crossing, WorldGenerator world)
+    {
+        float deck = DeckHeight(crossing, world);
+        List<float> piers = PierAlongs(crossing);
+        return FormattableString.Invariant(
+            $"viaduct at ({crossing.Center.x:F0}, {deck:F0}, {crossing.Center.y:F0}): {crossing.Width:F0} m from ({crossing.FromBank.x:F0}, {crossing.FromBank.y:F0}) to ({crossing.ToBank.x:F0}, {crossing.ToBank.y:F0}), deck {Clearance(crossing, world):F1} m over the {(OverKnownRiver(crossing) ? "water" : "ground")}, {piers.Count} pier(s), tallest {TallestPier(crossing, world):F1} m{(OverKnownRiver(crossing) ? ", navigation gap" : "")}");
+    }
+}

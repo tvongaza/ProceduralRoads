@@ -56,8 +56,13 @@ public static class BridgeLayout
     /// emitted shape of every bridge over a sailable channel, and free spans
     /// changed it again for narrow ones. Without this bump a world explored
     /// partly under layout 3 would carry both gap widths side by side.</para>
+    ///
+    /// <para>5: a Mistlands crossing whose deck stands 6 m or more over the
+    /// ground or water is a Dvergr viaduct (<see cref="DvergrViaduct"/>), not
+    /// a wooden bridge. A world explored partly under layout 4 keeps the wooden
+    /// pieces it has; only zones without pieces get the viaduct's.</para>
     /// </summary>
-    public const int LayoutVersion = 4;
+    public const int LayoutVersion = 5;
     public const float DeckFreeboard = 0.5f;  // deck at least this far above the water
     public const float PostTopBelowDeck = 0.2f;
     public const float BeamBelowDeck = 0.13f;
@@ -73,6 +78,15 @@ public static class BridgeLayout
     public const float DebrisChance = 0.5f;
     public const float RuinHealthMin = 0.05f;
     public const float RuinHealthMax = 0.70f;
+
+    /// <summary>The ruin rule's survival at a point of a span: <see cref="BankSurvival"/> at the
+    /// banks, falling to <see cref="MidSurvival"/> at mid-span. <paramref name="midCloseness"/> is 0
+    /// at a bank and 1 at mid-span. The one owner of the profile: the Dvergr viaduct
+    /// (<see cref="DvergrViaduct"/>) ruins by it too, at its own material's share.</summary>
+    public static float SpanSurvival(float midCloseness) => Mathf.Lerp(BankSurvival, MidSurvival, midCloseness);
+
+    /// <summary>A pier's survival where the deck's is <paramref name="survival"/>: piers outlive the deck.</summary>
+    public static float PierSurvival(float survival) => survival + (1f - survival) * PierPersistence;
 
     /// <summary>The navigation gap kept clear of piers and deck: at least
     /// FairwayGapWidth (a longship plus room to line up), growing with the
@@ -479,8 +493,8 @@ public static class BridgeLayout
             bool isBankStation = i == 0 || i == stationCount - 1;
 
             float midCloseness = mid > 0f ? 1f - Mathf.Abs(i - mid) / mid : 0f;
-            float survival = Mathf.Lerp(BankSurvival, MidSurvival, midCloseness);
-            float pierSurvival = survival + (1f - survival) * PierPersistence;
+            float survival = SpanSurvival(midCloseness);
+            float pierSurvival = PierSurvival(survival);
             stationAlive[i] = !inGap && (freeSpan
                 ? isBankStation
                 : !ruin || isBankStation || r.Roll(i, Ruin.Centre, Ruin.RoleStation) < pierSurvival);
@@ -523,7 +537,7 @@ public static class BridgeLayout
             if (!freeSpan && (!stationAlive[i] || !stationAlive[i + 1]))
                 continue;
             float midCloseness = mid > 0f ? 1f - Mathf.Abs(i + 0.5f - mid) / mid : 0f;
-            float survival = Mathf.Lerp(BankSurvival, MidSurvival, midCloseness);
+            float survival = SpanSurvival(midCloseness);
             bool endBay = i == 0 || i + 2 == stationCount;
             foreach (int lane in new[] { Ruin.Left, Ruin.Right })
             {
@@ -639,8 +653,9 @@ public static class BridgeLayout
     /// nothing floats -- but the walk stops above the dirt, and the caller
     /// is told so rather than the comment claiming every run reaches it.
     /// </summary>
-    private static bool EmitSteps(List<StructurePiece> pieces, WorldGenerator world,
-        Vector2 anchor, Vector2 inward, Vector2 side, float deckH, Ruin r, int bayKey)
+    internal static bool EmitSteps(List<StructurePiece> pieces, WorldGenerator world,
+        Vector2 anchor, Vector2 inward, Vector2 side, float deckH, Ruin r, int bayKey,
+        string stairPrefab = StairPrefab, string postPrefab = PostPrefab)
     {
         float stepYaw = YawDegrees(inward) + 180f; // the stair prefab rises toward local -z
         float yaw = YawDegrees(inward);
@@ -658,7 +673,7 @@ public static class BridgeLayout
                 pieces.Add(new StructurePiece
                 {
                     Kind = StructurePieceKind.Stair,
-                    Prefab = StairPrefab,
+                    Prefab = stairPrefab,
                     Position = new Vector3(p.x, foot, p.y),
                     YawDegrees = stepYaw,
                     HealthFraction = health,
@@ -671,7 +686,7 @@ public static class BridgeLayout
                 float under = BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
                 bool centreGrounded = foot <= under + StairFootTolerance;
                 if (!centreGrounded)
-                    EmitColumn(pieces, p, under, foot, yaw, health);
+                    EmitColumn(pieces, p, under, foot, yaw, health, postPrefab);
                 if (!centreGrounded || !FootEdgeIsGrounded(world, p, outward, side, foot))
                     bothLanded = false;
             }
@@ -745,7 +760,8 @@ public static class BridgeLayout
 
     /// <summary>A column of PostSegment poles from topHeight down until one is
     /// buried in the ground (grounded by construction).</summary>
-    private static void EmitColumn(List<StructurePiece> pieces, Vector2 pos, float ground, float topHeight, float yaw, float health)
+    private static void EmitColumn(List<StructurePiece> pieces, Vector2 pos, float ground, float topHeight, float yaw, float health,
+        string postPrefab = PostPrefab)
     {
         if (topHeight <= ground - PostSegment)
             return;
@@ -755,7 +771,7 @@ public static class BridgeLayout
             pieces.Add(new StructurePiece
             {
                 Kind = StructurePieceKind.Post,
-                Prefab = PostPrefab,
+                Prefab = postPrefab,
                 Position = new Vector3(pos.x, center, pos.y),
                 YawDegrees = yaw,
                 HealthFraction = health,

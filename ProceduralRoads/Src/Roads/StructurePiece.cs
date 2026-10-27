@@ -17,6 +17,9 @@ public enum StructurePieceKind
     StairFloor,   // a landing of a staircase
     StairFiller,  // a block in the wedge of a staircase's turn
     StairSupport, // a pillar under a staircase piece, down into the ground
+    ViaductPier,     // a Dvergr viaduct's pier: footing, shafts, bands, corbels, iron screens (DvergrViaduct)
+    ViaductDeck,     // a Dvergr viaduct's iron floor or the black marble course on it
+    ViaductParapet,  // an arch along a Dvergr viaduct's edge, or a head beside it over a pier
 }
 
 /// <summary>One placed piece of a structure the network builds (a bridge today), a

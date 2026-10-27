@@ -818,6 +818,13 @@ public static class ConsoleCommands
 
         RoadCrossing site = sites.OrderBy(c => Vector2.Distance(c.Center, at)).First();
         int seed = WorldGenerator.instance.GetSeed();
+        if (DvergrViaduct.Applies(site, WorldGenerator.instance))
+        {
+            // The wooden kit's repair diagnostic does not describe a viaduct.
+            args.Context.AddString("The nearest crossing is a Dvergr viaduct: " + DvergrViaduct.Describe(site, WorldGenerator.instance) +
+                $"; {DvergrViaduct.Solve(site, WorldGenerator.instance, seed).Count} of {DvergrViaduct.SolveComplete(site, WorldGenerator.instance, seed).Count} pieces stand.");
+            return;
+        }
         List<StructurePiece> complete = BridgeLayout.SolveComplete(site, WorldGenerator.instance, seed);
         List<StructurePiece> shipped = BridgeLayout.Solve(site, WorldGenerator.instance, seed);
 

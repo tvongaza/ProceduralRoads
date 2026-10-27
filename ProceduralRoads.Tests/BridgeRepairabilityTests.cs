@@ -587,9 +587,11 @@ public class BridgeRepairabilityTests
         // This pin exists to FORCE the question on every geometry change, not
         // to record a number. Layout 4: the navigation gap went 20 m -> 16 m
         // (moves every bridge over a sailable channel) and free spans changed
-        // narrow ones again. If you are here because this failed, the question
+        // narrow ones again. Layout 5: a Mistlands crossing 6 m or more over the
+        // ground or water is a Dvergr viaduct (DvergrViaduct), not wood.
+        // If you are here because this failed, the question
         // is "did the emitted shape move?", and if it did the answer is a bump.
-        Assert.Equal(4, BridgeLayout.LayoutVersion);
+        Assert.Equal(5, BridgeLayout.LayoutVersion);
         // What a bump does to a saved world: BridgeLayoutTests.AStaleLayoutLeavesSpawnedZonesAlone.
     }
 

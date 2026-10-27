@@ -62,7 +62,7 @@ public static class ManualRoads
         var world = WorldGenerator.instance;
         if (world != null)
             foreach (RoadCrossing crossing in BridgeLayout.DistinctSites(crossings.ToList()))
-                foreach (StructurePiece piece in BridgeLayout.Solve(crossing, world, world.GetSeed()))
+                foreach (StructurePiece piece in BridgeStructures.Solve(crossing, world, world.GetSeed()))
                     zones.Add(ZoneSystem.GetZone(piece.Position));
         return zones;
     }
