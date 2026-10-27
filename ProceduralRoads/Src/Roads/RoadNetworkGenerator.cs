@@ -1387,7 +1387,7 @@ public static partial class RoadNetworkGenerator
         }
         return n;
     }
-    internal static int EarthworkRetries = 3;
+    internal static int EarthworkRetries = 2;
     /// <summary>Cells within this of an offending point are priced up.</summary>
     internal const float EarthworkPenaltyRadius = 12f;
     private static int m_earthworkReroutes, m_earthworkUnavoided;
