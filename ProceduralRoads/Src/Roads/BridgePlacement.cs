@@ -119,7 +119,7 @@ public static class BridgePlacement
     private static int SpawnAppend(Vector2s zone)
     {
         var pieces = BridgeAppendQueue.ForZone(zone);
-        if (pieces == null) return 0;
+        if (pieces == null || NetworkCutoff.Excludes(zone)) return 0;
         var zdos = new List<ZDO>();
         ZDOMan.instance.FindObjects(zone, zdos, new HashSet<ZoneSystem.SectorIndex>());
         var existing = new HashSet<string>();
