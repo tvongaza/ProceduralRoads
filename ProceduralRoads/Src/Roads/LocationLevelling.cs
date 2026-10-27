@@ -39,12 +39,16 @@ public readonly struct LevelOp
     /// way (Heightmap.SmoothTerrain2).</summary>
     public readonly float SmoothRadius;
     public readonly float SmoothPower;
+    /// <summary>TerrainModifier.m_sortOrder: the game applies lower first (then, for a
+    /// location's own, which carry no creation time, the one nearer the world's origin).</summary>
+    public readonly int SortOrder;
 
+    /// <summary><paramref name="radius"/> 0: the modifier only smooths.</summary>
     public LevelOp(float offsetX, float offsetZ, float height, float radius, bool square,
-        float smoothRadius = 0f, float smoothPower = 3f)
+        float smoothRadius = 0f, float smoothPower = 3f, int sortOrder = 0)
     {
         OffsetX = offsetX; OffsetZ = offsetZ; Height = height; Radius = radius; Square = square;
-        SmoothRadius = smoothRadius; SmoothPower = smoothPower;
+        SmoothRadius = smoothRadius; SmoothPower = smoothPower; SortOrder = sortOrder;
     }
 
     /// <summary>Whether this operation sits on the location's own centre, so
@@ -161,6 +165,14 @@ public static class LocationLevelling
         float? saved = PlacementHeightSource?.Invoke(centre);
         return saved.HasValue && !float.IsNaN(saved.Value) && !float.IsInfinity(saved.Value)
             ? saved.Value : BiomeBlendedHeight.GetBlendedHeight(centre.x, centre.y, world);
+    }
+
+    /// <summary>Whether any of a location's terrain modifiers levels (the others only smooth).</summary>
+    public static bool Levels(IReadOnlyList<LevelOp>? ops)
+    {
+        if (ops == null) return false;
+        foreach (LevelOp op in ops) if (op.Radius > 0f) return true;
+        return false;
     }
 
     /// <summary>The levelling a location at this centre will do, or null.</summary>

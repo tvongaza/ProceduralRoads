@@ -792,7 +792,7 @@ public class RoadStairTests : IDisposable
     [Fact]
     public void ABossEntrancesLandingIsAtTheFootOfItsOwnStairs()
     {
-        var flat = new LevelOp(0f, 6.5f, 1f, 15f, false, 24f, 3f);
+        var flat = new LevelOp(0f, 6.5f, 1f, 15f, false, 24f, 3f, 1);
         var centre = new Vector2(7552f, 3392f);
         PlacedSiteShape queen = PlacedSiteShape.Of(centre, 315f, flat, 32f, null, (x, z) => 46f, prefab: "Mistlands_DvergrBossEntrance1");
         Assert.True(Vector2.Distance(queen.Landing, new Vector2(7538f, 3409f)) < 1f, $"landing at {queen.Landing}");

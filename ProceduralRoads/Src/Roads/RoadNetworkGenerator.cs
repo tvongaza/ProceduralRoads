@@ -988,7 +988,7 @@ public static partial class RoadNetworkGenerator
         var ops = LocationLevelling.OpsAt(centre);
         // Copy the terrain facts once: scoring must not reload the template
         // for every vertex. Unknown location shaping retains the old approach.
-        if (ops == null || ops.Count == 0) return path;
+        if (!LocationLevelling.Levels(ops)) return path;
         float centreHeight = LocationLevelling.CentreHeight(centre, world);
         float? platform = LocationLevelling.ApproachHeight(centreHeight, ops);
         if (platform < RoadConstants.ShallowWaterHeight) platform = null;
