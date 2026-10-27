@@ -28,6 +28,17 @@ public static class RoadSwitchbacks
     internal static float StairLandingGrade = 0.05f;
 
     /// <summary>
+    /// Smallest radius a switchback turn tightens to when its curve and the
+    /// next turn's overlap on the leg between them; only past it are the two
+    /// "turns too close to fit their curves". A turn takes r * tan(turn / 2)
+    /// of each leg, so at the full <see cref="StairRadius"/> two 160 degree
+    /// turns needed 22 m of the search's 8 m leg between them (MountainCave02 -2176,-4288). Measured on the five offline worlds
+    /// at 0.75 m: turns too close 26 -> 5, legs too close at different heights
+    /// 11 -> 17 (the separation check still holds), destinations 1378 -> 1379.
+    /// </summary>
+    internal const float MinTurnRadius = 0.75f;
+
+    /// <summary>
     /// Round every ordinary bend with a circular arc of up to this radius, so a
     /// road flows through its waypoints instead of running straight - corner -
     /// straight. Switchbacks keep their tight turns. Each arc takes at most
@@ -191,6 +202,32 @@ public static class RoadSwitchbacks
                 if(t<0.05f) continue;
                 trim[i]=t; rad[i]=t/tan; bendAt[i]=true;
             }
+        // Switchback turns whose curves overlap on the leg between them
+        // tighten until they fit, no tighter than MinTurnRadius. Bends were
+        // already held to their share of each leg, and a tight landing's
+        // corners are drawn by the landing, so only the switchbacks give way.
+        // A turn on a leg to the road's end keeps its radius: a short V there
+        // is still refused. Staircase turns only: the 6 m curved turn of the
+        // old shaping keeps its radius.
+        if (stairs)
+            for(int pass=0;pass<3;pass++)
+                for(int i=1;i<n-2;i++)
+                {
+                    if(tightStart[i]>=0 && tightStart[i]==tightStart[i+1]) continue;
+                    float over=trim[i]+trim[i+1]-(Vector2.Distance(p[i],p[i+1])-0.25f);
+                    if(over<=0f) continue;
+                    bool Gives(int k) => k>0 && k<n-1 && mark[k] && tightStart[k]<0;
+                    float giving=(Gives(i)?trim[i]:0f)+(Gives(i+1)?trim[i+1]:0f);
+                    if(giving<=0f) continue;
+                    float scale=Mathf.Max(0f,(giving-over-0.01f)/giving); // a centimetre clear of the check below
+                    foreach(int k in new[]{i,i+1})
+                    {
+                        if(!Gives(k)) continue;
+                        float tan=(float)Math.Tan(Math.Abs(angle[k])*0.5);
+                        rad[k]=Mathf.Max(MinTurnRadius,trim[k]*scale/tan);
+                        trim[k]=rad[k]*tan;
+                    }
+                }
         // Adjacent turns must not consume the same length of road.
         for(int i=0;i<n-1;i++)
             if(!(tightStart[i]>=0 && tightStart[i]==tightStart[i+1]) && trim[i]+trim[i+1]>Vector2.Distance(p[i],p[i+1])-0.25f)

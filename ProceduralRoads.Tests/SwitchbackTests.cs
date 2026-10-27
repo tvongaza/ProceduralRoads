@@ -46,6 +46,26 @@ public class SwitchbackTests
         }
         Assert.InRange(RoadGrade.SteepestStep(plan.Points,heights),0,0.3502f);
     }
+    /// <summary>A zigzag: two switchback turns of about 143 degrees, opposite
+    /// ways, <paramref name="leg"/> metres apart.</summary>
+    private static List<Vector2> Zigzag(float leg)
+    {
+        var second=new Vector2(40,0)+new Vector2(-0.8f,0.6f)*leg;
+        return new(){new(0,0),new(40,0),second,second+new Vector2(40,0)};
+    }
+    /// <summary>Two switchback turns whose curves overlap on the leg between
+    /// them tighten to fit instead of refusing the road; only a leg too short
+    /// for even the smallest radius refuses them.</summary>
+    [Fact] public void TwoTurnsOnAShortSharedLegTightenToFit()
+    {
+        // At the full radius each turn takes 6 m of the 10 m leg.
+        Assert.True(RoadSwitchbacks.Shape(Zigzag(10),4,out var shaped,out _,stair:true));
+        Assert.NotNull(shaped);
+        Assert.Null(RoadSwitchbacks.LastRefusal);
+        // At 0.75 m each still takes 2.2 m of a 4 m leg.
+        Assert.False(RoadSwitchbacks.Shape(Zigzag(4),4,out _,out _,stair:true));
+        Assert.Equal("switchback: turns too close to fit their curves",RoadSwitchbacks.LastRefusal);
+    }
     [Fact] public void PinchedUIsRefusedInsteadOfBlendingItsLegs()
     {
         RoadSpatialGrid.Clear();RoadSiteProtection.Reset();
