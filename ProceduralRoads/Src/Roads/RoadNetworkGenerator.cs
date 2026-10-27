@@ -274,6 +274,8 @@ public static partial class RoadNetworkGenerator
     internal static bool AlreadyServedByNetwork(Vector3 centre, float radius)
     {
         Vector2 flat = new Vector2(centre.x, centre.z);
+        // A place placed before its roads is reached on its landing, not at its ring.
+        if (radius > 0f && PlacedSites.TryGetReady(flat, out PlacedSite placed)) return LandingReached(placed);
         float reach = radius > 0f
             ? RoadSiteProtection.RadiusAt(flat, radius) + RoadWidth * 0.5f + 2f
             : radius;
@@ -286,11 +288,46 @@ public static partial class RoadNetworkGenerator
         // A place whose own road was built as its last resort (BuildLastResort) is reached by it:
         // the planner built it on purpose as the best the network has, so the count says what the
         // planner did, and the summary tallies how many places that serves.
-        float lowest = place.HasValue && !m_lastResortServed.ContainsKey(PlaceKey(flat)) ? place.Value - MaxApproachClimb : float.NegativeInfinity;
-        return RoadSpatialGrid.TryGetRoadWithin(flat, reach + RoadPathfinder.CellSize, out _, minHeight: lowest)
-            || StairStructures.PiecesNear(centre, reach + RoadPathfinder.CellSize).Exists(p => p.Kind != StructurePieceKind.StairSupport
-                && p.Position.y >= lowest);
+        return NetworkNear(flat, reach + RoadPathfinder.CellSize, LowestReaching(flat, place));
     }
+
+    /// <summary>The lowest network that reaches the place at <paramref name="centre"/>, whose approach arrives at
+    /// <paramref name="height"/>: what an approach climbs from there (MaxApproachClimb). Unbounded where the height is
+    /// not known, or where the place's own road was built as its last resort (BuildLastResort): the planner built it on
+    /// purpose as the best the network has. The one height guard for every place, placed first or not.</summary>
+    private static float LowestReaching(Vector2 centre, float? height) =>
+        height.HasValue && !m_lastResortServed.ContainsKey(PlaceKey(centre)) ? height.Value - MaxApproachClimb : float.NegativeInfinity;
+
+    /// <summary>Whether road (no higher than <paramref name="lowest"/> is too low) or a staircase's walked piece
+    /// lies within <paramref name="reach"/> of <paramref name="at"/>: the network a place is reached by.</summary>
+    private static bool NetworkNear(Vector2 at, float reach, float lowest = float.NegativeInfinity) =>
+        RoadSpatialGrid.TryGetRoadWithin(at, reach, out _, minHeight: lowest)
+        || StairStructures.PiecesNear(new Vector3(at.x, 0f, at.y), reach).Exists(p => p.Kind != StructurePieceKind.StairSupport
+            && p.Position.y >= lowest);
+
+    /// <summary>How near a placed place's landing the network must come to reach it: the road onto it keeps
+    /// its own reach (half its width and its blend) off the entrance's pit, so it stops a few metres short
+    /// of the shape's landing point (4.8 m on the test cave).</summary>
+    public const float LandingReach = 8f;
+
+    /// <summary>Settable for tests: false lets a road passing a boss's entrance reach it.</summary>
+    internal static bool BossEntrancesOwnLanding = true;
+    /// <summary>How far from a boss's entrance the network is looked for when it already passes within reach of it: a road
+    /// of its own is laid from there onto its landing.</summary>
+    public const float OwnLandingReach = 60f;
+
+    /// <summary>Whether <paramref name="prefab"/> is reached only by a road onto its own landing (a boss's entrance), not by a
+    /// road passing within reach of it.</summary>
+    internal static bool OwnLandingOnly(string prefab) =>
+        BossEntrancesOwnLanding && prefab.IndexOf("BossEntrance", StringComparison.OrdinalIgnoreCase) >= 0;
+
+    /// <summary>Whether the network comes onto a placed place's landing: a road or staircase was carried on
+    /// onto it (<see cref="PlacedSites.MarkLanded"/>), or road or a staircase's walked piece is near the
+    /// shape's landing point, no further under it than an approach climbs (<see cref="LowestReaching"/>, as every
+    /// other place: without it network 20-45 m under a landing counted it reached).</summary>
+    internal static bool LandingReached(PlacedSite site) =>
+        PlacedSites.Landed(site.Centre) || NetworkNear(site.Shape.Landing, LandingReach,
+            LowestReaching(site.Centre, site.Ground(site.Shape.Landing.x, site.Shape.Landing.y)));
 
     /// <summary>
     /// The most a road's end at a place may stand under the place's own ground and still reach it: what an approach staircase can climb from there. Its reach is
@@ -1713,7 +1750,8 @@ public static partial class RoadNetworkGenerator
     /// <summary>A road already built comes within this place's trim radius
     /// (where a road to it stops). A place with no radius (a junction) is.</summary>
     internal static bool PlaceReached(Vector2 centre, float trimRadius) =>
-        trimRadius <= 0f || (RoadSpatialGrid.IsInitialized && RoadSpatialGrid.TryGetRoadWithin(centre, trimRadius + 4f, out _));
+        trimRadius <= 0f || (PlacedSites.TryGetReady(centre, out PlacedSite placed) ? LandingReached(placed)
+            : RoadSpatialGrid.IsInitialized && RoadSpatialGrid.TryGetRoadWithin(centre, trimRadius + 4f, out _));
     /// <summary>Drop a road's own stub where it merges within <see cref="StubLength"/>. Settable for tests.</summary>
     internal static bool OneBranch = true;
 

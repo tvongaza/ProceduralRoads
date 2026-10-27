@@ -730,6 +730,18 @@ public class RoadStairTests : IDisposable
         Assert.False(GoesOn(trunk: false), "the arriving road's own end was taken for another road");
     }
 
+    /// <summary>A boss's entrance is reached only by a road onto its own landing (at the Queen's entrance
+    /// 7552,3392: a passing road counted as reaching it); any other place still by a road passing within reach.</summary>
+    [Fact]
+    public void ABossEntranceIsReachedOnlyAtItsOwnLanding()
+    {
+        Assert.True(RoadNetworkGenerator.OwnLandingOnly("Mistlands_DvergrBossEntrance1"));
+        Assert.False(RoadNetworkGenerator.OwnLandingOnly("Crypt4"));
+        RoadNetworkGenerator.BossEntrancesOwnLanding = false;
+        try { Assert.False(RoadNetworkGenerator.OwnLandingOnly("Mistlands_DvergrBossEntrance1")); }
+        finally { RoadNetworkGenerator.BossEntrancesOwnLanding = true; }
+    }
+
     /// <summary>A narrow valley along z: faces of 1.2 down to a bottom 5 m wide at x = 0, 24 m under the flats either side.</summary>
     private sealed class SharpValleyWorld : WorldGenerator
     {

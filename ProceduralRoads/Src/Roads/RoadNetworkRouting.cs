@@ -51,9 +51,19 @@ public static partial class RoadNetworkGenerator
             // ending 20 m from a place left it "unreached" and a second road
             // bridged the river towards it).
             float reached = RoadSiteProtection.RadiusAt(new Vector2(place.Position.x,place.Position.z),place.Radius) + RoadWidth*0.5f + 4f;
-            if (RoadSpatialGrid.TryGetRoadWithin(new Vector2(place.Position.x,place.Position.z),System.Math.Max(8f,reached),out _)) return true;
-            if (RoadSpatialGrid.TryGetRoadWithin(from,8,out _)) return true;
+            // A place placed before its roads is joined on its landing, not at its ring.
+            // A boss's entrance is reached only by a road onto its own landing: a road passing within reach of it does not
+            // count (at the Queen's entrance 7552,3392 the road should end there, but it looked like
+            // it went under the structure).
+            bool ownLanding = OwnLandingOnly(place.Name);
+            bool placedSite = PlacedSites.TryGetReady(new Vector2(place.Position.x,place.Position.z),out PlacedSite placed);
+            if (placedSite)
+            { if (ownLanding ? PlacedSites.Landed(placed.Centre) : LandingReached(placed)) return true; }
+            else if (!ownLanding && RoadSpatialGrid.TryGetRoadWithin(new Vector2(place.Position.x,place.Position.z),System.Math.Max(8f,reached),out _)) return true;
+            if (!ownLanding && RoadSpatialGrid.TryGetRoadWithin(from,8,out _)) return true;
             var path=finder.FindPathToNetwork(from,8,hints);
+            if (finder.AlreadyOnNetwork && ownLanding && RoadSpatialGrid.TryGetRoadWithin(from,OwnLandingReach,out Vector2 onNetwork))
+                return GenerateRoad(place.Position,place.Radius,new Vector3(onNetwork.x,0,onNetwork.y),0,RoadWidth,$"{place.Name} -> road",hints);
             if (finder.AlreadyOnNetwork) return true;
             if (path==null || path.Count<2) return false;
             Vector2 end=path[path.Count-1];

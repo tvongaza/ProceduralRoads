@@ -173,6 +173,36 @@ public partial class SitesFirstTests : IDisposable
         Assert.True(PlacedSites.TryGet(cave.Centre, out _));
     }
 
+    /// <summary>A road carried on onto a level landing further out than the shape's own landing point reaches
+    /// the place: the staircases onto a frost cave's ledge and a Dvergr entrance's landing (5440,4800) ended 9.3 m
+    /// and 9.0 m from it and were counted unreached.</summary>
+    [Fact]
+    public void ARoadCarriedOntoALevelLandingFurtherOutReachesThePlace()
+    {
+        PlacedSite cave = Cave();
+        Vector2 point = cave.Shape.Landing;
+        // Uneven ground round the shape's landing point: the level landing is further out.
+        Func<float, float, float> rippled = (x, z) =>
+        {
+            float h = cave.Ground(x, z);
+            float d = Vector2.Distance(new Vector2(x, z), point);
+            return d < 10f && d > 1.5f ? h + 0.6f * Mathf.Sin(x * 1.7f) * Mathf.Sin(z * 1.7f) : h;
+        };
+        var shape = PlacedSiteShape.Of(cave.Centre, 90f, CaveFloor[0], 0f, null, rippled, false, cave.Record.Root);
+        PlacedSites.Ready(new PlacedSite { Record = cave.Record, Ground = rippled, Shape = shape });
+        LocationLevelling.Source = c => c.magnitude < 0.5f ? CaveFloor : null;
+        SetPathfinder(new RoadPathfinder(_world) { Stairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f });
+
+        Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(0f, 120f), 0f, new Vector2(0f, 0f), 10f, 4f, "to the cave"));
+
+        var landings = shape.Landings(rippled, 4f);
+        Vector2 nearest = RoadSpatialGrid.GetRoadPointsNearPosition(Vector3.zero, 60f).Where(p => p.IsRoad).OrderBy(p => Vector2.Distance(p.p, point)).First().p;
+        string outcomes = "last refusal: " + (RoadSpatialGrid.LastRefusal ?? "none");
+        Assert.True(Vector2.Distance(nearest, point) > RoadNetworkGenerator.LandingReach,
+            $"the road came {Vector2.Distance(nearest, point):F1} m from {point}; landings {string.Join(" ", landings.Select(l => l.at))}; {outcomes}");
+        Assert.True(RoadNetworkGenerator.AlreadyServedByNetwork(Vector3.zero, 10f), outcomes);
+    }
+
     /// <summary>Where nothing gets from the ring onto a placed place's landing, the road is refused, not left at
     /// the outskirts: the planner tries its other candidates.</summary>
     [Fact]
