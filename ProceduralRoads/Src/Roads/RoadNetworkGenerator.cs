@@ -975,6 +975,13 @@ public static partial class RoadNetworkGenerator
             plans = null;
             RoadSpatialGrid.LastRefusal = "bridge with no road at one end";
         }
+        // No road crosses another: it meets one at a junction, at its ends or along a stretch it shares, or it is not
+        // built, even if that rejects a POI.
+        if (plans != null && NoCrossings && CrossesNetwork(plans, out _))
+        {
+            plans = null;
+            RoadSpatialGrid.LastRefusal = "crosses another road";
+        }
         if (plans == null)
         {
             string why = RoadSpatialGrid.LastRefusal ?? "other (crossing or footprint)";
@@ -1278,6 +1285,73 @@ public static partial class RoadNetworkGenerator
     internal const float CorridorAngle = 25f;
     internal const float CorridorHeight = 3f;
     internal const float CorridorRun = 12f;
+
+    /// <summary>Settable for tests: false lets a road cross another at grade.</summary>
+    internal static bool NoCrossings = true;
+    /// <summary>A stretch of a road this long or longer running on another road shares it (a trunk both walk); shorter, it
+    /// passes through.</summary>
+    public const float SharedRun = 12f;
+    /// <summary>A road's own ends meet the network within this of them: a junction, not a crossing.</summary>
+    public const float JunctionEnd = 6f;
+
+    /// <summary>A road's planned pieces end to end: their points, heights, and how far along the road each point lies.</summary>
+    private static (List<Vector2> points, List<float> heights, float[] along) Flatten(List<RoadSpatialGrid.PlannedPath> plans)
+    {
+        var points = new List<Vector2>();
+        var heights = new List<float>();
+        foreach (RoadSpatialGrid.PlannedPath plan in plans) { points.AddRange(plan.Points); heights.AddRange(plan.Heights); }
+        var along = new float[points.Count];
+        for (int i = 1; i < points.Count; i++) along[i] = along[i - 1] + Vector2.Distance(points[i - 1], points[i]);
+        return (points, heights, along);
+    }
+
+    /// <summary>
+    /// Whether a planned road passes through another already built: away from its own ends, a stretch on that road
+    /// shorter than <see cref="SharedRun"/> that comes in on one side of it and leaves on the other (an X at grade, or one
+    /// road over or under another). A road may still meet the network at its ends (a T or Y) and share a trunk along a
+    /// longer stretch. <paramref name="at"/>: where.
+    /// </summary>
+    internal static bool CrossesNetwork(List<RoadSpatialGrid.PlannedPath> plans, out Vector2 at)
+    {
+        at = default;
+        if (!RoadSpatialGrid.IsInitialized) return false;
+        var (points, _, along) = Flatten(plans);
+        if (points.Count < 3) return false;
+        float total = along[points.Count - 1], touch = RoadWidth * 0.5f;
+        int k = 0;
+        while (k < points.Count)
+        {
+            if (!RoadSpatialGrid.TryGetRoadWithin(points[k], touch, out _)) { k++; continue; }
+            int first = k;
+            while (k + 1 < points.Count && RoadSpatialGrid.TryGetRoadWithin(points[k + 1], touch, out _)) k++;
+            int last = k++;
+            if (along[first] < JunctionEnd || total - along[last] < JunctionEnd) continue;
+            if (along[last] - along[first] >= SharedRun) continue;
+            // The other road's line here: the road points round the middle of the touch.
+            Vector2 mid = points[(first + last) / 2];
+            var near = RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(mid.x, 0f, mid.y), 4f);
+            if (near.Count < 2) continue;
+            Vector2 centre = new Vector2(0f, 0f);
+            foreach (var q in near) centre += q.p;
+            centre *= 1f / near.Count;
+            float sxx = 0f, sxy = 0f, syy = 0f;
+            foreach (var q in near) { Vector2 d = q.p - centre; sxx += d.x * d.x; sxy += d.x * d.y; syy += d.y * d.y; }
+            float angle = 0.5f * Mathf.Atan2(2f * sxy, sxx - syy);
+            Vector2 dir = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)), normal = new Vector2(-dir.y, dir.x);
+            // Its own points a few metres before and after the touch, either side of the other road's line.
+            int before = first, after = last;
+            while (before > 0 && along[first] - along[before] < 4f) before--;
+            while (after < points.Count - 1 && along[after] - along[last] < 4f) after++;
+            float sideIn = Vector2.Dot(points[before] - centre, normal), sideOut = Vector2.Dot(points[after] - centre, normal);
+            if (Mathf.Abs(sideIn) > touch && Mathf.Abs(sideOut) > touch && (sideIn > 0f) != (sideOut > 0f))
+            {
+                at = mid;
+                return true;
+            }
+        }
+        return false;
+    }
+
 
     internal static List<Vector2>? SnapToNetwork(List<Vector2>? path, float? width = null)
     {
