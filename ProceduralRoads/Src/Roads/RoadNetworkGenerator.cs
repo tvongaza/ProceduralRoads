@@ -1539,6 +1539,7 @@ public static partial class RoadNetworkGenerator
                 // Its cuts outside every footprint: the terrain writer leaves the place's own ground alone.
                 RoadSpatialGrid.CommitCuts(RoadStairRuns.CutsOutsideFootprints(entryStairs.Plan), StairLayout.CutRadius * 2f);
                 var run = StairRun.FromPlan(entryStairs.FromPoint, entryStairs.ToPoint, RoadStairRuns.Width, entryStairs.Plan);
+                run.KeepsSiteRocks = true;
                 StairStructures.Add(run);
                 StairStructures.MarkStanding(run);
                 PlacedSites.MarkLanded(entrySite.Centre);

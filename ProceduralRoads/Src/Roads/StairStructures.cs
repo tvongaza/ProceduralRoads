@@ -11,6 +11,10 @@ public sealed class StairRun
     public Vector2 From;
     public Vector2 To;
     public float Width;
+    /// <summary>A staircase onto a place's landing, built with its road: its clearance never carves or removes a rock standing in a place's
+    /// footprint that is the place's own (a frost cave's boulders are likely
+    /// part of its prefab).</summary>
+    public bool KeepsSiteRocks;
     public readonly List<StructurePiece> Pieces = new();
     public readonly List<StairClearance> Clearances = new();
 
@@ -244,10 +248,11 @@ public sealed class StairStructures : IStructureSource
         foreach (StairRun run in s_runs)
             foreach (StairClearance box in run.Clearances)
                 if (Vector2.Distance(new Vector2(box.Centre.x, box.Centre.z), c) <= reach)
-                    clearances.Add(new StructureClearance(box.Centre, box.Half, box.YawDegrees, box.Surface));
+                    clearances.Add(new StructureClearance(box.Centre, box.Half, box.YawDegrees, box.Surface, run.KeepsSiteRocks));
     }
 
-    private const int FormatVersion = 1;
+    /// <summary>2 adds <see cref="StairRun.KeepsSiteRocks"/>; 1 (none kept) still loads.</summary>
+    private const int FormatVersion = 2;
 
     public static byte[] Serialize()
     {
@@ -260,6 +265,7 @@ public sealed class StairStructures : IStructureSource
             writer.Write(run.From.x); writer.Write(run.From.y);
             writer.Write(run.To.x); writer.Write(run.To.y);
             writer.Write(run.Width);
+            writer.Write(run.KeepsSiteRocks);
             writer.Write(run.Pieces.Count);
             foreach (StructurePiece p in run.Pieces)
             {
@@ -297,7 +303,8 @@ public sealed class StairStructures : IStructureSource
         {
             using var stream = new MemoryStream(bytes);
             using var reader = new BinaryReader(stream);
-            if (reader.ReadInt32() != FormatVersion) throw new InvalidDataException("Unknown stair run data version.");
+            int version = reader.ReadInt32();
+            if (version != 1 && version != FormatVersion) throw new InvalidDataException("Unknown stair run data version.");
             int runs = reader.ReadInt32();
             if (runs < 0 || runs > 10000) throw new InvalidDataException("Invalid stair run count.");
             int total = 0;
@@ -308,6 +315,7 @@ public sealed class StairStructures : IStructureSource
                     From = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
                     To = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
                     Width = reader.ReadSingle(),
+                    KeepsSiteRocks = version >= 2 && reader.ReadBoolean(),
                 };
                 int pieces = reader.ReadInt32();
                 if (pieces < 0 || (total += pieces) > 500000) throw new InvalidDataException("Invalid stair piece count.");

@@ -304,6 +304,8 @@ public class SiteEntryRoadTests : IDisposable
         Assert.Null(RoadSiteEntry.Plan(Request(new Vector2(26f, 0f), ground), hildir, Width, ground, world, out why));
         Assert.StartsWith("road: ", why);
         Assert.Contains("on its rock", why);
+        Assert.True(SiteRock.KeepsEveryRock("Hildir_cave"));
+        Assert.False(SiteRock.KeepsEveryRock("MountainCave02"));
     }
 
     [Fact]
@@ -516,5 +518,30 @@ public class SiteEntryRoadTests : IDisposable
         Assert.True(RoadSpatialGrid.DeserializeAllRoadPoints(saved));
         Assert.Contains(RoadSpatialGrid.GetRoadPointsInZone(new Vector2s(0, 0)), p => p.intoSite);
         Assert.Equal(saved, RoadSpatialGrid.SerializeAllRoadPoints());
+
+        StairStructures.Reset();
+        StairStructures.Add(new StairRun { From = new Vector2(1f, 2f), To = new Vector2(3f, 4f), Width = 2f, KeepsSiteRocks = true });
+        byte[] stairs = StairStructures.Serialize();
+        Assert.True(Assert.Single(StairStructures.Parse(stairs)).KeepsSiteRocks);
+        StairStructures.Reset();
+    }
+
+    /// <summary>A staircase record saved before the flag (format 1) still loads, keeping no rocks.</summary>
+    [Fact]
+    public void AStairRecordWithoutKeptRocksStillLoads()
+    {
+        StairStructures.Reset();
+        StairStructures.Add(new StairRun { From = new Vector2(1f, 2f), To = new Vector2(3f, 4f), Width = 2f, KeepsSiteRocks = true });
+        byte[] v2 = StairStructures.Serialize();
+        StairStructures.Reset();
+        // Format 2 with the run's flag (after the version, the count, From, To and Width) taken out.
+        var v1 = new List<byte>(v2);
+        v1.RemoveAt(4 + 4 + 8 + 8 + 4);
+        v1.RemoveRange(0, 4);
+        v1.InsertRange(0, BitConverter.GetBytes(1));
+        StairRun run = Assert.Single(StairStructures.Parse(v1.ToArray()));
+        Assert.False(run.KeepsSiteRocks);
+        Assert.Equal(new Vector2(3f, 4f), run.To);
+        Assert.Equal(2f, run.Width);
     }
 }

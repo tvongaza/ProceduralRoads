@@ -96,6 +96,14 @@ public static class PlacedSiteReader
         return PlacedSiteGround.Sampler(heights, x0, z0, w, h);
     }
 
+    /// <summary>Whether the place at <paramref name="centre"/> keeps every rock (<see cref="SiteRock.KeepsEveryRock"/>).</summary>
+    internal static bool KeepsEveryRock(Vector2 centre)
+    {
+        Vector2s zone = ZoneSystem.GetZone(new Vector3(centre.x, 0f, centre.y));
+        return ZoneSystem.instance != null && ZoneSystem.instance.m_locationInstances.TryGetValue(zone, out ZoneSystem.LocationInstance instance)
+            && SiteRock.KeepsEveryRock(instance.m_location.m_prefab.Name);
+    }
+
     /// <summary>The place's exterior radius: its rock, for leading a staircase round it.</summary>
     internal static float RockRadius(Vector2 centre)
     {
@@ -127,6 +135,7 @@ public static class PlacedSiteReader
         var rootAt = new Vector3(centre.x, root, centre.y);
         Quaternion turn = Quaternion.Euler(0f, yaw, 0f);
         float rockRadius = RockRadius(centre);
+        bool keepSmall = KeepsEveryRock(centre);
         var zones = new HashSet<Vector2s>();
         for (int z = z0; z <= z0 + h + 64; z += 64)
             for (int x = x0; x <= x0 + w + 64; x += 64)
@@ -159,7 +168,7 @@ public static class PlacedSiteReader
             SiteRock box = Box(p, zdo.GetRotation(), scale, LocalBox(prefab), prefab.name);
             // Its real top where it counts: a rock an approach keeps clear of (large, round the
             // mouth, or at a place keeping every rock); a small one elsewhere is cleared anyway.
-            bool kept = ownRock || box.Large || (rockRadius > 0f && Vector2.Distance(box.At, centre) <= rockRadius);
+            bool kept = ownRock || box.Large || keepSmall || (rockRadius > 0f && Vector2.Distance(box.At, centre) <= rockRadius);
             rocks.Add(kept ? WithTop(box, prefab, p, zdo.GetRotation(), setScale) : box);
         }
         return rocks;

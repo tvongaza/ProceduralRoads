@@ -151,7 +151,7 @@ public static class SitesFirstLoad
         PlacedSites.Remember(new PlacedSiteRecord
         {
             Prefab = ZoneSystem.instance.m_locationInstances.TryGetValue(zone, out ZoneSystem.LocationInstance placed) ? placed.m_location.m_prefab.Name : "?",
-            Centre = centre, Yaw = yaw, Root = root, RockRadius = rock,
+            Centre = centre, Yaw = yaw, Root = root, RockRadius = rock, KeepSmallRocks = PlacedSiteReader.KeepsEveryRock(centre),
             Ops = new List<LevelOp>(ops), Rocks = rocks, X0 = x0, Z0 = z0, W = w + 1, H = w + 1,
         });
         return true;

@@ -101,6 +101,11 @@ public readonly struct SiteRock
         float r = yaw * Mathf.Deg2Rad, c = Mathf.Cos(r), s = Mathf.Sin(r);
         return new Vector2(local.x * c + local.y * s, local.y * c - local.x * s);
     }
+
+    /// <summary>A place none of whose rocks an approach may clear, small ones included: Hildir's
+    /// cave, whose boulder blocking the entrance is not disturbed (the landing near by is still
+    /// reached).</summary>
+    public static bool KeepsEveryRock(string placeName) => placeName.StartsWith("Hildir", StringComparison.Ordinal);
 }
 
 /// <summary>
