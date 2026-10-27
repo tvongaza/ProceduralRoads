@@ -42,6 +42,15 @@ public static class RoadNetworkPersistence
     private static readonly int ZonesWithNetworkHash = "ProceduralRoads_ZonesWithNetwork".GetStableHashCode();
 
     /// <summary>
+    /// Whether the last TryLoadGlobalRoadData found a saved network it could
+    /// not read: the metadata ZDO holds road data, but its version is unknown,
+    /// it fails validation, or reading it threw. Such a world is never given a
+    /// new network automatically (RoadLifecycleManager): only road_generate
+    /// replaces it.
+    /// </summary>
+    public static bool LastLoadUnreadable { get; private set; }
+
+    /// <summary>
     /// Cached reference to the metadata ZDO.
     /// </summary>
     private static ZDO? s_metadataZdo;
@@ -146,6 +155,7 @@ public static class RoadNetworkPersistence
     public static bool TryLoadGlobalRoadData(List<(Vector2 position, string label)> roadStartPoints)
     {
         Log.LogDebug("[LOAD] TryLoadGlobalRoadData called");
+        LastLoadUnreadable = false;
 
         if (ZDOMan.instance == null)
         {
@@ -175,12 +185,28 @@ public static class RoadNetworkPersistence
         {
             Log.LogDebug($"[LOAD] Successfully loaded: {RoadSpatialGrid.GridCellsWithRoads} cells, {RoadSpatialGrid.TotalRoadPoints} points");
 
-            TryLoadRoadMetadata(roadStartPoints);
+            try
+            {
+                TryLoadRoadMetadata(roadStartPoints);
+            }
+            catch (Exception ex)
+            {
+                // Half a network is not a network: forget what was read, and
+                // say the save could not be read rather than that it is empty.
+                Log.LogError($"[LOAD] The saved road network could not be read: {ex}");
+                RoadSpatialGrid.Clear();
+                roadStartPoints.Clear();
+                LastLoadUnreadable = true;
+                return false;
+            }
 
             return true;
         }
 
-        Log.LogWarning("[LOAD] DeserializeAllRoadPoints returned false!");
+        LastLoadUnreadable = true;
+        Log.LogError($"[LOAD] This world holds a saved road network ({data.Length} bytes) that this build cannot read. " +
+                     "It is left as it is and no new network is generated over it; the world has no roads this session. " +
+                     "Use a build that reads it, or road_generate to replace it on purpose.");
         return false;
     }
 

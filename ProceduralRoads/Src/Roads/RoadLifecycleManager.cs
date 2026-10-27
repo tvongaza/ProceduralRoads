@@ -135,6 +135,12 @@ public static class RoadLifecycleManager
             return;
         }
 
+        // A saved network this build cannot read is still somebody's roads:
+        // never build a second network over it. The world runs without roads
+        // until a build that reads it, or road_generate, says otherwise.
+        if (RoadNetworkPersistence.LastLoadUnreadable)
+            return;
+
         ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug("No persisted roads found, generating...");
         // GenerateRoadsOnLoad, not GenerateRoads: it honours the
         // PROCEDURALROADS_GENERATE_ROADS_ON_LOAD switch and then applies road

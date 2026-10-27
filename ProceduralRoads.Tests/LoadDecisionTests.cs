@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using Xunit;
@@ -283,5 +285,37 @@ public class LoadDecisionTests : System.IDisposable
         Assert.False(RoadNetworkGenerator.RoadsGenerated,
             "a network was generated before the world's data had been read");
         Assert.False(RoadNetworkGenerator.RoadsAvailable);
+    }
+
+    /// <summary>A saved network this build cannot read, in the forms that happen.</summary>
+    private static byte[] Unreadable(string kind, out bool inBridgeAppends)
+    {
+        inBridgeAppends = false;
+        using var ms = new MemoryStream();
+        using var w = new BinaryWriter(ms);
+        w.Write(99); w.Write(0); return ms.ToArray();
+    }
+
+    [Theory]
+    [InlineData("version 99")]
+    public void AnUnreadableSavedNetworkIsNeverReplaced(string kind)
+    {
+        ZoneSystem zones = SetUp(savedNetworkExists: true);
+        int globalData = "ProceduralRoads_GlobalData".GetStableHashCode();
+        ZDO metadata = m_heldBack.Single(z => z.GetPrefab() == RoadNetworkPersistence.MetadataPrefabName.GetStableHashCode());
+        byte[] bad = Unreadable(kind, out bool inBridgeAppends);
+        metadata.Set(globalData, bad);
+        byte[] saved = (byte[])metadata.GetByteArray(globalData)!.Clone();
+
+        zones.LocationsGenerated = true;
+        WorldDataArrives();
+        RoadLifecycleManager.OnPlayerSpawn(Vector3.zero);
+
+        Assert.True(RoadNetworkPersistence.LastLoadUnreadable);
+        Assert.False(RoadNetworkGenerator.RoadsGenerated, "a network was generated over the saved one");
+        Assert.False(RoadNetworkGenerator.RoadsAvailable);
+        Assert.Equal(0, RoadSpatialGrid.TotalRoadPoints);
+        RoadLifecycleManager.OnPrepareSave();
+        Assert.Equal(saved, metadata.GetByteArray(globalData));
     }
 }
