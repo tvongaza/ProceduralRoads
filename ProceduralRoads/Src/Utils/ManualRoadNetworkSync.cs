@@ -105,17 +105,8 @@ public static class ManualRoadNetworkSync
         package.Write(data);
         package.Write(RoadNetworkPersistence.SerializeRoadStartPoints(RoadNetworkGenerator.GetRoadStartPoints()));
         package.Write(RoadNetworkPersistence.SerializeRoadCrossings(RoadNetworkGenerator.GetRoadCrossings()));
-        package.Write(NetworkCutoff.ClientList(RoadZones()));
+        package.Write(NetworkCutoff.ClientList(RoadSpatialGrid.GetZonesWithRoadPoints()));
         return package;
-    }
-
-    /// <summary>The zones holding road points (NetworkCutoff.ClientList adds their neighbours).</summary>
-    private static HashSet<Vector2s> RoadZones()
-    {
-        var zones = new HashSet<Vector2s>();
-        foreach (RoadSpatialGrid.RoadPoint point in RoadSpatialGrid.SnapshotAllRoadPoints())
-            zones.Add(ZoneSystem.GetZone(new Vector3(point.p.x, 0f, point.p.y)));
-        return zones;
     }
 
     private static void Receive(long sender, ZPackage package)
