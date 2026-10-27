@@ -365,6 +365,7 @@ public class LoadDecisionTests : System.IDisposable
         if (inBridgeAppends) metadata.Set("ProceduralRoads_AppendBridges".GetStableHashCode(), bad);
         else metadata.Set(globalData, bad);
         byte[] saved = (byte[])metadata.GetByteArray(globalData)!.Clone();
+        Assert.True(RoadNetworkGenerator.GenerateOnLoad, "with generation at load off this test would prove nothing");
 
         zones.LocationsGenerated = true;
         WorldDataArrives();
@@ -372,6 +373,7 @@ public class LoadDecisionTests : System.IDisposable
 
         Assert.True(RoadNetworkPersistence.LastLoadUnreadable);
         Assert.False(RoadNetworkGenerator.RoadsGenerated, "a network was generated over the saved one");
+        Assert.False(RoadLifecycleManager.IsGenerating, "a network is being generated over the saved one");
         Assert.False(RoadNetworkGenerator.RoadsAvailable);
         Assert.Equal(0, RoadSpatialGrid.TotalRoadPoints);
         RoadLifecycleManager.OnPrepareSave();
