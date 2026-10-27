@@ -864,7 +864,7 @@ public static partial class RoadNetworkGenerator
         if (CorridorSnap > RoadSnap)
             Log.LogInfo($"  Corridor snap (a road alongside another merges onto it, within {CorridorSnap:F0} m): {m_corridorSnapped} waypoint(s) moved, {m_chainsShared} chain(s) of crossings shared, candidates included");
         if (RoadsLog)
-            Log.LogInfo($"  Viaducts: {m_viaductsLaid} Mistlands viaduct(s) laid over dry valleys (DvergrViaduct)");
+            Log.LogInfo($"  Viaducts: {m_viaductsLaid} Mistlands viaduct(s) laid over dry valleys (DvergrViaduct); road attempts turned onto an end stair's foot after the search {m_viaductFeetPut}, ends whose foot the road could not meet {m_viaductFeetUnmet}");
         if (RoadWiggle.Enabled)
             Log.LogInfo($"  Sway (planned pieces, candidates included): kept {RoadSpatialGrid.SwayKept}, dropped as refused {RoadSpatialGrid.SwayRefused}, dropped for more earth {RoadSpatialGrid.SwayMoreEarth}; full sway to {RoadWiggle.Flat:P0} ground grade, {RoadWiggle.SlopeFloor:P0} of it at the {RoadGrade.Configured:P0} cap, meander fades out at {RoadPathfinder.MeanderFlat:P0}");
             Log.LogInfo($"  Sway on slopes (kept plans, over {RoadWiggle.Flat:P0} grade and more than 1 m off the plain line): {RoadSpatialGrid.SlopeSwayPlans} plan(s), metres by grade band 12-20%: {RoadSpatialGrid.SlopeSwayMillimetres[0] / 1000}, 20-28%: {RoadSpatialGrid.SlopeSwayMillimetres[1] / 1000}, over 28%: {RoadSpatialGrid.SlopeSwayMillimetres[2] / 1000}");
@@ -1530,7 +1530,10 @@ public static partial class RoadNetworkGenerator
             endCenter, endSite != null ? 0f : askedEndRadius, startAtPlace, endAtPlace, waiting);
         foreach (var w in waiting) SiteApproachQueue.Add(path, w.index, w.height, w.arriving, w.centre, w.end);
         foreach (RoadSpatialGrid.PlannedPath plan in plans)
+        {
             RoadSpatialGrid.Commit(plan);
+            PieceCommitted?.Invoke(plan, label);
+        }
         if (IslandActivity != null)
         {
             // A crossing snapped to a site an earlier road built is that bridge, not a new one.
@@ -1544,6 +1547,7 @@ public static partial class RoadNetworkGenerator
             {
                 RoadSpatialGrid.Commit(entryRoad, intoSite: true);
                 PlacedSites.MarkLanded(entrySite.Centre);
+                PieceCommitted?.Invoke(entryRoad, label);
                 if (RoadsLog && label != null) Log.LogDebug($"Road {label}: carried on onto the landing, {entryRoad.TotalLength:F0} m of road into the place");
             }
             if (entryStairs != null)
@@ -2348,17 +2352,50 @@ public static partial class RoadNetworkGenerator
     private static int m_shallowFordsWalked;
     /// <summary>The crossings of a finished path: its river crossings (RoadCrossingDetector) and
     /// the Mistlands viaducts its search bought over dry valleys (DvergrViaduct.AddJumps), in path
-    /// order.</summary>
+    /// order. Where a viaduct's end stairs would not land on the road, the path is first put
+    /// through their foot (DvergrViaduct.MeetTheRoad) and its crossings found again.</summary>
     private static List<RoadCrossing> DetectCrossings(RoadPathfinder finder, List<Vector2> path)
     {
-        List<RoadCrossing> crossings = finder.Fords || finder.Bridges
-            ? RoadCrossingDetector.Detect(path, GenerationWorld, finder.Bridges, finder.Fords)
-            : new List<RoadCrossing>();
-        if (finder.Viaducts && finder.Bridges)
-            DvergrViaduct.AddJumps(path, finder.LastViaductJumps, GenerationWorld, crossings);
-        return crossings;
+        List<RoadCrossing> Find()
+        {
+            List<RoadCrossing> found = finder.Fords || finder.Bridges
+                ? RoadCrossingDetector.Detect(path, GenerationWorld, finder.Bridges, finder.Fords)
+                : new List<RoadCrossing>();
+            if (finder.Viaducts && finder.Bridges)
+                DvergrViaduct.AddJumps(path, finder.LastViaductJumps, GenerationWorld, found);
+            return found;
+        }
+        List<RoadCrossing> crossings = Find();
+        if (!finder.Bridges) return crossings;
+        var viaducts = crossings.FindAll(c => c.Kind == CrossingKind.Bridge && DvergrViaduct.Applies(c, GenerationWorld));
+        if (viaducts.Count == 0) return crossings;
+        var steps = finder.LastStairSteps;
+        bool IsStep(Vector2 a, Vector2 b)
+        {
+            foreach (var (from, to) in steps)
+                if ((Vector2.Distance(a, from) <= 1f && Vector2.Distance(b, to) <= 1f) || (Vector2.Distance(a, to) <= 1f && Vector2.Distance(b, from) <= 1f))
+                    return true;
+            return false;
+        }
+        var unmetFeet = RoadsLog ? new List<Vector2>() : null;
+        int turned = DvergrViaduct.MeetTheRoad(path, viaducts, GenerationWorld, out int unmet, out int pinned, IsStep, unmetFeet);
+        if (turned > 0) System.Threading.Interlocked.Add(ref m_viaductFeetPut, turned);
+        if (unmet > 0) System.Threading.Interlocked.Add(ref m_viaductFeetUnmet, unmet);
+        if (unmetFeet != null)
+            foreach (Vector2 foot in unmetFeet)
+                Log.LogInfo(FormattableString.Invariant($"[VIADUCT] end stairs' foot at ({foot.x:F1}, {foot.y:F1}) not met by this road: it ends under the flight or comes to it on a staircase"));
+        return turned + pinned > 0 ? Find() : crossings;
     }
 
+    private static int m_viaductFeetPut, m_viaductFeetUnmet;
+    /// <summary>Viaduct end stairs whose foot the road was turned onto after its search (DvergrViaduct.MeetTheRoad: it
+    /// came at them off their line), and ends whose foot it could not be made to meet. Counted per road attempt, built
+    /// or not.</summary>
+    public static int ViaductFeetPut => m_viaductFeetPut;
+    public static int ViaductFeetUnmet => m_viaductFeetUnmet;
+    /// <summary>Told of every road piece a generated road stores, with the road's label: for offline maps and the
+    /// viaduct tests. Called from island workers.</summary>
+    public static Action<RoadSpatialGrid.PlannedPath, string?>? PieceCommitted;
     private static int m_viaductsLaid;
     /// <summary>Mistlands viaducts the roads of this generation laid over dry valleys.</summary>
     public static int ViaductsLaid => m_viaductsLaid;
@@ -2475,16 +2512,33 @@ public static partial class RoadNetworkGenerator
         // the end of a staircase, which the road meets at the stair's height.
         var plans = new List<RoadSpatialGrid.PlannedPath>(pieces.Count);
         System.Func<Vector2, float>? ground = StripGround(crossings, width);
-        for (int i = 0; i < pieces.Count; i++)
+        // The feet of the viaducts' end stairs, which the road was put through (DvergrViaduct.MeetTheRoad), stay on it.
+        List<Vector2>? feet = null;
+        foreach (RoadCrossing c in crossings)
         {
-            RoadSpatialGrid.PlannedPath? plan = RoadSpatialGrid.PlanRoadPath(
-                pieces[i].points, width, GenerationWorld,
-                pieces[i].startHeight ?? (i == 0 ? startGround : null),
-                pieces[i].endHeight ?? (i == pieces.Count - 1 ? endGround : null),
-                pieces[i].followTerrain, pieces[i].minHeight, ground);
-            if (plan == null)
-                return null;
-            plans.Add(plan);
+            if (c.Kind != CrossingKind.Bridge || !DvergrViaduct.Applies(c, GenerationWorld)) continue;
+            var (near, far) = DvergrViaduct.EndStairs(c, GenerationWorld);
+            foreach (DvergrViaduct.EndStair end in new[] { near, far })
+                if (end.Steps > 0) (feet ??= new List<Vector2>()).Add(end.Foot);
+        }
+        RoadSpatialGrid.HeldPoints = feet;
+        try
+        {
+            for (int i = 0; i < pieces.Count; i++)
+            {
+                RoadSpatialGrid.PlannedPath? plan = RoadSpatialGrid.PlanRoadPath(
+                    pieces[i].points, width, GenerationWorld,
+                    pieces[i].startHeight ?? (i == 0 ? startGround : null),
+                    pieces[i].endHeight ?? (i == pieces.Count - 1 ? endGround : null),
+                    pieces[i].followTerrain, pieces[i].minHeight, ground);
+                if (plan == null)
+                    return null;
+                plans.Add(plan);
+            }
+        }
+        finally
+        {
+            RoadSpatialGrid.HeldPoints = null;
         }
 
         return plans;
@@ -3373,7 +3427,7 @@ public static partial class RoadNetworkGenerator
         m_roadCrossings.Clear();
         StairStructures.Reset();
         DvergrViaduct.ResetStanding();
-        m_viaductsLaid = 0;
+        m_viaductsLaid = m_viaductFeetPut = m_viaductFeetUnmet = 0;
         RoadStairRuns.ResetCache();
         m_underRoads.Clear();
         m_lastResortServed.Clear();

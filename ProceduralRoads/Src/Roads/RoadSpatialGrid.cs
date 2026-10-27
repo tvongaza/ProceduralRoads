@@ -371,6 +371,10 @@ public static partial class RoadSpatialGrid
         System.Threading.Interlocked.Increment(ref SlopeSwayPlans);
         for (int b = 0; b < 3; b++) System.Threading.Interlocked.Add(ref SlopeSwayMillimetres[b], (long)(metres[b] * 1000f));
     }
+    /// <summary>Waypoints the road being planned must keep where they are, on this thread: the foot of a Dvergr
+    /// viaduct's end stairs (RoadNetworkGenerator.PlanPieces, DvergrViaduct.MeetTheRoad), which the pull would
+    /// otherwise skip and the sway's resampling cut past, leaving the foot off the road.</summary>
+    [System.ThreadStatic] internal static List<Vector2>? HeldPoints;
     /// <summary>Sway outcomes per planned road piece this generation (candidates included):
     /// kept, dropped because the swayed plan was refused, dropped for moving more earth.</summary>
     internal static int SwayKept, SwayRefused, SwayMoreEarth;
@@ -452,15 +456,22 @@ public static partial class RoadSpatialGrid
         for (int i = 0; i < path.Count - 1; i++)
             totalLength += Vector2.Distance(path[i], path[i + 1]);
 
+        // A held waypoint (a viaduct's end-stair foot, HeldPoints) is never pulled past, as one snapped onto a road.
+        List<Vector2>? held = HeldPoints;
+        bool Held(Vector2 p) => held != null && held.Exists(h => (h - p).sqrMagnitude < 0.25f);
+        bool holds = held != null && path.Exists(Held);
         if (!followTerrain && RoadPathPull.Enabled)
             path = RoadPathPull.Pull(path, width, SampleTerrain, p =>
             {
                 worldGen.GetRiverWeight(p.x, p.y, out float river, out _);
                 return river > RoadConstants.RiverImpassableThreshold || worldGen.GetHeight(p.x, p.y) < RoadConstants.ShallowWaterHeight;
             }, RoadGrade.Configured + RoadConstants.SearchGradeMargin,
-            anchor: RoadNetworkGenerator.RoadSnap > 0f ? p => TryGetRoadWithin(p, 0.5f, out _) : null);
+            anchor: RoadNetworkGenerator.RoadSnap > 0f ? p => TryGetRoadWithin(p, 0.5f, out _) || Held(p)
+                : holds ? Held : (System.Func<Vector2, bool>?)null);
 
-        if (!followTerrain && RoadWiggle.Enabled && !SuppressWiggle)
+        // Nor swayed: the sway resamples the road every 12 m, which cuts the corner at a held point. (A piece that
+        // holds a viaduct's foot is in the Mistlands, which have no sway anyway: only the resampling is skipped.)
+        if (!followTerrain && RoadWiggle.Enabled && !SuppressWiggle && !holds)
             path = RoadWiggle.Apply(path, SampleTerrain, p =>
             {
                 worldGen.GetRiverWeight(p.x, p.y, out float river, out _);

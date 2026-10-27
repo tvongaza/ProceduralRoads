@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace ProceduralRoads;
@@ -38,7 +39,13 @@ namespace ProceduralRoads;
 /// edges every 2 m. It runs bank to bank: the remainder past the outer piers
 /// goes onto the banks. A bank lower than the deck is walked off on
 /// blackmarble_stair steps, the wooden kit's own stair run
-/// (<see cref="BridgeLayout.EmitSteps"/>).</para>
+/// (<see cref="BridgeLayout.EmitSteps"/>), at most <see cref="MaxEndStairRise"/>
+/// of them (<see cref="EndStairs"/>), their foot on the road
+/// (<see cref="MeetTheRoad"/>); a bank at the deck's height has none.</para>
+///
+/// <para><b>Price</b> (<see cref="Price"/>): dearer the
+/// lower its piers, and its end stairs at ten times an ordinary staircase's
+/// metre, so a deep valley crossed high from level banks is the one bought.</para>
 ///
 /// <para><b>Ruin</b> is the wooden kit's rule (<see cref="BridgeLayout.Ruin"/>,
 /// <see cref="BridgeLayout.SpanSurvival"/>, <see cref="BridgeLayout.PierSurvival"/>):
@@ -186,8 +193,9 @@ public static class DvergrViaduct
     /// <summary>
     /// Whether a crossing is built as a Dvergr viaduct rather than the wooden kit: a bridge
     /// (never a ford) in the Mistlands whose deck stands <see cref="MinClearance"/> or more over
-    /// the ground or the water, on piers no taller than <see cref="PierCeiling"/>. The one owner
-    /// of that choice: the plan, the search's valley jumps and the dev command all ask it.
+    /// the ground or the water, on piers no taller than <see cref="PierCeiling"/>, with no more
+    /// than <see cref="MaxEndStairRise"/> of stairs at either end (<see cref="EndStairs"/>). The
+    /// one owner of that choice: the plan, the search's valley jumps and the dev command all ask it.
     /// </summary>
     public static bool Applies(RoadCrossing crossing, WorldGenerator world) => Refusal(crossing, world) == null;
 
@@ -201,6 +209,10 @@ public static class DvergrViaduct
         if (clearance < MinClearance) return FormattableString.Invariant($"deck {clearance:F1} m over the ground or water, under {MinClearance:F0} m");
         float tallest = TallestPier(crossing, world);
         if (tallest > PierCeiling) return FormattableString.Invariant($"a pier {tallest:F1} m tall, over the {PierCeiling:F0} m ceiling");
+        var (near, far) = EndStairs(crossing, world);
+        foreach (EndStair end in new[] { near, far })
+            if (!end.Landed || end.Rise > MaxEndStairRise + 1e-3f)
+                return FormattableString.Invariant($"end stairs {end.Rise:F0} m{(end.Landed ? "" : " and not down")}, over the {MaxEndStairRise:F0} m most");
         return null;
     }
 
@@ -406,6 +418,182 @@ public static class DvergrViaduct
         return Vector2.Distance(p, a + ab * t);
     }
 
+    // ------------------------------------------------------------ end stairs
+
+    /// <summary>The most stairs, bank to deck, a viaduct has at either end (at most about 3 m of end
+    /// stairs between the bank and the deck on each side; past that, no viaduct there). Its default.</summary>
+    public const float DefaultMaxEndStairRise = 3f;
+    /// <summary>The most end stairs, as set: PROCEDURALROADS_VIADUCT_END_STAIRS (metres, 0-12).
+    /// Past it at either end <see cref="Refusal"/> refuses the viaduct: a valley keeps
+    /// its stairs or road, a river its wooden bridge. 0: level banks only. Settable for tests.</summary>
+    public static float MaxEndStairRise = DebugSwitches.Number("VIADUCT_END_STAIRS", DefaultMaxEndStairRise, 0f, BridgeLayout.MaxStairSteps * BridgeLayout.StairRise);
+
+    /// <summary>
+    /// One end's stairs between the deck and the bank: <see cref="Steps"/> blackmarble_stair steps two abreast (the
+    /// wooden kit's run, <see cref="BridgeLayout.EmitSteps"/>), each 1 m down and 2 m out along the deck's line, from
+    /// the deck's end <see cref="Top"/> to the <see cref="Foot"/> edge a walker steps off onto. None where the bank is
+    /// at the deck's height (within half a step): the road runs onto the deck.
+    /// </summary>
+    public readonly struct EndStair
+    {
+        public readonly int Steps;
+        /// <summary>Whether the run reached the ground (not, when the bank falls away faster than the steps).</summary>
+        public readonly bool Landed;
+        /// <summary>The middle of the deck's end edge, where the stairs leave it.</summary>
+        public readonly Vector2 Top;
+        /// <summary>The middle of the bottom step's foot edge: where the road has to be.</summary>
+        public readonly Vector2 Foot;
+        /// <summary>The way up the flight, onto the deck (along the deck's line, toward the other bank).</summary>
+        public readonly Vector2 Up;
+        public float Rise => Steps * BridgeLayout.StairRise;
+        public EndStair(int steps, bool landed, Vector2 top, Vector2 up)
+        {
+            Steps = steps; Landed = landed; Top = top; Up = up;
+            Foot = top - up * (BridgeLayout.StairRun * steps);
+        }
+    }
+
+    /// <summary>The deck's module grid along the crossing: the piers, the anchor every module hangs on, and the first and
+    /// last module centres (each reaching onto its bank: its centre within a metre of it, or behind it).</summary>
+    private static (List<float> piers, float anchor, float first, float last) DeckGrid(RoadCrossing crossing)
+    {
+        float width = crossing.Width;
+        float? fairway = FairwayAlong(crossing);
+        List<float> piers = PierAlongs(width, fairway);
+        // Every module, pier and arch hangs on one grid: the piers' (vanilla's modules are centred on its piers).
+        float anchor = piers.Count > 0 ? piers[0] : fairway ?? width * 0.5f;
+        float first = anchor - Module * Mathf.CeilToInt((anchor - 1f) / Module - 1e-4f);
+        float last = anchor + Module * Mathf.CeilToInt((width - 1f - anchor) / Module - 1e-4f);
+        return (piers, anchor, first, last);
+    }
+
+    /// <summary>
+    /// The stairs at each end, near (from-bank) end first: the one owner of how many steps an end has, where their foot
+    /// is, and whether there are any. <see cref="Solve"/> lays exactly these, <see cref="Refusal"/> caps them
+    /// (<see cref="MaxEndStairRise"/>), <see cref="Price"/> charges for them, and the generator puts the road through
+    /// their foot (<see cref="MeetTheRoad"/>).
+    /// </summary>
+    public static (EndStair near, EndStair far) EndStairs(RoadCrossing crossing, WorldGenerator world)
+    {
+        if (crossing == null || world == null || crossing.Width < Module) return default;
+        Vector2 dir = crossing.Direction, side = new(-dir.y, dir.x);
+        float deck = DeckHeight(crossing, world);
+        var (_, _, first, last) = DeckGrid(crossing);
+        EndStair End(float edge, Vector2 inward)
+        {
+            Vector2 top = crossing.FromBank + dir * edge;
+            Vector2 beyond = top - inward * BridgeLayout.StairHalfRun;
+            if (deck - Ground(beyond, world) <= BridgeLayout.StairRise * 0.5f) return new EndStair(0, true, top, inward);
+            var scratch = new List<StructurePiece>();
+            bool landed = BridgeLayout.EmitSteps(scratch, world, top, inward, side, deck, new BridgeLayout.Ruin(0, crossing), 0, StepPrefab, Block);
+            int steps = scratch.FindAll(p => p.Kind == StructurePieceKind.Stair).Count / 2;
+            return new EndStair(steps, landed, top, inward);
+        }
+        return (End(first - Module * 0.5f, dir), End(last + Module * 0.5f, -dir));
+    }
+
+    // ----------------------------------------------------------------- price
+
+    /// <summary>
+    /// What the search pays for a viaduct, the road on it apart. Its own price,
+    /// <paramref name="fixedCost"/> plus <paramref name="perMeter"/> per metre of span, is what it costs on piers
+    /// <see cref="PriceHeight"/> tall, and goes in inverse to its tallest pier's height (taken between
+    /// <see cref="MinClearance"/> and <see cref="PierCeiling"/>): "the price falls as the piers get taller, up to the
+    /// pier ceiling". On top, <paramref name="endStairPerMeter"/> per metre of its end stairs (<see cref="EndStairs"/>):
+    /// "stairs to or from a viaduct cost much more than ordinary stairs", so level banks win.
+    /// </summary>
+    public static float Price(RoadCrossing crossing, WorldGenerator world, float fixedCost, float perMeter, float endStairPerMeter)
+    {
+        float height = Mathf.Clamp(TallestPier(crossing, world), MinClearance, PierCeiling);
+        var (near, far) = EndStairs(crossing, world);
+        return (fixedCost + perMeter * crossing.Width) * (PriceHeight / height) + endStairPerMeter * (near.Rise + far.Rise);
+    }
+
+    /// <summary>The pier height at which a viaduct costs its base price (<see cref="Price"/>): half as much on piers
+    /// twice as tall. Its default, about the median tallest pier (9.8 m on six test worlds): at 20 m (the
+    /// ceiling) 16 valley viaducts were left of 79, at 10 m 59, a third more of them 14 m and up, and two in three on
+    /// level banks.</summary>
+    public const float DefaultPriceHeight = 10f;
+    /// <summary>Settable for tests.</summary>
+    public static float PriceHeight = DefaultPriceHeight;
+
+    // ------------------------------------------------------- meeting the road
+
+    /// <summary>
+    /// Puts <paramref name="path"/> through the foot of each end's stairs of every viaduct on it, so the road arrives
+    /// at the foot along the flight's own line: the in-line case of the staircases' foot rule, the foot centred on the
+    /// road (at the far bank at -6598, 4551 the stairs came down the deck's line while the road
+    /// came in at the side of its end, so they never met). The search buys a viaduct from whatever side its road comes
+    /// to the rim: making it come at the rim head on, a cell straight on each side, was tried and lost 9 of 10 valley
+    /// viaducts (a rim is often a crest the road climbs to on stairs, seen on RoadSeedC and D). So the
+    /// path is turned onto the flight's line here, after the search, for valley and river viaducts alike; the
+    /// planner then holds the foot (RoadSpatialGrid.HeldPoints) so the pull and the sway keep it.
+    /// <para>From each bank (<see cref="RoadCrossing.FromIndex"/> back, <see cref="RoadCrossing.ToIndex"/> on) the road
+    /// is walked away from the deck. Its points beside the flight (nearer the bank than the foot, off the flight's
+    /// line) are dropped; the foot goes in before the first point at or behind it, which turns the road onto the line
+    /// where that point is off it, and pins the road's curve to the foot where it is on it. Where the road ends beside
+    /// or under the flight, or the stretch is a stair step the search bought (<paramref name="isStep"/>: a staircase
+    /// is laid from its two ends), the path is left and the end counts in <paramref name="unmet"/>.</para>
+    /// Returns how many ends were turned onto the flight's line; <paramref name="pinned"/> counts the feet put in on a
+    /// road already on it. The caller finds the crossings on the path again when either is above 0.
+    /// </summary>
+    public static int MeetTheRoad(List<Vector2> path, IReadOnlyList<RoadCrossing> viaducts, WorldGenerator world,
+        out int unmet, out int pinned, Func<Vector2, Vector2, bool>? isStep = null, List<Vector2>? unmetFeet = null)
+    {
+        int changed = 0;
+        unmet = pinned = 0;
+        // Last first, far end before near, so a change does not move an index still to do.
+        foreach (RoadCrossing crossing in viaducts.OrderByDescending(c => c.FromIndex))
+        {
+            var (near, far) = EndStairs(crossing, world);
+            foreach (var (end, bank, start, step) in new[] { (far, crossing.ToBank, crossing.ToIndex, +1), (near, crossing.FromBank, crossing.FromIndex, -1) })
+            {
+                if (end.Steps == 0) continue;
+                int before = path.Count;
+                bool? met = Meet(path, end, bank, start, step, isStep);
+                if (met == null) { unmet++; unmetFeet?.Add(end.Foot); }
+                else if (met == false) changed++;
+                else if (path.Count != before) pinned++;
+            }
+        }
+        return changed;
+    }
+
+    /// <summary>One end of <see cref="MeetTheRoad"/>: true where the road already ran up the flight's line (the foot
+    /// pinned on it), false where the path was turned onto it, null where it cannot be (the path left as it was).</summary>
+    private static bool? Meet(List<Vector2> path, EndStair end, Vector2 bank, int start, int step, Func<Vector2, Vector2, bool>? isStep)
+    {
+        Vector2 back = -end.Up, across = new(-back.y, back.x);
+        var beside = new List<int>();
+        int previous = -1;
+        for (int i = start; i >= 0 && i < path.Count; i += step)
+        {
+            Vector2 q = path[i];
+            if (Vector2.Distance(q, bank) < 0.5f) { previous = i; continue; }
+            float along = Vector2.Dot(q - end.Foot, back);
+            bool onLine = Mathf.Abs(Vector2.Dot(q - end.Foot, across)) <= 1f + Mathf.Max(0f, along) * 0.0875f;   // tan 5 degrees
+            bool roadsEnd = i == 0 || i == path.Count - 1;
+            if (along < -0.5f)
+            {
+                // Beside or under the flight: on its line the road runs up it; off it, the point is dropped.
+                if (roadsEnd) return null;
+                if (!onLine) beside.Add(i);
+                if (isStep?.Invoke(path[previous < 0 ? i : previous], q) ?? false) return null;
+                previous = i;
+                continue;
+            }
+            if (isStep?.Invoke(path[previous < 0 ? i : previous], q) ?? false) return onLine && beside.Count == 0 ? true : null;
+            // Drop the points beside the flight, then put the foot in between this point and the next one in: off the
+            // line it turns the road onto it; on it, it pins the road's curve to the foot, which a corner a few metres
+            // on otherwise bows off the line (0.6 m at the foot on a test valley).
+            foreach (int k in beside.OrderByDescending(k => k)) path.RemoveAt(k);
+            int at = step > 0 ? i - beside.Count : i + 1;
+            if (Vector2.Distance(path[step > 0 ? at : at - 1], end.Foot) > 0.5f) path.Insert(at, end.Foot);
+            return onLine && beside.Count == 0;
+        }
+        return null;   // the road ends under the flight
+    }
+
     // ---------------------------------------------------------------- solve
 
     /// <summary>The viaduct as built: ruined, the navigation gap open.</summary>
@@ -428,12 +616,8 @@ public static class DvergrViaduct
         float deck = DeckHeight(crossing, world);
         float width = crossing.Width;
         float? fairway = FairwayAlong(crossing);
-        List<float> piers = PierAlongs(width, fairway);
-        // Every module, pier and arch hangs on one grid: the piers' (vanilla's modules are centred on its piers).
-        float anchor = piers.Count > 0 ? piers[0] : fairway ?? width * 0.5f;
         // The first module reaches onto the near bank (its centre within a metre of it, or behind it), the last onto the far.
-        float first = anchor - Module * Mathf.CeilToInt((anchor - 1f) / Module - 1e-4f);
-        float last = anchor + Module * Mathf.CeilToInt((width - 1f - anchor) / Module - 1e-4f);
+        var (piers, anchor, first, last) = DeckGrid(crossing);
         int modules = Mathf.RoundToInt((last - first) / Module) + 1;
         float Mid(float along) => width <= 0f ? 0f : Mathf.Clamp01(1f - Mathf.Abs(along - width * 0.5f) / (width * 0.5f));
         float Survives(float along, float share) => 1f - (1f - BridgeLayout.SpanSurvival(Mid(along))) * share;
@@ -593,14 +777,14 @@ public static class DvergrViaduct
             }
         }
 
-        // ----- ends: a bank lower than the deck is walked off on marble steps, the wooden kit's run.
-        foreach (var (edge, inward, key) in new[] { (first - Module * 0.5f, dir, 0), (last + Module * 0.5f, -dir, modules) })
+        // ----- ends: a bank lower than the deck is walked off on marble steps, the wooden kit's run (EndStairs: none
+        // where the bank is at the deck's height, and the road runs onto the deck).
+        var (nearEnd, farEnd) = EndStairs(crossing, world);
+        foreach (var (end, key) in new[] { (nearEnd, 0), (farEnd, modules) })
         {
-            Vector2 anchorPoint = crossing.FromBank + dir * edge;
-            Vector2 beyond = anchorPoint - inward * BridgeLayout.StairHalfRun;
-            if (deck - Ground(beyond, world) <= BridgeLayout.StairRise * 0.5f) continue;
+            if (end.Steps == 0) continue;
             var steps = new List<StructurePiece>();
-            BridgeLayout.EmitSteps(steps, world, anchorPoint, inward, side, deck, r, key, StepPrefab, Block);
+            BridgeLayout.EmitSteps(steps, world, end.Top, end.Up, side, deck, r, key, StepPrefab, Block);
             foreach (StructurePiece s in steps)
             {
                 if (!ruin) s.HealthFraction = 1f;

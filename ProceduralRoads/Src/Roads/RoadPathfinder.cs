@@ -60,15 +60,17 @@ public class RoadPathfinder
     /// (DvergrViaduct) instead of a staircase down into it and another out. From a
     /// Mistlands cell at a valley's rim the search looks straight on, in the eight principal
     /// directions, for ground back at the rim's height within DvergrViaduct.MaxValleySpan, and
-    /// buys the jump where DvergrViaduct.ValleyCrossing builds it, for
-    /// <see cref="ViaductCostFixed"/> plus <see cref="ViaductCostPerMeter"/> per metre: priced
-    /// under the staircase pair (RoadConstants.DefaultViaductCostFixed). Needs
+    /// buys the jump where DvergrViaduct.ValleyCrossing builds it, at DvergrViaduct.Price: dearer
+    /// the lower its piers and the more end stairs it has. The road is put
+    /// through each end's stair foot after the search (DvergrViaduct.MeetTheRoad). Needs
     /// <see cref="Bridges"/>. On by default; PROCEDURALROADS_VIADUCTS=off for a control run.
     /// </summary>
     public bool Viaducts = ConfiguredViaducts;
     public static bool ConfiguredViaducts = DebugSwitches.Flag("VIADUCTS", true);
     public float ViaductCostFixed = RoadConstants.DefaultViaductCostFixed;
     public float ViaductCostPerMeter = RoadConstants.DefaultViaductCostPerMeter;
+    /// <summary>Per metre of a viaduct's end stairs, bank to deck, both ends together (DvergrViaduct.Price).</summary>
+    public float ViaductEndStairCostPerMeter = RoadConstants.DefaultViaductEndStairCostPerMeter;
     /// <summary>A valley starts where the next cell is at least this much lower: the rim.</summary>
     public const float ViaductRimDrop = 2f;
     /// <summary>The viaduct jumps of the last path found, bank cell to bank cell, in path order.</summary>
@@ -1140,9 +1142,10 @@ public class RoadPathfinder
             if (h < rim - RoadConstants.MaxBridgeBankDelta) continue;
             if (h > rim + RoadConstants.MaxBridgeBankDelta) return null;
             Vector2 a = GridToWorld(from), b = GridToWorld(check);
-            if (DvergrViaduct.ValleyCrossing(a, b, m_worldGen, out _) == null) return null;
+            RoadCrossing? viaduct = DvergrViaduct.ValleyCrossing(a, b, m_worldGen, out _);
+            if (viaduct == null) return null;
             float length = Vector2.Distance(a, b);
-            return (check, ViaductCostFixed + ViaductCostPerMeter * length + BaseCost * length);
+            return (check, DvergrViaduct.Price(viaduct, m_worldGen, ViaductCostFixed, ViaductCostPerMeter, ViaductEndStairCostPerMeter) + BaseCost * length);
         }
         return null;
     }

@@ -92,18 +92,28 @@ public static class RoadConstants
     /// A Mistlands viaduct over a dry valley (DvergrViaduct): what the search pays
     /// to jump the valley at the high level, against the staircase down and the staircase up
     /// it would otherwise buy. Bridges are preferred over stairs in the Mistlands. The
-    /// stair multipliers (2 / Mistlands 1 / Mountain 0.5) are NOT touched; this is priced
-    /// under them instead. A valley pair costs at least one staircase start (1000 x the
-    /// Mistlands' 1, varied +-30 %: 700 at the cheapest site) plus 10 per metre climbed down
-    /// and up (2 x 6 m at the least the viaduct is offered over: 120), so 820 and up; a viaduct
-    /// costs this plus <see cref="DefaultViaductCostPerMeter"/> per metre of span plus the
-    /// road's own 1 per metre: 400 + 5 x 64 = 720 for a 64 m valley, 880 for the longest
-    /// (96 m). It is still far dearer than easy road (about 1 per metre), so a valley the road
-    /// can simply walk through keeps its road.
+    /// stair multipliers (2 / Mistlands 1 / Mountain 0.5) are NOT touched. A valley pair costs
+    /// at least one staircase start (1000 x the Mistlands' 1, varied +-30 %: 700 at the
+    /// cheapest site) plus 10 per metre climbed down and up, so 820 and up at the 6 m least.
+    /// <para>The viaduct's own price, this plus <see cref="DefaultViaductCostPerMeter"/> per
+    /// metre of span, is what it costs on piers 10 m tall (DvergrViaduct.PriceHeight); it goes
+    /// in inverse to how tall its tallest pier is, up to the ceiling (the
+    /// price falls as the piers get taller, up to the pier ceiling, so a deep valley crossed
+    /// high beats a shallow one crossed low). 400 + 4 x 64 = 656 for a 64 m valley at 10 m,
+    /// 437 at 15 m, 328 at the 20 m ceiling, 1093 at the 6 m least. On top come the end stairs
+    /// (<see cref="DefaultViaductEndStairCostPerMeter"/>) and the road's own 1 per metre. Easy
+    /// road (about 1 per metre) keeps a valley the road can walk through.</para>
     /// </summary>
     public const float DefaultViaductCostFixed = 400f;
-    /// <summary>Per metre of a viaduct's span, on top of the road's own price per metre.</summary>
+    /// <summary>Per metre of a viaduct's span, on top of the road's own price per metre; scaled with
+    /// <see cref="DefaultViaductCostFixed"/> by the piers' height.</summary>
     public const float DefaultViaductCostPerMeter = 4f;
+    /// <summary>Per metre of a viaduct's end stairs, bank to deck, each end (stairs to or from a
+    /// viaduct cost much more than ordinary stairs, so viaducts whose banks are both at about deck height are preferred): ten
+    /// times an ordinary staircase's metre (<see cref="DefaultStairCostPerMeterClimbed"/>), so the 3 m most at both
+    /// ends (DvergrViaduct.MaxEndStairRise) adds 600, about a 64 m viaduct's own price, and a level pair of banks is
+    /// bought over a stepped one wherever there is a choice.</summary>
+    public const float DefaultViaductEndStairCostPerMeter = 100f;
 
     // A ford may also be SPANNED (Fords/SpanWeight): a short low footbridge
     // with a step at each end, where the crossing is at least
