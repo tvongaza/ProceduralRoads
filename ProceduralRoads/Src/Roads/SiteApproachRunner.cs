@@ -30,7 +30,8 @@ namespace ProceduralRoads;
 /// Then, on the main thread, what a staircase would run into is checked and the
 /// approach joins the network. Legacy: the places placed before their roads are reached
 /// by them (the just in time stair/road generation is to be removed); this serves only the places left for a player to find.
-/// With PROCEDURALROADS_ROADS_LOG each approach is logged, with where its time went.
+/// With PROCEDURALROADS_ROADS_LOG each approach is logged; with PROCEDURALROADS_DEV_COMMANDS
+/// each stage is timed and summed for road_site_approaches.
 /// </summary>
 public static class SiteApproachRunner
 {
@@ -136,7 +137,8 @@ public static class SiteApproachRunner
             long began = System.Diagnostics.Stopwatch.GetTimestamp();
             IReadOnlyList<LevelOp>? kept = PlacedSiteReader.KeptOps(request.Centre, proxy!);
             double ms = Ms(began);
-            if (kept == null) return false;
+            SiteApproachStats.Time("replay its parts (main, in play)", ms);
+            if (kept == null) { SiteApproachStats.Waiting("a place whose parts could not be replayed waits for a player"); return false; }
             Begin(request, "rebuilt", proxy!.GetRotation().eulerAngles.y, proxy.GetPosition().y, kept, ms);
             return s_jobs.Exists(j => j.job.Request == request);
         }
@@ -185,6 +187,7 @@ public static class SiteApproachRunner
         IReadOnlyList<LevelOp>? ops = kept ?? LocationLevelling.OpsAt(request.Centre);
         if (ops == null || ops.Count == 0) { Drop(request, "no levelling known"); return; }
         Bounds(request, out int x0, out int z0, out int w, out int h);
+        long rocks = System.Diagnostics.Stopwatch.GetTimestamp();
         var job = new Job
         {
             Request = request, Ground = ground, Yaw = yaw, Root = root, Ops = ops, Rock = PlacedSiteReader.RockRadius(request.Centre),
@@ -197,6 +200,7 @@ public static class SiteApproachRunner
             Top = RoadStairRuns.TopAt(request.RoadEnd, request.RoadHeight,
                 StairStructures.PiecesNear(new Vector3(request.RoadEnd.x, 0f, request.RoadEnd.y), RoadStairRuns.OnStairReach)),
         };
+        SiteApproachStats.Time("place's rocks and road (main)", Ms(rocks));
         // As placed, for offline tools (road_placed_sites_dump).
         PlacedSites.Remember(new PlacedSiteRecord
         {
@@ -326,6 +330,10 @@ public static class SiteApproachRunner
 
         if (task.IsFaulted) { Drop(r, "planning failed: " + task.Exception?.GetBaseException().Message); return; }
         if (s.Epoch != ManualRoads.WorldEpoch) return;
+        SiteApproachStats.Time(s.Ground == "loaded" ? "read ground (main)" : "road points (main)", s.SampleMs);
+        if (s.Ground == "loaded") SiteApproachStats.Time("read ground, worst frame (main)", s.SampleMaxMs);
+        if (s.Ground == "rebuilt") SiteApproachStats.Time("rebuild ground (worker)", s.ModelMs);
+        SiteApproachStats.Time("layout (worker)", s.PlanMs);
         Layout layout = task.Result;
         if (layout.Road != null) { AddRoad(s, layout, began); return; }
         RoadStairSpan? span = layout.Stairs;
@@ -367,6 +375,8 @@ public static class SiteApproachRunner
         StructurePlacement.ApplyPendingAppends();
         Step("pieces");
         double total = Ms(began);
+        SiteApproachStats.Time("check and add (main)", total);
+        SiteApproachStats.Outcome("laid, ground " + s.Ground);
         if (RoadNetworkGenerator.RoadsLog) ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo(
             $"[STAIRS] site approach at {r.Centre}: {span.Kit.Name} {span.Plan.Rise:F1} m {(span.Plan.Reversed ? "down" : "up")}, " +
             $"{span.Plan.Pieces.Count} pieces, from {span.FromPoint} to {span.ToPoint}, turn {s.Yaw:F1}, parts {Parts(s.Ops)}, {s.Rocks.Count} of its rock(s) kept clear ({s.Rocks.Count(k => k.Top != null)} by their real top), {s.WorldRocks} world boulder(s) left to the road's rules; " +
@@ -390,6 +400,8 @@ public static class SiteApproachRunner
         RoadTerrainModifier.ApplyAdditionsToLoadedZones();
         RoadRockClearing.Reset();
         double total = Ms(began);
+        SiteApproachStats.Time("check and add (main)", total);
+        SiteApproachStats.Outcome("road laid, ground " + s.Ground);
         float rise = road.Heights[road.Heights.Count - 1] - road.Heights[0];
         if (RoadNetworkGenerator.RoadsLog) ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo(FormattableString.Invariant(
             $"[STAIRS] site approach at {r.Centre}: road {road.TotalLength:F1} m, {rise:F1} m {(rise >= 0f ? "up" : "down")}, {road.Width:F1} m wide, earthwork {layout.RoadEarthwork:F1} m at worst, ") +
@@ -425,8 +437,27 @@ public static class SiteApproachRunner
     {
         // Saved with the world, as a laid one is.
         SiteApproachQueue.Remove(r);
+        SiteApproachStats.Outcome("not laid: " + string.Join("; ", why.Split(';').Where(part => part.Contains("road:") || part.Contains("stairs:"))
+            .Select(part => Short(part)).DefaultIfEmpty(Short(why.Split(';')[0]))));
         if (RoadNetworkGenerator.RoadsLog) ProceduralRoadsPlugin.ProceduralRoadsLogger.LogInfo($"[STAIRS] site approach at {r.Centre} not laid: {why}; {SiteApproachQueue.Count} still owed");
     }
+
+    /// <summary>A refusal in a word or two, for the outcome counts: its kind ("road", "stairs") and
+    /// its last clause, without the numbers and places the log line keeps.</summary>
+    private static string Short(string part)
+    {
+        part = part.Trim();
+        string kind = part.StartsWith("road:") ? "road " : part.StartsWith("stairs:") ? "stairs " : "";
+        string tail = part.Contains(':') ? part.Substring(part.LastIndexOf(':') + 1).Trim() : part;
+        // A road's reason names the landing it was for: "to (x, h, z) too far".
+        tail = System.Text.RegularExpressions.Regex.Replace(tail, @"^to \([^)]*\)\s*", "");
+        int cut = tail.IndexOfAny(new[] { '(', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-' });
+        if (cut > 0) tail = tail.Substring(0, cut).Trim();
+        return kind + tail;
+    }
+
+    /// <summary>An approach is being read or laid out.</summary>
+    internal static bool Busy => s_jobs.Count > 0 || s_sampling != null;
 
     /// <summary>Forget the approaches in hand with the network they were planned on.</summary>
     public static void Install() => RoadNetworkGenerator.OnReset += Reset;
@@ -440,5 +471,39 @@ public static class SiteApproachRunner
             try { task.Wait(); } catch (AggregateException) { }
         s_jobs.Clear();
         s_firstSeen.Clear();
+    }
+}
+
+/// <summary>This session's site approaches: outcomes and per-stage timing (main thread against worker), for
+/// road_site_approaches. Kept only with PROCEDURALROADS_DEV_COMMANDS (<see cref="ConsoleCommands.DevCommands"/>).</summary>
+public static class SiteApproachStats
+{
+    private static readonly Dictionary<string, (int n, double total, double max)> s_times = new();
+    private static readonly Dictionary<string, int> s_outcomes = new();
+    private static readonly HashSet<string> s_waiting = new();
+
+    public static void Time(string stage, double ms)
+    {
+        if (!ConsoleCommands.DevCommands) return;
+        s_times.TryGetValue(stage, out var t);
+        s_times[stage] = (t.n + 1, t.total + ms, Math.Max(t.max, ms));
+    }
+
+    public static void Outcome(string what)
+    {
+        if (ConsoleCommands.DevCommands) s_outcomes[what] = s_outcomes.TryGetValue(what, out int n) ? n + 1 : 1;
+    }
+    public static void Waiting(string why)
+    {
+        if (ConsoleCommands.DevCommands) s_waiting.Add(why);
+    }
+
+    public static IEnumerable<string> Describe(int owed, bool busy)
+    {
+        yield return $"SITE_APPROACHES owed {owed}{(busy ? ", one in hand" : "")}; " +
+            (s_outcomes.Count == 0 ? "none finished this session" : string.Join("; ", s_outcomes.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Value} {kv.Key}")));
+        foreach (var kv in s_times.OrderBy(kv => kv.Key))
+            yield return FormattableString.Invariant($"  {kv.Key}: {kv.Value.n} x, mean {kv.Value.total / kv.Value.n:F1} ms, worst {kv.Value.max:F1} ms");
+        foreach (string w in s_waiting) yield return "  " + w;
     }
 }

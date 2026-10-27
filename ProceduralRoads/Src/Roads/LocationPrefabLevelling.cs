@@ -137,6 +137,35 @@ public static class LocationPrefabLevelling
         return result;
     }
 
+    /// <summary>
+    /// Every location prefab of the loaded world with what it does to the ground,
+    /// as CSV: one row per levelling operation (a prefab that levels nothing has
+    /// one row with no operation), for offline tools.
+    /// Main thread, outside generation.
+    /// </summary>
+    public static string DescribeCsv()
+    {
+        var sb = new System.Text.StringBuilder("prefab,terrainRadius,offsetX,offsetZ,height,radius,square,smoothRadius,smoothPower,exteriorRadius,slopeRotation,randomRotation,unique,iconPlaced,iconAlways\n");
+        if (ZoneSystem.instance == null) return sb.ToString();
+        var seen = new HashSet<string>();
+        foreach (var inst in ZoneSystem.instance.GetLocationList())
+        {
+            string name = inst.m_location.m_prefab.Name;
+            if (!seen.Add(name)) continue;
+            IReadOnlyList<LevelOp> ops = ForPrefab(inst.m_location);
+            m_terrainRadius.TryGetValue(name, out float terrainRadius);
+            string head = FormattableString.Invariant($"{name},{terrainRadius:F3}");
+            string tail = FormattableString.Invariant(
+                $",{inst.m_location.m_exteriorRadius:F3},{(inst.m_location.m_slopeRotation ? 1 : 0)},{(inst.m_location.m_randomRotation ? 1 : 0)}") +
+                FormattableString.Invariant($",{(inst.m_location.m_unique ? 1 : 0)},{(inst.m_location.m_iconPlaced ? 1 : 0)},{(inst.m_location.m_iconAlways ? 1 : 0)}\n");
+            if (ops.Count == 0) sb.Append(head).Append(",,,,,,,").Append(tail);
+            foreach (LevelOp op in ops)
+                sb.Append(head).Append(FormattableString.Invariant(
+                    $",{op.OffsetX:F3},{op.OffsetZ:F3},{op.Height:F3},{op.Radius:F3},{(op.Square ? 1 : 0)},{op.SmoothRadius:F3},{op.SmoothPower:F3}")).Append(tail);
+        }
+        return sb.ToString();
+    }
+
     public static void Reset()
     {
         if (LocationLevelling.Sealed)

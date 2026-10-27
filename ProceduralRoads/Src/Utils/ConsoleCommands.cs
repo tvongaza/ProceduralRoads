@@ -20,6 +20,10 @@ namespace ProceduralRoads;
 /// </summary>
 public static class ConsoleCommands
 {
+    /// <summary>PROCEDURALROADS_DEV_COMMANDS: register the developer commands (<see cref="StairCommands"/>,
+    /// <see cref="SiteCommands"/>). Off by default.</summary>
+    internal static readonly bool DevCommands = DebugSwitches.Flag("DEV_COMMANDS", false);
+
     private static bool s_commandsRegistered = false;
     private static ManualLogSource Log => ProceduralRoadsPlugin.ProceduralRoadsLogger;
     private static List<Minimap.PinData> s_modPins = new();
@@ -46,7 +50,11 @@ public static class ConsoleCommands
             args.Context.AddString($"Road progress: run={p.RunId} phase={p.Phase} completed={p.Completed} total={p.Total} elapsed={p.ElapsedSeconds:F1}s frame={Time.frameCount}");
         });
         ManualRoadCommands.Register();
-        if (StairCommands.Enabled) StairCommands.Register();
+        if (DevCommands)
+        {
+            StairCommands.Register();
+            SiteCommands.Register();
+        }
         new Terminal.ConsoleCommand(
             "road_bake",
             "Road terrain the server writes for players without the mod: what it has written so far; road_bake again to go over every road zone of the current network once more (zones already carrying it are left alone); road_bake zone [x z] for what the server knows and would do about one zone (default: where you stand); road_bake vegetation for the road zones still holding vegetation on the road, most first; road_bake find [x z [radius]] for road zones not generated yet near a point; road_bake server for the server's own zone machinery -- reference position, live zone count, and each peer's zone.",
