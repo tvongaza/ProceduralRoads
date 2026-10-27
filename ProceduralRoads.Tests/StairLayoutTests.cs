@@ -357,6 +357,49 @@ public class StairLayoutTests
         };
     }
 
+    /// <summary>A gentle valley floor for 100 m, then a face steeper than 1:1:
+    /// 230 m of climb over 300 m. Too long for one search; it follows a coarse
+    /// route leg by leg (valley bottom to mountain top, with some flex).</summary>
+    private static float ValleyThenFace(float x, float z) =>
+        z < 100f ? 0.15f * z : 15f + (z - 100f) * 1.05f + 6f * Mathf.Sin(z * 0.05f) + 4f * Mathf.Sin(x * 0.07f);
+
+    /// <summary>A stair flight climbs between two switchbacks: two with only
+    /// floors between them made a pad that shuffled the stair 4 m sideways on
+    /// the summit run.</summary>
+    [Theory]
+    [InlineData("gully")]
+    public void AFlightClimbsBetweenTwoSwitchbacks(string ground)
+    {
+        StairPlan plan = ground switch
+        {
+            "gully" => StairLayout.Build(new Vector2(0, 0), new Vector2(0, 16), Gully),
+            "face" => StairLayout.Build(new Vector2(-2061.41f, 1504.82f), new Vector2(-2125f, 1460f), FixtureGround("mountain-face-2m.txt")),
+            _ => StairLayout.Build(new Vector2(0, 0), new Vector2(40, 300), ValleyThenFace),
+        };
+        Assert.True(plan.Reached, plan.Reason);
+        StairPiece[] walked = Walked(plan);
+        // A switchback is two floors abreast at one height and heading; count stairs since the last one,
+        // and from the foot: a switchback after the first stair stood its pad over the road it leaves
+        // (the bottom of the stairs was blocked off by the lower switchback).
+        int? stairsSinceSwitchback = 0;
+        for (int k = 0; k + 1 < walked.Length; k++)
+        {
+            // Abreast: 2 m apart ACROSS their heading (a straight run of floors is 2 m apart along it).
+            Vector2 a = new Vector2(walked[k].Position.x, walked[k].Position.z), b = new Vector2(walked[k + 1].Position.x, walked[k + 1].Position.z);
+            bool switchback = walked[k].Kind == StairPieceKind.Landing && walked[k + 1].Kind == StairPieceKind.Landing &&
+                walked[k].YawDegrees == walked[k + 1].YawDegrees && walked[k].Position.y == walked[k + 1].Position.y &&
+                Math.Abs(Vector2.Distance(a, b) - 2f) < 0.01f &&
+                Math.Abs(Vector2.Dot(b - a, StairLayout.Forward(walked[k].YawDegrees))) < 0.01f;
+            if (switchback)
+            {
+                if (stairsSinceSwitchback.HasValue) Assert.True(stairsSinceSwitchback >= StairLayout.MinFlightBetweenSwitchbacks, $"a switchback {stairsSinceSwitchback} stair(s) after the last one or the foot, at {walked[k].Position}");
+                stairsSinceSwitchback = 0;
+                k++;
+            }
+            else if (walked[k].Kind == StairPieceKind.Stair && stairsSinceSwitchback.HasValue) stairsSinceSwitchback++;
+        }
+    }
+
     /// <summary>A generated staircase ends on a floor carried on straight from its
     /// top step, level with it, and the road meets that floor's far edge (a flat 2x2 landing or two
     /// that clips into the road).</summary>

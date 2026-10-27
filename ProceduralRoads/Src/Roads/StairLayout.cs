@@ -4,6 +4,10 @@ using UnityEngine;
 
 namespace ProceduralRoads;
 
+/// <summary>The rules for steep ground a test may switch off (StairLayout.RulesOff).</summary>
+[Flags]
+internal enum SteepRules { None = 0, TurnSteepness = 2, FirstFlight = 8192 }
+
 public enum StairPieceKind
 {
     Stair,    // one stone_stair: 2 m along, 1 m up
@@ -138,6 +142,7 @@ public sealed class StairPlan
 /// * Every piece is supported down to the ground: stone loses its support
 ///   within a metre sideways, so a piece not sunk into the ground stands on
 ///   a column of pillars driven into it.
+/// * A switchback's pad is priced by the steepness round it, so the search turns on benches.
 ///
 /// The search is best-first over whole pieces. A partial staircase is scored by
 /// the length walked so far, how badly its pieces fit the ground, and how
@@ -219,7 +224,6 @@ public static partial class StairLayout
     /// it cuts 46, none over 0.73 m, and still floats under 2 m.</summary>
     private const float BuriedWeight = 6f;
     private const float TurnWeight = 0.5f;
-    private const float SwitchbackWeight = 1f;
 
     private const float LandingWeight = 0.25f;
     /// <summary>Above 1 the search prefers pieces that get closer over a
@@ -456,7 +460,10 @@ public static partial class StairLayout
     {
         // A leg ends near the ground, or the next one starts from a stair hanging in the air
         // or buried in the slope (measured: a leg kept at 18 m up left nothing to reach).
-        bool Done(Node n) => final ? Arrived(n, route) && Mathf.Abs(ground(n.Edge.x, n.Edge.y) - n.Height) <= ReachHeight
+        // Nor does a staircase end on a switchback, or on floors laid off one: the pad turns back to
+        // climb on, and finished there the top faced back down the flight. The steps down off the top
+        // then ran back down beside it, two rows wide (MountainCave02 -2560,1536: double stairs that looked like a bug).
+        bool Done(Node n) => final ? !EndsTurnedBack(n) && Arrived(n, route) && Mathf.Abs(ground(n.Edge.x, n.Edge.y) - n.Height) <= ReachHeight
             : n.Goal > 0 && Mathf.Abs(ground(n.Edge.x, n.Edge.y) - n.Height) <= LegEndHeight;
         root.Score = Remaining(root, route);
         var open = new SortedSet<Node>(NodeOrder.Instance) { root };
@@ -659,7 +666,7 @@ public static partial class StairLayout
             }
         }
 
-        if (node.Parent == null) return;
+        if (node.Parent == null || SwitchbackSinceLastStair(node)) return;
         Vector2 forward = Forward(node.Heading);
         for (int side = -1; side <= 1; side += 2)
         {
@@ -690,7 +697,7 @@ public static partial class StairLayout
             };
             child.Cost = node.Cost + PieceRun + width
                 + FloatWeight * floatGap + BuriedWeight * buried
-                + SwitchbackWeight;
+                + SwitchbackWeight + SwitchbackSteepPrice(Steepness(centre, ground));
             child.Goal = route.Advance(node.Goal, child.Edge);
             child.Score = child.Cost + HeuristicWeight * Remaining(child, route);
             next.Add(child);
@@ -755,6 +762,13 @@ public static partial class StairLayout
         }
         return false;
     }
+
+    /// <summary>Switches for tests, per thread (the search runs on the thread that asks): with one
+    /// set, that rule is as before it was made. Never set in the game.</summary>
+    [ThreadStatic] private static SteepRules t_off;
+    internal static SteepRules RulesOff { get => t_off; set => t_off = value; }
+    private static bool NoTurnSteepness => (t_off & SteepRules.TurnSteepness) != 0;
+    private static bool NoFirstFlight => (t_off & SteepRules.FirstFlight) != 0;
 
     /// <summary>Two pieces, <paramref name="acrossA"/> by a run, overlap by more than
     /// <see cref="OverlapTolerance"/> seen from above (separating axes).</summary>
