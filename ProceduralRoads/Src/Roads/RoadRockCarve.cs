@@ -292,9 +292,10 @@ public static class RoadRockCarve
         float reach = new Vector2(box.extents.x, box.extents.z).magnitude + 4f;
         // Headings need the neighbours just outside the reach too.
         all = RoadSpatialGrid.GetRoadPointsNearPosition(box.center, reach + 3f);
+        all.RemoveAll(p => p.cutOnly); // a staircase's cuts are not road: they would turn the headings
         foreach (var point in all)
         {
-            if (point.paintOnly || (point.p - new Vector2(box.center.x, box.center.z)).sqrMagnitude > reach * reach) continue;
+            if (!point.IsRoad || (point.p - new Vector2(box.center.x, box.center.z)).sqrMagnitude > reach * reach) continue;
             // A zone the server generates for a remote peer may have no ground
             // to read; the road's own stored height is the surface it levels to.
             at.Add((point, ZoneSystem.instance.GetGroundHeight(new Vector3(point.p.x, 0f, point.p.y), out float surface) ? surface : point.h));

@@ -271,6 +271,62 @@ public sealed class RoadStatisticsTests : IDisposable
     {
         Assert.Equal(3,ManualRoadNetworkSync.SnapshotVersion);
     }
+    /// <summary>
+    /// The staircase flag (cut-only) travels as geometry encoding 4 inside the v4 envelope, so one format number means
+    /// one thing. Every encoding round-trips byte for byte with its flags; an encoding or envelope this build does not
+    /// know is refused (and the world then takes the unreadable path: nothing generated over it).
+    /// </summary>
+    [Fact]
+    public void EveryEncodingRoundTrips()
+    {
+        int Encoding(byte[] b)=>BitConverter.ToInt32(b,4);
+        void RoundTrip(int encoding,Func<RoadSpatialGrid.RoadPoint,bool>? flag=null)
+        {
+            byte[] saved=Bytes(); int version=RoadSpatialGrid.RoadNetworkVersion;
+            Assert.Equal(4,BitConverter.ToInt32(saved,0)); Assert.Equal(encoding,Encoding(saved));
+            RoadSpatialGrid.Clear(); Assert.True(RoadSpatialGrid.DeserializeAllRoadPoints(saved));
+            Assert.Equal(saved,Bytes()); Assert.Equal(version,RoadSpatialGrid.RoadNetworkVersion);
+            if(flag!=null) Assert.Contains(RoadSpatialGrid.SnapshotAllRoadPoints(),p=>flag(p));
+            byte[] unknown=(byte[])saved.Clone(); Array.Copy(BitConverter.GetBytes(5),0,unknown,4,4);
+            Assert.False(RoadSpatialGrid.DeserializeAllRoadPoints(unknown),"encoding 5");
+            byte[] envelope=(byte[])saved.Clone(); Array.Copy(BitConverter.GetBytes(5),0,envelope,0,4);
+            Assert.False(RoadSpatialGrid.DeserializeAllRoadPoints(envelope),"envelope 5");
+            Assert.Equal(saved,Bytes());
+        }
+        Commit(); RoadSpatialGrid.FinalizeRoadNetwork();
+        RoundTrip(2);
+        RoadSpatialGrid.CommitAppend(new[]{Plan()},RoadSpatialGrid.RoadNetworkVersion);
+        RoundTrip(3,p=>p.addition>0);
+        RoadSpatialGrid.CommitAppendCuts(new[]{new Vector3(32,39,1)},2f,RoadSpatialGrid.RoadNetworkVersion);
+        RoundTrip(4,p=>p.cutOnly);
+    }
+    /// <summary>
+    /// A generated network with a staircase's cuts and nothing appended: encoding 4 with an empty append block, the
+    /// shape of every network generated with a staircase. The reader demanded at least one append under any encoding
+    /// from 3 up, so this build refused its own saves.
+    /// </summary>
+    [Fact]
+    public void ANetworkWithStaircaseCutsAndNoAppendsRoundTrips()
+    {
+        Commit();
+        RoadSpatialGrid.CommitCuts(new[]{new Vector3(32,39,1)},2f);
+        RoadSpatialGrid.FinalizeRoadNetwork();
+        byte[] saved=Bytes(); int version=RoadSpatialGrid.RoadNetworkVersion;
+        Assert.Equal(4,BitConverter.ToInt32(saved,0)); Assert.Equal(4,BitConverter.ToInt32(saved,4));
+        Assert.DoesNotContain(RoadSpatialGrid.SnapshotAllRoadPoints(),p=>p.addition>0);
+        Assert.Equal(0,BitConverter.ToInt32(saved,saved.Length-9));   // the append block's count, before the length record
+        RoadSpatialGrid.Clear();
+        Assert.True(RoadSpatialGrid.DeserializeAllRoadPoints(saved),RoadSpatialGrid.LastReadRefusal);
+        Assert.Null(RoadSpatialGrid.LastReadRefusal);
+        Assert.Equal(saved,Bytes()); Assert.Equal(version,RoadSpatialGrid.RoadNetworkVersion);
+        Assert.Contains(RoadSpatialGrid.SnapshotAllRoadPoints(),p=>p.cutOnly);
+        // Cut short, the refusal says where the read stopped.
+        byte[] cut=saved.Take(saved.Length-3).ToArray();
+        Assert.False(RoadSpatialGrid.DeserializeAllRoadPoints(cut));
+        Assert.StartsWith("envelope 4, encoding 4: EndOfStreamException at byte ",RoadSpatialGrid.LastReadRefusal);
+        Assert.Contains($" of {cut.Length}:",RoadSpatialGrid.LastReadRefusal);
+        Assert.DoesNotContain("at byte 0 ",RoadSpatialGrid.LastReadRefusal);
+    }
     internal static byte[] Legacy(int version,bool empty=false)
     {
         using var stream=new MemoryStream(); using var writer=new BinaryWriter(stream);

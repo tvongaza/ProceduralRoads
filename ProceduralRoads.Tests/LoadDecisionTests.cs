@@ -359,6 +359,24 @@ public class LoadDecisionTests : System.IDisposable
     [InlineData("bridge appends")]
     public void AnUnreadableSavedNetworkIsNeverReplaced(string kind)
     {
+        List<string> log = _world.CaptureLog();
+        try { NeverReplaced(kind); }
+        finally { BepInEx.Logging.ManualLogSource.Captured = null; }
+
+        // The error says why: the envelope and encoding read, and the check that failed. A record read after the network names its exception instead.
+        string? expected = kind switch
+        {
+            "version 99" => "cannot read (envelope 99, encoding 99: a format this build does not know",
+            "NaN height" => "cannot read (envelope 4, encoding 2: point 0 of cell (0,0) has position (1,2), width 4, height NaN",
+            "width 0" => "cannot read (envelope 4, encoding 2: point 0 of cell (0,0) has position (1,2), width 0, height 40",
+            _ => null,
+        };
+        if (expected != null) Assert.Contains(log, l => l.Contains(expected));
+        else Assert.Contains(log, l => l.Contains("could not be read"));
+    }
+
+    private void NeverReplaced(string kind)
+    {
         ZoneSystem zones = SetUp(savedNetworkExists: true);
         int globalData = "ProceduralRoads_GlobalData".GetStableHashCode();
         ZDO metadata = m_heldBack.Single(z => z.GetPrefab() == RoadNetworkPersistence.MetadataPrefabName.GetStableHashCode());

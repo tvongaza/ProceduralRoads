@@ -1414,9 +1414,11 @@ public static partial class RoadNetworkGenerator
             int last = k++;
             if (along[first] < JunctionEnd || total - along[last] < JunctionEnd) continue;
             if (along[last] - along[first] >= SharedRun) continue;
-            // The other road's line here: the road points round the middle of the touch.
+            // The other road's line here: the road points round the middle of the touch. Not a staircase's cut-only points
+            // (its guard cuts): near a staircase's end they outnumber the road points and turned the line.
             Vector2 mid = points[(first + last) / 2];
             var near = RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(mid.x, 0f, mid.y), 4f);
+            near.RemoveAll(q => q.cutOnly);
             if (near.Count < 2) continue;
             Vector2 centre = new Vector2(0f, 0f);
             foreach (var q in near) centre += q.p;
@@ -1551,13 +1553,14 @@ public static partial class RoadNetworkGenerator
         Vector2? best = null; float bestD = float.MaxValue;
         foreach (var q in near)
         {
-            if (q.paintOnly) continue;
+            if (!q.IsRoad) continue;
             float d = Vector2.Distance(q.p, p);
             if (d >= bestD || Mathf.Abs(q.h - ground) > CorridorHeight) continue;
             // The other road's heading at q: from its neighbours 1.5-4 m away.
             Vector2 dir = new Vector2(0f, 0f);
             foreach (var r in near)
             {
+                if (r.cutOnly) continue;
                 float dr = Vector2.Distance(r.p, q.p);
                 if (dr < 1.5f || dr > 4f) continue;
                 Vector2 v = r.p - q.p;

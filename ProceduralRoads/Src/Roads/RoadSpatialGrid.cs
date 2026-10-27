@@ -38,8 +38,13 @@ public static partial class RoadSpatialGrid
         public bool paintOnly;
         // 0 is the original network; positive values identify append operations.
         public int addition;
+        /// <summary>Cut only: not road. A staircase's earthwork: the terrain
+        /// within w/2 is lowered to h where it stands higher, never raised, never
+        /// painted (StairLayout's cuts). Everything that asks where the ROAD is
+        /// skips these points, as it skips paint-only ones.</summary>
+        public bool cutOnly;
 
-        public RoadPoint(Vector2 position, float width, float height, bool paintOnly = false, int addition = 0)
+        public RoadPoint(Vector2 position, float width, float height, bool paintOnly = false, int addition = 0, bool cutOnly = false)
         {
             p = position;
             w = width;
@@ -47,7 +52,11 @@ public static partial class RoadSpatialGrid
             h = height;
             this.paintOnly = paintOnly;
             this.addition = addition;
+            this.cutOnly = cutOnly;
         }
+
+        /// <summary>A point a road runs through: not a ford's paint-only point, not a stair's cut.</summary>
+        public bool IsRoad => !paintOnly && !cutOnly;
     }
 
     public const float GridSize = RoadConstants.SpatialGridSize;
@@ -654,6 +663,16 @@ public static partial class RoadSpatialGrid
         MergePoints(temp);
     }
 
+    /// <summary>A staircase's earthwork, stored with the road it climbs: a
+    /// cut-only point per cut (x, z, the height to lower the ground to).</summary>
+    public static void CommitCuts(IReadOnlyList<Vector3> cuts, float width)
+    {
+        var temp = new Dictionary<Vector2i, List<RoadPoint>>();
+        foreach (Vector3 c in cuts)
+            AddRoadPoint(temp, new Vector2(c.x, c.z), width, c.y, paintOnly: false, cutOnly: true);
+        MergePoints(temp);
+    }
+
     /// <summary>Plan a road and store it, for the caller that lays one road in
     /// one piece. False means it was refused and nothing was stored.</summary>
     public static bool AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
@@ -717,7 +736,8 @@ public static partial class RoadSpatialGrid
                 Mix(ref hash, rp.p.y.GetHashCode());
                 Mix(ref hash, rp.w.GetHashCode());
                 Mix(ref hash, rp.h.GetHashCode());
-                Mix(ref hash, rp.paintOnly ? 1 : 0);
+                // A road-only network mixes exactly what it always did.
+                Mix(ref hash, rp.paintOnly ? 1 : rp.cutOnly ? 2 : 0);
             }
         }
 
@@ -740,7 +760,9 @@ public static partial class RoadSpatialGrid
         c = a.w.CompareTo(b.w);
         if (c != 0) return c;
         c = a.h.CompareTo(b.h);
-        return c != 0 ? c : a.paintOnly.CompareTo(b.paintOnly);
+        if (c != 0) return c;
+        c = a.paintOnly.CompareTo(b.paintOnly);
+        return c != 0 ? c : a.cutOnly.CompareTo(b.cutOnly);
     }
 
     /// <summary>FNV-1a step over the four bytes of value, then an avalanche so neighbouring records do not cancel.</summary>
@@ -1070,6 +1092,7 @@ public static partial class RoadSpatialGrid
                 {
                     foreach (var rp in existingPoints)
                     {
+                        if (rp.cutOnly) continue; // a staircase's cut is not a road to meet
                         if (Vector2.Distance(rp.p, point) < searchRadius)
                         {
                             overlapCount++;
@@ -1102,6 +1125,7 @@ public static partial class RoadSpatialGrid
                     
                     foreach (var rp in existingPoints)
                     {
+                        if (rp.cutOnly) continue; // nor a height to blend toward
                         float dist = Vector2.Distance(rp.p, points[i]);
                         if (dist < blendRadius)
                         {
@@ -1118,7 +1142,7 @@ public static partial class RoadSpatialGrid
         }
     }
 
-    private static void AddRoadPoint(Dictionary<Vector2i, List<RoadPoint>> roadPoints, Vector2 p, float width, float height, bool paintOnly, int addition = 0)
+    private static void AddRoadPoint(Dictionary<Vector2i, List<RoadPoint>> roadPoints, Vector2 p, float width, float height, bool paintOnly, int addition = 0, bool cutOnly = false)
     {
         Vector2i grid = GetRoadGrid(p.x, p.y);
         int radius = Mathf.CeilToInt(width / GridSize);
@@ -1135,7 +1159,7 @@ public static partial class RoadSpatialGrid
                         list = new List<RoadPoint>();
                         roadPoints.Add(cellGrid, list);
                     }
-                    list.Add(new RoadPoint(p, width, height, paintOnly, addition));
+                    list.Add(new RoadPoint(p, width, height, paintOnly, addition, cutOnly));
                 }
             }
         }
@@ -1246,6 +1270,7 @@ public static partial class RoadSpatialGrid
         for (int i = 0; i < points.Length; i++)
         {
             RoadPoint rp = points[i];
+            if (rp.cutOnly) continue; // a staircase's cut is not painted road
             float sqrDist = Vector2.SqrMagnitude(rp.p - pos);
             float halfWidth = rp.w * 0.5f;
             float halfWidthSqr = halfWidth * halfWidth;
@@ -1317,7 +1342,9 @@ public static partial class RoadSpatialGrid
                     {
                         foreach (var rp in points)
                         {
-                            float reach = RoadConstants.HalfZoneSize + ZoneReach(rp.w);
+                            // A staircase's cut reaches only w/2 (plus a vertex spacing): gathered
+                            // wider, a zone it never touches waits for it forever, unstamped.
+                            float reach = RoadConstants.HalfZoneSize + (rp.cutOnly ? rp.w * 0.5f + RoadTerrainModifier.CutBatterReach + 1f : ZoneReach(rp.w));
                             if (rp.p.x >= zonePos.x - reach &&
                                 rp.p.x <= zonePos.x + reach &&
                                 rp.p.y >= zonePos.z - reach &&
@@ -1420,7 +1447,7 @@ public static partial class RoadSpatialGrid
                         foreach (var point in points)
                         {
                             float d = (point.p-position).sqrMagnitude;
-                            if (d <= best && !point.paintOnly) { best=d; height=point.h; width=point.w; found=true; }
+                            if (d <= best && point.IsRoad) { best=d; height=point.h; width=point.w; found=true; }
                         }
         }
         if (found) distance = Mathf.Sqrt(best);
@@ -1442,7 +1469,7 @@ public static partial class RoadSpatialGrid
                         foreach (var point in points)
                         {
                             float distance = (point.p-position).sqrMagnitude;
-                            if (distance <= best && (allowed == null || allowed(point.p))) { best=distance; nearest=point.p; found=true; }
+                            if (distance <= best && !point.cutOnly && (allowed == null || allowed(point.p))) { best=distance; nearest=point.p; found=true; }
                         }
         }
         return found;
@@ -1477,7 +1504,7 @@ public static partial class RoadSpatialGrid
                         foreach (var point in points)
                         {
                             float distance = (point.p-position).sqrMagnitude;
-                            if (distance <= best && !point.paintOnly && Mathf.Abs(point.h - groundHere) <= maxStep
+                            if (distance <= best && point.IsRoad && Mathf.Abs(point.h - groundHere) <= maxStep
                                 && (allowed == null || allowed(point.p))) { best=distance; nearest=point.p; found=true; }
                         }
         }
@@ -1652,9 +1679,11 @@ public static partial class RoadSpatialGrid
 
     /// <summary>
     /// Serialize the entire road network to a byte array for global persistence.
-    /// Version 4: [4][geometry encoding 2 or 3][the old geometry payload after its version]
+    /// Version 4: [4][geometry encoding 2-4][the old geometry payload after its version]
     /// [known-length byte 0 or 1][committed planned-path length:float]. Geometry/hash inputs are unchanged.
     /// Older Roads readers reject v4; this reader also accepts legacy v1-v3 with unknown nonempty length.
+    /// Geometry encoding 4 (the cut-only flag) occurs only inside the v4 envelope. Encodings 3 and up carry
+    /// the append block ([count][parent ids]); under encoding 4 it is written even when empty (count 0).
     /// </summary>
     public static byte[]? SerializeAllRoadPoints()
     {
@@ -1666,10 +1695,18 @@ public static partial class RoadSpatialGrid
             using var ms = new MemoryStream();
             using var writer = new BinaryWriter(ms);
             
-            // Version 2 adds the paint-only flag per point (waded fords).
+            // Version 2 adds the paint-only flag per point (waded fords), 3 the
+            // append id, 4 the cut-only flag (staircase earthwork). Each is
+            // written only when the network needs it, so a road-only network
+            // saves exactly as before.
             bool appended = s_appendParents.Count > 0;
+            bool cuts = false;
+            foreach (var cell in m_roadPoints.Values)
+                foreach (var rp in cell)
+                    cuts |= rp.cutOnly;
+            int format = cuts ? 4 : appended ? 3 : 2;
             writer.Write(4);
-            writer.Write(appended ? 3 : 2);
+            writer.Write(format);
             
             // Cells in a fixed order, so the saved bytes depend on the network only:
             // the grid's own order is its hash table's, and islands fill it in parallel.
@@ -1690,11 +1727,12 @@ public static partial class RoadSpatialGrid
                     writer.Write(rp.w);
                     writer.Write(rp.h);
                     writer.Write(rp.paintOnly);
-                    if (appended) writer.Write(rp.addition);
+                    if (format >= 4) writer.Write(rp.cutOnly);
+                    if (format >= 3) writer.Write(rp.addition);
                 }
             }
             
-            if (appended)
+            if (format >= 3)
             {
                 writer.Write(s_appendParents.Count);
                 foreach (int parent in s_appendParents) writer.Write(parent);
@@ -1710,33 +1748,44 @@ public static partial class RoadSpatialGrid
     }
 
     /// <summary>
+    /// Why the last <see cref="DeserializeAllRoadPoints"/> refused its data: the envelope and
+    /// geometry encoding it read, and the check that failed or the exception that stopped it.
+    /// Null after a successful read. The unreadable-save error and a refused client
+    /// snapshot name it, so a refusal says what this build could not read.
+    /// </summary>
+    public static string? LastReadRefusal { get; private set; }
+
+    /// <summary>
     /// Deserialize the entire road network from a byte array.
     /// Clears existing data and replaces with loaded data.
+    /// False (and <see cref="LastReadRefusal"/> says why) when the data is refused.
     /// </summary>
     public static bool DeserializeAllRoadPoints(byte[] data)
     {
-        if (data == null || data.Length == 0)
+        LastReadRefusal = null;
+        int envelope = 0, version = 0;
+        bool Refuse(string why)
+        {
+            LastReadRefusal = $"envelope {envelope}, encoding {version}: {why}";
             return false;
+        }
+        if (data == null || data.Length == 0)
+            return Refuse("no data");
 
+        // Left open by the reader, so a refusal can say how far the read got.
+        var ms = new MemoryStream(data);
         try
         {
-            using var ms = new MemoryStream(data);
-            using var reader = new BinaryReader(ms);
+            using var reader = new BinaryReader(ms, System.Text.Encoding.UTF8, leaveOpen: true);
             
-            int envelope=reader.ReadInt32();
-            int version=envelope==4 ? reader.ReadInt32() : envelope;
-            if ((envelope==4 && version!=2 && version!=3) || (version != 1 && version != 2 && version != 3))
-            {
-                Log.LogWarning($"Unknown road data version: {version}");
-                return false;
-            }
+            envelope=reader.ReadInt32();
+            version=envelope==4 ? reader.ReadInt32() : envelope;
+            if ((envelope==4 && (version < 2 || version > 4)) || (envelope!=4 && (version < 1 || version > 3)))
+                return Refuse("a format this build does not know (it reads envelope 4 with encodings 2-4, and formats 1-3 bare)");
             
             int cellCount = reader.ReadInt32();
             if (cellCount < 0 || cellCount > 1000000)
-            {
-                Log.LogWarning($"Invalid cell count: {cellCount}");
-                return false;
-            }
+                return Refuse($"cell count {cellCount} out of range");
             
             var loadedPoints = new Dictionary<Vector2i, RoadPoint[]>(cellCount);
             int totalPoints = 0;
@@ -1753,10 +1802,7 @@ public static partial class RoadSpatialGrid
                 int pointCount = reader.ReadInt32();
                 
                 if (pointCount < 0 || pointCount > 100000)
-                {
-                    Log.LogWarning($"Invalid point count at cell ({gridX},{gridY}): {pointCount}");
-                    return false;
-                }
+                    return Refuse($"point count {pointCount} at cell ({gridX},{gridY}) out of range");
                 
                 var points = new List<RoadPoint>(pointCount);
                 for (int i = 0; i < pointCount; i++)
@@ -1766,15 +1812,18 @@ public static partial class RoadSpatialGrid
                     float w = reader.ReadSingle();
                     float h = reader.ReadSingle();
                     bool paintOnly = version >= 2 && reader.ReadBoolean();
+                    bool cutOnly = version >= 4 && reader.ReadBoolean();
                     int addition = version >= 3 ? reader.ReadInt32() : 0;
                     if (!ManualRoadDraft.IsFinite(px) || !ManualRoadDraft.IsFinite(py) ||
                         !ManualRoadDraft.IsFinite(w) || w <= 0 || !ManualRoadDraft.IsFinite(h) || addition < 0)
                     {
-                        if (!released) return false;
+                        if (!released)
+                            return Refuse($"point {i} of cell ({gridX},{gridY}) has position ({px},{py}), width {w}, height {h}, " +
+                                          $"addition {addition}: a non-finite value, no width or a negative addition");
                         dropped++;
                         continue;
                     }
-                    points.Add(new RoadPoint(new Vector2(px, py), w, h, paintOnly, addition));
+                    points.Add(new RoadPoint(new Vector2(px, py), w, h, paintOnly, addition, cutOnly));
                 }
                 
                 var key=new Vector2i(gridX,gridY);
@@ -1783,7 +1832,7 @@ public static partial class RoadSpatialGrid
                 {
                     // A released build read a cell listed twice as one cell (it filed each point under its grid
                     // cell), so a released blob keeps both lists; in this build's own formats a repeat is damage.
-                    if (!released) return false;
+                    if (!released) return Refuse($"cell ({gridX},{gridY}) appears twice");
                     points.InsertRange(0, earlier);
                 }
                 loadedPoints[key]=points.ToArray();
@@ -1793,17 +1842,23 @@ public static partial class RoadSpatialGrid
             var parents = new List<int>();
             if (version >= 3)
             {
+                // Encoding 3 is written only for a network with appends, so its block holds at
+                // least one. Encoding 4 is written for any network with a staircase's cuts and
+                // carries the block whether or not anything was appended: empty is valid there.
+                // (Refusing it made every generated network with a staircase unreadable.)
                 int count = reader.ReadInt32();
-                if (count < 1 || count > ManualRoadDraft.MaxAppends) return false;
+                int least = version >= 4 ? 0 : 1;
+                if (count < least || count > ManualRoadDraft.MaxAppends)
+                    return Refuse($"append block holds {count} parent(s) ({least} to {ManualRoadDraft.MaxAppends} expected)");
                 for (int i = 0; i < count; i++)
                 {
                     int parent = reader.ReadInt32();
-                    if (parents.Contains(parent)) return false;
+                    if (parents.Contains(parent)) return Refuse($"append parent {parent} appears twice");
                     parents.Add(parent);
                 }
                 foreach (var cell in loadedPoints.Values)
                     foreach (var point in cell)
-                        if (point.addition > count) return false;
+                        if (point.addition > count) return Refuse($"a point names append {point.addition} of {count}");
             }
             float? length=totalPoints==0 ? 0f : (float?)null;
             if(envelope==4)
@@ -1812,10 +1867,11 @@ public static partial class RoadSpatialGrid
                 float metres=reader.ReadSingle();
                 bool canonicalZero=BitConverter.ToInt32(BitConverter.GetBytes(metres),0)==0;
                 if(known>1 || !ManualRoadDraft.IsFinite(metres) || metres<0 || (known==0 && !canonicalZero)
-                    || (totalPoints==0 && (known!=1 || !canonicalZero))) return false;
+                    || (totalPoints==0 && (known!=1 || !canonicalZero)))
+                    return Refuse($"planned-path length record (known {known}, {metres} m) does not fit {totalPoints} point(s)");
                 length=known==1 ? metres : (float?)null;
             }
-            if (ms.Position != ms.Length) return false;
+            if (ms.Position != ms.Length) return Refuse($"{ms.Length - ms.Position} byte(s) left over after the network");
             int worldSeed=WorldGenerator.instance?.GetSeed() ?? 0;
             var cells = NewCells(loadedPoints);
             m_roadCacheLock.EnterWriteLock();
@@ -1844,8 +1900,7 @@ public static partial class RoadSpatialGrid
         }
         catch (System.Exception ex)
         {
-            Log.LogWarning($"Failed to deserialize global road data: {ex.Message}");
-            return false;
+            return Refuse($"{ex.GetType().Name} at byte {ms.Position} of {data.Length}: {ex.Message}");
         }
     }
 

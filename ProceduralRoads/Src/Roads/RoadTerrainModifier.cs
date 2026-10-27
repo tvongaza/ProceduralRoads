@@ -446,7 +446,7 @@ public static class RoadTerrainModifier
         ModificationStats stats = ModifyVertexHeights(request.Zone, request.Points, context,
             ReferenceEquals(pending, request.Points) || pending.Count == request.Points.Count ? null : pending);
         stats.PaintedTexels = ApplyRoadPaint(pending, terrainComp, stats.PaintedCells, context);
-        FinalizeTerrainMods(request.Zone, request.Points, stats, context);
+        FinalizeTerrainMods(request.Zone, request.Points, stats, context, onlyCuts: pending.Count > 0 && pending.TrueForAll(p => p.cutOnly));
         // Vanilla now applies our deltas to this very array and rebuilds its
         // collider. Do not Poke again from here: that would queue another rebuild.
     }
@@ -527,7 +527,12 @@ public static class RoadTerrainModifier
         // The fill spread, per road point, once per zone: it samples the
         // natural ground around the point, which the per-vertex loop cannot afford.
         float[]? fillExtra = FillExtras(roadPoints, WorldGenerator.instance);
+
+        // A staircase's cuts (cut-only points): the ground within each one's
+        // reach is lowered to its height where it stands higher, never raised.
+        var cuts = roadPoints.FindAll(rp => rp.cutOnly);
         float[]? onlyFill = only != null ? FillExtras(only, WorldGenerator.instance) : null;
+        var onlyCuts = only?.FindAll(rp => rp.cutOnly);
 
         for (int vz = 0; vz < context.GridSize; vz++)
         {
@@ -548,17 +553,15 @@ public static class RoadTerrainModifier
                 
                 int index = vz * context.GridSize + vx;
                 float baseHeight = context.PreCompilerHeights[index] + context.HeightmapPosition.y;
-                if (only != null && CalculateBlendedHeight(only, vertexPos2D, baseHeight, onlyFill).InfluencingPoints == 0)
+                if (only != null && !(CalculateBlendedHeight(only, vertexPos2D, baseHeight, onlyFill).InfluencingPoints > 0
+                        || (onlyCuts!.Count > 0 && !float.IsPositiveInfinity(LowestCut(onlyCuts, vertexPos2D)))))
                     continue;
-                BlendResult blendResult = CalculateBlendedHeight(roadPoints, vertexPos2D, baseHeight, fillExtra);
-                if (blendResult.InfluencingPoints == 0)
-                    continue;
-
-                float finalHeight = Mathf.Lerp(baseHeight, blendResult.TargetHeight, blendResult.MaxBlend)
-                    + RoadEarthworkNoise.FaceBump(vertexPos2D, blendResult.MaxBlend, blendResult.TargetHeight - baseHeight);
-                float delta = Mathf.Clamp(finalHeight - baseHeight, RoadConstants.TerrainDeltaMin, RoadConstants.TerrainDeltaMax);
-
-                if (Mathf.Abs(delta) > RoadConstants.MinHeightDeltaThreshold || blendResult.MaxBlend > RoadConstants.MinBlendForModification)
+                // With no road point here the vertex keeps what the compiler already
+                // holds (an older road's cut, a player's digging): a staircase's cut
+                // added later must lower it from there, never lift it back up.
+                float current = baseHeight + (context.TerrainComp.m_modifiedHeight[index]
+                    ? context.TerrainComp.m_levelDelta[index] + context.TerrainComp.m_smoothDelta[index] : 0f);
+                if (WrittenDelta(vertexPos2D, baseHeight, current, roadPoints, fillExtra, cuts, out BlendResult blendResult) is float delta)
                 {
                     if (seam >= 1f)
                     {
@@ -588,6 +591,53 @@ public static class RoadTerrainModifier
         return stats;
     }
 
+    /// <summary>
+    /// The delta <see cref="ModifyVertexHeights"/> writes at a vertex outside every footprint, null where it writes
+    /// none: the road's earthwork, then a staircase's cut where it stands lower. <paramref name="current"/>: the height
+    /// the vertex holds before this write, which a cut with no road point here lowers from. Any thread: reads only its
+    /// arguments.
+    /// </summary>
+    private static float? WrittenDelta(Vector2 vertex, float baseHeight, float current, List<RoadSpatialGrid.RoadPoint> roadPoints,
+        float[]? fillExtra, List<RoadSpatialGrid.RoadPoint> cuts, out BlendResult blend)
+    {
+        blend = CalculateBlendedHeight(roadPoints, vertex, baseHeight, fillExtra);
+        float cut = cuts.Count > 0 ? LowestCut(cuts, vertex) : float.PositiveInfinity;
+        if (blend.InfluencingPoints == 0 && float.IsPositiveInfinity(cut)) return null;
+        float finalHeight = blend.InfluencingPoints == 0 ? current : RoadTarget(blend, vertex, baseHeight);
+        bool cutHere = cut < finalHeight;
+        if (blend.InfluencingPoints == 0 && !cutHere) return null;
+        if (cutHere) finalHeight = cut;
+        float delta = Mathf.Clamp(finalHeight - baseHeight, RoadConstants.TerrainDeltaMin, RoadConstants.TerrainDeltaMax);
+        return Writes(delta, blend.MaxBlend) || cutHere ? delta : null;
+    }
+
+    /// <summary>
+    /// How far past a cut's own reach its batter runs: the cut climbs back to
+    /// the natural ground at <see cref="CutBatterSlope"/> instead of standing
+    /// as a wall. Cut flat to its reach and no further, a staircase sat in a
+    /// trench with sheer dirt sides.
+    /// </summary>
+    public const float CutBatterReach = 3f;
+    /// <summary>Rise over run of a cut's batter.</summary>
+    public const float CutBatterSlope = 1f;
+
+    /// <summary>The lowest height any cut within reach asks for at this vertex
+    /// (infinity for none): its own height within its reach, climbing on the
+    /// batter beyond.</summary>
+    internal static float LowestCut(List<RoadSpatialGrid.RoadPoint> cuts, Vector2 vertex)
+    {
+        float lowest = float.PositiveInfinity;
+        foreach (var c in cuts)
+        {
+            float reach = Mathf.Sqrt(c.w2) * 0.5f;
+            float d = (c.p - vertex).magnitude;
+            if (d > reach + CutBatterReach) continue;
+            float h = c.h + Mathf.Max(0f, d - reach) * CutBatterSlope;
+            if (h < lowest) lowest = h;
+        }
+        return lowest;
+    }
+
     /// <summary>The fill spread per road point (null when it is off): it samples the
     /// natural ground round each point, so it is worked out once per set of points.</summary>
     internal static float[]? FillExtras(List<RoadSpatialGrid.RoadPoint> roadPoints, WorldGenerator? world)
@@ -595,11 +645,20 @@ public static class RoadTerrainModifier
         if (!(RoadEarthworkNoise.FillSpread > 0f) || world == null) return null;
         var fillExtra = new float[roadPoints.Count];
         for (int k = 0; k < roadPoints.Count; k++)
-            if (!roadPoints[k].paintOnly)
+            if (roadPoints[k].IsRoad)
                 fillExtra[k] = RoadEarthworkNoise.FillExtra(roadPoints[k].p, roadPoints[k].h,
                     (x, z) => BiomeBlendedHeight.GetBlendedHeight(x, z, world));
         return fillExtra;
     }
+
+    /// <summary>The height the road asks for at a vertex its points reach.</summary>
+    private static float RoadTarget(BlendResult blend, Vector2 vertex, float baseHeight) =>
+        Mathf.Lerp(baseHeight, blend.TargetHeight, blend.MaxBlend)
+        + RoadEarthworkNoise.FaceBump(vertex, blend.MaxBlend, blend.TargetHeight - baseHeight);
+
+    /// <summary>Whether a vertex is written at all, for a change this big at this blend.</summary>
+    private static bool Writes(float delta, float maxBlend) =>
+        Mathf.Abs(delta) > RoadConstants.MinHeightDeltaThreshold || maxBlend > RoadConstants.MinBlendForModification;
 
     private struct BlendResult
     {
@@ -689,8 +748,9 @@ public static class RoadTerrainModifier
         for (int k = 0; k < roadPoints.Count; k++)
         {
             RoadSpatialGrid.RoadPoint rp = roadPoints[k];
-            // A paint-only point (a waded ford) leaves the ground as it is.
-            if (rp.paintOnly)
+            // A paint-only point (a waded ford) leaves the ground as it is; a
+            // staircase's cut is applied on its own, after the road surface.
+            if (!rp.IsRoad)
                 continue;
             float distSq = (rp.p - vertexPos).sqrMagnitude;
             // A road point standing well below the ground gets a wider
@@ -857,6 +917,7 @@ public static class RoadTerrainModifier
         
         foreach (RoadSpatialGrid.RoadPoint roadPoint in roadPoints)
         {
+            if (roadPoint.cutOnly) continue; // stone pieces cover a staircase; its cut is not painted
             // Points closer together than PaintDedupeInterval paint the same
             // texels and are skipped, but only while a point's paint reaches
             // the neighbouring texels; a 2 m road paints 0.85 m out on 1 m
@@ -941,7 +1002,8 @@ public static class RoadTerrainModifier
         return painted;
     }
 
-    private static void FinalizeTerrainMods(Vector2s zoneID, List<RoadSpatialGrid.RoadPoint> roadPoints, ModificationStats stats, TerrainContext context)
+    private static void FinalizeTerrainMods(Vector2s zoneID, List<RoadSpatialGrid.RoadPoint> roadPoints, ModificationStats stats, TerrainContext context,
+        bool onlyCuts = false)
     {
         // Texels actually written, not the dedupe cells: a zone whose road
         // points all lie just outside it fills the dedupe set without painting
@@ -969,6 +1031,15 @@ public static class RoadTerrainModifier
             }
             ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug(
                 $"Zone {zoneID}: {stats.VerticesModified}/{stats.VerticesChecked} vertices modified, {paintOps} paint cells");
+        }
+        else if (onlyCuts && context.TerrainComp.m_nview != null && context.TerrainComp.m_nview.IsOwner())
+        {
+            // Every pending point is a staircase's cut and the ground is already
+            // low enough (or the spot is protected): nothing to save but the
+            // stamp. Without it the zone was queued again every 2 s, its mesh
+            // rebuilt each time, and the rock sweep never finished it.
+            context.TerrainComp.m_nview.GetZDO().Set(AppliedVersionHash, RoadSpatialGrid.RoadNetworkVersion);
+            LastWriteOutcome = WriteOutcome.NothingToWrite;
         }
         else
         {

@@ -341,7 +341,8 @@ public static class RoadNetworkPersistence
         }
 
         LastLoadUnreadable = true;
-        Log.LogError($"[LOAD] This world holds a saved road network ({data.Length} bytes) that this build cannot read. " +
+        Log.LogError($"[LOAD] This world holds a saved road network ({data.Length} bytes) that this build cannot read " +
+                     $"({RoadSpatialGrid.LastReadRefusal}). " +
                      "It is left as it is and no new network is generated over it; the world has no roads this session. " +
                      "Use a build that reads it, or road_generate to replace it on purpose.");
         return false;

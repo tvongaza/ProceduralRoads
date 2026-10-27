@@ -32,7 +32,7 @@ public static partial class RoadSpatialGrid
         {
             foreach (var cell in m_roadPoints.Values)
                 foreach (var point in cell)
-                    if (seen.Add(point.p) && allowed(point.p)) result.Add(point.p);
+                    if (!point.cutOnly && seen.Add(point.p) && allowed(point.p)) result.Add(point.p);
         }
         finally { m_roadCacheLock.ExitReadLock(); }
         return result;
@@ -40,7 +40,55 @@ public static partial class RoadSpatialGrid
 
     /// <summary>Plan first; publish the union once. Old arrays are retained until
     /// the new dictionary is complete, so an allocation failure cannot publish half a route.</summary>
-    public static void CommitAppend(IReadOnlyList<PlannedPath> plans, int expectedVersion)
+    public static void CommitAppend(IReadOnlyList<PlannedPath> plans, int expectedVersion) =>
+        PublishAppend(expectedVersion, plans.Count == 0 ? "No road plans to commit." : null, (addition, newPoints) =>
+        {
+            float? length = 0f;
+            foreach (var plan in plans)
+            {
+                length=AddCommittedLength(length,plan.TotalLength);
+                for (int i = 0; i < plan.Points.Count; i++)
+                    AddRoadPoint(newPoints, plan.Points[i], plan.Width, plan.Heights[i], plan.FollowTerrain, addition);
+            }
+            return length;
+        });
+
+    /// <summary>
+    /// Add a staircase's earthwork as one append: a cut-only point per cut
+    /// (x, z, the height to lower the ground to), reaching <paramref name="width"/>/2.
+    /// The road terrain writer lowers the ground at them as their zones load,
+    /// like any appended road, and on a dedicated server through the bake.
+    /// An empty list commits nothing and leaves the version as it is.
+    /// </summary>
+    public static void CommitAppendCuts(IReadOnlyList<Vector3> cuts, float width, int expectedVersion)
+    {
+        if (cuts.Count == 0)
+        {
+            // Checked as any append is, but nothing is published.
+            m_roadCacheLock.EnterReadLock();
+            try { CheckAppend(expectedVersion); }
+            finally { m_roadCacheLock.ExitReadLock(); }
+            return;
+        }
+        PublishAppend(expectedVersion, null, (addition, newPoints) =>
+        {
+            foreach (Vector3 c in cuts)
+                AddRoadPoint(newPoints, new Vector2(c.x, c.z), width, c.y, paintOnly: false, addition, cutOnly: true);
+            return 0f;
+        });
+    }
+
+    // Caller holds the grid lock.
+    private static void CheckAppend(int expectedVersion)
+    {
+        if (RoadNetworkVersion != expectedVersion) throw new InvalidOperationException("The road network changed; plan the road again.");
+        if (s_appendParents.Count >= ManualRoadDraft.MaxAppends) throw new InvalidOperationException("Manual road limit reached for this network.");
+    }
+
+    /// <summary>One append transaction: its points built and the union, statistics and version published
+    /// together under the grid's write lock.</summary>
+    private static void PublishAppend(int expectedVersion, string? empty,
+        Func<int, Dictionary<Vector2i, List<RoadPoint>>, float?> build)
     {
         int worldSeed=WorldGenerator.instance?.GetSeed() ?? 0;
 #if ROADS_TESTS
@@ -49,18 +97,11 @@ public static partial class RoadSpatialGrid
         m_roadCacheLock.EnterWriteLock();
         try
         {
-            if (RoadNetworkVersion != expectedVersion) throw new InvalidOperationException("The road network changed; plan the road again.");
-            if (s_appendParents.Count >= ManualRoadDraft.MaxAppends) throw new InvalidOperationException("Manual road limit reached for this network.");
-            if (plans.Count == 0) throw new ArgumentException("No road plans to commit.");
+            CheckAppend(expectedVersion);
+            if (empty != null) throw new ArgumentException(empty);
             int addition = s_appendParents.Count + 1;
             var newPoints = new Dictionary<Vector2i, List<RoadPoint>>();
-            float? length = 0f;
-            foreach (var plan in plans)
-            {
-                length=AddCommittedLength(length,plan.TotalLength);
-                for (int i = 0; i < plan.Points.Count; i++)
-                    AddRoadPoint(newPoints, plan.Points[i], plan.Width, plan.Heights[i], plan.FollowTerrain, addition);
-            }
+            float? length = build(addition, newPoints);
             var combined = NewCells(m_roadPoints);
             foreach (var cell in newPoints)
             {

@@ -553,7 +553,7 @@ public static class ServerTerrainBake
             int n = 0; double sum = 0, worst = 0;
             foreach (var point in RoadSpatialGrid.GetRoadPointsInZone(zone))
             {
-                if (point.paintOnly || !ZoneSystem.instance.GetGroundHeight(new Vector3(point.p.x, 0f, point.p.y), out float g)) continue;
+                if (!point.IsRoad || !ZoneSystem.instance.GetGroundHeight(new Vector3(point.p.x, 0f, point.p.y), out float g)) continue;
                 double d = Mathf.Abs(g - point.h); n++; sum += d; worst = System.Math.Max(worst, d);
             }
             if (n > 0) Log.LogDebug($"[BAKE] zone {zone}: ghost ground vs road height over {n} points: mean {sum / n:F2} m, worst {worst:F2} m");

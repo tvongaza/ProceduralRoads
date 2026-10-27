@@ -158,6 +158,7 @@ public static class ManualRoads
         float Ground(Vector2 p)
         {
             var near = RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(p.x, 0, p.y), 1f);
+            near.RemoveAll(n => n.cutOnly);
             if (near.Count > 0) return near.OrderBy(n => (n.p - p).sqrMagnitude).First().h;
             return BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
         }

@@ -118,6 +118,9 @@ public static class RoadRockProbe
         var touched = new Dictionary<GameObject, List<(RoadSpatialGrid.RoadPoint point, float surface)>>();
         long lookup = RoadRockStats.Now;
         var points = RoadSpatialGrid.GetRoadPointsNearPosition(centre, radius);
+        // A staircase's cuts are not road: left in the line, one half a metre off a road point turned that point's
+        // heading, and so its clearance box, toward it.
+        points.RemoveAll(p => p.cutOnly);
         // Structures (bridge decks) are not road points: each source says where
         // a walker on it needs rock cleared (StructurePlans).
         var structures = StructurePlans.ClearancesNear(centre, radius);
@@ -128,7 +131,7 @@ public static class RoadRockProbe
         long t = RoadRockStats.Now;
         foreach (var point in points)
         {
-            if (point.paintOnly) continue;
+            if (!point.IsRoad) continue;
             bool ground = ZoneSystem.instance.GetGroundHeight(new Vector3(point.p.x, 0f, point.p.y), out float surface);
             if (!RoadRockPolicy.ClearanceSurface(ground, surface, point.h, RoadRockCarve.GhostSpawned != null, out surface)) { LastGroundMisses++; continue; }
             if (!ground) LastRoadHeightPoints++;
