@@ -211,6 +211,66 @@ public sealed class RoadStatisticsTests : IDisposable
         }
         finally { RoadSpatialGrid.BeforeVersionCalculation=null; }
     }
+    /// <summary>
+    /// A world saved by 1.4.x (format 1) whose network holds a point that build never checked: the point is left out,
+    /// the rest of the network loads, and the world is not handed to a fresh generation for one bad number. Any other
+    /// format is this build's own and is still refused whole.
+    /// </summary>
+    [Theory]
+    [InlineData("NaN height")] [InlineData("infinite x")] [InlineData("width 0")] [InlineData("negative width")]
+    public void LegacyV1WithOneBadPointLoadsTheRest(string defect)
+    {
+        static void Point(BinaryWriter w,float x,float z,float width,float h,int version)
+        { w.Write(x); w.Write(z); w.Write(width); w.Write(h); if(version>=2) w.Write(false); }
+        byte[] Blob(int version)
+        {
+            using var stream=new MemoryStream(); using var w=new BinaryWriter(stream);
+            w.Write(version); w.Write(2);
+            w.Write(0); w.Write(0); w.Write(2);
+            Point(w,1,2,4,40,version);
+            Point(w,defect=="infinite x"?float.PositiveInfinity:3,4,defect=="width 0"?0:defect=="negative width"?-2:4,defect=="NaN height"?float.NaN:40,version);
+            w.Write(5); w.Write(5); w.Write(1);
+            Point(w,330,330,4,41,version);
+            return stream.ToArray();
+        }
+        Assert.True(RoadSpatialGrid.DeserializeAllRoadPoints(Blob(1)));
+        Assert.Equal(2,RoadSpatialGrid.StoredPointRecords);
+        Assert.Equal(2,RoadSpatialGrid.GridCellsWithRoads);
+        Assert.All(RoadSpatialGrid.SnapshotAllRoadPoints(),p=>Assert.True(ManualRoadDraft.IsFinite(p.h) && ManualRoadDraft.IsFinite(p.p.x) && p.w>0));
+        Assert.NotEqual(0,RoadSpatialGrid.RoadNetworkVersion);
+        RoadSpatialGrid.Clear();
+        Assert.False(RoadSpatialGrid.DeserializeAllRoadPoints(Blob(2)),"this build's own formats are refused whole");
+    }
+    /// <summary>
+    /// A released build (format 1) read a cell listed twice as one cell, so its blob loads here with both lists. In this
+    /// build's own formats a repeated cell is damage and the blob is refused whole.
+    /// </summary>
+    [Fact]
+    public void ARepeatedCellLoadsInAReleasedBlobAndIsRefusedInOurOwn()
+    {
+        byte[] Blob(int version)
+        {
+            using var stream=new MemoryStream(); using var w=new BinaryWriter(stream);
+            w.Write(version); w.Write(2);
+            for(int i=0;i<2;i++)
+            {
+                w.Write(0); w.Write(0); w.Write(1);
+                w.Write(1f+i); w.Write(2f); w.Write(4f); w.Write(40f);
+                if(version>=2) w.Write(false);
+            }
+            return stream.ToArray();
+        }
+        Assert.True(RoadSpatialGrid.DeserializeAllRoadPoints(Blob(1)));
+        Assert.Equal(2,RoadSpatialGrid.StoredPointRecords);
+        Assert.Equal(1,RoadSpatialGrid.GridCellsWithRoads);
+        RoadSpatialGrid.Clear();
+        Assert.False(RoadSpatialGrid.DeserializeAllRoadPoints(Blob(2)));
+    }
+    [Fact]
+    public void TheClientSnapshotCarriesTheFormat4GridUnderItsOwnVersion()
+    {
+        Assert.Equal(3,ManualRoadNetworkSync.SnapshotVersion);
+    }
     internal static byte[] Legacy(int version,bool empty=false)
     {
         using var stream=new MemoryStream(); using var writer=new BinaryWriter(stream);

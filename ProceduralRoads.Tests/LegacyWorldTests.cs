@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
@@ -221,7 +220,7 @@ public sealed class LegacyWorldTests : IDisposable
         OpenWorld();
         Assert.True(RoadNetworkGenerator.RoadsLoadedFromZDO);
         Assert.True(RoadSpatialGrid.LoadedFromReleasedFormat);
-        int points = RoadSpatialGrid.TotalRoadPoints;
+        int points = RoadSpatialGrid.StoredPointRecords;
 
         Assert.Throws<InvalidOperationException>(() =>
             ManualRoads.Prepare(new[] { new Vector2(-20f, 100f), new Vector2(60f, 100f) }, false));
@@ -289,36 +288,5 @@ public sealed class LegacyWorldTests : IDisposable
         old1.Write(1); old1.Write(v1.ReadByteArray()); old1.Write(v1.ReadByteArray()); old1.Write(v1.ReadByteArray());
         Assert.False(ManualRoadNetworkSync.Apply(new ZPackage(old1.GetArray())));
         Assert.False(RoadNetworkGenerator.RoadsAvailable);
-    }
-
-    /// <summary>
-    /// A world saved by 1.4.x (format 1) whose network holds a point that build never checked: the point is left out,
-    /// the rest of the network loads, and the world is not handed to a fresh generation for one bad number. Any other
-    /// format is this build's own and is still refused whole.
-    /// </summary>
-    [Theory]
-    [InlineData("NaN height")] [InlineData("infinite x")] [InlineData("width 0")] [InlineData("negative width")]
-    public void LegacyV1WithOneBadPointLoadsTheRest(string defect)
-    {
-        static void Point(BinaryWriter w,float x,float z,float width,float h,int version)
-        { w.Write(x); w.Write(z); w.Write(width); w.Write(h); if(version>=2) w.Write(false); }
-        byte[] Blob(int version)
-        {
-            using var stream=new MemoryStream(); using var w=new BinaryWriter(stream);
-            w.Write(version); w.Write(2);
-            w.Write(0); w.Write(0); w.Write(2);
-            Point(w,1,2,4,40,version);
-            Point(w,defect=="infinite x"?float.PositiveInfinity:3,4,defect=="width 0"?0:defect=="negative width"?-2:4,defect=="NaN height"?float.NaN:40,version);
-            w.Write(5); w.Write(5); w.Write(1);
-            Point(w,330,330,4,41,version);
-            return stream.ToArray();
-        }
-        Assert.True(RoadSpatialGrid.DeserializeAllRoadPoints(Blob(1)));
-        Assert.Equal(2,RoadSpatialGrid.TotalRoadPoints);
-        Assert.Equal(2,RoadSpatialGrid.GridCellsWithRoads);
-        Assert.All(RoadSpatialGrid.SnapshotAllRoadPoints(),p=>Assert.True(ManualRoadDraft.IsFinite(p.h) && ManualRoadDraft.IsFinite(p.p.x) && p.w>0));
-        Assert.NotEqual(0,RoadSpatialGrid.RoadNetworkVersion);
-        RoadSpatialGrid.Clear();
-        Assert.False(RoadSpatialGrid.DeserializeAllRoadPoints(Blob(2)),"this build's own formats are refused whole");
     }
 }

@@ -341,13 +341,14 @@ public class LoadDecisionTests : System.IDisposable
         using var w = new BinaryWriter(ms);
         if (kind == "version 99") { w.Write(99); w.Write(0); return ms.ToArray(); }
         if (kind == "bridge appends") { w.Write(99); return ms.ToArray(); }
-        // This build's own format 2 holding one bad point.
-        w.Write(2); w.Write(1);
+        // A v4 envelope (this build's own format) holding one bad point.
+        w.Write(4); w.Write(2); w.Write(1);
         w.Write(0); w.Write(0); w.Write(1);
         w.Write(1f); w.Write(2f);
         w.Write(kind == "width 0" ? 0f : 4f);
         w.Write(kind == "NaN height" ? float.NaN : 40f);
         w.Write(false);
+        w.Write((byte)0); w.Write(0f);
         return ms.ToArray();
     }
 
@@ -375,7 +376,7 @@ public class LoadDecisionTests : System.IDisposable
         Assert.False(RoadNetworkGenerator.RoadsGenerated, "a network was generated over the saved one");
         Assert.False(RoadLifecycleManager.IsGenerating, "a network is being generated over the saved one");
         Assert.False(RoadNetworkGenerator.RoadsAvailable);
-        Assert.Equal(0, RoadSpatialGrid.TotalRoadPoints);
+        Assert.Equal(0, RoadSpatialGrid.StoredPointRecords);
         RoadLifecycleManager.OnPrepareSave();
         Assert.Equal(saved, metadata.GetByteArray(globalData));
     }
