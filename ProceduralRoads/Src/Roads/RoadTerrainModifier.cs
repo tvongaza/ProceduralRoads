@@ -439,7 +439,12 @@ public static class RoadTerrainModifier
         // Old roads in this same zone may contain player edits: never replay them.
         var pending = request.Force ? request.Points : RoadSpatialGrid.PendingPoints(
             request.Points, terrainComp.m_nview.GetZDO().GetInt(AppliedVersionHash, 0));
-        ModificationStats stats = ModifyVertexHeights(request.Zone, pending, context);
+        // The pending points say which vertices to write; every road point of the zone says to
+        // what height, as a full write would: written from the new points alone, the north zone
+        // of a frost cave's approach stood 0.43 m above its neighbour along their shared edge, a
+        // tear.
+        ModificationStats stats = ModifyVertexHeights(request.Zone, request.Points, context,
+            ReferenceEquals(pending, request.Points) || pending.Count == request.Points.Count ? null : pending);
         stats.PaintedTexels = ApplyRoadPaint(pending, terrainComp, stats.PaintedCells, context);
         FinalizeTerrainMods(request.Zone, request.Points, stats, context);
         // Vanilla now applies our deltas to this very array and rebuilds its
@@ -508,7 +513,11 @@ public static class RoadTerrainModifier
         public int PaintedTexels;
     }
 
-    private static ModificationStats ModifyVertexHeights(Vector2s zoneID, List<RoadSpatialGrid.RoadPoint> roadPoints, TerrainContext context)
+    /// <param name="only">Write only the vertices these points reach (an incremental write of
+    /// appended points); null for every vertex any point reaches. Heights always come from all
+    /// of <paramref name="roadPoints"/>.</param>
+    private static ModificationStats ModifyVertexHeights(Vector2s zoneID, List<RoadSpatialGrid.RoadPoint> roadPoints, TerrainContext context,
+        List<RoadSpatialGrid.RoadPoint>? only = null)
     {
         ModificationStats stats = new ModificationStats { PaintedCells = new HashSet<Vector2i>() };
         bool seamNear = NetworkCutoff.SeamNear(zoneID);
@@ -517,16 +526,8 @@ public static class RoadTerrainModifier
 
         // The fill spread, per road point, once per zone: it samples the
         // natural ground around the point, which the per-vertex loop cannot afford.
-        var world = WorldGenerator.instance;
-        float[]? fillExtra = null;
-        if (RoadEarthworkNoise.FillSpread > 0f && world != null)
-        {
-            fillExtra = new float[roadPoints.Count];
-            for (int k = 0; k < roadPoints.Count; k++)
-                if (!roadPoints[k].paintOnly)
-                    fillExtra[k] = RoadEarthworkNoise.FillExtra(roadPoints[k].p, roadPoints[k].h,
-                        (x, z) => BiomeBlendedHeight.GetBlendedHeight(x, z, world));
-        }
+        float[]? fillExtra = FillExtras(roadPoints, WorldGenerator.instance);
+        float[]? onlyFill = only != null ? FillExtras(only, WorldGenerator.instance) : null;
 
         for (int vz = 0; vz < context.GridSize; vz++)
         {
@@ -547,6 +548,8 @@ public static class RoadTerrainModifier
                 
                 int index = vz * context.GridSize + vx;
                 float baseHeight = context.PreCompilerHeights[index] + context.HeightmapPosition.y;
+                if (only != null && CalculateBlendedHeight(only, vertexPos2D, baseHeight, onlyFill).InfluencingPoints == 0)
+                    continue;
                 BlendResult blendResult = CalculateBlendedHeight(roadPoints, vertexPos2D, baseHeight, fillExtra);
                 if (blendResult.InfluencingPoints == 0)
                     continue;
@@ -583,6 +586,19 @@ public static class RoadTerrainModifier
         }
 
         return stats;
+    }
+
+    /// <summary>The fill spread per road point (null when it is off): it samples the
+    /// natural ground round each point, so it is worked out once per set of points.</summary>
+    internal static float[]? FillExtras(List<RoadSpatialGrid.RoadPoint> roadPoints, WorldGenerator? world)
+    {
+        if (!(RoadEarthworkNoise.FillSpread > 0f) || world == null) return null;
+        var fillExtra = new float[roadPoints.Count];
+        for (int k = 0; k < roadPoints.Count; k++)
+            if (!roadPoints[k].paintOnly)
+                fillExtra[k] = RoadEarthworkNoise.FillExtra(roadPoints[k].p, roadPoints[k].h,
+                    (x, z) => BiomeBlendedHeight.GetBlendedHeight(x, z, world));
+        return fillExtra;
     }
 
     private struct BlendResult

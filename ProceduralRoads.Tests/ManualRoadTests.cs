@@ -168,6 +168,33 @@ public class ManualRoadTests : IDisposable
         Assert.Equal(saves + (elsewhere ? 0 : 1), tc.SaveCount);
     }
 
+    /// <summary>An appended road written into a zone that already carries the old one must leave
+    /// the same heights as a zone written with both at once: written from the new points alone, two
+    /// zones disagreed along their shared edge by 0.43 m, a tear.</summary>
+    [Fact] public void AnAppendedRoadIsWrittenAsAFullWriteWouldWhereItReaches()
+    {
+        BaseRoad(-16f); var zone = new Vector2s(0, 0);
+        var hm = Heightmap.CreateForZone(zone); Heightmap.Registered = hm; var tc = hm.m_terrainComp!;
+        RoadTerrainModifier.OnTerrainCompilerReady(tc);
+        // A second road 6 m away, close enough that the two blend.
+        var raised = Line(-10f); for (int i = 0; i < raised.Heights.Count; i++) raised.Heights[i] += 1.5f;
+        RoadSpatialGrid.CommitAppend(new[] { raised }, RoadSpatialGrid.RoadNetworkVersion);
+        RoadTerrainModifier.OnTerrainCompilerReady(tc);
+
+        var fresh = Heightmap.CreateForZone(zone); Heightmap.Registered = fresh; var full = fresh.m_terrainComp!;
+        RoadTerrainModifier.OnTerrainCompilerReady(full);
+
+        int compared = 0;
+        for (int i = 0; i < tc.m_levelDelta.Length; i++)
+        {
+            if (!tc.m_modifiedHeight[i] && !full.m_modifiedHeight[i]) continue;
+            compared++;
+            Assert.True(Mathf.Abs(tc.m_levelDelta[i] - full.m_levelDelta[i]) < 0.01f,
+                $"vertex {i}: appended {tc.m_levelDelta[i]:F3}, full {full.m_levelDelta[i]:F3}");
+        }
+        Assert.True(compared > 0);
+    }
+
     [Fact] public void BlendBoundaryIncludesTheNeighbouringZone()
     {
         int old=BaseRoad(); Add(32); // Zone edge, road influences both sides.
