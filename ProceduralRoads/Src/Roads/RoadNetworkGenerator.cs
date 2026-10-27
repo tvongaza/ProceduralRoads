@@ -638,6 +638,7 @@ public static partial class RoadNetworkGenerator
         m_lastFailure.Clear();
         ClearStairNotes();
         m_builtTo.Clear();
+        m_ringRoundFailed.Clear();
         m_roadsWithNoRoute = 0;
         m_earthworkReroutes = 0;
         m_pullReroutes = 0;
@@ -1080,6 +1081,41 @@ public static partial class RoadNetworkGenerator
         finally { Finder?.ClearNoStairs(); t_inRoad = false; }
     }
 
+    /// <summary>How far out from a placed place's ring point its road's search ends, the road then running
+    /// straight in to the ring point: a search cell.</summary>
+    public const float LeadInLength = RoadPathfinder.CellSize;
+    private static Vector2 LeadIn(PlacedSite site, Vector2 aim) => aim + (aim - site.Centre).normalized * LeadInLength;
+
+    /// <summary>Placed places (and whether stairs were searched) whose ring every turn round found no route to
+    /// once this generation, keyed on the places it belongs to (<see cref="RingKey"/>): read and written by the island
+    /// worker that owns the place (ContainsKey and the indexer only).</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<((int, int) a, (int, int) b, bool stairs), byte> m_ringRoundFailed = new();
+
+    /// <summary>The key a failed ring search is kept under: the placed place it was searched round, or, where both of a
+    /// road's ends are placed and both rings were turned together, the pair (either way round): which of the two no road
+    /// got to the search cannot say. Keyed on one of them (the start's), a road between two placed places that failed cost
+    /// the start its ring search for the rest of the generation, though it was the other place no road got to.</summary>
+    internal static ((int, int) a, (int, int) b, bool stairs) RingKey(Vector2? startPlaced, Vector2? endPlaced, bool stairs)
+    {
+        var none = (int.MinValue, int.MinValue);
+        var s = startPlaced is Vector2 sp ? PlaceKey(sp) : none;
+        var e = endPlaced is Vector2 ep ? PlaceKey(ep) : none;
+        if (s == none) return (e, none, stairs);
+        if (e == none) return (s, none, stairs);
+        return s.CompareTo(e) <= 0 ? (s, e, stairs) : (e, s, stairs);
+    }
+    /// <summary>Off, every road to a placed place searches round its ring again. Settable for tests.</summary>
+    internal static bool RingRoundOnce = true;
+    /// <summary>Searches made round placed places' rings (tests).</summary>
+    internal static int RingTurnSearches;
+
+    /// <summary>Where a road to a placed place ends its search: its trim ring (as <see cref="TrimPathToRadii"/>
+    /// cuts it) where that is nearest the place's landing (<see cref="PlacedSites.Aim"/>).</summary>
+    private static Vector2 AimAt(PlacedSite site, float radius, float width, float turn = 0f) =>
+        PlacedSites.Aim(site, RoadSiteProtection.RadiusAt(site.Centre, radius) + width * 0.5f + 2f,
+            p => RoadCrossingDetector.IsRoadGround(p, GenerationWorld)
+                && RoadCrossingDetector.IsRoadGround(LeadIn(site, p), GenerationWorld), turn);
+
     private static bool GenerateRoadCore(
         Vector2 startCenter, float startRadius,
         Vector2 endCenter, float endRadius,
@@ -1142,9 +1178,52 @@ public static partial class RoadNetworkGenerator
             return built;
         }
 
-        Vector2 pathStart = RoadEndpoint.FindGround(GenerationWorld, startCenter, startRadius);
-        Vector2 pathEnd = RoadEndpoint.FindGround(GenerationWorld, endCenter, endRadius);
-        List<Vector2>? path = SnapToNetwork(Finder.FindPath(pathStart, pathEnd), width);
+        // A place placed before its roads: searched to its trim ring where that is nearest its landing,
+        // not to its centre (PlacedSites.Aim).
+        PlacedSite? startSite = startRadius > 0f && PlacedSites.TryGetReady(startCenter, out PlacedSite s0) ? s0 : null;
+        PlacedSite? endSite = endRadius > 0f && PlacedSites.TryGetReady(endCenter, out PlacedSite s1) ? s1 : null;
+        Vector2? startAim = startSite != null ? AimAt(startSite, startRadius, width) : null;
+        Vector2? endAim = endSite != null ? AimAt(endSite, endRadius, width) : null;
+        Vector2 pathStart = startAim is Vector2 sa ? LeadIn(startSite!, sa) : RoadEndpoint.FindGround(GenerationWorld, startCenter, startRadius);
+        Vector2 pathEnd = endAim is Vector2 ea ? LeadIn(endSite!, ea) : RoadEndpoint.FindGround(GenerationWorld, endCenter, endRadius);
+        List<Vector2>? path = Finder.FindPath(pathStart, pathEnd);
+        // The landing's side out of reach (its lead-in on a cliff, in water or shut in): further round the
+        // ring, then searched to the place as any road is, the road onto its landing then leading round
+        // from where it arrives, as a staircase or a road is led round a place's rock (on one test world
+        // three Dvergr entrances found no route to their landing's side, and one then came in
+        // on the far side, too far from its landing).
+        // Each of those searches that finds nothing spends its whole budget, and a place no road gets to
+        // was searched round its ring for every road tried to it: on one test layout, 40 of island
+        // 3's 115 build searches (7.4 s of 12.7 s), the slowest island in game (149 s of build). Where every
+        // turn found nothing for a place once, its later roads go straight to the search to the place.
+        var roundKey = RingKey(startSite?.Centre, endSite?.Centre, Finder.Stairs);
+        bool round = (startAim != null || endAim != null) && (path == null || path.Count < 2)
+            && !(RingRoundOnce && m_ringRoundFailed.ContainsKey(roundKey));
+        foreach (float turn in new[] { 45f, -45f, 90f, -90f })
+        {
+            if (!round || (path != null && path.Count >= 2)) break;
+            if (startSite != null) { startAim = AimAt(startSite, startRadius, width, turn); pathStart = LeadIn(startSite, startAim.Value); }
+            if (endSite != null) { endAim = AimAt(endSite, endRadius, width, turn); pathEnd = LeadIn(endSite, endAim.Value); }
+            System.Threading.Interlocked.Increment(ref RingTurnSearches);
+            path = Finder.FindPath(pathStart, pathEnd);
+        }
+        if (round && (path == null || path.Count < 2)) m_ringRoundFailed[roundKey] = 0;
+        if ((path == null || path.Count < 2) && (startAim != null || endAim != null))
+        {
+            startAim = endAim = null;
+            pathStart = RoadEndpoint.FindGround(GenerationWorld, startCenter, startRadius);
+            pathEnd = RoadEndpoint.FindGround(GenerationWorld, endCenter, endRadius);
+            path = Finder.FindPath(pathStart, pathEnd);
+        }
+        // In to a placed place's ring point head on from its lead-in, so the road onto its landing
+        // carries straight on: arriving along the ring, its staircase ran beside the road's own end
+        // and was refused "on its road" (14 of the 36 placed places on one test world).
+        if (path != null && path.Count >= 2)
+        {
+            if (startAim is Vector2 s2) path.Insert(0, s2);
+            if (endAim is Vector2 e2) path.Add(e2);
+        }
+        path = SnapToNetwork(path, width);
 
         // Canvas.ForceUpdateCanvases() used to be pumped here to keep a
         // client's loading screen alive during a long generation. Islands are
@@ -1181,8 +1260,9 @@ public static partial class RoadNetworkGenerator
             return false;
         }
 
-        path = ImproveSiteApproach(path, startCenter, startRadius, width, true);
-        path = ImproveSiteApproach(path, endCenter, endRadius, width, false);
+        // A placed place's end is already on its landing's side, and is carried on onto the landing.
+        if (startSite == null) path = ImproveSiteApproach(path, startCenter, startRadius, width, true);
+        if (endSite == null) path = ImproveSiteApproach(path, endCenter, endRadius, width, false);
         Vector2 beforeStart = path[0], beforeEnd = path[path.Count - 1];
         var withStubs = path;
         path = DropStubs(path, PlaceReached(startCenter, startRadius), PlaceReached(endCenter, endRadius)) ?? path;
@@ -1288,7 +1368,7 @@ public static partial class RoadNetworkGenerator
             for (int attempt = 0; (past > 0 || pulled > 0) && attempt < EarthworkRetries; attempt++)
             {
                 foreach (var w in where) finder.PenalizeAround(w, EarthworkPenaltyRadius);
-                var retry = Replan(finder, pathStart, pathEnd, startCenter, startRadius, endCenter, endRadius, width);
+                var retry = Replan(finder, pathStart, pathEnd, startCenter, startRadius, endCenter, endRadius, width, startAim, endAim);
                 if (retry == null)
                 { Log.LogDebug($"Road {label}: earthwork re-route {attempt + 1} did not route or build ({RoadSpatialGrid.LastRefusal ?? "no route"}), {finder.EarthworkPenaltyCells} cell(s) priced up"); continue; }
                 var whereRetry = new List<Vector2>();
@@ -2018,18 +2098,30 @@ public static partial class RoadNetworkGenerator
     }
 
     /// <summary>The road searched and planned again, with the pathfinder's
-    /// current penalties; null when it does not route or build.</summary>
-    private static (List<Vector2> path, List<RoadCrossing> crossings, List<RoadSpatialGrid.PlannedPath> plans, List<RoadStairSpan> stairs, bool startAtPlace, bool endAtPlace)? Replan(
+    /// current penalties; null when it does not route or build. <paramref name="startAim"/> and <paramref name="endAim"/>:
+    /// the ring points the road's own search was aimed at (<see cref="AimAt"/>, turned where it went round the ring; null
+    /// where it searched to the place), which the re-route comes in to head on as the road did. Worked out again here, at
+    /// no turn and with only the ring point on road ground, they could differ, and the re-route then lost the head-on
+    /// ring point.</summary>
+    internal static (List<Vector2> path, List<RoadCrossing> crossings, List<RoadSpatialGrid.PlannedPath> plans, List<RoadStairSpan> stairs, bool startAtPlace, bool endAtPlace)? Replan(
         RoadPathfinder finder, Vector2 pathStart, Vector2 pathEnd, Vector2 startCenter, float startRadius,
-        Vector2 endCenter, float endRadius, float width)
+        Vector2 endCenter, float endRadius, float width, Vector2? startAim, Vector2? endAim)
     {
-        var path = SnapToNetwork(finder.FindPath(pathStart, pathEnd), width);
+        PlacedSite? startSite = startRadius > 0f && PlacedSites.TryGetReady(startCenter, out PlacedSite s0) ? s0 : null;
+        PlacedSite? endSite = endRadius > 0f && PlacedSites.TryGetReady(endCenter, out PlacedSite s1) ? s1 : null;
+        bool startPlaced = startSite != null, endPlaced = endSite != null;
+        var path = finder.FindPath(pathStart, pathEnd);
+        if (path == null || path.Count < 2) return null;
+        // In head on from the lead-in to the ring point the road's search was aimed at, as GenerateRoadCore does.
+        if (startPlaced && startAim is Vector2 sa) path.Insert(0, sa);
+        if (endPlaced && endAim is Vector2 ea) path.Add(ea);
+        path = SnapToNetwork(path, width);
         if (path == null || path.Count < 2) return null;
         path = TrimPathToRadii(path, startCenter, startRadius, endCenter, endRadius);
         path = TrimWetEnds(path);
         if (path == null || path.Count < 2) return null;
-        path = ImproveSiteApproach(path, startCenter, startRadius, width, true);
-        path = ImproveSiteApproach(path, endCenter, endRadius, width, false);
+        if (!startPlaced) path = ImproveSiteApproach(path, startCenter, startRadius, width, true);
+        if (!endPlaced) path = ImproveSiteApproach(path, endCenter, endRadius, width, false);
         Vector2 beforeStart = path[0], beforeEnd = path[path.Count - 1];
         path = DropStubs(path, PlaceReached(startCenter, startRadius), PlaceReached(endCenter, endRadius)) ?? path;
         // An end moved to a junction takes its height from the road it joins,
@@ -2761,6 +2853,7 @@ public static partial class RoadNetworkGenerator
 
     internal static void ResetData()
     {
+        m_ringRoundFailed.Clear();
         OnReset?.Invoke();
         ManualRoads.Reset();
         LocationLevelling.ResetPlacements?.Invoke();

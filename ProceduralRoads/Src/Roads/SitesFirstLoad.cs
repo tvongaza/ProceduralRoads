@@ -144,7 +144,7 @@ public static class SitesFirstLoad
         float rock = PlacedSiteReader.RockRadius(centre);
         // The ground the road onto its landing may be laid over: out to the road's trim ring and round
         // its rock (a staircase from behind is led round it), and a margin beyond.
-        float ring = RoadSiteProtection.RadiusAt(centre, rock) + RoadNetworkGenerator.RoadWidth * 0.5f + 2f;
+        float ring = RoadSiteProtection.RadiusAt(centre, rock) + RoadNetworkGenerator.RoadWidth * 0.5f + 2f + PlacedSites.AimOut;
         float half = Mathf.Max(ring, rock + RoadStairRuns.RockMargin + RoadStairRuns.RockClearance) + PlacedSiteReader.Margin;
         int x0 = Mathf.FloorToInt(centre.x - half), z0 = Mathf.FloorToInt(centre.y - half), w = Mathf.CeilToInt(2f * half) + 1;
         List<SiteRock> rocks = PlacedSiteReader.PlaceRocks(x0, z0, w, w, centre, root, yaw, out _);

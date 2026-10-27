@@ -153,6 +153,35 @@ public static class PlacedSites
         return randomRotation && (biome == Heightmap.Biome.Mountain || biome == Heightmap.Biome.Mistlands);
     }
 
+    /// <summary>How much further out than the road's trim ring the search's end is put, so the trim keeps it.</summary>
+    public const float AimOut = 0.5f;
+    /// <summary>The turns tried either side of the landing's bearing where the point there is no road ground,
+    /// round to the place's back: a landing facing the sea is come to along the shore (at -6016,4736).</summary>
+    public const float AimStep = 22.5f;
+    public const int AimSteps = 8;
+
+    /// <summary>
+    /// Where a road to <paramref name="site"/> ends its search: on its trim ring (<paramref name="ring"/>
+    /// from the centre) where the ring is nearest the place's landing, so the road comes in on the
+    /// landing's side whichever way it arrives; the nearest road ground round the ring either side where
+    /// that is not. Searched to the centre, a road came in from behind and ended 80 m from the landing.
+    /// </summary>
+    /// <param name="turn">Degrees round the ring from the landing's bearing, for a road that cannot get to that side.</param>
+    public static Vector2 Aim(PlacedSite site, float ring, Func<Vector2, bool> isGround, float turn = 0f)
+    {
+        Vector2 toward = site.Shape.Landing - site.Centre;
+        if (toward.sqrMagnitude < 1e-4f) toward = site.Shape.Front;
+        float bearing = Mathf.Atan2(toward.x, toward.y) * Mathf.Rad2Deg + turn;
+        float r = ring + AimOut;
+        Vector2 At(float b) => site.Centre + new Vector2(Mathf.Sin(b * Mathf.Deg2Rad), Mathf.Cos(b * Mathf.Deg2Rad)) * r;
+        for (int i = 0; i <= AimSteps; i++)
+            foreach (int side in i == 0 ? new[] { 0 } : new[] { 1, -1 })
+            {
+                Vector2 p = At(bearing + side * i * AimStep);
+                if (isGround(p)) return p;
+            }
+        return At(bearing);
+    }
     public static void Load(IEnumerable<PlacedSiteRecord> records) { foreach (var r in records) Remember(r); }
 
     private static string F(float v) => v.ToString("R", CultureInfo.InvariantCulture);
