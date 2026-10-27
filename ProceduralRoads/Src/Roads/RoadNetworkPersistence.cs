@@ -50,6 +50,8 @@ public static class RoadNetworkPersistence
     /// Hash key for storing global road network data on the ZDO.
     /// </summary>
     private static readonly int AppendBridgesHash = "ProceduralRoads_AppendBridges".GetStableHashCode();
+    /// <summary>Map icons of places placed before their roads, kept off the map until a player comes near (<see cref="HiddenSiteIcons"/>).</summary>
+    private static readonly int HiddenSiteIconsHash = "ProceduralRoads_HiddenSiteIcons".GetStableHashCode();
 
     /// <summary>The network's staircases: their pieces and clearances (StairStructures).</summary>
     private static readonly int StairRunsHash = "ProceduralRoads_StairRuns".GetStableHashCode();
@@ -185,6 +187,7 @@ public static class RoadNetworkPersistence
         WriteBridgeZones(metadataZdo, bridgeZones);
         metadataZdo.Set(AppendBridgesHash, StructureAppendQueue.Serialize());
         metadataZdo.Set(StairRunsHash, StairStructures.Serialize());
+        metadataZdo.Set(HiddenSiteIconsHash, HiddenSiteIcons.Serialize());
     }
 
     /// <summary>
@@ -204,6 +207,7 @@ public static class RoadNetworkPersistence
         WriteBridgeZones(metadataZdo, bridgeZones);
         metadataZdo.Set(AppendBridgesHash, StructureAppendQueue.Serialize());
         metadataZdo.Set(StairRunsHash, StairStructures.Serialize());
+        metadataZdo.Set(HiddenSiteIconsHash, HiddenSiteIcons.Serialize());
     }
 
     /// <summary>
@@ -340,6 +344,13 @@ public static class RoadNetworkPersistence
                 bridgeZones.Clear();
                 LastLoadUnreadable = true;
                 return false;
+            }
+            // A damaged record shows the places' icons: the map as the game would have it once they are placed.
+            try { HiddenSiteIcons.Load(metadataZdo.GetByteArray(HiddenSiteIconsHash, null)); }
+            catch (Exception e) when (e is System.IO.InvalidDataException || e is System.IO.IOException)
+            {
+                Log.LogWarning($"[LOAD] Hidden site icons not loaded, saved data is damaged: {e.Message}");
+                HiddenSiteIcons.Reset();
             }
             // A damaged stair record must not cost the world its roads: drop the stairs and say so.
             try { StairStructures.Load(metadataZdo.GetByteArray(StairRunsHash, null)); }

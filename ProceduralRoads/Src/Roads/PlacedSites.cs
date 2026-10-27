@@ -131,10 +131,11 @@ public static class PlacedSites
 
     public static int ReadyCount => s_ready.Count;
 
-    /// <summary>Whether a place's placement is the player's to make: unique, or shown on the map once placed or always
-    /// (where these places land is up to the player
-    /// exploring, not the mod). Never placed before its roads.</summary>
-    public static bool PlayerDecides(bool unique, bool iconPlaced, bool iconAlways) => unique || iconPlaced || iconAlways;
+    /// <summary>Whether a place's placement is the player's to make: unique, or shown on the map once placed or always.</summary>
+    /// <remarks>Not Hildir's quest sites while roads go to them (<see cref="RoadNetworkOptions.HildirQuestSites"/>): placed
+    /// first like the other caves, their map icons held back until a player comes near (<see cref="HiddenSiteIcons"/>).</remarks>
+    public static bool PlayerDecides(string prefab, bool unique, bool iconPlaced, bool iconAlways) =>
+        !(RoadNetworkGenerator.NetworkOptions.HildirQuestSites && RoadNetworkGenerator.IsHildirQuestSite(prefab)) && (unique || iconPlaced || iconAlways);
 
     /// <summary>
     /// Whether a place's landing is only known once it is placed, so it is placed before its roads:

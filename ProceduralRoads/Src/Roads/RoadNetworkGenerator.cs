@@ -2370,8 +2370,14 @@ public static partial class RoadNetworkGenerator
         return result;
     }
 
+    /// <summary>Hildir's quest sites: her cave, crypt and tower. Not her camp (unique, a vendor).</summary>
+    internal static bool IsHildirQuestSite(string name) => name == "Hildir_cave" || name == "Hildir_crypt" || name == "Hildir_plainsfortress";
+
     private static bool IsRoadLocation(string locationName)
     {
+        // A binary flag in the config players can set: if false, the Hildir quest sites are excluded from the POI
+        // list; if true they are like boss locations, always included and pre-loaded like other caves.
+        if (IsHildirQuestSite(locationName) && !NetworkOptions.HildirQuestSites) return false;
         return BossLocationNames.Contains(locationName) ||
                LocationPriorities.ContainsKey(locationName) ||
                IsCustomLocation(locationName);
@@ -2381,7 +2387,7 @@ public static partial class RoadNetworkGenerator
         || ConfiguredLocationNames.Contains(name);
 
     private static bool IsRequiredLocation(string name) => BossLocationNames.Contains(name)
-        || name == "Hildir_cave" || name == "Hildir_crypt" || name == "Hildir_plainsfortress"
+        || (IsHildirQuestSite(name) && NetworkOptions.HildirQuestSites)
         || name == RoadCoastalLandings.Name;
 
     private static List<(string name, Vector3 position, float radius)> SelectIslandDestinations(

@@ -19,8 +19,9 @@ namespace ProceduralRoads;
 /// stage and count on the loading panel: <see cref="ListingStage"/>, <see cref="PlacingStage"/>
 /// (one try a frame) and <see cref="ReadingStage"/>; then the generation rebuilds their ground
 /// (<see cref="PlacedSites.PrepareSteps"/>). Never a place that is unique or shows a map icon once
-/// placed: placing it would settle which candidate is the real one, which is the player's to find
-/// (<see cref="PlacedSites.PlayerDecides"/>).
+/// placed: placing it would settle which candidate is the real one, which is the player's to find;
+/// but Hildir's quest sites where the roads go to them (<see cref="PlacedSites.PlayerDecides"/>), whose
+/// icons stay off the map until a player comes near (<see cref="HiddenSiteIcons"/>).
 /// </summary>
 public static class SitesFirstLoad
 {
@@ -100,10 +101,13 @@ public static class SitesFirstLoad
         ZoneSystem.ZoneLocation location = instance.m_location;
         if (!PlacedSites.NeedsPlacing(location.m_slopeRotation, location.m_randomRotation,
                 WorldGenerator.instance.GetBiome(position.x, position.z), LocationLevelling.OpsAt(centre))) return;
-        if (PlacedSites.PlayerDecides(location.m_unique, location.m_iconPlaced, location.m_iconAlways))
+        if (PlacedSites.PlayerDecides(location.m_prefab.Name, location.m_unique, location.m_iconPlaced, location.m_iconAlways))
             return;
         if (PlacedSiteReader.Placed(zone, centre, out _)) { s_placing.Add((centre, zone)); return; }
         if (instance.m_placed || ZoneSystem.instance.IsZoneGenerated(zone)) return;
+        // Shown on the map once placed (Hildir's quest sites): off the map until a player comes as near as
+        // the game would have placed it from. Hidden first: placing sends the icons at once.
+        if (location.m_iconPlaced) HiddenSiteIcons.Hide(instance.m_position);
         s_pending.Add((centre, zone));
     }
 
