@@ -39,6 +39,7 @@
         <Compile Include="../ProceduralRoads/Src/Roads/StairRoute.cs" Link="ModSrc/StairRoute.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StairFiller.cs" Link="ModSrc/StairFiller.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StairKit.cs" Link="ModSrc/StairKit.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadStairRuns.cs" Link="ModSrc/RoadStairRuns.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadBeside.cs" Link="ModSrc/RoadBeside.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/ManualRoadDraft.cs" Link="ModSrc/ManualRoadDraft.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/ManualRoads.cs" Link="ModSrc/ManualRoads.cs"/>

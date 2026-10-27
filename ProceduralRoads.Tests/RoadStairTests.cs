@@ -154,12 +154,95 @@ public class RoadStairTests : IDisposable
     }
 
     [Fact]
+    public void TheRoadStopsAtTheStaircaseAndCarriesOnFromItsTop()
+    {
+        SetPathfinder(Finder(stairs: true));
+
+        Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(100f, 0f), 0f, 4f, "scarp"));
+
+        StairRun run = Assert.Single(StairStructures.Runs);
+        Assert.All(run.Pieces, p => Assert.StartsWith("stone_", p.Prefab)); // a Mountain staircase
+        Assert.Contains(run.Pieces, p => p.Kind == StructurePieceKind.StairStep);
+        // Road on the flats both sides, none levelled on the face (cuts are not road).
+        Assert.NotEmpty(RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(-40f, 0f, 0f), 12f).Where(p => p.IsRoad));
+        Assert.NotEmpty(RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(60f, 0f, 0f), 12f).Where(p => p.IsRoad));
+        float faceTop = _world.Rise / _world.Grade;
+        foreach (StructurePiece step in run.Pieces.Where(p => p.Kind == StructurePieceKind.StairStep))
+            Assert.DoesNotContain(RoadSpatialGrid.GetRoadPointsNearPosition(step.Position, 0.5f), p => p.IsRoad && p.p.x > 2f && p.p.x < faceTop - 2f);
+        // No walked piece lies on the road away from the two junctions (the stairs must not go over the road they start from).
+        foreach (StructurePiece piece in run.Pieces.Where(p => p.Kind != StructurePieceKind.StairSupport))
+        {
+            var at = new Vector2(piece.Position.x, piece.Position.z);
+            if (Vector2.Distance(at, run.From) <= RoadStairRuns.JunctionReach + 2f || Vector2.Distance(at, run.To) <= RoadStairRuns.JunctionReach + 2f) continue;
+            Assert.DoesNotContain(RoadSpatialGrid.GetRoadPointsNearPosition(piece.Position, 1.5f), p => p.IsRoad);
+        }
+        // The road meets the staircase level at both ends. The foot is the first step's base: the
+        // lowest stair is sunk a rise below it, or, for a staircase set beside its road, stands on
+        // the road's height itself (BesideItsRoad lays it from the road's height).
+        float lowest = run.Pieces.Where(p => p.Kind == StructurePieceKind.StairStep).Min(p => p.Position.y);
+        Assert.Contains(RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(run.From.x, 0f, run.From.y), 3f),
+            p => p.IsRoad && (Mathf.Abs(p.h - (lowest + StairLayout.PieceRise)) < 0.6f || Mathf.Abs(p.h - lowest) < 0.6f));
+    }
+
+    [Fact]
     public void WithoutStairsTheRoadIsNotBuiltAndNothingIsLaid()
     {
         SetPathfinder(Finder(stairs: false));
 
         Assert.False(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(100f, 0f), 0f, 4f, "scarp"));
         Assert.Empty(StairStructures.Runs);
+    }
+
+    [Fact]
+    public void AStaircaseIsBuiltOfItsBiomesPieces()
+    {
+        _world.Biome = Heightmap.Biome.Mistlands;
+        SetPathfinder(Finder(stairs: true));
+
+        Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(100f, 0f), 0f, 4f, "scarp"));
+
+        Assert.All(Assert.Single(StairStructures.Runs).Pieces, p => Assert.StartsWith("blackmarble_", p.Prefab));
+    }
+
+    /// <summary>Over a ridge or through a gully the road climbs one staircase and
+    /// descends another (stairs can go downhill too): a
+    /// layout climbs from its lower end, so one staircase cannot cross a crest,
+    /// and joined into one the road was refused.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ARidgeOrAGullyIsTwoStaircases(bool gully)
+    {
+        var world = new RidgeWorld { Gully = gully };
+        _scope.WithWorld(world);
+        SetPathfinder(new RoadPathfinder(world) { Stairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f });
+
+        Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(80f, 0f), 0f, 4f, gully ? "gully" : "ridge"));
+
+        Assert.Equal(2, StairStructures.Runs.Count);
+        // One climbs the west face, one the east; close over the top, the second is
+        // laid to meet the first, with floors between.
+        Assert.Contains(StairStructures.Runs, r => r.Pieces.Any(p => p.Position.x < -20f) && r.Pieces.All(p => p.Position.x < 1f));
+        Assert.Contains(StairStructures.Runs, r => r.Pieces.Any(p => p.Position.x > 20f));
+        // Their tops meet, not one inside the other.
+        var walked0 = StairStructures.Runs[0].Pieces.Where(p => p.Kind != StructurePieceKind.StairSupport).ToList();
+        var walked1 = StairStructures.Runs[1].Pieces.Where(p => p.Kind != StructurePieceKind.StairSupport).ToList();
+        foreach (var p in walked0)
+            Assert.DoesNotContain(walked1, q => Vector2.Distance(new Vector2(p.Position.x, p.Position.z), new Vector2(q.Position.x, q.Position.z)) < RoadStairRuns.StairOverlap
+                && Mathf.Abs(p.Position.y - q.Position.y) < 2f);
+    }
+
+    /// <summary>A second road over the same face walks the staircase the first
+    /// one laid: two laid side by side spawned every piece twice.</summary>
+    [Fact]
+    public void ASecondRoadOverTheSameFaceWalksTheFirstOnesStaircase()
+    {
+        SetPathfinder(Finder(stairs: true));
+
+        Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(100f, 0f), 0f, 4f, "first"));
+        Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 6f), 0f, new Vector2(100f, 6f), 0f, 4f, "second"));
+
+        Assert.Single(StairStructures.Runs);
     }
 
     /// <summary>A road built after a staircase goes round it, never under or through
@@ -181,6 +264,54 @@ public class RoadStairTests : IDisposable
 
         Assert.NotNull(path);
         Assert.DoesNotContain(path!, p => Mathf.Abs(p.x) < 4f && Mathf.Abs(p.y) < 36f);
+    }
+
+    /// <summary>Two staircases with less than 20 m of road between them are one;
+    /// further apart they stay two, with road between.</summary>
+    [Theory]
+    [InlineData(16f, 1)]
+    [InlineData(24f, 2)]
+    public void StaircasesCloseTogetherAreOne(float between, int runs)
+    {
+        var path = new List<Vector2> { new(0, 0), new(8, 0), new(16, 0), new(16 + between, 0), new(24 + between, 0), new(40 + between, 0) };
+        var steps = new List<(Vector2, Vector2)> { (path[1], path[2]), (path[3], path[4]) };
+
+        var found = RoadStairRuns.Find(path, steps);
+
+        Assert.Equal(runs, found.Count);
+        Assert.Equal(1, found[0].from);
+        Assert.Equal(4, found[found.Count - 1].to);
+    }
+
+    /// <summary>Two staircases further apart than the stone gap stay two, unless
+    /// the ground between them is too steep for the road to be built there:
+    /// then they are one (217 roads on one world were refused between two).</summary>
+    [Theory]
+    [InlineData(0.1f, 2)]
+    [InlineData(0.4f, 1)]
+    public void StaircasesWithRoadTooSteepBetweenThemAreOne(float gapGrade, int runs)
+    {
+        // Steps at 0.6 either side of a 30 m stretch climbing at gapGrade.
+        var path = new List<Vector2> { new(0, 0), new(8, 0), new(16, 0), new(46, 0), new(54, 0), new(70, 0) };
+        float H(Vector2 p) => p.x <= 8f ? 0f
+            : p.x <= 16f ? (p.x - 8f) * 0.6f
+            : p.x <= 46f ? 4.8f + (p.x - 16f) * gapGrade
+            : p.x <= 54f ? 4.8f + 30f * gapGrade + (p.x - 46f) * 0.6f
+            : 4.8f + 30f * gapGrade + 4.8f;
+        var steps = new List<(Vector2, Vector2)> { (path[1], path[2]), (path[3], path[4]) };
+
+        Assert.Equal(runs, RoadStairRuns.Find(path, steps, H).Count);
+    }
+
+    /// <summary>The path's ends are moved a little after the search (trimmed to
+    /// the places' edges); a step shortened that way still reads as stairs.</summary>
+    [Fact]
+    public void AStepTrimmedShortIsStillAStairStep()
+    {
+        var path = new List<Vector2> { new(0, 0), new(8, 0), new(13, 0.4f) };
+        var found = RoadStairRuns.Find(path, new List<(Vector2, Vector2)> { (new Vector2(8, 0), new Vector2(16, 0)) });
+
+        Assert.Equal((1, 2), Assert.Single(found));
     }
 
     /// <summary>Flat at 40 m north of z = 0, rising south at <see cref="Grade"/> to 40 + <see cref="Rise"/>; sea past 200 m.</summary>

@@ -443,6 +443,31 @@ public class CantileverTests
         finally { StairLayout.RulesOff = SteepRules.None; }
     }
 
+    /// <summary>At -5853,5918: a flight running beside its road a few metres off, both climbing, mostly floors
+    /// (better to avoid running parallel, even if it costs POIs). Three walked pieces
+    /// in a row within 5 m of a road and 1.5 m of its height, away from the staircase's own ends, refuse the layout.</summary>
+    [Fact]
+    public void AStaircaseRunningBesideARoadAtItsHeightIsRefused()
+    {
+        float Ground(float x, float z) => 40f + 0.1f * x;
+        var path = new List<Vector2>();
+        for (int x = -40; x <= 40; x += 8) path.Add(new Vector2(x, 0f));
+        path.Add(new Vector2(40f, 16f));
+        StairPlan Beside(float lift)
+        {
+            var plan = new StairPlan { Reached = true };
+            foreach (float x in new[] { -24f, -22f, -20f, -18f })
+                plan.Pieces.Add(new StairPiece { Kind = StairPieceKind.Landing, Position = new Vector3(x, Ground(x, 0f) - 0.5f + lift, 3f), YawDegrees = 90f });
+            return plan;
+        }
+        // Its stretch is the road's last leg, (40,0) to (40,16): the run at x -24..-18 lies beside the road before it.
+        Assert.True(RoadStairRuns.BesideARoad(Beside(0f), path, 10, 11, Ground));
+        Assert.False(RoadStairRuns.BesideARoad(Beside(3f), path, 10, 11, Ground), "3 m over the road it is not beside it");
+        RoadStairRuns.NoParallelStairs = false;
+        try { Assert.False(RoadStairRuns.BesideARoad(Beside(0f), path, 10, 11, Ground)); }
+        finally { RoadStairRuns.NoParallelStairs = true; }
+    }
+
     /// <summary>No switchback in a staircase's first five stairs from its foot (Hildir_cave 1664,768): up a narrow gully, the first
     /// switchback comes after five stairs; before, three.</summary>
     [Fact]

@@ -63,11 +63,11 @@ public class RoadPathfinder
     /// and <see cref="StairCostFixed"/> where a staircase starts, varied a
     /// little from site to site so a world gets long traverses, staircases and
     /// both. The steps bought are kept in
-    /// <see cref="LastStairSteps"/>. Off by default: nothing lays the steps yet.
-    /// The levers are "Stairs/CostFixed" and "Stairs/CostPerMeterClimbed".
+    /// <see cref="LastStairSteps"/>; the generator lays them with StairLayout.
+    /// The levers are "Stairs/Enabled", "Stairs/CostFixed" and "Stairs/CostPerMeterClimbed".
     /// </summary>
     public bool Stairs = ConfiguredStairs;
-    public static bool ConfiguredStairs = false;
+    public static bool ConfiguredStairs = true;
     public static float ConfiguredStairCostFixed = RoadConstants.DefaultStairCostFixed;
     public static float ConfiguredStairCostPerMeterClimbed = RoadConstants.DefaultStairCostPerMeterClimbed;
     public float StairCostFixed = ConfiguredStairCostFixed;

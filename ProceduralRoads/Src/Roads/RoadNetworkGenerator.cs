@@ -889,6 +889,17 @@ public static partial class RoadNetworkGenerator
         // From here, anything this road asks for that preparation did not
         // provide marks the road rather than only the log.
         LocationLevelling.BeginRoad();
+        float askedStartRadius = startRadius, askedEndRadius = endRadius;
+        // The road again with no stairs, as roads were built before them: when a
+        // staircase the search bought cannot be laid, or the road round it cannot
+        // be built.
+        bool WithoutStairs(string why)
+        {
+            var noStairs = Finder!;
+            noStairs.Stairs = false;
+            try { return GenerateRoad(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints); }
+            finally { noStairs.Stairs = RoadPathfinder.ConfiguredStairs; }
+        }
 
         Vector2 pathStart = RoadEndpoint.FindGround(GenerationWorld, startCenter, startRadius);
         Vector2 pathEnd = RoadEndpoint.FindGround(GenerationWorld, endCenter, endRadius);
@@ -903,7 +914,7 @@ public static partial class RoadNetworkGenerator
         {
             if (label != null)
                 Log.LogDebug($"Could not find path: {label}");
-            NoteFailure(startCenter, endCenter, "no route");
+            NoteFailure(startCenter, endCenter, Finder.Stairs ? "no route" : "no route without stairs");
             System.Threading.Interlocked.Increment(ref m_roadsWithNoRoute);
             return false;
         }
@@ -954,6 +965,8 @@ public static partial class RoadNetworkGenerator
         // the one bridge built there instead of pointing at water beside it.
         SnapToExistingCrossings(crossings);
         foreach (var c in crossings) c.Road = label;
+        if (!TryLayStairs(finder, path, crossings, out List<RoadStairSpan> stairs))
+            return WithoutStairs("a staircase could not be laid");
         // The heights to meet are asked for at the road's OWN ends, after
         // trimming - not at the locations' centres. A road stops at the
         // exterior radius, which on a hillside is metres below the middle of
@@ -975,7 +988,7 @@ public static partial class RoadNetworkGenerator
         }
 
         RoadSpatialGrid.LastRefusal = null;
-        var plans = PlanRoadPathWithCrossings(path, crossings, width, startGround, endGround);
+        var plans = PlanRoadPathWithCrossings(path, crossings, width, startGround, endGround, stairs);
         if (plans == null && !ReferenceEquals(withStubs, path))
         {
             // Dropping the stubs is cosmetic: a road refused without them is
@@ -991,8 +1004,12 @@ public static partial class RoadNetworkGenerator
             startGround = ApproachGround(path[0], startCenter, startRadius);
             endGround = ApproachGround(path[path.Count - 1], endCenter, endRadius);
             RoadSpatialGrid.LastRefusal = null;
-            plans = PlanRoadPathWithCrossings(path, crossings, width, startGround, endGround);
+            if (!TryLayStairs(finder, path, crossings, out stairs))
+                return WithoutStairs("a staircase could not be laid");
+            plans = PlanRoadPathWithCrossings(path, crossings, width, startGround, endGround, stairs);
         }
+        if (plans == null && stairs.Count > 0)
+            return WithoutStairs("road round the stairs: " + (RoadSpatialGrid.LastRefusal ?? "refused"));
         if (plans != null && EarthworkCap > 0f)
         {
             // A road the game cannot build as planned -- a cut or fill past the
@@ -1024,7 +1041,7 @@ public static partial class RoadNetworkGenerator
                     Log.LogDebug($"Road {label}: re-routed round deep earthwork, {past} -> {pastRetry} points past {EarthworkCap:F0} m, {pulled} -> {pulledRetry} held off its profile");
                     System.Threading.Interlocked.Increment(ref pastRetry < past ? ref m_earthworkReroutes : ref m_pullReroutes);
                     pulled = pulledRetry;
-                    (path, crossings, plans, past) = (retry.Value.path, retry.Value.crossings, retry.Value.plans, pastRetry);
+                    (path, crossings, plans, past, stairs) = (retry.Value.path, retry.Value.crossings, retry.Value.plans, pastRetry, retry.Value.stairs);
                     where = whereRetry;
                 }
                 else where = whereRetry.Count > 0 ? whereRetry : where;
@@ -1069,6 +1086,10 @@ public static partial class RoadNetworkGenerator
             RoadSpatialGrid.LastRefusal = "runs beside another road";
             if (RoadsLog) Log.LogDebug(FormattableString.Invariant($"Road {label ?? "(unlabelled)"}: runs beside another road at its height from ({braidAt.x:F1}, {braidAt.y:F1}); refused"));
         }
+        // Refused with stairs on it -- its earthwork or a bridge end may come from
+        // the stair's held heights: tried again without them, as before stairs.
+        if (plans == null && stairs.Count > 0)
+            return WithoutStairs("road round the stairs: " + (RoadSpatialGrid.LastRefusal ?? "refused"));
         if (plans == null)
         {
             string why = RoadSpatialGrid.LastRefusal ?? "other (crossing or footprint)";
@@ -1089,6 +1110,17 @@ public static partial class RoadNetworkGenerator
             foreach (var c in crossings) if (c.Kind == CrossingKind.Bridge && !c.Shared && !c.Invalid) bridges++;
             IslandActivity.BuiltBridges(bridges);
         }
+        foreach (RoadStairSpan stair in stairs)
+        {
+            StairStructures.MarkLaid(path.GetRange(stair.FromIndex, stair.ToIndex - stair.FromIndex + 1));
+            if (stair.Existing) continue;
+            // The staircase's earthwork goes in with the road's; its pieces are a structure source's.
+            RoadSpatialGrid.CommitCuts(stair.Plan.Cuts, StairLayout.CutRadius * 2f);
+            var run = StairRun.FromPlan(path[stair.FromIndex], path[stair.ToIndex], RoadStairRuns.Width, stair.Plan);
+            StairStructures.Add(run);
+            StairStructures.MarkStanding(run);
+            RoadStairRuns.Laid(run, stair.Plan, stair.Kit);
+        }
         if (RoadCrossingDetector.ToWater)
         {
             GroundUnderDeck(crossings, width);
@@ -1108,6 +1140,9 @@ public static partial class RoadNetworkGenerator
                 bool onCrossing = false;
                 foreach (var crossing in crossings)
                     if (i >= crossing.FromIndex && i <= crossing.ToIndex) { onCrossing = true; break; }
+                // Nor on a staircase: there is no road there to join.
+                foreach (var stair in stairs)
+                    if (i >= stair.FromIndex && i <= stair.ToIndex) { onCrossing = true; break; }
                 if (!onCrossing) networkHints.Add(path[i]);
             }
         m_islandRoads++;
@@ -1683,7 +1718,7 @@ public static partial class RoadNetworkGenerator
 
     /// <summary>The road searched and planned again, with the pathfinder's
     /// current penalties; null when it does not route or build.</summary>
-    private static (List<Vector2> path, List<RoadCrossing> crossings, List<RoadSpatialGrid.PlannedPath> plans)? Replan(
+    private static (List<Vector2> path, List<RoadCrossing> crossings, List<RoadSpatialGrid.PlannedPath> plans, List<RoadStairSpan> stairs)? Replan(
         RoadPathfinder finder, Vector2 pathStart, Vector2 pathEnd, Vector2 startCenter, float startRadius,
         Vector2 endCenter, float endRadius, float width)
     {
@@ -1705,10 +1740,11 @@ public static partial class RoadNetworkGenerator
             ? RoadCrossingDetector.Detect(path, GenerationWorld, finder.Bridges, finder.Fords)
             : new List<RoadCrossing>();
         SnapToExistingCrossings(crossings);
+        if (!TryLayStairs(finder, path, crossings, out List<RoadStairSpan> stairs)) return null;
         float? startGround = startAtPlace ? ApproachGround(path[0], startCenter, startRadius) : null;
         float? endGround = endAtPlace ? ApproachGround(path[path.Count - 1], endCenter, endRadius) : null;
-        var plans = PlanRoadPathWithCrossings(path, crossings, width, startGround, endGround);
-        return plans == null ? null : (path, crossings, plans);
+        var plans = PlanRoadPathWithCrossings(path, crossings, width, startGround, endGround, stairs);
+        return plans == null ? null : (path, crossings, plans, stairs);
     }
 
     /// <summary>Plans every piece of the road and stores them; nothing is
@@ -1726,10 +1762,11 @@ public static partial class RoadNetworkGenerator
     internal static bool DryFloor = true;
 
     internal static List<RoadSpatialGrid.PlannedPath>? PlanRoadPathWithCrossings(
-        List<Vector2> path, List<RoadCrossing> crossings, float width, float? startGround, float? endGround)
+        List<Vector2> path, List<RoadCrossing> crossings, float width, float? startGround, float? endGround,
+        List<RoadStairSpan>? stairs = null)
     {
         using var fitting = new RoadFittingActivity(IslandActivity);
-        var plans = PlanPieces(path, crossings, width, startGround, endGround);
+        var plans = PlanPieces(path, crossings, width, startGround, endGround, stairs);
         // A shallow ford is a style, never a reason a road cannot be built: its banks hold their
         // natural heights and split the road, and a short piece between two held ends can be too
         // steep for the cap (measured: a road refused at a 17 m piece 7 m high between a pool's
@@ -1738,7 +1775,7 @@ public static partial class RoadNetworkGenerator
         if (plans == null && crossings.Exists(c => c.Shallow && !c.Invalid))
         {
             var walked = crossings.FindAll(c => !(c.Shallow && !c.Invalid));
-            var retry = PlanPieces(path, walked, width, startGround, endGround);
+            var retry = PlanPieces(path, walked, width, startGround, endGround, stairs);
             if (retry != null)
             {
                 System.Threading.Interlocked.Increment(ref m_shallowFordsWalked);
@@ -1752,23 +1789,41 @@ public static partial class RoadNetworkGenerator
     private static int m_shallowFordsWalked;
 
     private static List<RoadSpatialGrid.PlannedPath>? PlanPieces(
-        List<Vector2> path, List<RoadCrossing> crossings, float width, float? startGround, float? endGround)
+        List<Vector2> path, List<RoadCrossing> crossings, float width, float? startGround, float? endGround,
+        List<RoadStairSpan>? stairs = null)
     {
         // Every piece is worked out before any of it is stored. A piece can be
         // refused - too steep to build - and a road stored up to the river it
         // cannot come back from is a paved stretch ending in open ground.
-        var pieces = new List<(List<Vector2> points, bool followTerrain, float minHeight)>();
+        // A piece's ends may be held at a height: the road's own ends where they
+        // meet a place, and the ends of a staircase, which the road meets level.
+        var pieces = new List<(List<Vector2> points, bool followTerrain, float minHeight, float? startHeight, float? endHeight)>();
+
+        // What the road is cut at, in path order: river crossings and staircases.
+        var gaps = new List<(int from, int to, Vector2 fromPoint, Vector2 toPoint, Vector2? fromLand, Vector2? toLand, float? fromHeight, float? toHeight, RoadCrossing? crossing)>();
+        foreach (RoadCrossing c in crossings)
+            gaps.Add((c.FromIndex, c.ToIndex, c.FromBank, c.ToBank, c.FromLand, c.ToLand, null, null, c));
+        if (stairs != null)
+            foreach (RoadStairSpan st in stairs)
+                gaps.Add((st.FromIndex, st.ToIndex, st.FromPoint, st.ToPoint, null, null, st.FromHeight, st.ToHeight, null));
+        // Stable by start: crossings keep the order Detect gave them.
+        gaps = gaps.Select((g, i) => (g, i)).OrderBy(x => x.g.from).ThenBy(x => x.i).Select(x => x.g).ToList();
 
         float landFloor = DryFloor ? RoadConstants.DryRoadFloor : float.NegativeInfinity;
-        if (crossings.Count == 0)
+        if (gaps.Count == 0)
         {
-            pieces.Add((path, false, landFloor));
+            pieces.Add((path, false, landFloor, null, null));
         }
         else
         {
             int cursor = 0;
             Vector2? resumeAt = null, resumeLand = null;
-            foreach (RoadCrossing crossing in crossings)
+            float? resumeHeight = null;
+            // A staircase ends where its layout ended, up to a few metres from the
+            // path point it aimed at: the road ends and starts there instead of
+            // running on to that point and doubling back (a hairpin was refused).
+            bool resumeOnStair = false;
+            foreach (var gap in gaps)
             {
                 // Two crossings on one road can overlap on the path: a bridge's
                 // banks walk out to the bank tops and a swamp bridge's on to dry
@@ -1776,28 +1831,31 @@ public static partial class RoadNetworkGenerator
                 // next. A crossing the previous one already spans has nothing left
                 // to paint, and one that merely starts inside it has no land in
                 // front of it.
-                if (crossing.ToIndex <= cursor)
+                if (gap.to <= cursor)
                     continue;
 
-                List<Vector2> land = crossing.FromIndex > cursor
-                    ? path.GetRange(cursor, crossing.FromIndex - cursor + 1)
+                List<Vector2> land = gap.from > cursor
+                    ? path.GetRange(cursor, gap.from - cursor + 1)
                     : new List<Vector2>();
                 if (resumeLand.HasValue && (land.Count == 0 || Vector2.Distance(resumeLand.Value, land[0]) > 0.5f))
                     land.Insert(0, resumeLand.Value);
+                if (resumeOnStair && land.Count > 1) land.RemoveAt(0);
                 if (resumeAt.HasValue && (land.Count == 0 || Vector2.Distance(resumeAt.Value, land[0]) > 0.5f))
                     land.Insert(0, resumeAt.Value);
                 // A deck end walked in off land: the road runs on over the strip.
-                if (crossing.FromLand is Vector2 fromLand && land.Count > 0 && Vector2.Distance(fromLand, land[land.Count - 1]) > 0.5f)
+                if (gap.fromLand is Vector2 fromLand && land.Count > 0 && Vector2.Distance(fromLand, land[land.Count - 1]) > 0.5f)
                     land.Add(fromLand);
-                if (land.Count > 0 && Vector2.Distance(crossing.FromBank, land[land.Count - 1]) > 0.5f)
-                    land.Add(crossing.FromBank);
+                if (gap.crossing == null && land.Count > 1) land.RemoveAt(land.Count - 1);
+                if (land.Count > 0 && Vector2.Distance(gap.fromPoint, land[land.Count - 1]) > 0.5f)
+                    land.Add(gap.fromPoint);
                 if (land.Count >= 2)
-                    pieces.Add((land, false, landFloor));
+                    pieces.Add((land, false, landFloor, resumeHeight, gap.fromHeight));
 
                 // A bridge or a spanned ford is left to its pieces: nothing is
-                // leveled or painted over the water.
+                // leveled or painted over the water. Nor on a staircase.
                 // A shared crossing is carried by the road that built it: only the land up to its banks is ours.
-                if (crossing.Kind == CrossingKind.Ford && crossing.Style != FordStyle.Span && !crossing.Shared)
+                RoadCrossing? crossing = gap.crossing;
+                if (crossing != null && crossing.Kind == CrossingKind.Ford && crossing.Style != FordStyle.Span && !crossing.Shared)
                 {
                     List<Vector2> ford = new() { crossing.FromBank };
                     for (int k = Mathf.Max(crossing.FromIndex + 1, cursor + 1); k < crossing.ToIndex; k++)
@@ -1806,39 +1864,47 @@ public static partial class RoadNetworkGenerator
                     if (ford.Count >= 2)
                         pieces.Add(crossing.Style == FordStyle.Wade
                             ? (crossing.Shallow
-                                ? (ford, false, RoadConstants.SeaLevel - RoadCrossingDetector.ShallowWadeCover) // built up to wading depth
-                                : (ford, true, float.NegativeInfinity))
-                            : (ford, false, crossing.Shallow ? RoadConstants.DryRoadFloor : RoadPathfinder.LandingFloor));
+                                ? (ford, false, RoadConstants.SeaLevel - RoadCrossingDetector.ShallowWadeCover, null, null) // built up to wading depth
+                                : (ford, true, float.NegativeInfinity, null, null))
+                            : (ford, false, crossing.Shallow ? RoadConstants.DryRoadFloor : RoadPathfinder.LandingFloor, null, null));
                 }
 
-                resumeAt = crossing.ToBank;
-                resumeLand = crossing.ToLand;
-                cursor = crossing.ToIndex;
+                resumeAt = gap.toPoint;
+                resumeLand = gap.toLand;
+                resumeHeight = gap.toHeight;
+                resumeOnStair = gap.crossing == null;
+                cursor = gap.to;
             }
 
             int tailStart = Mathf.Min(cursor, path.Count - 1);
             List<Vector2> tail = path.GetRange(tailStart, path.Count - tailStart);
+            // A staircase at the path's last index ends the road there: no stub of road from its end back to the path point
+            // (short, possibly steep or doubled back, it could cost the road its stairs). Kept only where it
+            // is all the road there is.
+            bool endsOnStair = resumeOnStair && tail.Count == 1 && pieces.Count > 0;
+            if (resumeOnStair && tail.Count > 1) tail.RemoveAt(0);
             if (resumeLand.HasValue && Vector2.Distance(resumeLand.Value, tail[0]) > 0.5f)
                 tail.Insert(0, resumeLand.Value);
             if (resumeAt.HasValue && Vector2.Distance(resumeAt.Value, tail[0]) > 0.5f)
                 tail.Insert(0, resumeAt.Value);
-            if (tail.Count >= 2)
-                pieces.Add((tail, false, landFloor));
+            if (tail.Count >= 2 && !endsOnStair)
+                pieces.Add((tail, false, landFloor, resumeHeight, null));
         }
 
         if (pieces.Count == 0)
             return null;
 
         // Only the road's own two ends meet a location. Every join in between
-        // is a river bank, which meets the natural ground as it always did.
+        // is a river bank, which meets the natural ground as it always did, or
+        // the end of a staircase, which the road meets at the stair's height.
         var plans = new List<RoadSpatialGrid.PlannedPath>(pieces.Count);
         System.Func<Vector2, float>? ground = StripGround(crossings, width);
         for (int i = 0; i < pieces.Count; i++)
         {
             RoadSpatialGrid.PlannedPath? plan = RoadSpatialGrid.PlanRoadPath(
                 pieces[i].points, width, GenerationWorld,
-                i == 0 ? startGround : null,
-                i == pieces.Count - 1 ? endGround : null,
+                pieces[i].startHeight ?? (i == 0 ? startGround : null),
+                pieces[i].endHeight ?? (i == pieces.Count - 1 ? endGround : null),
                 pieces[i].followTerrain, pieces[i].minHeight, ground);
             if (plan == null)
                 return null;
@@ -1859,6 +1925,18 @@ public static partial class RoadNetworkGenerator
         WorldGenerator? world = WorldGenerator.instance;
         if (world == null || StairStructures.Runs.Count == 0) return;
         StairStructures.SettleOnFinishedGround(RoadTerrainModifier.FinishedGround((x, z) => BiomeBlendedHeight.GetBlendedHeight(x, z, world)));
+    }
+
+    /// <summary>The staircases on <paramref name="path"/> laid out from the stair
+    /// steps the last search bought; false when one cannot be laid.</summary>
+    private static bool TryLayStairs(RoadPathfinder finder, List<Vector2> path, List<RoadCrossing> crossings, out List<RoadStairSpan> stairs)
+    {
+        stairs = new List<RoadStairSpan>();
+        if (!finder.Stairs || finder.LastStairSteps.Count == 0) return true;
+        List<RoadStairSpan>? laid = RoadStairRuns.Lay(path, finder.LastStairSteps, crossings, GenerationWorld);
+        if (laid == null) return false;
+        stairs = laid;
+        return true;
     }
 
     /// <summary>
@@ -2343,6 +2421,7 @@ public static partial class RoadNetworkGenerator
         m_roadStartPoints.Clear();
         m_roadCrossings.Clear();
         StairStructures.Reset();
+        RoadStairRuns.ResetCache();
         StructurePlans.Reset();
         VegetationClearing.Reset();
         RoadNetworkPersistence.Reset();

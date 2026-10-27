@@ -117,7 +117,8 @@ public static class ManualRoads
         bool OnIsland(Vector2 p) => island.ContainsPoint(p.x, p.y);
         if (points.Any(p => !OnIsland(p))) throw new ArgumentException("All waypoints must be on the same island.");
         var plan = new Plan { Epoch = worldEpoch, Version = RoadSpatialGrid.RoadNetworkVersion, Start = points[0] };
-        var finder = new RoadPathfinder(world) { SiteClearance = width * 0.5f + 2f };
+        // Manual roads are laid as drawn: no staircases on them.
+        var finder = new RoadPathfinder(world) { SiteClearance = width * 0.5f + 2f, Stairs = false };
         var path = new List<Vector2>();
         if (connect)
         {
@@ -267,9 +268,10 @@ public static partial class RoadNetworkGenerator
         catch (System.IO.InvalidDataException e) { throw new InvalidOperationException($"Incomplete road snapshot: {e.Message}"); }
         if (!NetworkCutoff.TryReadClientList(excluded, out HashSet<Vector2s> excludedZones) ||
             !RoadNetworkPersistence.DeserializeRoadStartPoints(starts, newStarts) ||
-            !RoadNetworkPersistence.DeserializeRoadCrossings(crossings, newCrossings) ||
-            !RoadSpatialGrid.DeserializeAllRoadPoints(data))
+            !RoadNetworkPersistence.DeserializeRoadCrossings(crossings, newCrossings))
             throw new InvalidOperationException("Incomplete road snapshot.");
+        if (!RoadSpatialGrid.DeserializeAllRoadPoints(data))
+            throw new InvalidOperationException($"Incomplete road snapshot: its road network cannot be read ({RoadSpatialGrid.LastReadRefusal}).");
         // Before the network is available to any writer on this client.
         NetworkCutoff.UseServerList(excludedZones);
         m_roadStartPoints = newStarts;
