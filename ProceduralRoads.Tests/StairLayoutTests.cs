@@ -441,12 +441,40 @@ public class StairLayoutTests
     private static float ValleyThenFace(float x, float z) =>
         z < 100f ? 0.15f * z : 15f + (z - 100f) * 1.05f + 6f * Mathf.Sin(z * 0.05f) + 4f * Mathf.Sin(x * 0.07f);
 
+    [Fact]
+    public void ValleyBottomToMountainTopIsReachedAlongACoarseRoute()
+    {
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(40, 300), ValleyThenFace);
+
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.True(plan.Waypoints > 1, "a run this long follows a route");
+        Assert.InRange(plan.Rise, 228f, 232f);
+        Assert.True(plan.Switchbacks > 0, "a face steeper than 1:1 is climbed on switchbacks");
+        Assert.True(plan.MaxBuried <= StairLayout.MaxBuriedDepth + 1e-3f, $"buried {plan.MaxBuried:F2}");
+    }
+
+    /// <summary>The coarse route never climbs steeper than a stair flight: up a
+    /// face steeper than 1:1 it zigzags, so it is about twice as long as the climb.</summary>
+    [Fact]
+    public void CoarseRouteIsNeverSteeperThanAFlight()
+    {
+        var waypoints = StairRoute.Waypoints(new Vector2(0, 0), new Vector2(40, 300), ValleyThenFace);
+
+        Assert.NotNull(waypoints);
+        float length = Vector2.Distance(new Vector2(0, 0), waypoints![0]);
+        for (int i = 1; i < waypoints.Count; i++) length += Vector2.Distance(waypoints[i - 1], waypoints[i]);
+        float climb = ValleyThenFace(40, 300) - ValleyThenFace(0, 0);
+        // Waypoints are thinned to about 12 m, which cuts the zigzag corners a little.
+        Assert.True(length >= climb / StairRoute.MaxClimb * 0.85f, $"route {length:F0} m for a {climb:F0} m climb");
+    }
+
     /// <summary>A stair flight climbs between two switchbacks: two with only
     /// floors between them made a pad that shuffled the stair 4 m sideways on
     /// the summit run.</summary>
     [Theory]
     [InlineData("gully")]
     [InlineData("face")]
+    [InlineData("valley")]
     public void AFlightClimbsBetweenTwoSwitchbacks(string ground)
     {
         StairPlan plan = ground switch
@@ -484,6 +512,7 @@ public class StairLayoutTests
     /// lower one has nowhere for its supports to stand.</summary>
     [Theory]
     [InlineData("face")]
+    [InlineData("summit")]
     public void NoFlightLiesOverAnother(string ground)
     {
         StairPlan plan = ground == "face"

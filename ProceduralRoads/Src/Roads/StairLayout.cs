@@ -207,6 +207,11 @@ public static partial class StairLayout
     /// floors, a landing that did not look clean.</summary>
     public const int MaxSwitchbackBendSteps = 1;
     public const int MaxPieces = 800;
+    /// <summary>A run longer than this follows a coarse route (<see cref="StairRoute"/>), leg by leg
+    /// through waypoints. Shorter runs are one search, which lays a better staircase where it can
+    /// finish: on the real 82 m face it floats 1.6 m and cuts 0.8 m at worst, against 2.1 and 1.25
+    /// leg by leg.</summary>
+    public const float RouteBeyond = 120f;
     /// <summary>A waypoint is passed when an edge comes this close to it, at any height: the route's flex.</summary>
     public const float WaypointReach = 3.5f;
     /// <summary>A leg to an intermediate waypoint ends with its walking surface this close to the ground.</summary>
@@ -375,6 +380,11 @@ public static partial class StairLayout
                 last = p;
             }
             goals.Add(to);
+        }
+        else if (Vector2.Distance(from, to) > RouteBeyond)
+        {
+            List<Vector2>? waypoints = StairRoute.Waypoints(from, to, ground);
+            if (waypoints != null) goals = waypoints;
         }
         // Down to a laid row, its top meets the row at the row's own height, over the ground or not.
         var route = new Route(goals, after.HasValue && plan.Reversed ? after.Value.Height : ground(to.x, to.y)) { StartAligned = arriving.HasValue, EndHeading = leaving, Corridor = corridor, MaxBuried = maxBuried, ArriveWithin = arriveWithin, Allowed = allowed, Kit = kit };
