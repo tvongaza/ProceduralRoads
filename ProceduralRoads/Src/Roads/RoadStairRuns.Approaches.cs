@@ -55,7 +55,7 @@ public static partial class RoadStairRuns
     /// known until the place is placed, as its zone first loads: none is laid to it.
     /// A model of that ground, from an estimated turn, buried six stairs of the
     /// first one in the cliff below a frost cave's ledge; the
-    /// staircase onto a placed place's landing is planned once the place is placed.
+    /// staircase onto a placed place's landing is <see cref="PlanPlacedSiteApproach"/>.
     /// Null, with <paramref name="why"/>, where none is laid; the road is then as it was.
     /// </summary>
     public static RoadStairSpan? LaySiteApproach(Vector2 roadEnd, float roadHeight, float arriving, Vector2 centre,

@@ -42,6 +42,28 @@ public static partial class RoadStairRuns
     /// <summary>Settable for tests: false tries the other side of the road too.</summary>
     internal static bool OneSideWhenTurned = true;
 
+    /// <summary>How far off the road's travel an approach's flight must set off to be laid again beside the road's end: back
+    /// along the road (a Hildir_cave foot, 118 degrees off). Nearer it, the search's own price for a start off
+    /// the road (StairLayout.FootOffRoadWeight) brings it round, and a second search for every approach cost the time.</summary>
+    public const float ApproachBesideFrom = 90f;
+
+    /// <summary>
+    /// Where a staircase setting off from a road's end at <paramref name="end"/> on <paramref name="settled"/>, the road
+    /// arriving on <paramref name="travel"/>, starts beside the road instead: its edge on the road's edge, on the side it
+    /// turns to first (the other second); none where it carries on within <paramref name="from"/> degrees of the road.
+    /// </summary>
+    internal static List<Vector2> BesideTheRoadsEnd(Vector2 end, float travel, float settled, float from = FootAlignTolerance)
+    {
+        var points = new List<Vector2>();
+        float turn = StairLayout.Wrap(settled - travel + 180f) - 180f; // + to the right
+        if (Mathf.Abs(turn) < from) return points;
+        float offset = BesideOffset(turn);
+        Vector2 right = StairLayout.Right(travel);
+        int first = turn > 0f ? 1 : -1;
+        foreach (int side in BesideSides(turn, first)) points.Add(end + right * (side * offset));
+        return points;
+    }
+
     /// <summary>How far across a road's travel a staircase set beside the road stands from its line, its edge on the
     /// road's edge: its back edge when it leaves square to the road (<paramref name="turn"/> degrees off it), its whole
     /// width when it carries on along it or turns back. The one offset for a foot beside its road's end, a road

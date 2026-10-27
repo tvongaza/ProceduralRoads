@@ -499,6 +499,39 @@ public class CantileverTests
         finally { StairLayout.RulesOff = SteepRules.None; }
     }
 
+    /// <summary>A top at the mountain cave entry: top stair (1932.190, 169.451, 697.097) yaw 157.5, its top edge
+    /// at 170.45, the plateau past it 0-0.5 m over it, a gap at the top of the stair run. The hand-built fix, one
+    /// stone_floor_2x2 at (1931.424, 169.951, 698.945) yaw 247.5, level with the top and out onto the snow, is laid; without
+    /// the rule the top is left as it was.</summary>
+    [Fact]
+    public void ATopNearlyLevelWithTheGroundGetsAFloorOutOntoIt()
+    {
+        Vector2 edge = new(1931.807f, 698.021f), dir = StairLayout.Forward(337.5f);
+        float[] ds = { 0f, 1f, 2f, 3f, 4f, 6f }, hs = { 169.5f, 169.9f, 170.35f, 170.5f, 170.45f, 169.8f };
+        float Ground(float x, float z)
+        {
+            float d = Vector2.Dot(new Vector2(x, z) - edge, dir);
+            if (d <= 0f) return hs[0] + d;
+            for (int i = 1; i < ds.Length; i++) if (d <= ds[i]) return Mathf.Lerp(hs[i - 1], hs[i], (d - ds[i - 1]) / (ds[i] - ds[i - 1]));
+            return hs[hs.Length - 1];
+        }
+        StairPlan Top() => new() { Kit = StairKit.Stone.Name, Reached = true, End = new Vector3(edge.x, 170.451f, edge.y), EndHeading = 337.5f,
+            LastRowKind = StairPieceKind.Stair, LastRowPieces = 0 };
+        StairPlan plan = Top();
+        Assert.Equal(RoadStairRuns.LedgeFinish.TopFloor, RoadStairRuns.FinishOverLedge(plan, Ground, 2f, _ => true));
+        StairPiece floor = Assert.Single(plan.Pieces, p => p.Prefab == "stone_floor_2x2");
+        Assert.True(Vector3.Distance(floor.Position, new Vector3(1931.424f, 169.951f, 698.945f)) < 0.02f, $"floor at {floor.Position}");
+        Assert.Equal(247.5f % 90f, floor.YawDegrees % 90f, 1);
+        StairLayout.RulesOff = SteepRules.TopFloor;
+        try
+        {
+            StairPlan before = Top();
+            RoadStairRuns.FinishOverLedge(before, Ground, 2f, _ => true);
+            Assert.DoesNotContain(before.Pieces, p => p.Prefab == "stone_floor_2x2");
+        }
+        finally { StairLayout.RulesOff = SteepRules.None; }
+    }
+
     /// <summary>A road arriving heading north at the foot of a slope that climbs south, behind it: set off freely, the
     /// staircase started straight back across the road and on up the slope (at 1948.1,691.7, 180 degrees opposite the
     /// direction of road travel and blocking the actual road to the stair start). Held to the road's
@@ -568,6 +601,26 @@ public class CantileverTests
         finally { StairLayout.RulesOff = SteepRules.None; }
         Assert.True(plan.StartHeading == 0f, $"set off on {plan.StartHeading} (without the rule {free})");
         Assert.True(free != 0f, "without the rule it set off along the road anyway");
+    }
+
+    /// <summary>A Hildir_cave foot (-2304,1536): the road climbs to its end at (-2305.1, 1573.9) heading south
+    /// along x = -2306 ((-2306.3, 1580.5) to (-2305.0, 1576.4)); the flight set off at 45 degrees, back up beside the road,
+    /// from the road's end, a floor turned on it. A hand-built first stair at (-2303.734, 1575.360) sits beside the road
+    /// (where it starts at a sharper angle it should align more to the side of the road). The approach is laid again from
+    /// beside the road's end, on the side it turns to, at the road's edge; carrying on the road's way it stays where it is.</summary>
+    [Fact]
+    public void AFootSettingOffSharplyStartsBesideTheRoadsEnd()
+    {
+        Vector2 end = new(-2305.1f, 1573.9f);
+        float travel = StairLayout.Bearing(new Vector2(-2306.3f, 1580.5f), new Vector2(-2305.0f, 1576.4f));
+        List<Vector2> beside = RoadStairRuns.BesideTheRoadsEnd(end, travel, 45f);
+        Assert.Single(beside);
+        Vector2 first = beside[0];
+        Assert.True(first.x > end.x, $"beside the road at {first}, not on the side the flight turns to");
+        Vector2 across = StairLayout.Right(travel);
+        Assert.True(Mathf.Abs(Vector2.Dot(first - end, across)) >= RoadNetworkGenerator.RoadWidth / 2f - 0.01f, $"{first} on the road");
+        Assert.True(Vector2.Distance(first, new Vector2(-2303.734f, 1575.360f)) < 1.5f, $"{first} far from the hand-built first stair");
+        Assert.Empty(RoadStairRuns.BesideTheRoadsEnd(end, travel, travel + 22.5f));
     }
 
     /// <summary>At the top of the 41 m staircase at 5669.6,4239.7: the flight came in facing away from the way
@@ -768,6 +821,83 @@ public class CantileverTests
         finally { StairLayout.RulesOff = SteepRules.None; }
     }
 
+    /// <summary>A second floor (6465.2,-1522.4): an end cap ridge done with a block. The hand-built
+    /// top stair (6465.922, 162.355, -1520.561) yaw 22.5, top edge 163.36, the snow where a walker steps off up to about
+    /// half a metre over it: a stone_floor_2x2 at (6465.156, 162.855, -1522.409), level with the top, not the crest.</summary>
+    [Fact]
+    public void ATopHalfAMetreUnderTheSnowGetsAFloorNotACrest()
+    {
+        Vector2 edge = new(6465.539f, -1521.485f), dir = StairLayout.Forward(202.5f);
+        float[] ds = { 0f, 1f, 2f, 3f, 6f }, hs = { 162.9f, 163.4f, 163.8f, 164.1f, 164.1f };
+        float Ground(float x, float z)
+        {
+            float d = Vector2.Dot(new Vector2(x, z) - edge, dir);
+            if (d <= 0f) return hs[0] + 0.5f * d;
+            for (int i = 1; i < ds.Length; i++) if (d <= ds[i]) return Mathf.Lerp(hs[i - 1], hs[i], (d - ds[i - 1]) / (ds[i] - ds[i - 1]));
+            return hs[hs.Length - 1];
+        }
+        var plan = new StairPlan { Kit = StairKit.Stone.Name, Reached = true, End = new Vector3(edge.x, 163.355f, edge.y), EndHeading = 202.5f,
+            LastRowKind = StairPieceKind.Stair, LastRowPieces = 0 };
+        Assert.Equal(RoadStairRuns.LedgeFinish.TopFloor, RoadStairRuns.FinishOverLedge(plan, Ground, 2f, _ => true));
+        StairPiece floor = Assert.Single(plan.Pieces, p => p.Prefab == "stone_floor_2x2");
+        Assert.True(Vector3.Distance(floor.Position, new Vector3(6465.156f, 162.855f, -1522.409f)) < 0.02f, $"floor at {floor.Position}");
+        Assert.DoesNotContain(plan.Pieces, p => p.Kind == StairPieceKind.Stair);
+    }
+
+    /// <summary>A top under a lip close enough for a crest by the ground read straight ahead, but with the ground under
+    /// the down stair's low end falling away on one side: no crest out over the drop (the upper staircase overshot, at the mountain cave
+    /// at -2560.6,1549.9).</summary>
+    [Fact]
+    public void ACrestIsNotLaidOutPastALipOverADrop()
+    {
+        static float Ground(float x, float z) => z > 3.2f && x > 0.3f ? 0f : 9.9f + 0.3f * Mathf.Max(z, -2f);
+        LedgeFinishAndPieces Finish()
+        {
+            var plan = new StairPlan { Kit = StairKit.Stone.Name, Reached = true, End = new Vector3(0f, 10f, 0f), EndHeading = 0f,
+                LastRowKind = StairPieceKind.Stair, LastRowPieces = 0 };
+            return new(RoadStairRuns.FinishOverLedge(plan, Ground, 2f, _ => true), plan.Pieces);
+        }
+        LedgeFinishAndPieces with = Finish();
+        Assert.NotEqual(RoadStairRuns.LedgeFinish.Crest, with.Finish);
+        Assert.DoesNotContain(with.Pieces, p => p.Kind == StairPieceKind.Stair && p.Position.z > 2.5f);
+        StairLayout.RulesOff = SteepRules.CrestFooting;
+        try { Assert.Equal(RoadStairRuns.LedgeFinish.Crest, Finish().Finish); }
+        finally { StairLayout.RulesOff = SteepRules.None; }
+    }
+
+    /// <summary>An overshoot (the mountain cave at -2560.6,1549.9): the flight up 202.5, its last stair's top
+    /// edge at 157.26, the ground probed along it (from the stair at -2559.0,1553.6): 157.76 a metre on, 158.22 at a crest's
+    /// ridge, 158.4-158.55 past it. The crest's ridge stood 0.04 m over the ground and its down stair was buried whole:
+    /// The upper staircase overshot. One more stair up and a floor on the ground's level instead.</summary>
+    [Fact]
+    public void ATopWhoseCrestWouldBeBuriedClimbsOneAndFloors()
+    {
+        Vector2 a = new(-2559.0f, 1553.6f), dir = StairLayout.Forward(202.5f), edge = a + dir * 3f;
+        float[] hs = { 154.06f, 154.20f, 154.30f, 154.80f, 155.37f, 156.22f, 156.90f, 157.31f, 157.76f, 157.98f, 158.22f, 158.31f,
+            158.42f, 158.47f, 158.52f, 158.55f, 158.56f };
+        float Ground(float x, float z)
+        {
+            float along = Mathf.Clamp(Vector2.Dot(new Vector2(x, z) - a, dir) / 0.5f, 0f, hs.Length - 1.001f);
+            int i = (int)along;
+            return Mathf.Lerp(hs[i], hs[i + 1], along - i);
+        }
+        LedgeFinishAndPieces Finish()
+        {
+            var plan = new StairPlan { Kit = StairKit.Stone.Name, Reached = true, End = new Vector3(edge.x, 157.262f, edge.y), EndHeading = 202.5f,
+                LastRowKind = StairPieceKind.Stair, LastRowPieces = 0 };
+            return new(RoadStairRuns.FinishOverLedge(plan, Ground, 2f, _ => true), plan.Pieces);
+        }
+        LedgeFinishAndPieces with = Finish();
+        Assert.Equal(RoadStairRuns.LedgeFinish.TopFloor, with.Finish);
+        StairPiece up = Assert.Single(with.Pieces, p => p.Kind == StairPieceKind.Stair);
+        Assert.Equal(22.5f, up.YawDegrees, 2);
+        StairPiece floor = Assert.Single(with.Pieces, p => p.Kind == StairPieceKind.Landing);
+        Assert.Equal(158.262f, floor.Position.y + StairKit.Stone.FloorTop, 2);
+        StairLayout.RulesOff = SteepRules.CrestFooting;
+        try { Assert.Equal(RoadStairRuns.LedgeFinish.Crest, Finish().Finish); }
+        finally { StairLayout.RulesOff = SteepRules.None; }
+    }
+
     /// <summary>The two flights of a valley (4392-4398,6438-6444) as they were laid down to a shared floor at
     /// 32.5: the first (reversed) down into it from the west, the second up out of it to the east.</summary>
     internal static (StairPlan below, StairPlan up) SharedFloorValley()
@@ -864,6 +994,30 @@ public class CantileverTests
             Assert.True(Hangs(without), "without the rule no foot stair stood out anyway");
         }
         finally { StairLayout.RulesOff = SteepRules.None; }
+    }
+
+    private sealed record LedgeFinishAndPieces(RoadStairRuns.LedgeFinish Finish, List<StairPiece> Pieces);
+
+    /// <summary>A third floor (-9286.1,691.6): the surface past the top 0.1-0.6 m under it, so the top is improved with a 2x2.
+    /// The hand-built last stair (-9286.095, 173.029, 691.647) yaw 247.5, top edge 174.03; its
+    /// stone_floor_2x2 at (-9284.247, 173.529, 692.413), level with the top, slightly proud of the snow.</summary>
+    [Fact]
+    public void ATopAlittleOverTheSnowGetsAFloorToo()
+    {
+        Vector2 edge = new(-9285.171f, 692.030f), dir = StairLayout.Forward(67.5f);
+        float[] ds = { 0f, 1f, 2f, 3f, 4f }, hs = { 173.4f, 173.6f, 173.8f, 173.9f, 173.9f };
+        float Ground(float x, float z)
+        {
+            float d = Vector2.Dot(new Vector2(x, z) - edge, dir);
+            if (d <= 0f) return hs[0] + 0.5f * d;
+            for (int i = 1; i < ds.Length; i++) if (d <= ds[i]) return Mathf.Lerp(hs[i - 1], hs[i], (d - ds[i - 1]) / (ds[i] - ds[i - 1]));
+            return hs[hs.Length - 1];
+        }
+        var plan = new StairPlan { Kit = StairKit.Stone.Name, Reached = true, End = new Vector3(edge.x, 174.029f, edge.y), EndHeading = 67.5f,
+            LastRowKind = StairPieceKind.Stair, LastRowPieces = 0 };
+        Assert.Equal(RoadStairRuns.LedgeFinish.TopFloor, RoadStairRuns.FinishOverLedge(plan, Ground, 2f, _ => true));
+        StairPiece floor = Assert.Single(plan.Pieces, p => p.Prefab == "stone_floor_2x2");
+        Assert.True(Vector3.Distance(floor.Position, new Vector3(-9284.247f, 173.529f, 692.413f)) < 0.02f, $"floor at {floor.Position}");
     }
 
     /// <summary>A staircase whose foot stands on a mound 2.3 m over its road 5 m back (-9308.1,690.3: the bottom of the stairs

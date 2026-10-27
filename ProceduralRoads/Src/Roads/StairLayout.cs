@@ -136,7 +136,7 @@ public sealed class StairPlan
     public float SteepestFace;
     public Vector3 End;
     /// <summary>Where the last walked row begins in <see cref="Pieces"/> and <see cref="Clearances"/>,
-    /// and what it is.</summary>
+    /// and what it is: what <see cref="StairLayout.StepDownTop"/> may replace.</summary>
     public int LastRowPieces = -1, LastRowClearances = -1, LastRowPieceCount, LastRowClearanceCount;
     public StairPieceKind LastRowKind;
     public Vector2 LastRowStart;

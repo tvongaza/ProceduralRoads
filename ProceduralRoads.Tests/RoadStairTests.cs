@@ -785,6 +785,22 @@ public class RoadStairTests : IDisposable
         finally { RoadStairRuns.ValleyMeets = true; }
     }
 
+    /// <summary>The Queen's entrance (Mistlands_DvergrBossEntrance1 at 7552,3392 turned 315): its landing is
+    /// where its own stairs meet the ground in front of its door, about 7538,3409, not its levelled flat's edge against the
+    /// entrance building's west wall, where the road ended (the aims along the flat's joined edges); it is the only landing
+    /// aimed at. Another place has no door landing.</summary>
+    [Fact]
+    public void ABossEntrancesLandingIsAtTheFootOfItsOwnStairs()
+    {
+        var flat = new LevelOp(0f, 6.5f, 1f, 15f, false, 24f, 3f);
+        var centre = new Vector2(7552f, 3392f);
+        PlacedSiteShape queen = PlacedSiteShape.Of(centre, 315f, flat, 32f, null, (x, z) => 46f, prefab: "Mistlands_DvergrBossEntrance1");
+        Assert.True(Vector2.Distance(queen.Landing, new Vector2(7538f, 3409f)) < 1f, $"landing at {queen.Landing}");
+        Assert.Single(queen.Aims((x, z) => 46f, new Vector2(7525f, 3415f), 1f, 4));
+        PlacedSiteShape other = PlacedSiteShape.Of(centre, 315f, flat, 32f, null, (x, z) => 46f, prefab: "Crypt4");
+        Assert.Null(other.Door);
+    }
+
     /// <summary>A Queen approach: from the road's end at 41.5 over a dip to 39.5 and up to the entrance at 46,
     /// laid as stairs down, a floor and stairs up; it should be a straight run of floors over the dip. A valley no
     /// deeper than RoadStairRuns.ShallowDip under both ends is no turn: the approach crosses it level.</summary>

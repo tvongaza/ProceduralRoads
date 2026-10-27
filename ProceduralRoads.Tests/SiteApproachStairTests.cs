@@ -189,6 +189,100 @@ public class SiteApproachStairTests : IDisposable
 
         Assert.Empty(StairStructures.Runs);
     }
+    /// <summary>Ground falling at 0.8 towards +x from 12 m behind to 14 m in front, then at 0.3 (where a
+    /// road can reach); level behind (a road can end there too); sea past 200 m.</summary>
+    private sealed class HillsideWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy) =>
+            Mathf.Abs(wx) > 200f || Mathf.Abs(wy) > 200f ? 0f : 50f - 0.8f * Mathf.Clamp(wx, -12f, 14f) - 0.3f * Mathf.Max(wx - 14f, 0f);
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Mountain;
+        public override int GetSeed() => 77;
+    }
+
+    /// <summary>MountainCave02's one levelling operation, as road_sites_dump read it off the prefab:
+    /// a floor 4 m across, 4.75 m behind the centre and 4.09 m below it, smoothed out to 7 m.</summary>
+    private static readonly IReadOnlyList<LevelOp> CaveFloor = new[] { new LevelOp(-0.06f, -4.75f, -4.09f, 4f, false, 7f, 3f) };
+
+    /// <summary>Ground at a frost cave turned to face +x (yaw 90), as the game leaves it: the
+    /// hillside, with the cave's floor levelled and smoothed 4.75 m behind the centre.</summary>
+    private static float CaveGround(float x, float z)
+    {
+        float h = new HillsideWorld().GetHeight(x, z);
+        LevelOp op = CaveFloor[0];
+        Vector2 floor = LocationLevelling.OffsetAt(op, 90f);
+        float d = Vector2.Distance(new Vector2(x, z), floor);
+        float level = 50f + op.Height;
+        if (d <= op.Radius) h = level;
+        if (d <= op.SmoothRadius) h = Mathf.Lerp(h, level, 1f - Mathf.Pow(d / op.SmoothRadius, op.SmoothPower));
+        return h;
+    }
+
+    private static RoadStairSpan? PlanAtCave(Vector2 end, out string why, float rock = 0f)
+    {
+        Vector2 before = end + end.normalized * 30f;
+        var request = new SiteApproachRequest
+        {
+            RoadEnd = end, RoadHeight = CaveGround(end.x, end.y), Arriving = StairLayout.Bearing(before, end),
+            Centre = new Vector2(0f, 0f), RoadTail = new List<Vector2> { before, end },
+        };
+        return RoadStairRuns.PlanPlacedSiteApproach(request, 90f, CaveFloor, CaveGround, (x, z) => Heightmap.Biome.Mountain, 77, out why, rock);
+    }
+
+    [Fact]
+    public void ARoadBelowAPlacedFrostCaveClimbsToTheLandingInFrontOfItsMouth()
+    {
+        RoadStairSpan? span = PlanAtCave(new Vector2(24f, 0f), out string why);
+
+        Assert.True(span != null, why);
+        StairPlan plan = span!.Plan;
+        Assert.False(plan.Reversed);
+        // It lands on the ground in front of the entrance: the floor is 4.75 m behind the centre
+        // (facing +x) and smoothed out to 7 m; the landing is aimed 3 m beyond that.
+        Vector2 floor = new Vector2(-4.75f, 0.06f);
+        Vector2 landing = floor + new Vector2(7f + RoadStairRuns.LandingOut, 0f);
+        Vector2 top = new Vector2(plan.End.x, plan.End.z);
+        Assert.InRange(Vector2.Distance(top, landing), 0f, RoadStairRuns.LedgeReach + RoadStairRuns.FinishReach);
+        Assert.InRange(plan.End.y, CaveGround(top.x, top.y) - StairLayout.ReachHeight, CaveGround(top.x, top.y) + StairLayout.ReachHeight);
+        Assert.True(plan.MaxCut - StairLayout.CutBelowSurface <= RoadStairRuns.SiteMaxCover, $"cut {plan.MaxCut:F2} m");
+        // Never down in the entrance: no piece within the floor's smoothing.
+        foreach (StairPiece piece in plan.Pieces.Where(p => p.Kind != StairPieceKind.Support))
+            Assert.True(Vector2.Distance(new Vector2(piece.Position.x, piece.Position.z), floor) >= 7f, $"{piece.Kind} at {piece.Position} in the entrance");
+        // It ends facing into the cave (towards -x), within the alignment the layout allows.
+        float off = Mathf.Abs(((plan.EndHeading - 270f) % 360f + 540f) % 360f - 180f);
+        Assert.True(off <= StairLayout.AlignSteps * StairLayout.HeadingStep + 0.01f, $"ends facing {plan.EndHeading}");
+    }
+
+    [Fact]
+    public void FromBehindACaveTheStaircaseGoesRoundItsRockToTheFront()
+    {
+        const float rock = 7f;
+        // The road ends uphill of the cave, behind it and off to one side.
+        RoadStairSpan? span = PlanAtCave(new Vector2(-20f, 14f), out string why, rock);
+
+        Assert.True(span != null, why);
+        StairPlan plan = span!.Plan;
+        // No piece in the cave's rock but in the cone in front of its floor (apex at the floor, 4.75 m behind the centre, facing +x).
+        Vector2 floor = new Vector2(-4.75f, 0.06f);
+        float cos = Mathf.Cos(RoadStairRuns.FrontCone * Mathf.Deg2Rad);
+        foreach (StairPiece piece in plan.Pieces.Where(p => p.Kind != StairPieceKind.Support))
+        {
+            var at = new Vector2(piece.Position.x, piece.Position.z);
+            bool inFront = Vector2.Dot((at - floor).normalized, new Vector2(1f, 0f)) >= cos;
+            Assert.True(at.magnitude >= rock + RoadStairRuns.RockMargin || inFront, $"{piece.Kind} at {piece.Position} in the cave's rock");
+        }
+        // It comes to the cave's front: its place end is in front of the floor.
+        Vector2 placeEnd = plan.Reversed ? new Vector2(span.FromPoint.x, span.FromPoint.y) : new Vector2(plan.End.x, plan.End.z);
+        Vector2 caveEnd = plan.Reversed ? new Vector2(span.ToPoint.x, span.ToPoint.y) : placeEnd;
+        Assert.True(caveEnd.x > floor.x, $"ends at {caveEnd}, not in front of the floor");
+    }
+
+    [Fact]
+    public void WithoutItsRockKnownARoadBehindTheCaveIsStillLaidStraight()
+    {
+        // The keep-out is what leads it round: with none, nothing stops a straight line.
+        Assert.NotNull(PlanAtCave(new Vector2(24f, 0f), out string why));
+    }
+
     /// <summary>An approach that carries on from the top of the staircase its road ends on
     /// touches that staircase there, as staircases meeting head-on may: given the meeting
     /// point it is not refused "on another staircase" (a frost cave 13 m
@@ -237,6 +331,77 @@ public class SiteApproachStairTests : IDisposable
         Assert.Equal(plan.EndHeading, top.Value.Heading, 3);
         Assert.Equal(topLandings > 0 ? StairPieceKind.Landing : StairPieceKind.Stair, top.Value.Kind);
         Assert.Null(RoadStairRuns.TopAt(foot, Slope(foot.x, foot.y), run.Pieces));
+    }
+
+    /// <summary>A cave's approach from the top of the staircase its road ends on carries on from that
+    /// staircase's top row, off its snap edge: its first piece's back edge on the row's far edge at its
+    /// walking height (or pivoting off it with a filler where it turns), within a turn's reach of the
+    /// row's heading, and no sunk foot dug in under the row (MountainCave02
+    /// -2560,1536: the final staircase builds off the snap points of what is already there).</summary>
+    [Fact]
+    public void AnApproachFromAStaircasesTopCarriesOnFromItsTopRow()
+    {
+        var end = new Vector2(24f, 0f);
+        float height = CaveGround(end.x, end.y);
+        Vector2 before = end + end.normalized * 30f;
+        var request = new SiteApproachRequest
+        {
+            RoadEnd = end, RoadHeight = height, Arriving = StairLayout.Bearing(before, end),
+            Centre = new Vector2(0f, 0f), RoadTail = new List<Vector2> { before, end },
+        };
+        // The road's staircase climbed west (toward the cave) to its top row's far edge at the road's end.
+        var row = new StairContinuation(end, 270f, height, StairPieceKind.Stair);
+
+        RoadStairSpan? span = RoadStairRuns.PlanPlacedSiteApproach(request, 90f, CaveFloor, CaveGround, (x, z) => Heightmap.Biome.Mountain, 77,
+            out string why, onStairs: row);
+
+        Assert.True(span != null, why);
+        StairPlan plan = span!.Plan;
+        Assert.False(plan.Reversed);
+        // No sunk foot: nothing walked below the row it carries on from.
+        foreach (StairPiece piece in plan.Pieces.Where(p => p.Kind == StairPieceKind.Stair))
+            Assert.True(piece.Position.y >= height - 0.01f, $"{piece.Kind} at {piece.Position} under the row at {height:F2}");
+        float turned = Mathf.Abs(StairLayout.Wrap(plan.StartHeading - row.Heading + 180f) - 180f);
+        Assert.True(turned <= StairLayout.MaxStairTurnSteps * StairLayout.HeadingStep + 0.01f, $"sets off at {plan.StartHeading}");
+        StairPiece first = plan.Pieces.First(p => p.Kind == StairPieceKind.Stair || p.Kind == StairPieceKind.Landing);
+        float heading = first.Kind == StairPieceKind.Stair ? StairLayout.Wrap(first.YawDegrees + 180f) : first.YawDegrees;
+        Vector2 back = new Vector2(first.Position.x, first.Position.z) - StairLayout.Forward(heading) * (StairLayout.PieceRun / 2f);
+        if (turned < 0.01f)
+            Assert.True(Vector2.Distance(back, end) < 0.05f, $"first piece starts at {back}, the row's edge is {end}");
+        else
+        {
+            // Pivoting on the row's inside corner: its back edge within a piece's width, the wedge filled.
+            Assert.True(Vector2.Distance(back, end) <= RoadStairRuns.Width + 0.05f, $"first piece starts at {back}, the row's edge is {end}");
+            Assert.Contains(plan.Pieces, p => p.Kind == StairPieceKind.Filler);
+        }
+    }
+
+    /// <summary>Where nothing fits carried straight on from a staircase's top row, the approach sets off
+    /// from the row's end any way, at its height (MountainCave02 -2560,1536: every heading is
+    /// buried, crosses itself or turns too far off the row, and the staircase stopped under the cave).</summary>
+    [Fact]
+    public void AnApproachSetsOffFromAStaircasesTopAnyWayWhereNothingFitsStraightOn()
+    {
+        var end = new Vector2(24f, 0f);
+        float height = CaveGround(end.x, end.y);
+        // A block of rock-hard ground 6 m high straight on from the row and either side of it: every
+        // piece carried on from the row, or turned off it, is buried in it.
+        float Ground(float x, float z) => CaveGround(x, z) + (x > 17f && x < 23.5f && Mathf.Abs(z) < 7f ? 6f : 0f);
+        Vector2 before = end + new Vector2(30f, 0f);
+        var request = new SiteApproachRequest
+        {
+            RoadEnd = end, RoadHeight = height, Arriving = StairLayout.Bearing(before, end),
+            Centre = new Vector2(0f, 0f), RoadTail = new List<Vector2> { before, end },
+        };
+        // The road's staircase climbed west, toward the cave, to its top row at the road's end.
+        var row = new StairContinuation(end, 270f, height, StairPieceKind.Stair);
+
+        RoadStairSpan? span = RoadStairRuns.PlanPlacedSiteApproach(request, 90f, CaveFloor, Ground, (x, z) => Heightmap.Biome.Mountain, 77,
+            out string why, onStairs: row);
+
+        Assert.True(span != null, why);
+        foreach (StairPiece piece in span!.Plan.Pieces.Where(p => p.Kind == StairPieceKind.Stair))
+            Assert.True(piece.Position.y >= height - 0.01f, $"{piece.Kind} at {piece.Position} under the row at {height:F2}");
     }
 
 }

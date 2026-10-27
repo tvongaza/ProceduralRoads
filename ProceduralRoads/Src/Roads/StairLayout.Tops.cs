@@ -35,13 +35,41 @@ public static partial class StairLayout
     public const float TopAhead = 2.5f;
 
     /// <summary>
+    /// Where a staircase's top (<see cref="StairPlan.End"/>, facing <see cref="StairPlan.EndHeading"/>)
+    /// stands more than <see cref="StepUp"/> over the ground ahead of it, stairs on down to that
+    /// ground, facing back: a ramp from the clearing up onto the top, left buried where it meets
+    /// the ground (the 2x2 stone was too high to walk from the landing on
+    /// to the block, which could be a set of stairs down into the ground). At most
+    /// <paramref name="most"/> rows. Returns how many pieces and clearances were added, so a
+    /// caller can take them off again.
+    /// </summary>
+    public static (int pieces, int clearances) AddDescent(StairPlan plan, Func<float, float, float> ground, float width, int most = 2)
+    {
+        int pieces = plan.Pieces.Count, clearances = plan.Clearances.Count;
+        StairKit kit = StairKit.Named(plan.Kit) ?? StairKit.Stone;
+        int lanes = Mathf.Max(1, Mathf.RoundToInt(width / PieceRun));
+        Vector2 dir = Forward(plan.EndHeading), edge = new Vector2(plan.End.x, plan.End.z);
+        float top = plan.End.y;
+        for (int i = 0; i < most; i++)
+        {
+            Vector2 low = edge + dir * PieceRun;
+            if (top - ground(low.x, low.y) <= StepUp) break;
+            AddRow(plan, kit, StairPieceKind.Stair, kit.Stair, low, Wrap(plan.EndHeading + 180f), top - PieceRise, lanes, ground, mark: true, cut: false);
+            plan.Stairs += lanes;
+            edge = low;
+            top -= PieceRise;
+        }
+        return (plan.Pieces.Count - pieces, plan.Clearances.Count - clearances);
+    }
+
+    /// <summary>
     /// Where the ground just past a staircase's top (<see cref="StairPlan.End"/>, facing
     /// <see cref="StairPlan.EndHeading"/>) stands more than <see cref="StepUp"/> but no more than a rise
     /// over it (and a step-up: the ridge between them is a rise over the top), a crest: one more stair up, then the same stair turned round, back to back, running down
     /// onto that ground with its low edge sunk into it (at the top of a cantilevered staircase
     /// by the mountain cave at 1920,704, which ended 0.8 m under the plateau's lip: two stone steps
     /// in opposite directions at the top of the landing connect it better). Ground anywhere between the top and a rise over it is met without exact heights.
-    /// Its <see cref="StairPlan.End"/> stays the top. Returns the pieces and
+    /// Its <see cref="StairPlan.End"/> stays the top, as with <see cref="AddDescent"/>. Returns the pieces and
     /// clearances added (none where it does not apply), for <see cref="RemoveDescent"/>.
     /// </summary>
     public static (int pieces, int clearances) AddCrest(StairPlan plan, Func<float, float, float> ground, float width, float maxCover)
@@ -263,7 +291,32 @@ public static partial class StairLayout
         return TopFinish.None;
     }
 
-    /// <summary>Take off what <see cref="ClimbOn"/>, <see cref="AddTopFloor"/> or <see cref="AddCrest"/> added.</summary>
+    /// <summary>
+    /// Where a staircase ends on a floor whose surface stands more than <see cref="StepUp"/> over
+    /// the ground just past it, that floor becomes a stair down, in its own place: its back edge
+    /// at the floor's height, its front a rise lower, buried where it meets the ground. Nothing
+    /// is laid further on, so it cannot reach a place's pit or rock (at Hildir's cave the last 2x2 is probably not
+    /// needed, or is replaced with stairs going down into the landing). Returns whether it did. Only for the last row emitted (nothing after it).
+    /// </summary>
+    public static bool StepDownTop(StairPlan plan, Func<float, float, float> ground, float width)
+    {
+        if (plan.LastRowPieces < 0 || plan.LastRowKind != StairPieceKind.Landing) return false;
+        Vector2 dir = Forward(plan.LastRowHeading);
+        Vector2 front = plan.LastRowStart + dir * PieceRun, past = front + dir * 1f;
+        if (plan.LastRowHeight - ground(past.x, past.y) <= StepUp) return false;
+        StairKit kit = StairKit.Named(plan.Kit) ?? StairKit.Stone;
+        int lanes = Mathf.Max(1, Mathf.RoundToInt(width / PieceRun));
+        // Only the row's own pieces (and its columns): supports sunk later for other pieces stay.
+        plan.Pieces.RemoveRange(plan.LastRowPieces, plan.LastRowPieceCount);
+        plan.Clearances.RemoveRange(plan.LastRowClearances, plan.LastRowClearanceCount);
+        AddRow(plan, kit, StairPieceKind.Stair, kit.Stair, front, Wrap(plan.LastRowHeading + 180f), plan.LastRowHeight - PieceRise, lanes, ground, mark: true, cut: false);
+        plan.Landings -= lanes; plan.Stairs += lanes;
+        plan.LastRowKind = StairPieceKind.Stair;
+        plan.End = new Vector3(front.x, plan.LastRowHeight - PieceRise, front.y);
+        return true;
+    }
+
+    /// <summary>Take off what <see cref="AddDescent"/> added.</summary>
     public static void RemoveDescent(StairPlan plan, (int pieces, int clearances) added)
     {
         plan.Pieces.RemoveRange(plan.Pieces.Count - added.pieces, added.pieces);

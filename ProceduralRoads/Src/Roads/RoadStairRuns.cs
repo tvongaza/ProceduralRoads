@@ -151,7 +151,7 @@ public static partial class RoadStairRuns
         System.Threading.Interlocked.Increment(ref s_generation);
         s_plans.Clear();
         s_laid.Clear();
-        FeetBeside = FeetBesideRefused = RoadTopsCrested = TopFloors = FeetLowered = FeetFacedFreely = RidgesBridged = RidgesSnapped = TopsBeside = ValleysMet = FootAprons = SpurFeet = RidgesSnappedOffCrest = CrestStubs = CrestStubsJoined = ValleysSpanned = 0;
+        FeetBeside = FeetBesideRefused = Crests = ClimbedOn = RoadTopsCrested = TopFloors = FeetLowered = FeetFacedFreely = RidgesBridged = RidgesSnapped = TopsBeside = ValleysMet = FootAprons = SpurFeet = RidgesSnappedOffCrest = CrestStubs = CrestStubsJoined = ValleysSpanned = 0;
     }
 
     /// <summary>
