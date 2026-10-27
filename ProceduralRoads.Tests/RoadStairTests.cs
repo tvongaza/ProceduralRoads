@@ -127,6 +127,62 @@ public class RoadStairTests : IDisposable
         Assert.Equal(0, finder.OpenStairCells);
     }
 
+    /// <summary>A staircase that leaves its road square to it sets off from the road's edge,
+    /// not its middle: no step stands on the road's width (a bottom step on the road would cover half the road, so start
+    /// closer to the road edge).</summary>
+    [Fact]
+    public void AStaircaseLeavingItsRoadSquareStartsAtTheRoadsEdge()
+    {
+        // North up x = 0 to the foot of the face, then east up it.
+        var path = new List<Vector2>();
+        for (int z = -40; z <= 0; z += 8) path.Add(new Vector2(0f, z));
+        for (int x = 8; x <= 32; x += 8) path.Add(new Vector2(x, 0f));
+        var steps = new List<(Vector2, Vector2)> { (new Vector2(0f, 0f), new Vector2(8f, 0f)), (new Vector2(8f, 0f), new Vector2(16f, 0f)), (new Vector2(16f, 0f), new Vector2(24f, 0f)) };
+
+        List<RoadStairSpan>? spans = RoadStairRuns.Lay(path, steps, new List<RoadCrossing>(), _world);
+
+        Assert.NotNull(spans);
+        RoadStairSpan span = Assert.Single(spans!);
+        // The first walked piece is the sunk foot, under the road on purpose.
+        var walked = span.Plan.Pieces.Where(p => p.Kind == StairPieceKind.Stair || p.Kind == StairPieceKind.Landing).Skip(1).ToList();
+        Assert.NotEmpty(walked);
+        foreach (StairPiece p in walked)
+        {
+            // Distance from the arriving road's centreline (x = 0, z <= 0), less the piece's own half width.
+            float d = p.Position.z > 0f ? new Vector2(p.Position.x, p.Position.z).magnitude : Mathf.Abs(p.Position.x);
+            Assert.True(d - 1f >= RoadNetworkGenerator.RoadWidth / 2f - 0.05f, $"{p.Kind} at {p.Position} stands on the road ({d:F2} m from its centreline)");
+        }
+        Assert.Equal(1, RoadStairRuns.FeetBeside);
+    }
+
+    /// <summary>A staircase that carries on roughly the way its road goes (here 27 degrees off it)
+    /// sets off from the middle of the road, not beside it (a stair going the same direction as the road stays
+    /// centred).</summary>
+    [Fact]
+    public void AStaircaseCarryingOnRoughlyTheWayItsRoadGoesStartsFromTheMiddle()
+    {
+        // North-east by knight's moves to the foot of the face, then east up it.
+        var path = new List<Vector2>();
+        for (int i = -3; i <= 0; i++) path.Add(new Vector2(16f * i, 8f * i));
+        for (int x = 8; x <= 32; x += 8) path.Add(new Vector2(x, 0f));
+        var steps = new List<(Vector2, Vector2)> { (new Vector2(0f, 0f), new Vector2(8f, 0f)), (new Vector2(8f, 0f), new Vector2(16f, 0f)), (new Vector2(16f, 0f), new Vector2(24f, 0f)) };
+
+        // Up this 1.2 face it switched back within five stairs; held to StairLayout.FirstFlightStairs it bends on the face first,
+        // swings at its foot and is set beside the road. Where it starts is what this is about.
+        List<RoadStairSpan>? spans;
+        StairLayout.RulesOff = SteepRules.FirstFlight;
+        try { spans = RoadStairRuns.Lay(path, steps, new List<RoadCrossing>(), _world); }
+        finally { StairLayout.RulesOff = SteepRules.None; }
+
+        Assert.NotNull(spans);
+        RoadStairSpan span = Assert.Single(spans!);
+        Assert.Equal(0, RoadStairRuns.FeetBeside);
+        Assert.Equal(0, RoadStairRuns.FeetBesideRefused);
+        // Its foot on the road's end, not a road's width to one side of it.
+        StairPiece foot = span.Plan.Pieces.First(p => p.Kind == StairPieceKind.Stair || p.Kind == StairPieceKind.Landing);
+        Assert.True(Mathf.Abs(foot.Position.z) < RoadNetworkGenerator.RoadWidth / 2f, $"foot at {foot.Position} is beside the road");
+    }
+
     /// <summary>East along z = 0, a last search step in from the north-west, then east up a face of 0.45: the
     /// road as a player sees it runs the staircase's way, though its last 8 m step is 45 degrees off it.</summary>
     private (List<Vector2> path, List<(Vector2, Vector2)> steps) EastWithAJogIn()
@@ -139,6 +195,43 @@ public class RoadStairTests : IDisposable
         for (int x = 0; x <= 32; x += 8) path.Add(new Vector2(x, 0f));
         var steps = new List<(Vector2, Vector2)> { (new Vector2(0f, 0f), new Vector2(8f, 0f)), (new Vector2(8f, 0f), new Vector2(16f, 0f)), (new Vector2(16f, 0f), new Vector2(24f, 0f)) };
         return (path, steps);
+    }
+
+    /// <summary>The road's direction at a staircase's foot is read over its last stretch, and the
+    /// staircase's from its settled flight: one carrying on the road's way starts from its middle though
+    /// the last search step is 45 degrees off (MountainCave02 -2560,1536: the bottom of the
+    /// stairs was not aligned).</summary>
+    [Fact]
+    public void AStaircaseCarryingOnTheRoadsWayPastAJogInItsLastStepStartsFromTheMiddle()
+    {
+        var (path, steps) = EastWithAJogIn();
+
+        List<RoadStairSpan>? spans = RoadStairRuns.Lay(path, steps, new List<RoadCrossing>(), _world);
+
+        Assert.NotNull(spans);
+        RoadStairSpan only = Assert.Single(spans!);
+        Assert.True(RoadStairRuns.FeetBeside + RoadStairRuns.FeetBesideRefused == 0,
+            $"set beside: start {only.Plan.StartHeading}, settled {RoadStairRuns.SettledHeading(only.Plan, new Vector2(0f, 0f))}, travel {StairLayout.Bearing(RoadStairRuns.Back(path, 6, -1, RoadStairRuns.TravelReach), new Vector2(0f, 0f))}, pieces "
+            + string.Join(" ", only.Plan.Pieces.Where(p => p.Kind == StairPieceKind.Stair).Take(6).Select(p => $"({p.Position.x:F1},{p.Position.z:F1})h{StairLayout.Wrap(p.YawDegrees + 180f)}")));
+    }
+
+    /// <summary>A flight that swings round on its bottom steps is told from one that turns later: the
+    /// stairs at the foot of Ruin1 -> Hildir_cave faced 247.5, 270, then 315 up the flight
+    /// (a weird jog; start aligned with the road).</summary>
+    [Fact]
+    public void ASwingOnTheBottomStepsIsToldFromALaterTurn()
+    {
+        StairPlan Flight(params float[] headings)
+        {
+            var plan = new StairPlan();
+            for (int i = 0; i < headings.Length; i++)
+                plan.Pieces.Add(new StairPiece { Kind = StairPieceKind.Stair, Position = new Vector3(2f * i + 1f, i, 0f), YawDegrees = StairLayout.Wrap(headings[i] + 180f) });
+            return plan;
+        }
+
+        Assert.True(RoadStairRuns.SwingsAtItsFoot(Flight(247.5f, 270f, 315f, 315f, 315f), new Vector2(0f, 0f)));
+        Assert.False(RoadStairRuns.SwingsAtItsFoot(Flight(315f, 315f, 315f, 247.5f, 247.5f), new Vector2(0f, 0f)));
+        Assert.False(RoadStairRuns.SwingsAtItsFoot(Flight(292.5f, 315f, 315f, 315f), new Vector2(0f, 0f)));
     }
 
     /// <summary>A stretch whose staircase could not be laid is closed to stairs and the road
@@ -379,6 +472,45 @@ public class RoadStairTests : IDisposable
         public override int GetSeed() => 77;
     }
 
+    /// <summary>A road arriving heading east along the foot of a face, its climb lying back the way it came (south-west):
+    /// the staircase still sets off within 90 degrees of the road's travel and turns on the stairs. Free, or relaid beside
+    /// the road on its own heading, it set off 157.5 degrees off it, back alongside the road (the foot at
+    /// Hildir_cave 1664,768; offline its staircase set off 158 degrees off its road).</summary>
+    [Fact]
+    public void ARoadStaircaseSetsOffWithin90DegreesOfItsRoadsTravel()
+    {
+        var world = new BehindWorld();
+        _scope.WithWorld(world);
+        var path = new List<Vector2>();
+        for (int x = -40; x <= 0; x += 8) path.Add(new Vector2(x, 4f));
+        var stair = new List<Vector2> { new(-4f, -1f), new(-8f, -6f), new(-12f, -11f) };
+        path.AddRange(stair);
+        path.Add(stair[2] + new Vector2(-8f, 0f));
+        path.Add(stair[2] + new Vector2(-16f, 0f));
+        var steps = new List<(Vector2, Vector2)> { (new Vector2(0f, 4f), stair[0]), (stair[0], stair[1]), (stair[1], stair[2]) };
+        string Laid(out float off)
+        {
+            RoadNetworkGenerator.Reset();
+            List<RoadStairSpan>? spans = RoadStairRuns.Lay(path, steps, new List<RoadCrossing>(), world);
+            Assert.NotNull(spans);
+            StairPlan plan = Assert.Single(spans!).Plan;
+            Assert.True(plan.Reached, plan.Reason);
+            off = Math.Abs(StairLayout.Wrap(plan.StartHeading - 90f + 180f) - 180f);
+            return $"set off on {plan.StartHeading}: " + string.Join(" ", plan.Pieces.Where(p => p.Kind == StairPieceKind.Stair).Take(4)
+                .Select(p => $"({p.Position.x:F1},{p.Position.z:F1},{p.Position.y:F1})"));
+        }
+        string laid = Laid(out float within);
+        Assert.True(within <= 90.01f, laid);
+        // Without the rule it set off back along the road.
+        StairLayout.RulesOff = SteepRules.Facing;
+        try
+        {
+            string free = Laid(out float off);
+            Assert.True(off > 90.01f, "without the rule it set off within 90 degrees anyway: " + free);
+        }
+        finally { StairLayout.RulesOff = SteepRules.None; }
+    }
+
     /// <summary>A flat world: a road built north-south, then one east-west across it. The second would cross the first at
     /// grade and is not built (roads that cross at grade are disallowed even if that rejects a POI); one that
     /// ends on the first (a T) is.</summary>
@@ -387,6 +519,30 @@ public class RoadStairTests : IDisposable
         public override float GetHeight(float wx, float wy) => Mathf.Abs(wx) > 200f || Mathf.Abs(wy) > 200f ? 0f : 40f;
         public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Meadows;
         public override int GetSeed() => 77;
+    }
+
+    /// <summary>A foot straight on with its road stays in the road's middle only where the road ends there; where another road
+    /// goes on past it (the ridge at -6961,3369, the foot at -6951.1,3360.4 on a junction, road all round it:
+    /// the stairs would get in the way of the straight-through road versus branching off to the side), it is a spur, set beside.</summary>
+    [Fact]
+    public void AFootOnARoadGoingOnPastItIsASpur()
+    {
+        bool GoesOn(bool trunk)
+        {
+            RoadNetworkGenerator.Reset();
+            var world = new FlatWorld();
+            _scope.WithWorld(world);
+            SetPathfinder(new RoadPathfinder(world) { TerrainVarianceThreshold = 1000f, Meander = 0f });
+            if (trunk) Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(0f, -80f), 0f, new Vector2(0f, 80f), 0f, 4f, "trunk"));
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0.5f), 0f, new Vector2(-1f, 0.5f), 0f, 4f, "arriving"));
+            var path = new List<Vector2>();
+            for (float x = 0f; x >= -60f; x -= 4f) path.Add(new Vector2(x, 0.5f));
+            path.Reverse();
+            int foot = path.Count - 1;
+            return RoadStairRuns.RoadGoesOnPast(path[foot], path, foot, -1, 90f, out _);
+        }
+        Assert.True(GoesOn(trunk: true), "the trunk going on past the foot was not seen");
+        Assert.False(GoesOn(trunk: false), "the arriving road's own end was taken for another road");
     }
 
 }

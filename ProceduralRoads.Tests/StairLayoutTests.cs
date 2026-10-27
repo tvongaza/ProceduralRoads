@@ -468,6 +468,34 @@ public class StairLayoutTests
         Assert.True(length >= climb / StairRoute.MaxClimb * 0.85f, $"route {length:F0} m for a {climb:F0} m climb");
     }
 
+    /// <summary>Every tread and landing within EndGuardReach of either end has a cut under
+    /// it, buried by the natural ground or not: the road meeting a staircase is held at its end
+    /// height and its earthwork covered the last steps (a top
+    /// step 0.8 m under, hard to walk up). Pieces further in on ground below
+    /// them get none, as before.</summary>
+    [Fact]
+    public void TreadsNearEitherEndAreKeptClearOfEarthwork()
+    {
+        // A slope gentler than a flight: the treads stand over the ground all the way up.
+        float Slope(float x, float z) => 40f + 0.4f * z;
+        var plan = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 40), Slope, sunkFoot: true);
+        Assert.True(plan.Reached, plan.Reason);
+        Vector2 foot = new(0, 0), top = new(plan.End.x, plan.End.z);
+        int guarded = 0, inner = 0;
+        // The first walked piece is the sunk foot, buried on purpose: skipped.
+        foreach (StairPiece p in Walked(plan).Skip(1))
+        {
+            var c = new Vector2(p.Position.x, p.Position.z);
+            float tread = p.Kind == StairPieceKind.Stair ? p.Position.y + StairLayout.PieceRise / 2f : p.Position.y + StairKit.Stone.FloorTop;
+            bool near = Vector2.Distance(c, foot) <= StairLayout.EndGuardReach || Vector2.Distance(c, top) <= StairLayout.EndGuardReach;
+            bool cut = plan.Cuts.Exists(k => Vector2.Distance(new Vector2(k.x, k.z), c) < 1f && k.y <= tread);
+            if (near) { guarded++; Assert.True(cut, $"no cut under the {p.Kind} at {p.Position}, {Vector2.Distance(c, foot):F1} m from the foot"); }
+            else if (!cut) inner++;
+        }
+        Assert.True(guarded > 0);
+        Assert.True(inner > 0, "pieces away from the ends are left as they were");
+    }
+
     /// <summary>A stair flight climbs between two switchbacks: two with only
     /// floors between them made a pad that shuffled the stair 4 m sideways on
     /// the summit run.</summary>
@@ -639,6 +667,30 @@ public class StairLayoutTests
         Assert.Equal(StairLayout.Wrap(landed.EndHeading), StairLayout.Bearing(new Vector2(0f, 0f), step), 1);
         // Its walking surface is the top step's.
         Assert.Equal(landed.End.y, last.Position.y + StairKit.Stone.FloorTop, 3);
+    }
+
+    /// <summary>A generated staircase starts with one more stair sunk a step into the
+    /// ground, so the flight comes up out of the road rather than standing on it
+    /// with a lip (one extra set of stairs clipped down into the
+    /// earth makes it connect better); no earthwork uncovers it.</summary>
+    [Fact]
+    public void ItCanStartWithAStairSunkIntoTheGround()
+    {
+        Func<float, float, float> ground = PlaneAlongZ(0.5f);
+        StairPlan bare = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 20), ground);
+        StairPlan sunk = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 20), ground, sunkFoot: true);
+
+        Assert.True(sunk.Reached, sunk.Reason);
+        StairPiece first = Walked(bare)[0];
+        StairPiece below = Walked(sunk)[0];
+        Assert.Equal(StairPieceKind.Stair, below.Kind);
+        Assert.Equal(first.YawDegrees, below.YawDegrees, 3);
+        Assert.Equal(first.Position.y - StairLayout.PieceRise, below.Position.y, 3);
+        // One run back down the flight, and nothing dug to show it.
+        Vector2 back = new Vector2(first.Position.x - below.Position.x, first.Position.z - below.Position.z);
+        Assert.Equal(StairLayout.PieceRun, back.magnitude, 2);
+        Assert.Equal(bare.Cuts.Count, sunk.Cuts.Count);
+        Assert.Equal(Walked(bare).Length + 1, Walked(sunk).Length);
     }
 
     /// <summary>A cliff the stair cannot climb within its piece budget is reported, not faked.</summary>

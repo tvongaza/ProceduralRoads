@@ -428,6 +428,28 @@ public class CantileverTests
         Assert.True(hug.MaxBuried <= StairLayout.MaxBuriedDepth);
     }
 
+    /// <summary>A road arriving heading north (+z) at the foot of a slope that climbs east (a foot at Hildir's cave's
+    /// approach met the road 55-90 degrees off its heading): held to set off within 45 degrees of the road, the
+    /// layout laid a pad of floors and turned off it (stairs should join like this more often than two starter blocks).
+    /// Laid again starting on a stair, it comes up out of the road and turns on the stairs.</summary>
+    private static float EastSlope(float x, float z) => x < 3f ? 0f : 0.5f * (x - 3f);
+
+    [Fact]
+    public void AStaircaseComesUpOutOfTheRoadOnAStairNotAPad()
+    {
+        StairPlan Lay() => StairLayout.Build(new Vector2(0f, 0f), new Vector2(24f, 2f), EastSlope, arriving: 0f, sunkFoot: true);
+        StairPlan plan = Lay();
+        StairPlan pad;
+        StairLayout.RulesOff = SteepRules.StairFirst;
+        try { pad = Lay(); }
+        finally { StairLayout.RulesOff = SteepRules.None; }
+        _out.WriteLine($"stair first: starts on floor {plan.StartsOnFloor}, start heading {plan.StartHeading}; without: {pad.StartsOnFloor}, {pad.StartHeading}");
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.True(pad.StartsOnFloor, "without the rule the layout did not start on a pad");
+        Assert.False(plan.StartsOnFloor);
+        Assert.InRange(Math.Abs(StairLayout.Wrap(plan.StartHeading + 180f) - 180f), 0f, 3f * StairLayout.HeadingStep + 0.01f);
+    }
+
     /// <summary>The block beside a held-out stair is laid where the face holds most of it, and left out where it would
     /// stand clear of the rock between the stair and the face (the hug applies to the stairs, not the side wall).</summary>
     [Fact]
@@ -441,6 +463,123 @@ public class CantileverTests
         StairLayout.RulesOff = SteepRules.Hug;
         try { Assert.Single(StairLayout.LayFlight(new Vector2(0f, 0f), 10f, new[] { 0f }, StairKit.Stone, (x, z) => x > 1f ? 9f : 0f, side: 1).Pieces, p => p.Prefab == "stone_wall_2x1"); }
         finally { StairLayout.RulesOff = SteepRules.None; }
+    }
+
+    /// <summary>A road arriving heading north at the foot of a slope that climbs south, behind it: set off freely, the
+    /// staircase started straight back across the road and on up the slope (at 1948.1,691.7, 180 degrees opposite the
+    /// direction of road travel and blocking the actual road to the stair start). Held to the road's
+    /// arrival it sets off back at most StairLayout.MostSetOffBack pieces, then faces within 90 degrees of it and turns on
+    /// the stairs.</summary>
+    [Fact]
+    public void AStaircaseFromARoadsEndSetsOffFacingTheRoadsArrival()
+    {
+        float South(float x, float z) => z < 0f ? -0.5f * z : 0f;
+        StairPlan Lay() => StairLayout.Build(new Vector2(0f, 0f), new Vector2(0f, -20f), South, sunkFoot: true, facing: 0f);
+        StairPlan plan = Lay();
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.InRange(plan.SetOffBack, 0, StairLayout.MostSetOffBack);
+        Assert.True(BackRun(plan, 0f) <= StairLayout.MostSetOffBack, $"ran back {BackRun(plan, 0f)} pieces");
+        StairLayout.RulesOff = SteepRules.Facing;
+        try { Assert.True(BackRun(Lay(), 0f) > StairLayout.MostSetOffBack, "without the rule it ran back no further anyway"); }
+        finally { StairLayout.RulesOff = SteepRules.None; }
+    }
+
+    /// <summary>Walked pieces from the foot heading more than 90 degrees off <paramref name="facing"/> before the first that
+    /// does not.</summary>
+    private static int BackRun(StairPlan plan, float facing)
+    {
+        int run = 0;
+        foreach (StairPiece p in plan.Pieces.Where(p => p.Kind == StairPieceKind.Stair || p.Kind == StairPieceKind.Landing).Skip(1))
+        {
+            float heading = StairLayout.Wrap(p.YawDegrees + 180f);
+            if (Math.Abs(StairLayout.Wrap(heading - facing + 180f) - 180f) <= 90.01f) break;
+            run++;
+        }
+        return run;
+    }
+
+    /// <summary>A Hildir_cave foot (1664,768): the road arrives heading north into a face, every heading
+    /// within 90 degrees of it buried at the foot, the way up a slope behind and to the east. Held strictly to the road's
+    /// heading, no piece fits; set off back beside the road for up to three pieces (staircases back along the road at most
+    /// about three stair lengths), it turns to face the road's way and climbs.</summary>
+    [Fact]
+    public void AFootInFrontOfAFaceSetsOffBackAtMostThreePiecesThenTurns()
+    {
+        float Ground(float x, float z) => z > 0.5f ? 6f + z : Mathf.Max(0f, 0.5f * x);
+        StairPlan Lay() => StairLayout.Build(new Vector2(0f, 0f), new Vector2(16f, -6f), Ground, sunkFoot: true, facing: 0f);
+        StairPlan plan = Lay();
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.InRange(plan.SetOffBack, 1, StairLayout.MostSetOffBack);
+        StairLayout.RulesOff = SteepRules.SetOffBack;
+        try { Assert.False(Lay().Reached, "held strictly to the road's heading it reached anyway"); }
+        finally { StairLayout.RulesOff = SteepRules.None; }
+    }
+
+    /// <summary>At MountainCave02 1920,704: the foot set off 45 degrees off its road (it should line up better with the
+    /// road, straight on, moved a bit to the left). Where straight on
+    /// fits as well, the first piece sets off along the road's travel.</summary>
+    [Fact]
+    public void AFootSetsOffAlongItsRoadWhereThatFits()
+    {
+        // A slope rising 22.5 degrees off the road's travel (north): a flight up it fits straight on as well, a little off
+        // the fall line.
+        Vector2 up = StairLayout.Forward(22.5f);
+        float Ground(float x, float z) => Mathf.Max(0f, 0.5f * Vector2.Dot(new Vector2(x, z), up));
+        StairPlan Lay() => StairLayout.Build(new Vector2(0f, 0f), up * 24f, Ground, sunkFoot: true, facing: 0f);
+        StairPlan plan = Lay();
+        Assert.True(plan.Reached, plan.Reason);
+        StairLayout.RulesOff = SteepRules.FootAlongRoad;
+        float free;
+        try { free = Lay().StartHeading; }
+        finally { StairLayout.RulesOff = SteepRules.None; }
+        Assert.True(plan.StartHeading == 0f, $"set off on {plan.StartHeading} (without the rule {free})");
+        Assert.True(free != 0f, "without the rule it set off along the road anyway");
+    }
+
+    /// <summary>A foot at the 41 m staircase (5629.9,4266.0): two stairs set off along the road (yaw 247.5,
+    /// climbing 67.5, the road arriving on about 53), then a bend to 112.5; set beside the road by its settled flight, it
+    /// started off to the side. Straight on at its first stairs, it stays in the road's middle; turned at both, beside.</summary>
+    [Fact]
+    public void AFootStraightOnWithItsRoadStaysCentredThoughItBendsLater()
+    {
+        var plan = new StairPlan();
+        void Stair(float x, float z, float yaw) => plan.Pieces.Add(new StairPiece { Kind = StairPieceKind.Stair, Position = new Vector3(x, 0f, z), YawDegrees = yaw });
+        Stair(5629.889f, 4265.993f, 247.5f);
+        Stair(5631.736f, 4266.758f, 247.5f);
+        Stair(5634.350f, 4266.757f, 292.5f);
+        var foot = new Vector2(5629.0f, 4265.6f);
+        Assert.False(RoadStairRuns.SetsOffTurned(plan, foot, 53f));
+        Assert.True(RoadStairRuns.SetsOffTurned(plan, foot, 160f), "turned at both, it is set beside the road");
+        // Its first stairs back along the road (a foot at -3187.2,-27.5), though it settles facing it: beside.
+        Assert.True(RoadStairRuns.SetsOffTurned(plan, foot, 225f), "set off back, it stayed in the road's middle");
+        RoadStairRuns.CentreAlignedFirstStair = false;
+        try { Assert.True(RoadStairRuns.SetsOffTurned(plan, foot, 53f), "without the rule its bend set it beside the road anyway"); }
+        finally { RoadStairRuns.CentreAlignedFirstStair = true; }
+    }
+
+    /// <summary>A foot at -3187.2,-27.5: the road arriving heading north, the flight set off at 225 from the
+    /// road's middle, a last resort (as a last resort the base is off the centre of the road).
+    /// Relaid beside the road, a last resort is held to no facing (held to the road's, it could not be relaid and stayed in
+    /// the middle); a foot that faced the road, or ran back facing it, still is.</summary>
+    [Fact]
+    public void ALastResortFootIsRelaidBesideItsRoadAsItIs()
+    {
+        Assert.Null(RoadStairRuns.BesideHold(new StairPlan { StartHeading = 225f }, 0f));
+        Assert.Equal(0f, RoadStairRuns.BesideHold(new StairPlan { StartHeading = 67.5f }, 0f));
+        Assert.Equal(0f, RoadStairRuns.BesideHold(new StairPlan { StartHeading = 180f, SetOffBack = 2 }, 0f));
+    }
+
+    /// <summary>A foot at 8972.6,3335.8: the road arriving on 161, the flight turning left to 112.5, its foot set
+    /// on the road's right and the flight crossing back over the road's line. A turned foot is set only on the side it turns
+    /// to; turned right back along the road, either side.</summary>
+    [Fact]
+    public void ATurnedFootIsSetOnlyOnTheSideItTurnsTo()
+    {
+        Assert.Equal(new[] { -1 }, RoadStairRuns.BesideSides(-48.5f, -1));
+        Assert.Equal(new[] { 1, -1 }, RoadStairRuns.BesideSides(170f, 1));
+        RoadStairRuns.OneSideWhenTurned = false;
+        try { Assert.Equal(new[] { -1, 1 }, RoadStairRuns.BesideSides(-48.5f, -1)); }
+        finally { RoadStairRuns.OneSideWhenTurned = true; }
     }
 
     /// <summary>At -5853,5918: a flight running beside its road a few metres off, both climbing, mostly floors
@@ -466,6 +605,33 @@ public class CantileverTests
         RoadStairRuns.NoParallelStairs = false;
         try { Assert.False(RoadStairRuns.BesideARoad(Beside(0f), path, 10, 11, Ground)); }
         finally { RoadStairRuns.NoParallelStairs = true; }
+    }
+
+    /// <summary>A foot at -8018,-660 stood against a bank (minor earthworks give it space): a level apron is cut behind it
+    /// at its height, the bank 1:1 there; a foot that opens onto
+    /// flat ground gets none.</summary>
+    [Fact]
+    public void AFootAgainstABankGetsAnApronCutBehindIt()
+    {
+        // The climb rises west; north of z = 0 a 1:1 bank.
+        float Corner(float x, float z) => 40f + Mathf.Max(0f, -x) * 0.5f + Mathf.Max(0f, z);
+        float Flat(float x, float z) => 40f + Mathf.Max(0f, -x) * 0.5f;
+        StairPlan banked = StairLayout.Build(new Vector2(0f, 0f), new Vector2(-16f, 0f), Corner, sunkFoot: true);
+        Assert.True(banked.Reached, banked.Reason);
+        int before = banked.Cuts.Count;
+        Assert.True(StairLayout.CutFootApron(banked, Corner, 2f) > 0, "no apron against the bank");
+        Vector3 foot = banked.Foot!.Value;
+        Assert.All(banked.Cuts.Skip(before), c => Assert.Equal(foot.y - StairLayout.CutBelowSurface, c.y, 3));
+        Assert.All(banked.Cuts.Skip(before), c => Assert.True(Vector2.Distance(new Vector2(c.x, c.z), new Vector2(foot.x, foot.z)) <= StairLayout.ApronDepth + 2.5f));
+        StairPlan flat = StairLayout.Build(new Vector2(0f, 0f), new Vector2(-16f, 0f), Flat, sunkFoot: true);
+        Assert.Equal(0, StairLayout.CutFootApron(flat, Flat, 2f));
+        StairLayout.RulesOff = SteepRules.FootApron;
+        try
+        {
+            StairPlan again = StairLayout.Build(new Vector2(0f, 0f), new Vector2(-16f, 0f), Corner, sunkFoot: true);
+            Assert.Equal(0, StairLayout.CutFootApron(again, Corner, 2f));
+        }
+        finally { StairLayout.RulesOff = SteepRules.None; }
     }
 
     /// <summary>No switchback in a staircase's first five stairs from its foot (Hildir_cave 1664,768): up a narrow gully, the first
@@ -495,4 +661,68 @@ public class CantileverTests
         finally { StairLayout.RulesOff = SteepRules.None; }
     }
 
+    /// <summary>At the mountain cave (-2556.7,1554.2): the stairs must not stick out past the edge of the cliff, only the bottom step. A foot on a ledge
+    /// with a sharp drop beside it sets off along the ledge instead; a steady slope crossed (the flight there, 0.525 a metre
+    /// across, probed) is no edge.</summary>
+    [Fact]
+    public void AFootDoesNotStandOutPastALedgesEdgeButMayCrossASlope()
+    {
+        // The fourth stair (-2551.953, 159.960, 1550.053) yaw 292.5 on a plane through the probe: a slope, not an edge.
+        var centre = new Vector2(-2551.953f, 1550.053f);
+        Vector2 dir = StairLayout.Forward(112.5f), x = new Vector2(Mathf.Cos(292.5f * Mathf.Deg2Rad), -Mathf.Sin(292.5f * Mathf.Deg2Rad));
+        float Probe(float px, float pz)
+        {
+            var d = new Vector2(px, pz) - centre;
+            return 159.46f + 0.525f * Vector2.Dot(d, x) + 0.08f * Vector2.Dot(d, dir);
+        }
+        Assert.Equal(0f, StairLayout.HangsOverEdge(centre - dir * (StairLayout.PieceRun / 2f), dir, StairLayout.Right(112.5f), 1f, 159.96f, Probe));
+
+        // A ledge rising north with a metre's drop east of x = 0.6: set off north from (0, 0), the first stairs' right side
+        // stood out past the edge; with the rule the flight sets off along the ledge.
+        static float Ledge(float px, float pz) => 0.5f * Mathf.Max(0f, pz) - (px > 0.6f ? 1f : 0f);
+        bool Hangs(StairPlan plan) => plan.Pieces.Where(p => p.Kind == StairPieceKind.Stair).Take(StairLayout.EdgeStairs).Any(p =>
+        {
+            float climb = StairLayout.Wrap(p.YawDegrees + 180f);
+            Vector2 d = StairLayout.Forward(climb);
+            return StairLayout.HangsOverEdge(new Vector2(p.Position.x, p.Position.z) - d * (StairLayout.PieceRun / 2f), d, StairLayout.Right(climb), 1f, p.Position.y, Ledge) > 0f;
+        });
+        StairPlan with = StairLayout.Build(new Vector2(0f, 0f), new Vector2(-2f, 16f), Ledge, arriving: 0f);
+        Assert.True(with.Reached, with.Reason);
+        Assert.False(Hangs(with), "a foot stair stands out past the ledge's edge");
+        StairLayout.RulesOff = SteepRules.OffTheEdge;
+        try
+        {
+            StairPlan without = StairLayout.Build(new Vector2(0f, 0f), new Vector2(-2f, 16f), Ledge, arriving: 0f);
+            StairLayout.RulesOff = SteepRules.None;
+            Assert.True(without.Reached, without.Reason);
+            Assert.True(Hangs(without), "without the rule no foot stair stood out anyway");
+        }
+        finally { StairLayout.RulesOff = SteepRules.None; }
+    }
+
+    /// <summary>A staircase whose foot stands on a mound 2.3 m over its road 5 m back (-9308.1,690.3: the bottom of the stairs
+    /// was not walkable, the earthworks too steep): one more stair down from the
+    /// foot toward the road, cut into the mound, the sunk step under the foot becoming it; the road meets the new foot.</summary>
+    private static float Mound(float x, float z) => z < -5f ? 0f : z < 0f ? 0.46f * (z + 5f) : 2.3f + 0.5f * z;
+
+    [Fact]
+    public void AFootOnAMoundIsLoweredToItsRoad()
+    {
+        StairPlan Lay() => StairLayout.Build(new Vector2(0f, 0f), new Vector2(0f, 20f), Mound, arriving: 0f, sunkFoot: true);
+        StairPlan plan = Lay();
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.NotNull(plan.Foot);
+        int stairs = plan.Pieces.Count(p => p.Kind == StairPieceKind.Stair);
+        Vector3? foot = StairLayout.LowerFoot(plan, Mound, 2f, 0f, 5f, 0.35f);
+        Assert.NotNull(foot);
+        Assert.Equal(1, plan.FootLowered);
+        Assert.Equal(1.3f, foot!.Value.y, 2);
+        Assert.Equal(-2f, foot.Value.z, 2);
+        // The sunk step went; one stair down took its place, uncovered: the same number of stair pieces, one more walked.
+        Assert.Equal(stairs, plan.Pieces.Count(p => p.Kind == StairPieceKind.Stair));
+        Assert.Contains(plan.Pieces, p => p.Kind == StairPieceKind.Stair && Math.Abs(p.Position.y - 1.3f) < 0.01f && Math.Abs(p.Position.z + 1f) < 0.01f);
+        StairLayout.RulesOff = SteepRules.LowerFoot;
+        try { Assert.Null(StairLayout.LowerFoot(Lay(), Mound, 2f, 0f, 5f, 0.35f)); }
+        finally { StairLayout.RulesOff = SteepRules.None; }
+    }
 }

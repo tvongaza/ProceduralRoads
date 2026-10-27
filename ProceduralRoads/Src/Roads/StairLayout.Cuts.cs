@@ -60,11 +60,12 @@ public static partial class StairLayout
     /// <summary>Cut points under every tread and landing within <see cref="EndGuardReach"/>
     /// of the foot or the top, whether the natural ground covers them or not: the terrain
     /// writer lowers ground (a road's fill included) to a cut, and never raises it.</summary>
-    private static void GuardEnds(StairPlan plan, StairKit kit, Vector2 foot, Vector2 top, Func<float, float, float> ground)
+    private static void GuardEnds(StairPlan plan, StairKit kit, Vector2 foot, Vector2 top, Func<float, float, float> ground, int sunkPieces)
     {
         if (!(EndGuardReach > 0f)) return; // off: settable for tests of the burial rule alone
         int count = plan.Pieces.Count;
-        for (int i = 0; i < count; i++)
+        // The sunk foot is buried on purpose (the flight comes up out of the road): left as it is.
+        for (int i = sunkPieces; i < count; i++)
         {
             StairPiece piece = plan.Pieces[i];
             bool stair = piece.Kind == StairPieceKind.Stair;
