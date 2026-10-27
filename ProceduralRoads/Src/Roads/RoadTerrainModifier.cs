@@ -162,6 +162,15 @@ public static class RoadTerrainModifier
         if (heightmaps == null)
             return 0;
 
+        // The operator's write reaches every loaded road zone: none of them is an edge for the seam fade.
+        if (operatorRequest)
+            foreach (var heightmap in heightmaps)
+                if (heightmap != null)
+                {
+                    Vector2s zone = ZoneSystem.GetZone(heightmap.transform.position);
+                    if (RoadSpatialGrid.GetRoadPointsInZone(zone).Count > 0) NetworkCutoff.WrittenByOperator(zone);
+                }
+
         foreach (var heightmap in heightmaps)
         {
             if (heightmap == null) continue;
@@ -269,6 +278,7 @@ public static class RoadTerrainModifier
     private static ModificationStats ModifyVertexHeights(Vector2s zoneID, List<RoadSpatialGrid.RoadPoint> roadPoints, TerrainContext context)
     {
         ModificationStats stats = new ModificationStats { PaintedCells = new HashSet<Vector2i>() };
+        bool seamNear = NetworkCutoff.SeamNear(zoneID);
 
         LogCoordinateDebug(zoneID, roadPoints, context);
 
@@ -297,6 +307,10 @@ public static class RoadTerrainModifier
                 Vector2 vertexPos2D = new Vector2(vertexWorldPos.x, vertexWorldPos.z);
                 if (!WithinReach(roadPoints, vertexPos2D))
                     continue;
+                // Next to a zone left as it is, the road fades in from its border (NetworkCutoff.SeamWeight).
+                float seam = seamNear ? NetworkCutoff.SeamWeight(vertexPos2D) : 1f;
+                if (seam <= 0f)
+                    continue;
 
                 float baseHeight = BiomeBlendedHeight.GetBlendedHeight(vertexWorldPos.x, vertexWorldPos.z, WorldGenerator.instance);
                 BlendResult blendResult = CalculateBlendedHeight(roadPoints, vertexPos2D, baseHeight, fillExtra);
@@ -310,8 +324,18 @@ public static class RoadTerrainModifier
                 if (Mathf.Abs(delta) > RoadConstants.MinHeightDeltaThreshold || blendResult.MaxBlend > RoadConstants.MinBlendForModification)
                 {
                     int index = vz * context.GridSize + vx;
-                    context.TerrainComp.m_levelDelta[index] = delta;
-                    context.TerrainComp.m_smoothDelta[index] = 0f;
+                    if (seam >= 1f)
+                    {
+                        context.TerrainComp.m_levelDelta[index] = delta;
+                        context.TerrainComp.m_smoothDelta[index] = 0f;
+                    }
+                    else
+                    {
+                        // Part of the road's change, as the full write does an absolute one: writing it
+                        // again gives the same ground, however often an operator reapplies the road.
+                        context.TerrainComp.m_levelDelta[index] = delta * seam;
+                        context.TerrainComp.m_smoothDelta[index] = Mathf.Lerp(context.TerrainComp.m_smoothDelta[index], 0f, seam);
+                    }
                     context.TerrainComp.m_modifiedHeight[index] = true;
                     stats.VerticesModified++;
                     
@@ -503,6 +527,7 @@ public static class RoadTerrainModifier
         int gridSize = terrainComp.m_width + 1;
         Vector3 terrainPos = hmap.transform.position;
         float scale = hmap.m_scale;
+        bool seamNear = NetworkCutoff.SeamNear(ZoneSystem.GetZone(terrainPos));
         
         foreach (RoadSpatialGrid.RoadPoint roadPoint in roadPoints)
         {
@@ -565,7 +590,8 @@ public static class RoadTerrainModifier
                     // in the core, fading out strictly inside the leveled
                     // footprint (unpainted verge), instead of the old
                     // pow(x,0.1) near-solid disc to the full road edge.
-                    float blendFactor = RoadProfile.PaintStrength(distMetres, roadPoint.w);
+                    float blendFactor = RoadProfile.PaintStrength(distMetres, roadPoint.w)
+                        * (seamNear ? NetworkCutoff.SeamWeight(paintPosition) : 1f);
                     if (blendFactor <= 0f)
                         continue;
                     if (PaintBelow > 0f && context.HasValue && deck - LevelledCellHeight(context.Value, vx, vy) > PaintBelow)

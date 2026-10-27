@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using UnityEngine;
 
 namespace ProceduralRoads;
 
@@ -46,6 +47,18 @@ public static class NetworkCutoff
     /// <summary>Whether this world has had a network in place this session.</summary>
     private static bool s_hadNetwork;
 
+    /// <summary>
+    /// Excluded zones an operator's command (road_generate, road_regen_island) wrote in full this
+    /// session. The seam fade does not treat their edges as edges: their road is there.
+    /// </summary>
+    private static HashSet<Vector2s> s_writtenByOperator = new();
+
+    /// <summary>
+    /// How far, in metres, a road fades in from the edge of a zone left as it is. At that edge the
+    /// road changes nothing; this far from it the road is laid in full.
+    /// </summary>
+    public const float SeamFadeDistance = 16f;
+
     private static bool Current => s_world != null && ReferenceEquals(s_world, ZoneSystem.instance);
 
     /// <summary>Whether automatic writers must leave this zone exactly as it is.</summary>
@@ -67,6 +80,7 @@ public static class NetworkCutoff
         s_generatedAtLoad = null;
         s_excluded = new HashSet<Vector2s>();
         s_hadNetwork = false;
+        s_writtenByOperator = new HashSet<Vector2s>();
     }
 
     /// <summary>
@@ -101,6 +115,7 @@ public static class NetworkCutoff
         Adopt();
         s_excluded = excluded;
         s_hadNetwork = true;
+        s_writtenByOperator = new HashSet<Vector2s>();
         Log($"loaded network {networkVersion}: {s_excluded.Count} zone(s) generated before it are left as they are");
     }
 
@@ -121,6 +136,7 @@ public static class NetworkCutoff
         Adopt();
         s_excluded = excluded;
         s_hadNetwork = true;
+        // Zones an operator wrote stay written (a write still pending for them comes from that command).
         Log($"new network: {s_excluded.Count} zone(s) generated before it are left as they are");
     }
 
@@ -135,6 +151,64 @@ public static class NetworkCutoff
         s_hadNetwork = false;
         s_generatedAtLoad = null;
         s_excluded = new HashSet<Vector2s>();
+        s_writtenByOperator = new HashSet<Vector2s>();
+    }
+
+    /// <summary>An operator's command is writing this excluded zone in full (see s_writtenByOperator).</summary>
+    internal static void WrittenByOperator(Vector2s zone)
+    {
+        if (Current && s_excluded.Contains(zone)) s_writtenByOperator.Add(zone);
+    }
+
+    /// <summary>
+    /// How much of the road a terrain writer lays at this point, from 0 to 1: its change to the
+    /// ground (level and smooth) and its paint. A zone left as it is keeps its own ground, so a road
+    /// that leaves it for a zone the network writes would start with a step (up to the earthwork
+    /// cap) and a hard paint line on the zone border. Instead the road fades in: 0 on the border of
+    /// an excluded zone, rising evenly to 1 at <see cref="SeamFadeDistance"/> from it. Distance is
+    /// measured to the excluded zone's square, so a border the road crosses on a slant, or a zone
+    /// that only touches at a corner, fades by how close the ground really is. With nothing
+    /// excluded (a fresh world) this is exactly 1 everywhere.
+    /// </summary>
+    public static float SeamWeight(Vector2 point) =>
+        Current && s_excluded.Count > 0 ? SeamWeight(point, s_excluded, s_writtenByOperator) : 1f;
+
+    /// <summary>
+    /// Whether any point of this zone can be faded: an excluded zone (not written by an operator) is among its eight
+    /// neighbours or is the zone itself. The fade is shorter than a zone, so nothing further away counts. Writers ask
+    /// once per zone and skip <see cref="SeamWeight(Vector2)"/> where this is false.
+    /// </summary>
+    public static bool SeamNear(Vector2s zone)
+    {
+        if (!Current || s_excluded.Count == 0) return false;
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                var near = new Vector2s((short)(zone.x + dx), (short)(zone.y + dy));
+                if (s_excluded.Contains(near) && !s_writtenByOperator.Contains(near)) return true;
+            }
+        return false;
+    }
+
+    /// <summary><see cref="SeamWeight(Vector2)"/> against a given excluded set (tests).</summary>
+    internal static float SeamWeight(Vector2 point, ICollection<Vector2s> excluded, ICollection<Vector2s>? writtenByOperator = null)
+    {
+        if (excluded.Count == 0) return 1f;
+        // The fade is shorter than a zone, so only the point's own zone and its eight neighbours can be near.
+        Vector2s home = ZoneSystem.GetZone(new Vector3(point.x, 0f, point.y));
+        float nearest = SeamFadeDistance;
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                var zone = new Vector2s((short)(home.x + dx), (short)(home.y + dy));
+                if (!excluded.Contains(zone) || (writtenByOperator != null && writtenByOperator.Contains(zone))) continue;
+                Vector3 centre = ZoneSystem.GetZonePos(zone);
+                float outX = Mathf.Max(0f, Mathf.Abs(point.x - centre.x) - RoadConstants.HalfZoneSize);
+                float outZ = Mathf.Max(0f, Mathf.Abs(point.y - centre.z) - RoadConstants.HalfZoneSize);
+                float distance = Mathf.Sqrt(outX * outX + outZ * outZ);
+                if (distance < nearest) nearest = distance;
+            }
+        return nearest >= SeamFadeDistance ? 1f : nearest / SeamFadeDistance;
     }
 
     /// <summary>
