@@ -24,6 +24,10 @@ public static class ServerBakePlanner
         /// <summary>The zone has not been generated. It is written while it
         /// is generated (the ghost-generation hook), not before.</summary>
         LeaveToGeneration,
+        /// <summary>The zone was generated before this road network reached
+        /// the world (NetworkCutoff): its players' terrain is left exactly as
+        /// it is, whatever its compiler carries.</summary>
+        GeneratedBeforeNetwork,
         /// <summary>The zone is loaded on this peer and has no compiler yet;
         /// the zone-spawn hook makes its one compiler and writes it.</summary>
         LeaveToLiveZone,
@@ -104,7 +108,7 @@ public static class ServerBakePlanner
                         return RepairOutcome.Waiting;
                 }
             default:
-                // NoNetwork, LeaveToGeneration, LeaveToLiveZone, AlreadyCurrent:
+                // NoNetwork, LeaveToGeneration, GeneratedBeforeNetwork, LeaveToLiveZone, AlreadyCurrent:
                 // nothing for the repair queue to carry. The generation and
                 // live-zone hooks own those, and a ghost failure there records
                 // the zone again.
@@ -134,13 +138,17 @@ public static class ServerBakePlanner
         }
     }
 
-    public static Action Decide(int networkVersion, bool generated, bool loadedHere,
+    public static Action Decide(int networkVersion, bool generated, bool generatedBeforeNetwork, bool loadedHere,
         IReadOnlyList<Compiler> compilers, long mySession)
     {
         if (networkVersion == 0)
             return Action.NoNetwork;
         if (!generated)
             return Action.LeaveToGeneration;
+        // Before any compiler fact: an unstamped compiler here is the player's
+        // terrain (or a released build's roads), never ours to rewrite.
+        if (generatedBeforeNetwork)
+            return Action.GeneratedBeforeNetwork;
         if (compilers.Count > 1)
             return Action.DuplicateCompilers;
         // A loaded zone with no compiler yet gets one from the zone-spawn hook.

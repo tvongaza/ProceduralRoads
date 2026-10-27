@@ -109,10 +109,10 @@ public class ServerBakeFaultTests
     {
         var foreign = new[] { new ServerBakePlanner.Compiler(1, 7, false) };
         Assert.Equal(ServerBakePlanner.Action.WaitForOwner,
-            ServerBakePlanner.Decide(2, true, true, foreign, 1));
+            ServerBakePlanner.Decide(2, true, false, true, foreign, 1));
         Assert.Equal(ServerBakePlanner.Action.WriteSavedCompiler,
-            ServerBakePlanner.Decide(2, true, false, foreign, 1));
+            ServerBakePlanner.Decide(2, true, false, false, foreign, 1));
         Assert.Equal(ServerBakePlanner.Action.WriteLiveCompiler,
-            ServerBakePlanner.Decide(2, true, true, new[] { new ServerBakePlanner.Compiler(1, 0, false) }, 1));
+            ServerBakePlanner.Decide(2, true, false, true, new[] { new ServerBakePlanner.Compiler(1, 0, false) }, 1));
     }
 }

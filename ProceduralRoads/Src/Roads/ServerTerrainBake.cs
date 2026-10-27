@@ -123,7 +123,7 @@ public static class ServerTerrainBake
 
     private struct Counts
     {
-        public int Zones, Created, Rewritten, LiveWritten, Current, Ungenerated, Loaded, Duplicates, Failed, BridgeZones;
+        public int Zones, Created, Rewritten, LiveWritten, Current, Ungenerated, BeforeNetwork, Loaded, Duplicates, Failed, BridgeZones;
         public int NothingToWrite, VegetationZones, VegetationRemoved, GhostRocks, GhostSettled;
         public int GhostCreated, GhostRewritten, GhostFailed;
         public long Bytes;
@@ -195,7 +195,7 @@ public static class ServerTerrainBake
         }
         string next = points == 0
             ? "nothing to write (no road terrain)"
-            : ServerBakePlanner.Decide(RoadSpatialGrid.RoadNetworkVersion, generated, loadedHere, facts, me).ToString();
+            : ServerBakePlanner.Decide(RoadSpatialGrid.RoadNetworkVersion, generated, NetworkCutoff.Excludes(zone), loadedHere, facts, me).ToString();
         if (s_faults.IsQuarantined(zone))
             next = "stopped after a zone exception; fix the cause, then road_bake again";
         else if (s_faults.IsPaused)
@@ -568,7 +568,8 @@ public static class ServerTerrainBake
         int pending = Math.Max(0, s_queue.Count - s_next);
         return $"network {s_version}, {c.Zones} zones: {c.Created} compilers created, {c.Rewritten} saved ones written, " +
                $"{c.LiveWritten} written through a live compiler, " +
-               $"{c.Current} already current, {c.Ungenerated} left to generation, {c.Loaded} loaded here without one, " +
+               $"{c.Current} already current, {c.Ungenerated} left to generation, " +
+               $"{c.BeforeNetwork} explored before the network (left as they are), {c.Loaded} loaded here without one, " +
                $"{c.Duplicates} with duplicate compilers, {c.NothingToWrite} with nothing to write, {c.Failed} failed, " +
                $"{s_ghostRepair.Count} deferred, {pending} pending; bridge pieces into {c.BridgeZones} zones; " +
                $"vegetation removed from {c.VegetationZones} zones ({c.VegetationRemoved} objects); {c.Bytes / 1024} KiB written; " +
@@ -731,11 +732,15 @@ public static class ServerTerrainBake
 
         List<ZDO> saved = FindSavedCompilers(zone);
         ServerBakePlanner.Action action = ServerBakePlanner.Decide(
-            s_version, generated, loadedHere, Describe(saved, zone), ZDOMan.GetSessionID());
+            s_version, generated, NetworkCutoff.Excludes(zone), loadedHere, Describe(saved, zone), ZDOMan.GetSessionID());
         switch (action)
         {
             case ServerBakePlanner.Action.LeaveToGeneration:
                 s_counts.Ungenerated++;
+                Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
+                return Outcome.Done;
+            case ServerBakePlanner.Action.GeneratedBeforeNetwork:
+                s_counts.BeforeNetwork++;
                 Resolve(zone, action, ServerBakePlanner.WriteReport.NotAttempted);
                 return Outcome.Done;
             case ServerBakePlanner.Action.LeaveToLiveZone:
@@ -1203,7 +1208,7 @@ public static class ServerTerrainBake
 
         List<ZDO> saved = FindSavedCompilers(zone);
         ServerBakePlanner.Action action = ServerBakePlanner.Decide(RoadSpatialGrid.RoadNetworkVersion,
-            generated: true, loadedHere: false, Describe(saved, zone), ZDOMan.GetSessionID());
+            generated: true, generatedBeforeNetwork: NetworkCutoff.Excludes(zone), loadedHere: false, Describe(saved, zone), ZDOMan.GetSessionID());
         GameObject? go = null;
         bool bound = false;
         WriteResult result = WriteResult.Failed;
@@ -1222,6 +1227,9 @@ public static class ServerTerrainBake
                     go = BringSavedCompilerAlive(saved[0], hmap);
                     bound = true;
                     break;
+                case ServerBakePlanner.Action.GeneratedBeforeNetwork:
+                    // Left as it is (NetworkCutoff): nothing owed, so no failure and no repair entry.
+                    return result = WriteResult.NothingToWrite;
                 default:
                     Log.LogWarning($"[BAKE] zone {zone} (generated for a peer): {action}; not written now");
                     return result;

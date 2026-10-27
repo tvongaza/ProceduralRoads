@@ -20,8 +20,8 @@ public class ServerBakeTests
         new(compilers);
 
     private static ServerBakePlanner.Action Decide(bool generated, bool loadedHere,
-        List<ServerBakePlanner.Compiler> compilers, int version = Version) =>
-        ServerBakePlanner.Decide(version, generated, loadedHere, compilers, Me);
+        List<ServerBakePlanner.Compiler> compilers, int version = Version, bool beforeNetwork = false) =>
+        ServerBakePlanner.Decide(version, generated, beforeNetwork, loadedHere, compilers, Me);
 
     [Fact]
     public void NoNetworkMeansNothingToWrite()
@@ -89,8 +89,26 @@ public class ServerBakeTests
             Decide(true, false, Compilers(new ServerBakePlanner.Compiler(Version, 0, false))));
         Assert.Equal(ServerBakePlanner.Action.WriteSavedCompiler,
             Decide(true, false, Compilers(new ServerBakePlanner.Compiler(Version - 1, 0, false))));
+    }
+
+    /// <summary>
+    /// Stamp 0 is what every compiler of a 1.4.4 world reads as (that build never stamped), and what a player's own
+    /// digging makes. In a zone generated before the network it is theirs; only a zone generated with the network in
+    /// place, whose compiler simply has not been written yet, is written.
+    /// </summary>
+    [Fact]
+    public void AnUnstampedCompilerIsWrittenOnlyOutsideTheCutoff()
+    {
+        Assert.Equal(ServerBakePlanner.Action.GeneratedBeforeNetwork,
+            Decide(true, false, Compilers(new ServerBakePlanner.Compiler(0, 0, false)), beforeNetwork: true));
         Assert.Equal(ServerBakePlanner.Action.WriteSavedCompiler,
-            Decide(true, false, Compilers(new ServerBakePlanner.Compiler(0, 0, false))));
+            Decide(true, false, Compilers(new ServerBakePlanner.Compiler(0, 0, false)), beforeNetwork: false));
+        // Nor is a compiler made for one, loaded here or not, nor a live one written.
+        Assert.Equal(ServerBakePlanner.Action.GeneratedBeforeNetwork, Decide(true, false, Compilers(), beforeNetwork: true));
+        Assert.Equal(ServerBakePlanner.Action.GeneratedBeforeNetwork,
+            Decide(true, true, Compilers(new ServerBakePlanner.Compiler(0, Me, false)), beforeNetwork: true));
+        Assert.Equal(ServerBakePlanner.RepairOutcome.Resolved,
+            ServerBakePlanner.ResolveRepair(ServerBakePlanner.Action.GeneratedBeforeNetwork, ServerBakePlanner.WriteReport.NotAttempted));
     }
 
     [Fact]

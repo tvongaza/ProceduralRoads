@@ -172,6 +172,19 @@ public sealed class LegacyWorldTests : IDisposable
         Assert.Equal(1, ZDOMan.instance!.CountWithPrefab(TerrainComp.PrefabName)); // no compiler made for the later zone
         Assert.Equal(0, RoadTerrainModifier.PendingWriteCount);
 
+        // The server bake, for both zones, whatever their compilers say.
+        long me = ZDOMan.instance!.m_sessionID;
+        foreach (var zone in new[] { OldZone, LaterZone })
+            foreach (var facts in new[]
+                     {
+                         new List<ServerBakePlanner.Compiler>(),
+                         new List<ServerBakePlanner.Compiler> { new(0, 0, false) },
+                         new List<ServerBakePlanner.Compiler> { new(RoadSpatialGrid.RoadNetworkVersion - 1, me, false) },
+                     })
+                foreach (bool loaded in new[] { false, true })
+                    Assert.Equal(ServerBakePlanner.Action.GeneratedBeforeNetwork,
+                        ServerBakePlanner.Decide(RoadSpatialGrid.RoadNetworkVersion, true, NetworkCutoff.Excludes(zone), loaded, facts, me));
+
         // And the save leaves 1.4.4's blob as 1.4.4 wrote it.
         RoadLifecycleManager.OnPrepareSave();
         Assert.Equal(Blob, Metadata().GetByteArray(GlobalDataHash));

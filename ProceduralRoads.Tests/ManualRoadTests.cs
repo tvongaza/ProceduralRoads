@@ -158,7 +158,7 @@ public class ManualRoadTests : IDisposable
         var saved = new[] { new ServerBakePlanner.Compiler(applied, 999, true,
             RoadTerrainModifier.CarriesCurrentRoads(zone, applied)) };
         Assert.Equal(elsewhere ? ServerBakePlanner.Action.AlreadyCurrent : ServerBakePlanner.Action.WaitForOwner,
-            ServerBakePlanner.Decide(RoadSpatialGrid.RoadNetworkVersion, true, false, saved, 1));
+            ServerBakePlanner.Decide(RoadSpatialGrid.RoadNetworkVersion, true, false, false, saved, 1));
         hm.AutoRebuild = false;
         RoadTerrainModifier.BakeRoadTerrain(zone, hm, tc);
         Assert.Equal(3.25f, tc.m_levelDelta[oldRoad]);
