@@ -982,6 +982,14 @@ public static partial class RoadNetworkGenerator
             plans = null;
             RoadSpatialGrid.LastRefusal = "crosses another road";
         }
+        // Nor runs beside one at its height: where its search did not put it on the other road (snapped onto the trunk it
+        // shares), it braids beside it (roads at 3354,6308 and -5487,5808 were a
+        // mess).
+        if (plans != null && NoBraids && BraidsNetwork(plans, out _))
+        {
+            plans = null;
+            RoadSpatialGrid.LastRefusal = "runs beside another road";
+        }
         if (plans == null)
         {
             string why = RoadSpatialGrid.LastRefusal ?? "other (crossing or footprint)";
@@ -1352,6 +1360,53 @@ public static partial class RoadNetworkGenerator
         return false;
     }
 
+
+    /// <summary>Settable for tests: false lets a road run beside another at its height.</summary>
+    internal static bool NoBraids = true;
+
+    /// <summary>
+    /// Whether a planned road runs beside another already built, at its height, for longer than the cap
+    /// (<see cref="RoadBeside"/>: within its reach across and its height, off the other road), away from its own ends
+    /// (<see cref="JunctionEnd"/>: its junctions). A lens (off the other road and back onto it), a duplicate (beside it all
+    /// the way) and a road that comes in beside the trunk and ends on it, or starts on it and runs out beside it (a Y at its
+    /// own end), are judged alike, by how long they run beside it (the length is capped like every
+    /// other parallel check; such a Y once passed however long it ran beside the trunk). A road that shares a trunk
+    /// along its middle and comes onto it or leaves it there (onto a shared bridge and off again) is not judged here: its run beside the trunk is the fork where two roads part.
+    /// </summary>
+    internal static bool BraidsNetwork(List<RoadSpatialGrid.PlannedPath> plans, out Vector2 at)
+    {
+        at = default;
+        if (!RoadSpatialGrid.IsInitialized) return false;
+        var (points, heights, along) = Flatten(plans);
+        if (points.Count < 3) return false;
+        float total = along[points.Count - 1];
+        var place = new RoadBeside.Place[points.Count];
+        for (int i = 0; i < points.Count; i++) place[i] = RoadBeside.At(points[i], heights[i]);
+        // Whether the road is on the other road from point i to its end (step +1) or from its start to i (step -1), its
+        // junction's mouth aside.
+        bool OnToItsEnd(int i, int step)
+        {
+            for (int j = i; j >= 0 && j < points.Count; j += step)
+                if (place[j] != RoadBeside.Place.On && (step > 0 ? total - along[j] : along[j]) >= JunctionEnd) return false;
+            return true;
+        }
+        int k = 0;
+        while (k < points.Count)
+        {
+            if (place[k] != RoadBeside.Place.Beside) { k++; continue; }
+            int first = k;
+            while (k + 1 < points.Count && place[k + 1] == RoadBeside.Place.Beside) k++;
+            int last = k++;
+            bool fromTrunk = first > 0 && place[first - 1] == RoadBeside.Place.On, toTrunk = last + 1 < points.Count && place[last + 1] == RoadBeside.Place.On;
+            // A fork off a trunk shared along the road's middle: not judged (see the summary).
+            if (fromTrunk != toTrunk && !(toTrunk ? OnToItsEnd(last + 1, +1) : OnToItsEnd(first - 1, -1))) continue;
+            // Its own ends left out: the stretch between them.
+            while (first <= last && along[first] < JunctionEnd) first++;
+            while (last >= first && total - along[last] < JunctionEnd) last--;
+            if (first <= last && RoadBeside.TooLong(along[last] - along[first])) { at = points[first]; return true; }
+        }
+        return false;
+    }
 
     internal static List<Vector2>? SnapToNetwork(List<Vector2>? path, float? width = null)
     {
