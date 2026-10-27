@@ -38,6 +38,9 @@ public sealed class ZRoutedRpc
 public sealed class ZPackage
 {
     private readonly MemoryStream stream = new();
+    public ZPackage() { }
+    public ZPackage(byte[] data) { stream.Write(data, 0, data.Length); stream.Position = 0; }
+    public byte[] GetArray() => stream.ToArray();
     public void Write(int value) => new BinaryWriter(stream).Write(value);
     public void Write(byte[] value) { Write(value.Length); new BinaryWriter(stream).Write(value); }
     public int ReadInt() => new BinaryReader(stream).ReadInt32();

@@ -135,7 +135,8 @@ public sealed class LegacyWorldTests : IDisposable
         if (hm.m_terrainComp != null) RoadTerrainModifier.OnTerrainCompilerReady(hm.m_terrainComp);
         // Plugin.Update, every 3 s.
         for (int i = 0; i < 10; i++) RoadTerrainModifier.SweepUnstamped();
-        // The load-time application to loaded zones.
+        // A manual-road snapshot's application, and the load-time application to loaded zones.
+        RoadTerrainModifier.ApplyAdditionsToLoadedZones();
         RoadTerrainModifier.ApplyToLoadedZones();
         hm.RebuildTerrain();
     }
@@ -232,6 +233,51 @@ public sealed class LegacyWorldTests : IDisposable
         Assert.Equal(Blob, after);
         Assert.True(Released144.Reads(after, out int read), "1.4.4 must still read the world's network");
         Assert.Equal(points, read);
+    }
+
+    /// <summary>
+    /// A modded client cannot see the save. It receives the network from the server, and with it the zones it must
+    /// leave alone; a compiler it owns in such a zone is never written, however often the sweep comes round. A
+    /// snapshot without that list (version 1) is refused rather than trusted.
+    /// </summary>
+    [Fact]
+    public void AClientGivenALegacySnapshotNeverWritesACutoffZone()
+    {
+        SaveAsReleased144();
+        OpenWorld();
+        ZPackage snapshot = ManualRoadNetworkSync.Snapshot()!;
+        byte[] sent = snapshot.GetArray();
+
+        // Now the client: a fresh peer with no network, no save, and the old zone loaded with a compiler it owns.
+        RoadLifecycleManager.OnZoneSystemDestroy(ZoneSystem.instance!);
+        RoadNetworkPersistence.Reset(); RoadSpatialGrid.Clear();
+        Heightmap old = Heightmap.CreateForZone(OldZone);
+        Heightmap.Registered = old;
+        TerrainComp compiler = old.m_terrainComp!;
+        PlayerTerrain(compiler);
+        object[] before = Terrain(compiler);
+        Assert.False(RoadNetworkGenerator.RoadsAvailable);
+
+        Assert.True(ManualRoadNetworkSync.Apply(new ZPackage(sent)));
+        Assert.True(RoadNetworkGenerator.RoadsAvailable);
+        Assert.True(NetworkCutoff.Excludes(OldZone));
+        Assert.NotEmpty(RoadSpatialGrid.GetRoadPointsInZone(OldZone));
+
+        for (int i = 0; i < 10; i++) Assert.Equal(0, RoadTerrainModifier.SweepUnstamped());
+        RoadTerrainModifier.OnTerrainCompilerReady(compiler);
+        RoadTerrainModifier.ApplyAdditionsToLoadedZones();
+        old.RebuildTerrain();
+        Assert.Equal(before, Terrain(compiler));
+        Assert.Equal(0, compiler.m_nview.GetZDO().GetInt(AppliedVersionHash));
+
+        // A version-1 snapshot carries no list: refused, so the client holds no network to write with.
+        RoadNetworkGenerator.Reset(); RoadSpatialGrid.Clear(); NetworkCutoff.Forget();
+        var v1 = new ZPackage(sent);
+        v1.ReadInt();
+        var old1 = new ZPackage();
+        old1.Write(1); old1.Write(v1.ReadByteArray()); old1.Write(v1.ReadByteArray()); old1.Write(v1.ReadByteArray());
+        Assert.False(ManualRoadNetworkSync.Apply(new ZPackage(old1.GetArray())));
+        Assert.False(RoadNetworkGenerator.RoadsAvailable);
     }
 
     /// <summary>

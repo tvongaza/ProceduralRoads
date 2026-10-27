@@ -290,9 +290,9 @@ public class ManualRoadFailureTests : IDisposable
         byte[] grid=RoadSpatialGrid.SerializeAllRoadPoints()!;
         byte[] starts=RoadNetworkPersistence.SerializeRoadStartPoints(RoadNetworkGenerator.GetRoadStartPoints());
         byte[] crossings=RoadNetworkPersistence.SerializeRoadCrossings(RoadNetworkGenerator.GetRoadCrossings());
-        Assert.Throws<InvalidOperationException>(()=>RoadNetworkGenerator.AcceptManualSnapshot(grid,starts.Take(1).ToArray(),crossings));
+        Assert.Throws<InvalidOperationException>(()=>RoadNetworkGenerator.AcceptManualSnapshot(grid,starts.Take(1).ToArray(),crossings,NetworkCutoff.ClientList(Array.Empty<Vector2s>())));
         Assert.Equal(grid,RoadSpatialGrid.SerializeAllRoadPoints());
-        RoadNetworkGenerator.Reset();RoadNetworkGenerator.AcceptManualSnapshot(grid,starts,crossings);
+        RoadNetworkGenerator.Reset();RoadNetworkGenerator.AcceptManualSnapshot(grid,starts,crossings,NetworkCutoff.ClientList(Array.Empty<Vector2s>()));
         Assert.Equal(grid,RoadSpatialGrid.SerializeAllRoadPoints());Assert.True(RoadNetworkGenerator.RoadsAvailable);Assert.Single(RoadNetworkGenerator.GetRoadStartPoints());
     }
 }

@@ -14,7 +14,8 @@ namespace ProceduralRoads;
 /// downgraded, and the explored part of a world whose network is generated
 /// now. Players may have built, dug and planted there. Those zones are left
 /// exactly as they are -- no road terrain, no paint, no bridge pieces -- by
-/// every automatic writer. Only never-generated zones, and zones generated
+/// every automatic writer, on the server and on modded clients alike. Only
+/// never-generated zones, and zones generated
 /// in a session that already had this network, get the roads.
 ///
 /// The record that makes this hold across sessions is the set of zones that
@@ -22,7 +23,8 @@ namespace ProceduralRoads;
 /// version). At load, a zone the save says was generated, and that is not in
 /// that record, was generated without this network: it is excluded. A save
 /// with no record (every 1.4.x world), or a record for another network, means
-/// every generated zone is excluded.
+/// every generated zone is excluded. Clients cannot see the save; the server
+/// sends them the excluded zones with the road snapshot.
 ///
 /// Explicit operator commands (road_generate, road_regen_island) may still
 /// write the zones they are run in; nothing automatic may.
@@ -140,6 +142,14 @@ public static class NetworkCutoff
         Log($"new network: {s_excluded.Count} zone(s) generated before it are left as they are");
     }
 
+    /// <summary>A client: the server's excluded zones, received with the road snapshot.</summary>
+    public static void UseServerList(HashSet<Vector2s> excluded)
+    {
+        Adopt();
+        s_excluded = excluded;
+        s_hadNetwork = true;
+    }
+
     /// <summary>
     /// The world is going away. With the world named, only its own state is
     /// dropped: a late teardown of an earlier world leaves the current one's.
@@ -234,6 +244,53 @@ public static class NetworkCutoff
             writer.Write(zone.y);
         }
         return ms.ToArray();
+    }
+
+    /// <summary>
+    /// What a client must know: the excluded zones among the road zones and
+    /// their neighbours (a rock pass reaches a zone's neighbours).
+    /// Format: [count] then [x][y] per zone as 16-bit ints.
+    /// </summary>
+    public static byte[] ClientList(IEnumerable<Vector2s> roadZones)
+    {
+        var near = new HashSet<Vector2s>();
+        foreach (Vector2s zone in roadZones)
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    var candidate = new Vector2s((short)(zone.x + dx), (short)(zone.y + dy));
+                    if (Excludes(candidate)) near.Add(candidate);
+                }
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms);
+        writer.Write(near.Count);
+        foreach (Vector2s zone in near)
+        {
+            writer.Write(zone.x);
+            writer.Write(zone.y);
+        }
+        return ms.ToArray();
+    }
+
+    internal static bool TryReadClientList(byte[]? data, out HashSet<Vector2s> zones)
+    {
+        zones = new HashSet<Vector2s>();
+        if (data == null || data.Length < 4) return false;
+        try
+        {
+            using var ms = new MemoryStream(data);
+            using var reader = new BinaryReader(ms);
+            int count = reader.ReadInt32();
+            if (count < 0 || count > 1_000_000) return false;
+            for (int i = 0; i < count; i++)
+                zones.Add(new Vector2s(reader.ReadInt16(), reader.ReadInt16()));
+            return ms.Position == ms.Length;
+        }
+        catch (Exception)
+        {
+            zones.Clear();
+            return false;
+        }
     }
 
     internal static bool TryRead(byte[]? record, out int networkVersion, out HashSet<Vector2s> zones)

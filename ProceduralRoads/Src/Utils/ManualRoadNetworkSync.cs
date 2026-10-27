@@ -82,30 +82,63 @@ public static class ManualRoadNetworkSync
         readers.RemoveWhere(id => ZNet.instance.GetPeer(id) == null);
         foreach (long id in readers) Send(id);
     }
+    /// <summary>
+    /// Version 2 carries the zones the client must leave alone (NetworkCutoff):
+    /// a client cannot see the save, so without them it would write road
+    /// terrain into zones explored before the network. A version-1 snapshot
+    /// (no such list) is refused, so a client never writes on a guess.
+    /// </summary>
+    internal const int SnapshotVersion = 2;
+
     private static void Send(long peer)
     {
+        ZPackage? package = Snapshot();
+        if (package != null) snapshotRpc.SendPackage(peer, package);
+    }
+
+    internal static ZPackage? Snapshot()
+    {
         byte[]? data = RoadSpatialGrid.SerializeAllRoadPoints();
-        if (data == null) return;
+        if (data == null) return null;
         var package = new ZPackage();
-        package.Write(1);
+        package.Write(SnapshotVersion);
         package.Write(data);
         package.Write(RoadNetworkPersistence.SerializeRoadStartPoints(RoadNetworkGenerator.GetRoadStartPoints()));
         package.Write(RoadNetworkPersistence.SerializeRoadCrossings(RoadNetworkGenerator.GetRoadCrossings()));
-        snapshotRpc.SendPackage(peer, package);
+        package.Write(NetworkCutoff.ClientList(RoadZones()));
+        return package;
     }
+
+    /// <summary>The zones holding road points (NetworkCutoff.ClientList adds their neighbours).</summary>
+    private static HashSet<Vector2s> RoadZones()
+    {
+        var zones = new HashSet<Vector2s>();
+        foreach (RoadSpatialGrid.RoadPoint point in RoadSpatialGrid.SnapshotAllRoadPoints())
+            zones.Add(ZoneSystem.GetZone(new Vector3(point.p.x, 0f, point.p.y)));
+        return zones;
+    }
+
     private static void Receive(long sender, ZPackage package)
     {
         if (ZNet.instance == null || ZNet.instance.IsServer() || sender != ZRoutedRpc.instance.GetServerPeerID()) return;
+        Apply(package);
+    }
+
+    internal static bool Apply(ZPackage package)
+    {
         try
         {
-            if (package.ReadInt() != 1) throw new InvalidOperationException("Unknown manual road snapshot version.");
-            byte[] grid = package.ReadByteArray(), starts = package.ReadByteArray(), crossings = package.ReadByteArray();
-            if (grid.Length > 64 * 1024 * 1024 || starts.Length > 1024 * 1024 || crossings.Length > 16 * 1024 * 1024)
+            if (package.ReadInt() != SnapshotVersion) throw new InvalidOperationException("Unknown manual road snapshot version.");
+            byte[] grid = package.ReadByteArray(), starts = package.ReadByteArray(), crossings = package.ReadByteArray(),
+                excluded = package.ReadByteArray();
+            if (grid.Length > 64 * 1024 * 1024 || starts.Length > 1024 * 1024 || crossings.Length > 16 * 1024 * 1024 ||
+                excluded.Length > 16 * 1024 * 1024)
                 throw new InvalidOperationException("Manual road snapshot is too large.");
-            RoadNetworkGenerator.AcceptManualSnapshot(grid, starts, crossings);
-            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug($"Manual road snapshot applied: version={RoadSpatialGrid.RoadNetworkVersion}, additions={RoadSpatialGrid.AppendCount}, points={RoadSpatialGrid.TotalRoadPoints}");
+            RoadNetworkGenerator.AcceptManualSnapshot(grid, starts, crossings, excluded);
+            ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug($"Manual road snapshot applied: version={RoadSpatialGrid.RoadNetworkVersion}, additions={RoadSpatialGrid.AppendCount}, points={RoadSpatialGrid.TotalRoadPoints}, excluded zones={NetworkCutoff.ExcludedCount}");
             RoadTerrainModifier.ApplyAdditionsToLoadedZones();
+            return true;
         }
-        catch (Exception ex) { ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError($"Road snapshot not applied: {ex}"); }
+        catch (Exception ex) { ProceduralRoadsPlugin.ProceduralRoadsLogger.LogError($"Road snapshot not applied: {ex}"); return false; }
     }
 }

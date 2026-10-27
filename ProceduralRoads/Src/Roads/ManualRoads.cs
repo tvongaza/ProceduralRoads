@@ -175,14 +175,17 @@ public static partial class RoadNetworkGenerator
 
 public static partial class RoadNetworkGenerator
 {
-    internal static void AcceptManualSnapshot(byte[] data, byte[] starts, byte[] crossings)
+    internal static void AcceptManualSnapshot(byte[] data, byte[] starts, byte[] crossings, byte[] excluded)
     {
         var newStarts = new List<(Vector2 position, string label)>();
         var newCrossings = new List<RoadCrossing>();
-        if (!RoadNetworkPersistence.DeserializeRoadStartPoints(starts, newStarts) ||
+        if (!NetworkCutoff.TryReadClientList(excluded, out HashSet<Vector2s> excludedZones) ||
+            !RoadNetworkPersistence.DeserializeRoadStartPoints(starts, newStarts) ||
             !RoadNetworkPersistence.DeserializeRoadCrossings(crossings, newCrossings) ||
             !RoadSpatialGrid.DeserializeAllRoadPoints(data))
             throw new InvalidOperationException("Incomplete road snapshot.");
+        // Before the network is available to any writer on this client.
+        NetworkCutoff.UseServerList(excludedZones);
         m_roadStartPoints = newStarts;
         m_roadCrossings.Clear(); m_roadCrossings.AddRange(newCrossings);
         m_roadsLoadedFromZDO = true;
