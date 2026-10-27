@@ -56,6 +56,110 @@ public sealed class BridgeLifecycleTests : IDisposable
         Assert.True(RoadNetworkGenerator.TryLoadGlobalRoadData()); RoadNetworkGenerator.MarkRoadsLoadedFromZDO();
     }
 
+    /// <summary>
+    /// Bridge pieces never go into a zone explored before the network (NetworkCutoff): neither the append queue nor a
+    /// zone spawn puts them there, and the zone is not marked spawned, while every other zone of the same bridge gets
+    /// its pieces.
+    /// </summary>
+    [Fact] public void AZoneExploredBeforeTheNetworkGetsNoPieces()
+    {
+        var zones = BridgeAppendQueue.Zones.ToList(); RegisterPrefabs();
+        Assert.True(zones.Count >= 2, "the fixture must append in more than one zone");
+        Vector2s kept = zones[0];
+        NetworkCutoff.Forget();
+        try
+        {
+            NetworkCutoff.SnapshotWorld(new[] { kept });
+            NetworkCutoff.UseNewNetwork();
+            Drain(10 * zones.Count);
+            Assert.Equal(0, BridgePlacement.OnZoneSpawned(kept, ZoneSystem.SpawnMode.Full));
+            Assert.Equal(0, BridgePlacement.SpawnGhostInZone(kept));
+            Assert.DoesNotContain(Live(), z => z.GetString(AppendKey).Length > 0 && z.GetSector() == kept);
+            Assert.False(BridgePlans.IsSpawned(kept));
+            Assert.Contains(Live(), z => z.GetString(AppendKey).Length > 0 && z.GetSector() != kept);
+        }
+        finally { NetworkCutoff.Forget(); }
+    }
+
+    /// <summary>
+    /// A generated bridge that would put any piece in a zone explored before the network is built nowhere: no zone of
+    /// it gets a piece, live or ghost, and none is marked spawned, so no half bridge stands. On a world with nothing
+    /// explored the same bridge gets every planned piece.
+    /// </summary>
+    [Fact] public void AGeneratedBridgeReachingAnExploredZoneIsBuiltNowhere()
+    {
+        List<Vector2s> zones = GeneratedPlanZones();
+        foreach (Vector2s zone in zones) _world.RegisterHeightmap(zone);   // loaded too, for SpawnInLoadedZones
+        NetworkCutoff.Forget();
+        try
+        {
+            NetworkCutoff.SnapshotWorld(new[] { zones[zones.Count - 1] });
+            NetworkCutoff.UseNewNetwork();
+            foreach (Vector2s zone in zones)
+            {
+                Assert.Equal(0, BridgePlacement.OnZoneSpawned(zone, ZoneSystem.SpawnMode.Full));
+                Assert.Equal(0, BridgePlacement.SpawnGhostInZone(zone));
+                Assert.False(BridgePlans.IsSpawned(zone));
+            }
+            Assert.Equal(0, BridgePlacement.SpawnInLoadedZones());
+            Assert.DoesNotContain(Live(), z => z.GetInt(BridgePlans.MarkerHash) == 1);
+
+            NetworkCutoff.Forget();
+            NetworkCutoff.SnapshotWorld(Array.Empty<Vector2s>());
+            NetworkCutoff.UseNewNetwork();
+            Assert.Equal(BridgePlans.TotalPlannedPieces, zones.Sum(z => BridgePlacement.OnZoneSpawned(z, ZoneSystem.SpawnMode.Full)));
+        }
+        finally { NetworkCutoff.Forget(); }
+    }
+
+    // The fixture's crossing as a generated plan, not an append, with its prefabs registered.
+    private static List<Vector2s> GeneratedPlanZones()
+    {
+        BridgeAppendQueue.Reset();
+        List<Vector2s> zones = BridgePlans.PlannedZones;
+        Assert.True(zones.Count >= 2, "the fixture's bridge must span more than one zone");
+        foreach (var piece in zones.SelectMany(z => BridgePlans.PlanFor(z)!))
+            if (ZNetScene.instance!.GetPrefab(piece.Prefab) == null) ZNetScene.instance.AddPrefab(piece.Prefab);
+        return zones;
+    }
+
+    /// <summary>
+    /// road_generate or road_regen_island in a running session: the new network leaves every zone generated so far
+    /// as it is, so the respawn that follows destroys none of the bridge pieces standing there and builds no second
+    /// copy over them, though the zones are loaded.
+    /// </summary>
+    [Fact] public void ARespawnKeepsThePiecesInExploredZones()
+    {
+        List<Vector2s> zones = GeneratedPlanZones();
+        foreach (Vector2s zone in zones) _world.RegisterHeightmap(zone);   // loaded, so the respawn can rebuild
+        NetworkCutoff.Forget();
+        try
+        {
+            NetworkCutoff.SnapshotWorld(Array.Empty<Vector2s>());
+            NetworkCutoff.UseNewNetwork();
+            foreach (Vector2s zone in zones) BridgePlacement.OnZoneSpawned(zone, ZoneSystem.SpawnMode.Full);
+            var standing = Live().Where(z => z.GetInt(BridgePlans.MarkerHash) == 1).ToList();
+            Assert.Equal(BridgePlans.TotalPlannedPieces, standing.Count);
+
+            NetworkCutoff.Forget();
+            NetworkCutoff.SnapshotWorld(zones);   // every zone of the bridge explored before the next network
+            NetworkCutoff.UseNewNetwork();
+            BridgePlacement.RespawnFromPlans();
+
+            Assert.All(standing, z => Assert.DoesNotContain(z, ZDOMan.instance!.DestroyQueue));
+            Assert.Equal(standing.Count, Live().Count(z => z.GetInt(BridgePlans.MarkerHash) == 1));
+
+            // Control: with nothing explored the same respawn destroys the pieces and builds the plan again.
+            NetworkCutoff.Forget();
+            NetworkCutoff.SnapshotWorld(Array.Empty<Vector2s>());
+            NetworkCutoff.UseNewNetwork();
+            BridgePlacement.RespawnFromPlans();
+            Assert.All(standing, z => Assert.Contains(z, ZDOMan.instance!.DestroyQueue));
+            Assert.Equal(BridgePlans.TotalPlannedPieces, Live().Count(z => z.GetInt(BridgePlans.MarkerHash) == 1));
+        }
+        finally { NetworkCutoff.Forget(); }
+    }
+
     [Fact] public void AMultiZoneAppendResumesAfterAReloadAndEmitsEachOwedPieceOnce()
     {
         var owed = Owed(); var zones = BridgeAppendQueue.Zones.ToList();

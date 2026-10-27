@@ -46,6 +46,7 @@ public sealed class BridgeLayoutTests
             Assert.True(RoadNetworkPersistence.BridgeLayoutIsStale);
             Assert.True(BridgePlans.IsSpawned(zone), "the zone's old pieces must stay its pieces");
             Assert.Contains(piece, ZDOMan.instance.Zdos);
+            Assert.DoesNotContain(piece, ZDOMan.instance.DestroyQueue);   // destruction is queued in the doubles
             Assert.Equal(1, piece.GetInt(BridgePlans.MarkerHash));
         }
         finally
