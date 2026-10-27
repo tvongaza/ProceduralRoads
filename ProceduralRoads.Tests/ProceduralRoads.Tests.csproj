@@ -46,6 +46,7 @@
         <Compile Include="../ProceduralRoads/Src/Roads/RoadStairRuns.Feet.cs" Link="ModSrc/RoadStairRuns.Feet.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadStairRuns.Tops.cs" Link="ModSrc/RoadStairRuns.Tops.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadStairRuns.Chains.cs" Link="ModSrc/RoadStairRuns.Chains.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadStairRuns.Approaches.cs" Link="ModSrc/RoadStairRuns.Approaches.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadBeside.cs" Link="ModSrc/RoadBeside.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/ManualRoadDraft.cs" Link="ModSrc/ManualRoadDraft.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/ManualRoads.cs" Link="ModSrc/ManualRoads.cs"/>

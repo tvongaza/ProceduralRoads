@@ -1046,6 +1046,8 @@ public static partial class RoadNetworkGenerator
             // planned with them. With both ends at places other roads reach,
             // the 40-60 m connector left between two parts of the network can
             // be too steep where the full road is not.
+            // The stubs put back: both ends are on their places' rings again.
+            startAtPlace = endAtPlace = true;
             path = withStubs;
             crossings = finder.Fords || finder.Bridges
                 ? RoadCrossingDetector.Detect(path, GenerationWorld, finder.Bridges, finder.Fords)
@@ -1103,6 +1105,7 @@ public static partial class RoadNetworkGenerator
                     System.Threading.Interlocked.Increment(ref pastRetry < past ? ref m_earthworkReroutes : ref m_pullReroutes);
                     pulled = pulledRetry;
                     (path, crossings, plans, past, stairs) = (retry.Value.path, retry.Value.crossings, retry.Value.plans, pastRetry, retry.Value.stairs);
+                    (startAtPlace, endAtPlace) = (retry.Value.startAtPlace, retry.Value.endAtPlace);
                     where = whereRetry;
                 }
                 else where = whereRetry.Count > 0 ? whereRetry : where;
@@ -1162,6 +1165,8 @@ public static partial class RoadNetworkGenerator
             return false;
         }
 
+        var approaches = finder.Stairs ? SiteApproaches(path, plans, stairs, startCenter, askedStartRadius, endCenter, askedEndRadius, startAtPlace, endAtPlace)
+            : new List<RoadStairSpan>();
         foreach (RoadSpatialGrid.PlannedPath plan in plans)
             RoadSpatialGrid.Commit(plan);
         if (IslandActivity != null)
@@ -1170,6 +1175,13 @@ public static partial class RoadNetworkGenerator
             int bridges = 0;
             foreach (var c in crossings) if (c.Kind == CrossingKind.Bridge && !c.Shared && !c.Invalid) bridges++;
             IslandActivity.BuiltBridges(bridges);
+        }
+        foreach (RoadStairSpan approach in approaches)
+        {
+            var run = StairRun.FromPlan(approach.FromPoint, approach.ToPoint, RoadStairRuns.Width, approach.Plan);
+            StairStructures.Add(run);
+            StairStructures.MarkStanding(run);
+            RoadStairRuns.Laid(run, approach.Plan, approach.Kit);
         }
         foreach (RoadStairSpan stair in stairs)
         {
@@ -1779,7 +1791,7 @@ public static partial class RoadNetworkGenerator
 
     /// <summary>The road searched and planned again, with the pathfinder's
     /// current penalties; null when it does not route or build.</summary>
-    private static (List<Vector2> path, List<RoadCrossing> crossings, List<RoadSpatialGrid.PlannedPath> plans, List<RoadStairSpan> stairs)? Replan(
+    private static (List<Vector2> path, List<RoadCrossing> crossings, List<RoadSpatialGrid.PlannedPath> plans, List<RoadStairSpan> stairs, bool startAtPlace, bool endAtPlace)? Replan(
         RoadPathfinder finder, Vector2 pathStart, Vector2 pathEnd, Vector2 startCenter, float startRadius,
         Vector2 endCenter, float endRadius, float width)
     {
@@ -1805,7 +1817,7 @@ public static partial class RoadNetworkGenerator
         float? startGround = startAtPlace ? ApproachGround(path[0], startCenter, startRadius) : null;
         float? endGround = endAtPlace ? ApproachGround(path[path.Count - 1], endCenter, endRadius) : null;
         var plans = PlanRoadPathWithCrossings(path, crossings, width, startGround, endGround, stairs);
-        return plans == null ? null : (path, crossings, plans, stairs);
+        return plans == null ? null : (path, crossings, plans, stairs, startAtPlace, endAtPlace);
     }
 
     /// <summary>Plans every piece of the road and stores them; nothing is
@@ -1986,6 +1998,54 @@ public static partial class RoadNetworkGenerator
         WorldGenerator? world = WorldGenerator.instance;
         if (world == null || StairStructures.Runs.Count == 0) return;
         StairStructures.SettleOnFinishedGround(RoadTerrainModifier.FinishedGround((x, z) => BiomeBlendedHeight.GetBlendedHeight(x, z, world)));
+    }
+
+    /// <summary>
+    /// Staircases from the road's ends that stop at a place up to the place's
+    /// flat ground (<see cref="RoadStairRuns.LaySiteApproach"/>). An end is at
+    /// its place unless it was moved to a junction (<paramref name="startAtPlace"/>,
+    /// <paramref name="endAtPlace"/>); a place with no radius (an island's edge) has none.
+    /// Judged by distance from the trimmed ring, an end the approach bend or the contour
+    /// search had moved a few metres out (by design) counted as moved off its place, and
+    /// its approach was never tried (at the frost cave -2560,1536 the road did
+    /// not meet the front cave landing; 51 such ends on one world).
+    /// </summary>
+    private static List<RoadStairSpan> SiteApproaches(List<Vector2> path, List<RoadSpatialGrid.PlannedPath> plans,
+        List<RoadStairSpan> stairs, Vector2 startCenter, float askedStartRadius,
+        Vector2 endCenter, float askedEndRadius, bool startAtPlace, bool endAtPlace)
+    {
+        var laid = new List<RoadStairSpan>();
+        var world = GenerationWorld;
+        if (world == null || path.Count < 2) return laid;
+        void At(bool atStart, Vector2 centre, float asked, bool atPlace)
+        {
+            if (asked <= 0f || !atPlace) return;
+            int index = atStart ? 0 : path.Count - 1;
+            Vector2 end = path[index];
+            RoadSpatialGrid.PlannedPath piece = atStart ? plans[0] : plans[plans.Count - 1];
+            int at = atStart ? 0 : piece.Points.Count - 1;
+            float height;
+            if (piece.Points.Count > 0 && Vector2.Distance(piece.Points[at], end) <= 0.5f) height = piece.Heights[at];
+            else
+            {
+                // A road whose last stretch is a staircase ends at its top (or foot): the approach
+                // carries on from there. Refused as "no road at the end", a frost cave facing downhill
+                // was left 15 m under its mouth at the top of the staircase that climbed to it
+                // (MountainCave02 -2560,1536: the stairs gave up).
+                RoadStairSpan? last = stairs.Find(s => atStart ? s.FromIndex == 0 : s.ToIndex == path.Count - 1);
+                if (last == null) return;
+                (end, height) = atStart ? (last.FromPoint, last.FromHeight) : (last.ToPoint, last.ToHeight);
+            }
+            Vector2 inner = path[atStart ? 1 : path.Count - 2];
+            var both = new List<RoadStairSpan>(stairs);
+            both.AddRange(laid);
+            RoadStairSpan? span = RoadStairRuns.LaySiteApproach(end, height, StairLayout.Bearing(inner, end), centre,
+                LocationLevelling.CentreHeight(centre, world), LocationLevelling.OpsAt(centre), path, index, both, world, out _);
+            if (span != null) laid.Add(span);
+        }
+        At(true, startCenter, askedStartRadius, startAtPlace);
+        At(false, endCenter, askedEndRadius, endAtPlace);
+        return laid;
     }
 
     /// <summary>The staircases on <paramref name="path"/> laid out from the stair

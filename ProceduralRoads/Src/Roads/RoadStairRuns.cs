@@ -221,6 +221,27 @@ public static partial class RoadStairRuns
         return first < 0 ? null : (first, last);
     }
 
+    /// <summary>What a staircase refused for <see cref="InExcludedZone"/> is called in the logs.</summary>
+    internal const string ExcludedZone = "in a zone explored before the network";
+
+    /// <summary>
+    /// Whether any piece of <paramref name="plan"/>, or any of its cuts (as far as a cut's ground reaches), lies in a zone the
+    /// network leaves as it is (NetworkCutoff.Excludes). Such a staircase is not built at all (all or
+    /// nothing): the writers skip excluded zones, so it would stand in the others only, a partial staircase.
+    /// </summary>
+    internal static bool InExcludedZone(StairPlan plan)
+    {
+        if (NetworkCutoff.ExcludedCount == 0) return false;
+        foreach (StairPiece piece in plan.Pieces)
+            if (NetworkCutoff.Excludes(ZoneSystem.GetZone(piece.Position))) return true;
+        float reach = StairLayout.CutRadius * 2f;
+        foreach (Vector3 cut in plan.Cuts)
+            foreach (float dx in new[] { -reach, reach })
+                foreach (float dz in new[] { -reach, reach })
+                    if (NetworkCutoff.Excludes(ZoneSystem.GetZone(new Vector3(cut.x + dx, 0f, cut.z + dz)))) return true;
+        return false;
+    }
+
     private static float DistanceToSegment(Vector2 p, Vector2 a, Vector2 b)
     {
         Vector2 ab = b - a;
@@ -599,6 +620,9 @@ public static partial class RoadStairRuns
             span.Existing = existing != null;
             // Columns at its ends over the road's cut are carried on down below it once the network is built, on the ground
             // the terrain writer will leave (BuriedPieces.CarryColumns), not on a guess at the road's cut here.
+            // Whole or not at all: what was added after its layout was judged (a top carried on, a foot lowered, an apron
+            // cut) may not reach a zone explored before the network either.
+            if (existing == null && InExcludedZone(plan)) { LastRefusal = Refusal.WaterOrPlace; return null; }
             spans.Add(span);
         }
         return spans;
@@ -763,7 +787,7 @@ public static partial class RoadStairRuns
 
     private static bool Usable(StairPlan plan, List<Vector2> path, int from, int to, WorldGenerator world, List<RoadStairSpan> before, Vector2? meet)
     {
-        Refusal why = !plan.Reached ? Refusal.NotReached : !Clear(plan, world) ? Refusal.WaterOrPlace
+        Refusal why = !plan.Reached ? Refusal.NotReached : !Clear(plan, world) || InExcludedZone(plan) ? Refusal.WaterOrPlace
             : OverRoad(plan, path, from, to, (x, z) => GroundAt(x, z, world)) ? Refusal.OnItsRoad : OverStairs(plan, before, meet) ? Refusal.OnAnotherStaircase
             : BesideARoad(plan, path, from, to, (x, z) => GroundAt(x, z, world)) ? Refusal.BesideARoad : Refusal.None;
         if (why != Refusal.None) LastRefusal = why;
@@ -876,6 +900,16 @@ public static partial class RoadStairRuns
     {
         Vector2 a = path[from], b = path[to];
         float ha = ground(a.x, a.y), hb = ground(b.x, b.y);
+        // An approach's path[from..to] is the road's end alone: its one end is its foot (or, laid down from the road, its
+        // top), tested once. Tested as the other end too, every piece within JunctionReach of it at the road's level was let
+        // stand on the road.
+        bool oneEnd = from == to;
+        // The road's travel into the staircase's foot, where the road comes on past it (none at the path's own end).
+        Vector2 footEnd = plan.Reversed ? b : a;
+        Vector2? into = null;
+        if (!plan.Reversed && from > 0) into = (a - path[from - 1]).normalized;
+        else if (plan.Reversed && !oneEnd && to + 1 < path.Count) into = (b - path[to + 1]).normalized;
+        float hFoot = plan.Reversed ? hb : ha;
         foreach (StairPiece piece in plan.Pieces)
         {
             if (piece.Kind == StairPieceKind.Support) continue;
@@ -891,15 +925,24 @@ public static partial class RoadStairRuns
             // At its top too, only the piece that joins the road may stand on it: a last flight that curled round over the
             // road within the old 6 m took the road over (top at 6495.5,-1464.9: it entered the road on the wrong side and took
             // over the road itself).
-            float topJoins = TopJoinsOnly ? JoiningStep : JunctionReach;
+            // Only a road's own staircase has a top on its road (an approach's path[from..to] is the road's end alone).
+            float topJoins = TopJoinsOnly && to > from ? JoiningStep : JunctionReach;
             float joinsA = !plan.Reversed ? JoiningStep : topJoins,
                 joinsB = plan.Reversed ? JoiningStep : topJoins;
             // A foot that set off back (StairLayout.MostSetOffBack) runs beside the road, never on it: only its sunk step,
             // under the road's level, stands there (at 1948.1,691.7 a stair set off 180 degrees opposite the direction of road
             // travel blocked the actual road to the stair start).
             bool backA = plan.SetOffBack > 0 && !plan.Reversed, backB = plan.SetOffBack > 0 && plan.Reversed;
-            if ((Vector2.Distance(p, a) <= joinsA && (backA ? top <= ha + SunkStepAbove : Mathf.Abs(top - ha) <= JunctionHeight))
-                || (Vector2.Distance(p, b) <= joinsB && (backB ? top <= hb + SunkStepAbove : Mathf.Abs(top - hb) <= JunctionHeight))) continue;
+            // Nor does any piece back along the road behind an approach's foot, whatever the search called it (a free layout counts no
+            // set-off): only a sunk stair under the road's level. A floor set off back on the road's end, the flight turned off
+            // a filler further back, stood in the middle of the road (the frost cave at -2304,1536: starting backwards in the middle of
+            // the road).
+            // An approach's foot only: a road's own staircase keeps the set-off rule above (applied to every foot it refused 13 more
+            // road staircases, most of them Mistlands).
+            bool behind = KeepFootOffRoadBehind && oneEnd && into is Vector2 t && Vector2.Dot(p - footEnd, t) < -BehindFoot
+                && !(piece.Kind == StairPieceKind.Stair && top <= hFoot + SunkStepAbove);
+            if ((Vector2.Distance(p, a) <= joinsA && !(behind && !plan.Reversed) && (backA ? top <= ha + SunkStepAbove : Mathf.Abs(top - ha) <= JunctionHeight))
+                || (!oneEnd && Vector2.Distance(p, b) <= joinsB && !(behind && plan.Reversed) && (backB ? top <= hb + SunkStepAbove : Mathf.Abs(top - hb) <= JunctionHeight))) continue;
             for (int i = 1; i < path.Count; i++)
             {
                 if (i > from && i <= to) continue; // the stretch the staircase replaces

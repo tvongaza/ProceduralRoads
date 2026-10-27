@@ -538,14 +538,15 @@ public class RoadStairTests : IDisposable
         }
         string laid = Laid(out float within);
         Assert.True(within <= 90.01f, laid);
-        // Without the rule it set off back along the road.
+        // Without the rule, and without the foot kept off the road behind it (OverRoad), it set off back along the road.
         StairLayout.RulesOff = SteepRules.Facing;
+        RoadStairRuns.KeepFootOffRoadBehind = false;
         try
         {
             string free = Laid(out float off);
             Assert.True(off > 90.01f, "without the rule it set off within 90 degrees anyway: " + free);
         }
-        finally { StairLayout.RulesOff = SteepRules.None; }
+        finally { StairLayout.RulesOff = SteepRules.None; RoadStairRuns.KeepFootOffRoadBehind = true; }
     }
 
     /// <summary>A sharp ridge along z: faces of 1.2 up to a crest line at x = 0, 24 m over the flats either side.</summary>
@@ -784,4 +785,18 @@ public class RoadStairTests : IDisposable
         finally { RoadStairRuns.ValleyMeets = true; }
     }
 
+    /// <summary>A Queen approach: from the road's end at 41.5 over a dip to 39.5 and up to the entrance at 46,
+    /// laid as stairs down, a floor and stairs up; it should be a straight run of floors over the dip. A valley no
+    /// deeper than RoadStairRuns.ShallowDip under both ends is no turn: the approach crosses it level.</summary>
+    [Fact]
+    public void AnApproachCrossesAShallowDipLevel()
+    {
+        float Ground(float x, float z) => x < 4f ? 41.5f - x * 0.4f : x < 8f ? 39.9f : Mathf.Min(46f, 39.9f + (x - 8f) * 0.8f);
+        Assert.Null(RoadStairRuns.Turn(new Vector2(0f, 0f), new Vector2(20f, 0f), Ground));
+        float Deep(float x, float z) => x < 4f ? 41.5f - x * 1.2f : x < 8f ? 36.5f : Mathf.Min(46f, 36.5f + (x - 8f) * 1.2f);
+        Assert.NotNull(RoadStairRuns.Turn(new Vector2(0f, 0f), new Vector2(20f, 0f), Deep));
+        RoadStairRuns.ShallowDipsLevel = false;
+        try { Assert.NotNull(RoadStairRuns.Turn(new Vector2(0f, 0f), new Vector2(20f, 0f), Ground)); }
+        finally { RoadStairRuns.ShallowDipsLevel = true; }
+    }
 }

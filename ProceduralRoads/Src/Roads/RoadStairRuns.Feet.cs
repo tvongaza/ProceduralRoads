@@ -259,4 +259,9 @@ public static partial class RoadStairRuns
     /// <summary>How far over the road's level the top of a foot's sunk step may stand (a stair's top is a rise over its base).</summary>
     public const float SunkStepAbove = 0.25f;
 
+    /// <summary>How far back along its road behind its foot a piece's middle may stand and still be the step that joins it.</summary>
+    public const float BehindFoot = 0.5f;
+
+    /// <summary>Settable for tests: false lets a foot's pieces stand back on the road behind it within the joining step.</summary>
+    internal static bool KeepFootOffRoadBehind = true;
 }
