@@ -1344,6 +1344,11 @@ public static partial class RoadSpatialGrid
             
             var loadedPoints = new Dictionary<Vector2i, RoadPoint[]>(cellCount);
             int totalPoints = 0;
+            // A released build (1.4.x, format 1) clamped widths and saved
+            // averaged heights, but never checked them. One bad point there
+            // costs that point, not the world its whole network.
+            bool released = version == 1;
+            int dropped = 0;
             
             for (int c = 0; c < cellCount; c++)
             {
@@ -1357,7 +1362,7 @@ public static partial class RoadSpatialGrid
                     return false;
                 }
                 
-                var points = new RoadPoint[pointCount];
+                var points = new List<RoadPoint>(pointCount);
                 for (int i = 0; i < pointCount; i++)
                 {
                     float px = reader.ReadSingle();
@@ -1368,12 +1373,17 @@ public static partial class RoadSpatialGrid
                     int addition = version >= 3 ? reader.ReadInt32() : 0;
                     if (!ManualRoadDraft.IsFinite(px) || !ManualRoadDraft.IsFinite(py) ||
                         !ManualRoadDraft.IsFinite(w) || w <= 0 || !ManualRoadDraft.IsFinite(h) || addition < 0)
-                        return false;
-                    points[i] = new RoadPoint(new Vector2(px, py), w, h, paintOnly, addition);
+                    {
+                        if (!released) return false;
+                        dropped++;
+                        continue;
+                    }
+                    points.Add(new RoadPoint(new Vector2(px, py), w, h, paintOnly, addition));
                 }
                 
-                loadedPoints[new Vector2i(gridX, gridY)] = points;
-                totalPoints += pointCount;
+                if (points.Count == 0 && pointCount > 0) continue;   // every point of the cell was dropped
+                loadedPoints[new Vector2i(gridX, gridY)] = points.ToArray();
+                totalPoints += points.Count;
             }
             
             var parents = new List<int>();
@@ -1407,6 +1417,9 @@ public static partial class RoadSpatialGrid
                 m_roadCacheLock.ExitWriteLock();
             }
             
+            if (dropped > 0)
+                Log.LogWarning($"The saved road network (format 1, from a released build) held {dropped} point(s) with a " +
+                               "non-finite position or height, or no width; they were left out and the rest of the network loaded.");
             Log.LogDebug($"Deserialized {cellCount} grid cells, {totalPoints} road points");
             FinalizeRoadNetwork();
             return true;
