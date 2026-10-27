@@ -58,11 +58,20 @@ public static partial class RoadSpatialGrid
 
     public static bool IsInitialized => m_initialized;
 
+    /// <summary>
+    /// Whether the network in memory was read from format 1, the only format a
+    /// released build (1.4.x) can read. Such a network is never written back
+    /// in a newer format (RoadNetworkGenerator.SaveGlobalRoadData), so the
+    /// world still opens in the build that made it.
+    /// </summary>
+    public static bool LoadedFromReleasedFormat { get; private set; }
+
     public static void Clear()
     {
         m_roadCacheLock.EnterWriteLock();
         try
         {
+            LoadedFromReleasedFormat = false;
             m_roadPoints.Clear();
             s_appendParents.Clear();
             m_initialized = false;
@@ -1411,6 +1420,7 @@ public static partial class RoadSpatialGrid
                 m_initialized = true;
                 GridCellsWithRoads = loadedPoints.Count;
                 TotalRoadPoints = totalPoints;
+                LoadedFromReleasedFormat = released;
             }
             finally
             {

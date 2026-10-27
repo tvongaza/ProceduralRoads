@@ -205,6 +205,36 @@ public sealed class LegacyWorldTests : IDisposable
     }
 
     /// <summary>
+    /// 1.4.4 reads format 1 only; any other blob it throws away and generates a new network over the world. So a
+    /// network it saved takes no additions here, and nothing this build does at save time rewrites it.
+    /// </summary>
+    [Fact]
+    public void AppendOnA144NetworkLeavesItsBlobReadableBy144()
+    {
+        SaveAsReleased144();
+        OpenWorld();
+        Assert.True(RoadNetworkGenerator.RoadsLoadedFromZDO);
+        Assert.True(RoadSpatialGrid.LoadedFromReleasedFormat);
+        int points = RoadSpatialGrid.TotalRoadPoints;
+
+        Assert.Throws<InvalidOperationException>(() =>
+            ManualRoads.Prepare(new[] { new Vector2(-20f, 100f), new Vector2(60f, 100f) }, false));
+        Assert.Throws<InvalidOperationException>(() =>
+            RoadNetworkGenerator.AppendManualRoad(new List<RoadSpatialGrid.PlannedPath>(), new List<RoadCrossing>(),
+                new Vector2(0f, 0f), RoadSpatialGrid.RoadNetworkVersion));
+        RoadLifecycleManager.OnPrepareSave();
+        Assert.Equal(Blob, Metadata().GetByteArray(GlobalDataHash));
+
+        // Even a network marked for a full save (as an append would mark it) is not written over 1.4.4's.
+        typeof(RoadNetworkGenerator).GetField("m_roadsGenerated", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, true);
+        RoadLifecycleManager.OnPrepareSave();
+        byte[] after = Metadata().GetByteArray(GlobalDataHash)!;
+        Assert.Equal(Blob, after);
+        Assert.True(Released144.Reads(after, out int read), "1.4.4 must still read the world's network");
+        Assert.Equal(points, read);
+    }
+
+    /// <summary>
     /// A world saved by 1.4.x (format 1) whose network holds a point that build never checked: the point is left out,
     /// the rest of the network loads, and the world is not handed to a fresh generation for one bad number. Any other
     /// format is this build's own and is still refused whole.

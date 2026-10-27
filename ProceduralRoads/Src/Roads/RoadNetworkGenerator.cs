@@ -2002,6 +2002,12 @@ public static partial class RoadNetworkGenerator
             Log.LogDebug("[SAVE] No roads generated, skipping global save");
             return;
         }
+        // A released build's network stays in the format that build reads.
+        if (RoadSpatialGrid.LoadedFromReleasedFormat)
+        {
+            Log.LogWarning("[SAVE] The road network was saved by a released build (format 1); it is not rewritten");
+            return;
+        }
 
         RoadNetworkPersistence.SaveGlobalRoadData(m_roadStartPoints, m_roadCrossings, BridgePlans.SpawnedZones);
     }

@@ -43,8 +43,21 @@ public static class ManualRoads
         finally { Busy = false; }
     }
 
+    /// <summary>
+    /// A network a released build saved (format 1) takes no additions: saving
+    /// one would rewrite it in a format that build cannot read, and that build
+    /// would then throw the network away and generate another over the world.
+    /// </summary>
+    internal static void RefuseOnReleasedNetwork()
+    {
+        if (RoadSpatialGrid.LoadedFromReleasedFormat)
+            throw new InvalidOperationException("This world's roads were saved by ProceduralRoads 1.4 or earlier. " +
+                "Adding a road would make them unreadable to that version, so roads cannot be added to this world.");
+    }
+
     private static Plan PrepareCore(IReadOnlyList<Vector2> points, bool connect, IReadOnlyList<Island>? knownIslands)
     {
+        RefuseOnReleasedNetwork();
         var world = WorldGenerator.instance;
         if (world == null || !RoadNetworkGenerator.IsLocationsReady)
             throw new InvalidOperationException("Wait for the world and its locations to finish loading.");
@@ -146,6 +159,7 @@ public static partial class RoadNetworkGenerator
     internal static void AppendManualRoad(IReadOnlyList<RoadSpatialGrid.PlannedPath> paths,
         List<RoadCrossing> crossings, Vector2 start, int expectedVersion)
     {
+        ManualRoads.RefuseOnReleasedNetwork();
         var bridgeAdditions = BridgeAppendQueue.Prepare(crossings);
         RoadNetworkPersistence.EnsureMetadataInstance();
         RoadSpatialGrid.CommitAppend(paths, expectedVersion);
