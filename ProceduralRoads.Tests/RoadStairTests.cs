@@ -377,6 +377,43 @@ public class RoadStairTests : IDisposable
                 && Mathf.Abs(p.Position.y - q.Position.y) < 2f);
     }
 
+    /// <summary>Over a ridge, the staircase down from the crest is carried on to the top row of the
+    /// one that climbed to it: the two meet edge to edge, with no road laid between them (at 7842,1803 the two stairs
+    /// connect via their snap points without a short road section). Measured before: 1.2 m apart, a road piece over both tops.</summary>
+    [Fact]
+    public void TwoStaircasesOverARidgeMeetEdgeToEdgeWithNoRoadBetween()
+    {
+        RidgeMeeting();
+    }
+
+    private void RidgeMeeting()
+    {
+        var world = new RidgeWorld();
+        _scope.WithWorld(world);
+        SetPathfinder(new RoadPathfinder(world) { Stairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f });
+
+        Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(80f, 0f), 0f, 4f, "ridge"));
+
+        Assert.Equal(2, StairStructures.Runs.Count);
+        StairRun up = StairStructures.Runs[0], down = StairStructures.Runs[1];
+        // The first one's top row: its highest floor nearest the crest (x = 0), and that floor's edge
+        // toward the crest. The second has a row whose far edge is that same edge.
+        float top = up.Pieces.Where(p => p.Kind != StructurePieceKind.StairSupport).Max(p => p.Position.y);
+        StructurePiece last = up.Pieces.Where(p => p.Kind == StructurePieceKind.StairFloor && p.Position.y > top - 0.1f)
+            .OrderBy(p => Mathf.Abs(p.Position.x)).First();
+        float height = last.Position.y + StairKit.Stone.FloorTop;
+        Vector2 middle = new Vector2(last.Position.x, last.Position.z);
+        Vector2 edge = new[] { middle + StairLayout.Forward(last.YawDegrees), middle - StairLayout.Forward(last.YawDegrees) }
+            .OrderBy(e => Mathf.Abs(e.x)).First();
+        Assert.True(RoadStairRuns.TopAt(edge, height, up.Pieces).HasValue, $"no top row at {edge}");
+        Assert.True(RoadStairRuns.TopAt(edge, height, down.Pieces).HasValue,
+            $"the second's top does not reach {edge}: its floors at {string.Join(" ", down.Pieces.Where(p => p.Kind == StructurePieceKind.StairFloor && p.Position.y > top - 0.1f).Select(p => p.Position.x.ToString("F1")))}");
+        // No road over the crest between the two.
+        Vector2 dir = StairLayout.Forward(last.YawDegrees);
+        for (float d = -4f; d <= 4f; d += 1f)
+            Assert.False(RoadSpatialGrid.TryGetRoadWithin(edge + dir * d, 1f, out Vector2 at), $"road at {at}, {d} m from the meeting edge");
+    }
+
     /// <summary>A second road over the same face walks the staircase the first
     /// one laid: two laid side by side spawned every piece twice.</summary>
     [Fact]
@@ -511,6 +548,153 @@ public class RoadStairTests : IDisposable
         finally { StairLayout.RulesOff = SteepRules.None; }
     }
 
+    /// <summary>A sharp ridge along z: faces of 1.2 up to a crest line at x = 0, 24 m over the flats either side.</summary>
+    private sealed class SharpRidgeWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 200f || Mathf.Abs(wy) > 200f) return 0f;
+            return 40f + Mathf.Clamp(24f - Mathf.Abs(wx) * 1.2f, 0f, 24f);
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Mountain;
+        public override int GetSeed() => 77;
+    }
+
+    /// <summary>Over a sharp ridge the two staircases meet top to top: the first's top stair, a floor across, the second's
+    /// top stair, with no road on the crest (at 3377,6425 the two should snap together, with no road spur at
+    /// the top). Laid as before (each top on its own way, then floors only where the two lined up) the road was not built.</summary>
+    [Fact]
+    public void TwoStaircasesOverASharpRidgeMeetTopToTopWithNoRoadOnTheCrest()
+    {
+        bool Lay(out string what)
+        {
+            RoadNetworkGenerator.Reset();
+            var world = new SharpRidgeWorld();
+            _scope.WithWorld(world);
+            SetPathfinder(new RoadPathfinder(world) { Stairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f });
+            bool built = RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(80f, 0f), 0f, 4f, "ridge");
+            var crestRoad = new List<Vector2>();
+            for (float x = -12f; x <= 12f; x += 1f) for (float z = -30f; z <= 30f; z += 1f)
+                if (world.GetHeight(x, z) > 50f && RoadSpatialGrid.TryGetRoadWithin(new Vector2(x, z), 0.5f, out Vector2 at)) crestRoad.Add(at);
+            what = $"built {built}, {StairStructures.Runs.Count} staircase(s), road on the crest at {string.Join(" ", crestRoad.Distinct().Take(6))}";
+            if (!built || StairStructures.Runs.Count != 2 || crestRoad.Count > 0) return false;
+            // The two tops at one height, joined: the second's highest floors reach the first's top stair's edge.
+            StairRun up = StairStructures.Runs[0], down = StairStructures.Runs[1];
+            float top = up.Pieces.Where(p => p.Kind == StructurePieceKind.StairStep).Max(p => p.Position.y);
+            return down.Pieces.Exists(p => p.Kind == StructurePieceKind.StairStep && Mathf.Abs(p.Position.y - top) < 0.05f);
+        }
+        Assert.True(Lay(out string laid), laid);
+        // The second searched down from the far edge of a 2x2 on from the first's top stair (a ridge has at least one 2x2 between the up and down stairs).
+        Assert.True(RoadStairRuns.RidgesSnapped >= 1, $"not snapped ({RoadStairRuns.RidgesBridged} bridged): {laid}");
+        StairRun first = StairStructures.Runs[0];
+        float crest = first.Pieces.Where(p => p.Kind == StructurePieceKind.StairStep).Max(p => p.Position.y) + StairLayout.PieceRise;
+        Assert.Contains(first.Pieces, p => p.Kind == StructurePieceKind.StairFloor && Mathf.Abs(p.Position.y + StairKit.Stone.FloorTop - crest) < 0.05f);
+        // No way straight down off the crest's floor: snapped off its side or past a second floor instead, still no road on
+        // the crest (at 6678,2440 a 2x2 at the ridge top and stairs snapping the whole way up and down are preferred).
+        RoadStairRuns.RidgeStraightDown = false;
+        try
+        {
+            Assert.True(Lay(out string turned), turned);
+            Assert.True(RoadStairRuns.RidgesSnappedOffCrest >= 1, "not snapped off the crest: " + turned);
+            RoadStairRuns.CrestTurns = false;
+            Lay(out string unturned);
+            Assert.Equal(0, RoadStairRuns.RidgesSnappedOffCrest);
+        }
+        finally { RoadStairRuns.RidgeStraightDown = true; RoadStairRuns.CrestTurns = true; }
+        RoadStairRuns.RidgeSnapDown = false;
+        try { Assert.True(Lay(out string bridged), bridged); Assert.Equal(0, RoadStairRuns.RidgesSnapped); }
+        finally { RoadStairRuns.RidgeSnapDown = true; }
+        RoadStairRuns.RidgeMeets = false;
+        try { Assert.False(Lay(out string before), "without the rule they met anyway: " + before); }
+        finally { RoadStairRuns.RidgeMeets = true; }
+    }
+
+    /// <summary>The sharp ridge with its east flats half a metre higher: two staircases laid each up from its own foot end
+    /// half a metre apart in height at the crest.</summary>
+    private sealed class OffsetRidgeWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 200f || Mathf.Abs(wy) > 200f) return 0f;
+            return wx < 0f ? 40f + Mathf.Clamp(24f + wx * 1.2f, 0f, 24f) : 40.5f + Mathf.Clamp(23.5f - wx * 1.2f, 0f, 23.5f);
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Mountain;
+        public override int GetSeed() => 77;
+    }
+
+    /// <summary>Over a ridge, two tops that could not be joined (the second laid from its own foot, their heights apart)
+    /// leave no stub of road between them on the crest (at 6678,2440, about 2-3 m; short sections of road between two stairs
+    /// are not allowed): one staircase over both, or none.</summary>
+    [Fact]
+    public void TwoTopsOverARidgeLeaveNoStubOfRoadBetweenThem()
+    {
+        string Lay(out bool built)
+        {
+            RoadNetworkGenerator.Reset();
+            var world = new OffsetRidgeWorld();
+            _scope.WithWorld(world);
+            SetPathfinder(new RoadPathfinder(world) { Stairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f });
+            built = RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(80f, 0f), 0f, 4f, "ridge");
+            var crestRoad = new List<Vector2>();
+            for (float x = -12f; x <= 12f; x += 1f) for (float z = -30f; z <= 30f; z += 1f)
+                if (world.GetHeight(x, z) > 58f && RoadSpatialGrid.TryGetRoadWithin(new Vector2(x, z), 0.5f, out Vector2 at)) crestRoad.Add(at);
+            return $"built {built}, {StairStructures.Runs.Count} staircase(s), {RoadStairRuns.CrestStubs} stub(s), road on the crest at {string.Join(" ", crestRoad.Distinct().Take(6))}";
+        }
+        RoadStairRuns.RidgeFromCrest = false;
+        try
+        {
+            RoadStairRuns.NoCrestStubs = false;
+            string before = Lay(out bool builtBefore);
+            Assert.True(builtBefore && RoadStairRuns.CrestStubs >= 1, "no stub to refuse: " + before);
+            RoadStairRuns.NoCrestStubs = true;
+            string after = Lay(out bool builtAfter);
+            Assert.True(!builtAfter || RoadStairRuns.CrestStubs == 0 || StairStructures.Runs.Count == 1, "a stub kept: " + after);
+        }
+        finally { RoadStairRuns.RidgeFromCrest = true; RoadStairRuns.NoCrestStubs = true; }
+    }
+
+    /// <summary>Two sharp ridges (crests at x = -24 and 24, on the road's 8 m path points, 21.5 m over the flats, faces of 1)
+    /// with a narrow valley between them (its bottom 5 m wide at x = 0): up, over, down, up, over and down again.</summary>
+    private sealed class RidgeValleyRidgeWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 200f || Mathf.Abs(wy) > 200f) return 0f;
+            float x = Mathf.Abs(wx);
+            return x <= 24f ? 40f + Mathf.Max(0f, x - 2.5f) : 40f + Mathf.Max(0f, 21.5f - (x - 24f));
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Mountain;
+        public override int GetSeed() => 77;
+    }
+
+    /// <summary>A chain over ridge, valley and ridge: each meet snapped, no road between the staircases (a ridge transitions to a valley and maybe back again).</summary>
+    [Fact]
+    public void ARidgeValleyRidgeChainMeetsAtEachTurn()
+    {
+        bool Lay(out string laid)
+        {
+            RoadNetworkGenerator.Reset();
+            var world = new RidgeValleyRidgeWorld();
+            _scope.WithWorld(world);
+            SetPathfinder(new RoadPathfinder(world) { Stairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f });
+            bool built = RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(80f, 0f), 0f, 4f, "chain");
+            var road = new List<Vector2>();
+            for (float x = -36f; x <= 36f; x += 1f) for (float z = -60f; z <= 60f; z += 1f)
+                if (RoadSpatialGrid.TryGetRoadWithin(new Vector2(x, z), 0.5f, out Vector2 at)) road.Add(at);
+            int joined = RoadStairRuns.RidgesSnapped + RoadStairRuns.RidgesBridged + RoadStairRuns.CrestStubsJoined;
+            laid = $"built {built}, {StairStructures.Runs.Count} staircase(s) {string.Join(" | ", StairStructures.Runs.Select(r => r.From + "->" + r.To))}, ridges snapped {RoadStairRuns.RidgesSnapped}, bridged {RoadStairRuns.RidgesBridged}, stubs joined {RoadStairRuns.CrestStubsJoined}, refused {RoadStairRuns.CrestStubs}, valleys {RoadStairRuns.ValleysMet}, road off the flats at {string.Join(" ", road.Distinct().Take(8))}";
+            // Four staircases, up, down, up, down, both crests joined, and no road anywhere between the outer feet (x = -40 and
+            // 40): the two in the valley meet on a shared floor.
+            return built && StairStructures.Runs.Count == 4 && joined >= 2 && RoadStairRuns.ValleysMet >= 1 && road.Count == 0;
+        }
+        Assert.True(Lay(out string chain), chain);
+        // The second ridge's first staircase (up out of the valley) tops out on a floor: searched down off it, not laid from its
+        // own foot a rise under it.
+        RoadStairRuns.CrestFromTopFloor = false;
+        try { Assert.False(Lay(out string before), "without the rule the chain met anyway: " + before); }
+        finally { RoadStairRuns.CrestFromTopFloor = true; }
+    }
+
     /// <summary>A flat world: a road built north-south, then one east-west across it. The second would cross the first at
     /// grade and is not built (roads that cross at grade are disallowed even if that rejects a POI); one that
     /// ends on the first (a T) is.</summary>
@@ -543,6 +727,61 @@ public class RoadStairTests : IDisposable
         }
         Assert.True(GoesOn(trunk: true), "the trunk going on past the foot was not seen");
         Assert.False(GoesOn(trunk: false), "the arriving road's own end was taken for another road");
+    }
+
+    /// <summary>A narrow valley along z: faces of 1.2 down to a bottom 5 m wide at x = 0, 24 m under the flats either side.</summary>
+    private sealed class SharpValleyWorld : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy)
+        {
+            if (Mathf.Abs(wx) > 200f || Mathf.Abs(wy) > 200f) return 0f;
+            return 64f - Mathf.Clamp(24f - Mathf.Max(0f, Mathf.Abs(wx) - 2.5f) * 1.2f, 0f, 24f);
+        }
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Mountain;
+        public override int GetSeed() => 77;
+    }
+
+    /// <summary>Through a narrow valley the two staircases meet at their feet on a shared floor at the bottom, with no road
+    /// between them (the same rule applies to valleys); laid as before, the
+    /// second set off from the first's foot point.</summary>
+    [Fact]
+    public void TwoStaircasesThroughASharpValleyMeetOnASharedFloor()
+    {
+        string Lay(out int shared)
+        {
+            RoadNetworkGenerator.Reset();
+            var world = new SharpValleyWorld();
+            _scope.WithWorld(world);
+            SetPathfinder(new RoadPathfinder(world) { Stairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f });
+            bool built = RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(80f, 0f), 0f, 4f, "valley");
+            shared = RoadStairRuns.ValleysMet;
+            var low = new List<Vector2>();
+            for (float x = -12f; x <= 12f; x += 1f) for (float z = -30f; z <= 30f; z += 1f)
+                if (world.GetHeight(x, z) < 50f && RoadSpatialGrid.TryGetRoadWithin(new Vector2(x, z), 0.5f, out Vector2 at)) low.Add(at);
+            Assert.True(built, "not built");
+            return $"{StairStructures.Runs.Count} staircase(s), road in the valley at {string.Join(" ", low.Distinct().Take(6))}";
+        }
+        string laid = Lay(out int met);
+        Assert.True(met >= 1, "not met on a shared floor: " + laid);
+        // Snapped: the shared floor straight on from the first's foot, its heading the first flight's turned round (the two runs
+        // must line up where they connect in the valley).
+        StairRun downRun = StairStructures.Runs[0], upRun = StairStructures.Runs[1];
+        StructurePiece footStair = downRun.Pieces.Where(p => p.Kind == StructurePieceKind.StairStep).OrderBy(p => p.Position.y).First();
+        var footAt = new Vector2(footStair.Position.x, footStair.Position.z);
+        StructurePiece floor = upRun.Pieces.Where(p => p.Kind == StructurePieceKind.StairFloor)
+            .OrderBy(p => Vector2.Distance(new Vector2(p.Position.x, p.Position.z), footAt)).First();
+        var at = new Vector2(floor.Position.x, floor.Position.z);
+        // The floor one piece on from the foot stair (edge to edge), and nothing of
+        // the first standing in it (the step sunk under its foot taken away).
+        Assert.InRange(Vector2.Distance(at, footAt), StairLayout.PieceRun - 0.3f, StairLayout.PieceRun + 0.3f);
+        Assert.DoesNotContain(downRun.Pieces, p => p.Kind != StructurePieceKind.StairSupport && Vector2.Distance(new Vector2(p.Position.x, p.Position.z), at) < 1f);
+        float turned = Mathf.Abs(StairLayout.Wrap(floor.YawDegrees - footStair.YawDegrees + 180f) - 180f) % 180f;
+        Assert.True(turned < 0.5f, $"the shared floor turned {turned} off the foot's line (foot yaw {footStair.YawDegrees} at {footStair.Position}, floor yaw {floor.YawDegrees} at {floor.Position}); runs {string.Join(" | ", StairStructures.Runs.Select(r => r.From + "->" + r.To + ": " + string.Join(" ", r.Pieces.Where(p => p.Kind != StructurePieceKind.StairSupport && p.Position.y < 48.5f).Select(p => $"{p.Kind.ToString().Substring(5, 2)}({p.Position.x:F1},{p.Position.y:F1},{p.Position.z:F1})y{p.YawDegrees}"))))}");
+        Assert.Contains("road in the valley at ", laid);
+        Assert.EndsWith("at ", laid);
+        RoadStairRuns.ValleyMeets = false;
+        try { Lay(out int before); Assert.Equal(0, before); }
+        finally { RoadStairRuns.ValleyMeets = true; }
     }
 
 }

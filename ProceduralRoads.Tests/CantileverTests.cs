@@ -652,6 +652,27 @@ public class CantileverTests
         finally { RoadStairRuns.OneSideWhenTurned = true; }
     }
 
+    /// <summary>Searched down from the top edge of a staircase over a ridge (-8030,-660: the top of one set of
+    /// stairs was too high to walk over, fixed by snapping to the other set: just one stair up and another down),
+    /// the second staircase's top stair stands back to back with the first's: its high edge on that edge, at that height,
+    /// heading back, and its foot down by the road below.</summary>
+    [Fact]
+    public void AStaircaseSearchedDownFromAnotherTopStandsBackToBackWithIt()
+    {
+        float Ridge(float x, float z) => 40f + Mathf.Clamp(24f - Mathf.Abs(x) * 1.2f, 0f, 24f);
+        var edge = new Vector2(-0.5f, 0f);
+        var top = new StairContinuation(edge, 90f, 63.6f, StairPieceKind.Stair);
+        StairPlan plan = StairLayout.BuildDown(top, new Vector2(24f, 0f), Ridge, 2f, StairKit.Stone);
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.True(Vector3.Distance(plan.End, new Vector3(edge.x, 63.6f, edge.y)) < 0.01f, $"top at {plan.End}");
+        Assert.Equal(270f, plan.EndHeading, 1);
+        // Its top stair: a rise under the top, its back on the edge, climbing back west.
+        StairPiece last = plan.Pieces.Last(p => p.Kind == StairPieceKind.Stair);
+        Assert.Equal(63.6f - StairLayout.PieceRise, last.Position.y, 2);
+        Assert.True(plan.Foot.HasValue && Mathf.Abs(plan.Foot.Value.y - Ridge(plan.Foot.Value.x, plan.Foot.Value.z)) < 1.5f, $"foot at {plan.Foot}");
+        Assert.True(plan.Rise > 20f, $"rose {plan.Rise}");
+    }
+
     /// <summary>A top at 6495.5,-1464.9: the last flight curled round over the road it hands to and lay on its
     /// surface for several pieces, taking over the road itself. At a top, as at a foot, only the joining piece
     /// (within JoiningStep) may stand on the road: a stair 4 m on along the road at its level lies on it.</summary>
@@ -745,6 +766,65 @@ public class CantileverTests
         StairLayout.RulesOff = SteepRules.FirstFlight;
         try { Assert.True(StairsBeforeSwitchback(Lay()) < StairLayout.FirstFlightStairs, "without the rule it waited anyway"); }
         finally { StairLayout.RulesOff = SteepRules.None; }
+    }
+
+    /// <summary>The two flights of a valley (4392-4398,6438-6444) as they were laid down to a shared floor at
+    /// 32.5: the first (reversed) down into it from the west, the second up out of it to the east.</summary>
+    internal static (StairPlan below, StairPlan up) SharedFloorValley()
+    {
+        StairKit kit = StairKit.BlackMarble;
+        static StairPiece Piece(StairPieceKind kind, string prefab, float x, float y, float z, float yaw) =>
+            new() { Kind = kind, Prefab = prefab, Position = new Vector3(x, y, z), YawDegrees = yaw };
+        StairPiece Stair(float x, float y, float z, float yaw) => Piece(StairPieceKind.Stair, kit.Stair, x, y, z, yaw);
+        StairPiece Filler(float x, float y, float z, float yaw) => Piece(StairPieceKind.Filler, "blackmarble_2x1x1", x, y, z, yaw);
+        var below = new StairPlan { Kit = kit.Name, Reached = true, Reversed = true };
+        below.Pieces.AddRange(new[] {
+            Stair(4392.601f, 32.5f, 6440.604f, 180f), Filler(4392.601f, 33f, 6442.104f, 180f), Stair(4392.142f, 33.5f, 6442.911f, 157.5f),
+            Filler(4391.568f, 34f, 6444.297f, 157.5f), Stair(4390.295f, 34.5f, 6444.759f, 112.5f), Stair(4387.682f, 35.5f, 6444.758f, 67.5f),
+            Stair(4385.727f, 36.5f, 6443.452f, 45f), Stair(4383.313f, 37.5f, 6442.452f, 90f) });
+        var up = new StairPlan { Kit = kit.Name, Reached = true };
+        up.Pieces.AddRange(new[] {
+            Filler(4394.101f, 32f, 6438.604f, 270f), Filler(4393.955f, 32f, 6438.544f, 225f), Stair(4395.015f, 32.5f, 6439.604f, 225f),
+            Filler(4396.076f, 33f, 6440.665f, 225f), Stair(4396.970f, 33.5f, 6440.911f, 247.5f), Stair(4398.818f, 34.5f, 6441.676f, 247.5f),
+            Stair(4400.666f, 35.5f, 6442.441f, 247.5f), Piece(StairPieceKind.Landing, kit.Floor, 4392.601f, 32f, 6438.604f, 180f) });
+        return (below, up);
+    }
+
+    /// <summary>A V across the valley on its line: 31 at its bottom, rising 1.1 a metre to 35.1 where the span meets the
+    /// first flight's stair at 34.5 (the floors' ends in the slope; read flat, no span was found here).</summary>
+    internal static float SharedFloorValleyGround(float x, float z)
+    {
+        Vector2 l1 = new Vector2(4391.22f, 6444.38f), along = StairLayout.Forward(112.5f);
+        return 31f + 1.1f * Mathf.Abs(Vector2.Dot(new Vector2(x, z) - l1, along) - 3.7f);
+    }
+
+    /// <summary>A valley (4392-4398,6438-6444): both flights went down to a shared floor at 32.5 and doubled
+    /// back. Taking off the bottom two stairs of each, the floor and its fillers, and laying four blackmarble_floor at 34.5
+    /// on 112.5 from the first's stair at 34.5 to the second's is smoother, with no 180 degree turn.</summary>
+    [Fact]
+    public void AValleyIsSpannedInLineAboveItsSwitchback()
+    {
+        StairKit kit = StairKit.BlackMarble;
+        var (first, second) = SharedFloorValley();
+        Assert.True(RoadStairRuns.SpanTheValley(first, second, kit, SharedFloorValleyGround, 32.5f, 2f, (_, _) => true, out Vector2 from));
+        Assert.DoesNotContain(first.Pieces, p => p.Kind != StairPieceKind.Support && p.Position.y < 34.4f);
+        Assert.DoesNotContain(second.Pieces, p => p.Kind != StairPieceKind.Support && p.Position.y + (p.Kind == StairPieceKind.Stair ? 0f : kit.FloorTop) < 34.4f);
+        var floors = second.Pieces.Where(p => p.Kind == StairPieceKind.Landing).ToList();
+        Assert.Equal(4, floors.Count);
+        Assert.All(floors, f => { Assert.Equal(34.5f, f.Position.y + kit.FloorTop, 2); Assert.Equal(112.5f, f.YawDegrees, 2); });
+        Assert.True(Vector2.Distance(new Vector2(floors[0].Position.x, floors[0].Position.z), new Vector2(4392.143f, 6443.993f)) < 0.1f, $"first floor at {floors[0].Position}");
+        // Its first stair kept in both, the 2x1 wedge of the cut turn gone.
+        Assert.Contains(first.Pieces, p => p.Kind == StairPieceKind.Stair && Mathf.Abs(p.Position.y - 34.5f) < 0.01f);
+        Assert.Contains(second.Pieces, p => p.Kind == StairPieceKind.Stair && Mathf.Abs(p.Position.y - 34.5f) < 0.01f);
+        Assert.DoesNotContain(first.Pieces, p => p.Kind == StairPieceKind.Filler);
+        RoadStairRuns.ValleySpans = false;
+        try
+        {
+            var (a, b) = SharedFloorValley();
+            Assert.False(RoadStairRuns.SpanTheValley(a, b, kit, SharedFloorValleyGround, 32.5f, 2f, (_, _) => true, out _));
+            Assert.Equal(8, b.Pieces.Count);
+        }
+        finally { RoadStairRuns.ValleySpans = true; }
     }
 
     /// <summary>At the mountain cave (-2556.7,1554.2): the stairs must not stick out past the edge of the cliff, only the bottom step. A foot on a ledge

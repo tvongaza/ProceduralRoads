@@ -113,6 +113,11 @@ public sealed class StairPlan
     public int Cantilevered;
     /// <summary>Its first walked piece is a floor (a pad at its foot).</summary>
     public bool StartsOnFloor;
+    /// <summary>Searched down from the top of another staircase (StairLayout.BuildDown): its top is that one's top edge exactly,
+    /// its foot (<see cref="Foot"/>) where the search reached the ground near the road.</summary>
+    public bool BuiltDown;
+    /// <summary>Its top carried on as a floor at a ridge's crest for another staircase to come down from (RoadStairRuns).</summary>
+    public bool CrestFloored;
     /// <summary>Cut points of the level apron cut behind its foot where it stood against a bank (StairLayout.CutFootApron).</summary>
     public int FootApron;
     /// <summary>Pieces it set off back from its foot, more than StairLayout.FacingSteps off the road's travel, before
@@ -642,6 +647,9 @@ public static partial class StairLayout
         /// piece arrives within <see cref="FacingSteps"/> of it, and pieces near the top are priced by how far off it they
         /// head (<see cref="FootOffRoadWeight"/>).</summary>
         public float? TopFacing;
+        /// <summary>Searched down from its top (<see cref="BuildDown"/>): every stair a rise lower, the first piece on the
+        /// root's own heading.</summary>
+        public bool Down;
 
         public bool InCorridor(Vector2 p)
         {
@@ -696,7 +704,7 @@ public static partial class StairLayout
     private static float Remaining(Vector2 edge, int goal, float height, Route route)
     {
         float distance = Vector2.Distance(edge, route.Goals[goal]) + route.Tail[goal];
-        float rise = route.GoalHeight - height;
+        float rise = route.Down ? height - route.GoalHeight : route.GoalHeight - height;
         float climb = rise > 0f ? rise * PieceRun / PieceRise : -rise * PieceRun / PieceRise * 2f;
         return Mathf.Max(distance, climb);
     }
@@ -724,7 +732,8 @@ public static partial class StairLayout
                 : kind == StairPieceKind.Landing ? (floorOnFloor ? MaxFloorTurnSteps : 0)
                 : node.Kind == StairPieceKind.Landing ? MaxTurnOffLandingSteps
                 : MaxStairTurnSteps;
-            for (int turn = first && !route.StartAligned ? -7 : -maxTurn; turn <= maxTurn; turn++)
+            if (route.Down && node.Placed) maxTurn = 0; // straight on from the top it carries down from: back to back
+            for (int turn = first && !route.StartAligned && !route.Down ? -7 : -maxTurn; turn <= maxTurn; turn++)
             {
                 float heading = Wrap(node.Heading + turn * HeadingStep);
                 var setOff = BackRunAfter(node, heading, kind, route);
@@ -736,7 +745,7 @@ public static partial class StairLayout
                 Vector2 middle = start + dir * (PieceRun / 2f);
                 if (!route.InCorridor(middle)) continue;
 
-                float rise = kind == StairPieceKind.Stair ? PieceRise : 0f;
+                float rise = kind == StairPieceKind.Stair ? (route.Down ? -PieceRise : PieceRise) : 0f;
                 Fit(start, dir, Right(heading), half, node.Height, rise, ground, out float floatGap, out float buried);
                 // The wedge a turn opens is filled level with the piece before (StairFiller): it is walked
                 // too, and buried it needs earthwork as a piece does. Where a staircase is kept off earthwork
@@ -751,7 +760,7 @@ public static partial class StairLayout
                 // over floors, stand on ordinary support.
                 float underside = node.Height - (kind == StairPieceKind.Stair ? 0f : route.Kit.FloorThickness);
                 float face = 0f;
-                int cantilever = node.Switchback == 0 && !floorOnFloor && (first || turn == 0 || !NoTurnCantilever) && width <= PieceRun + 0.01f && floatGap >= CantileverDrop / 9f
+                int cantilever = !route.Down && node.Switchback == 0 && !floorOnFloor && (first || turn == 0 || !NoTurnCantilever) && width <= PieceRun + 0.01f && floatGap >= CantileverDrop / 9f
                     ? CantileverSide(start, dir, Right(heading), half, underside, route.Kit, ground, out face, node.Height, rise, route.MaxBuried) : 0;
                 // Columns where they are the cheaper (lesser grades, little air under the piece); held out
                 // where the air under it would cost more than the face's price.
@@ -762,7 +771,7 @@ public static partial class StairLayout
                 // up the flight and at its top, stairs hug the ground as before (at the mountain cave at
                 // -2556.7,1554.2 the stairs should not stick out the edge of the cliff, so turn it to start on
                 // the landing; only at the bottom step of stairs, the top steps work fine already).
-                float offEdge = kind == StairPieceKind.Stair && cantilever == 0 && node.Depth < EdgeStairs
+                float offEdge = kind == StairPieceKind.Stair && cantilever == 0 && node.Depth < EdgeStairs && !route.Down
                     && !(node.Depth == 0 ? node : node.Parent!).Placed ? EdgeWeight * HangsOverEdge(start, dir, Right(heading), half, node.Height, ground) : 0f;
 
                 var child = new Node
@@ -793,6 +802,7 @@ public static partial class StairLayout
                     + (cantilever != 0 ? CantileverPrice(face) : FloatWeight * floatGap) + BuriedWeight * buried
                     + TurnWeight * Mathf.Abs(first ? 0 : turn) + (first ? FootOffRoadPrice(heading, route) : 0f) + TopOffRoadPrice(edge, heading, node.Goal, route)
                     + (kind == StairPieceKind.Landing ? LandingWeight : 0f);
+                if (offEdge > 0f) t_ledgePrices++;
                 child.Goal = route.Advance(node.Goal, child.Edge);
                 child.Score = child.Cost + HeuristicWeight * Remaining(child, route);
                 next.Add(child);
@@ -962,6 +972,10 @@ public static partial class StairLayout
     /// set, that rule is as before it was made. Never set in the game.</summary>
     [ThreadStatic] private static SteepRules t_off;
     internal static SteepRules RulesOff { get => t_off; set => t_off = value; }
+    /// <summary>Foot stairs this thread's searches priced for standing out past a ledge's edge (the ledge price paid):
+    /// RoadStairRuns.Lay lays a failed stretch again without the price only where its layouts paid it.</summary>
+    [ThreadStatic] private static int t_ledgePrices;
+    internal static int LedgePrices => t_ledgePrices;
     private static bool NoCantilevers => (t_off & SteepRules.Cantilevers) != 0;
     private static bool NoTurnSteepness => (t_off & SteepRules.TurnSteepness) != 0;
     private static bool NoOverhang => (t_off & SteepRules.Overhang) != 0;
