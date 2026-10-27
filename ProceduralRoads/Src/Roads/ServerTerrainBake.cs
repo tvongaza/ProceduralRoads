@@ -341,7 +341,8 @@ public static class ServerTerrainBake
         int total = 0;
         foreach (Vector2s zone in zones)
         {
-            if (!ZoneSystem.instance.IsZoneGenerated(zone))
+            // Generated but explored before the network: the pass never clears it, so it is not listed.
+            if (!ZoneSystem.instance.IsZoneGenerated(zone) || NetworkCutoff.Excludes(zone))
                 continue;
             int count = CountVegetationOnRoad(zone);
             if (count == 0)
@@ -922,7 +923,7 @@ public static class ServerTerrainBake
     /// </summary>
     private static Outcome ProcessVegetation(Vector2s zone, bool generated)
     {
-        if (!generated || VegetationClearing.IsCleared(zone, s_version))
+        if (!ServerBakePlanner.VegetationOwed(generated, VegetationClearing.IsCleared(zone, s_version), NetworkCutoff.Excludes(zone)))
         {
             // Nothing owed here any more. Terrain's give-up, if it has one,
             // stands -- this says the PENDING work is done, not that terrain
@@ -969,9 +970,13 @@ public static class ServerTerrainBake
     private static bool AnyPeerNear(Vector2s zone)
     {
         Vector3 centre = ZoneSystem.GetZonePos(zone);
+        var peers = new List<Vector3>();
         foreach (ZNetPeer peer in ZNet.instance.GetPeers())
+            peers.Add(peer.GetRefPos());
+        Vector3? host = Player.m_localPlayer != null ? Player.m_localPlayer.transform.position : (Vector3?)null;
+        foreach (Vector3 position in ServerBakePlanner.VegetationWitnesses(peers, host))
         {
-            if (ZNetScene.InActiveArea(centre, peer.GetRefPos()))
+            if (ZNetScene.InActiveArea(centre, position))
                 return true;
         }
         return false;

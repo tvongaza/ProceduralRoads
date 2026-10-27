@@ -111,6 +111,33 @@ public class ServerBakeTests
             ServerBakePlanner.ResolveRepair(ServerBakePlanner.Action.GeneratedBeforeNetwork, ServerBakePlanner.WriteReport.NotAttempted));
     }
 
+    /// <summary>
+    /// A zone explored before the network keeps its trees, bushes and rocks: the vegetation pass owes it nothing, cleared
+    /// or not. A zone generated with the network, and not yet cleared for it, is still owed its clearing.
+    /// </summary>
+    [Fact]
+    public void VegetationInACutoffZoneIsKept()
+    {
+        Assert.False(ServerBakePlanner.VegetationOwed(generated: true, cleared: false, generatedBeforeNetwork: true));
+        Assert.True(ServerBakePlanner.VegetationOwed(generated: true, cleared: false, generatedBeforeNetwork: false));
+        Assert.False(ServerBakePlanner.VegetationOwed(generated: true, cleared: true, generatedBeforeNetwork: false));
+        Assert.False(ServerBakePlanner.VegetationOwed(generated: false, cleared: false, generatedBeforeNetwork: false));
+    }
+
+    /// <summary>
+    /// A tree must not vanish under the axe of the player hosting the game. ZNet's peer list leaves the host's own
+    /// player out, so it is added; a dedicated server, which has no local player, adds nobody.
+    /// </summary>
+    [Fact]
+    public void VegetationIsDeferredWhileTheHostStandsInIt()
+    {
+        var host = new Vector3(10f, 30f, 10f);
+        var peer = new Vector3(900f, 30f, 900f);
+        Assert.Contains(host, ServerBakePlanner.VegetationWitnesses(new List<Vector3>(), host));
+        Assert.Equal(new List<Vector3> { peer, host }, ServerBakePlanner.VegetationWitnesses(new[] { peer }, host));
+        Assert.Equal(new List<Vector3> { peer }, ServerBakePlanner.VegetationWitnesses(new[] { peer }, null));
+    }
+
     [Fact]
     public void TwoSavedCompilersAreNeitherOfThemWritten()
     {

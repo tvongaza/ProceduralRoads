@@ -116,6 +116,27 @@ public static class ServerBakePlanner
         }
     }
 
+    /// <summary>
+    /// Whether a zone still owes the vegetation pass anything: generated,
+    /// not yet cleared for this network, and not explored before the network
+    /// reached the world (NetworkCutoff). A zone explored before keeps every
+    /// tree, bush and rock its players grew up with, planted or not.
+    /// </summary>
+    public static bool VegetationOwed(bool generated, bool cleared, bool generatedBeforeNetwork) =>
+        generated && !cleared && !generatedBeforeNetwork;
+
+    /// <summary>
+    /// Where players stand, for "is anyone near this zone?": every connected
+    /// peer and, on a listen host or in single player, the host's own player,
+    /// whom ZNet's peer list leaves out. A dedicated server has no local player.
+    /// </summary>
+    public static List<UnityEngine.Vector3> VegetationWitnesses(IEnumerable<UnityEngine.Vector3> peers, UnityEngine.Vector3? localPlayer)
+    {
+        var witnesses = new List<UnityEngine.Vector3>(peers);
+        if (localPlayer.HasValue) witnesses.Add(localPlayer.Value);
+        return witnesses;
+    }
+
     /// <summary>What the server knows about one saved compiler ZDO.</summary>
     public readonly struct Compiler
     {
