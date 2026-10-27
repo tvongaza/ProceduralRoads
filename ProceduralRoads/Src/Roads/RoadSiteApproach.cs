@@ -161,7 +161,12 @@ public static class RoadSiteApproach
         // is missed, search the local ground itself for a walkable contour.
         // One bounded search serves all possible arrival directions; it never
         // changes the main network search budget or exempts the destination.
-        for (int margin = 1; best == null && desiredHeight.HasValue && oldMismatch > 1.5f && margin <= 9; margin += 4)
+        // An arrival no further out than the network counts a place reached from:
+        // AlreadyServedByNetwork takes a road within one path cell past this keep-out
+        // edge. Arrivals up to 9 m past the margin counted two Crypt4s unreached that
+        // were built to (42.7 and 43.6 m out against 42 m).
+        float farthest = radius + RoadPathfinder.CellSize;
+        for (int margin = 1; best == null && desiredHeight.HasValue && oldMismatch > 1.5f && radius + margin < farthest; margin += 4)
         {
             const float step = 4f;
             var directions = new[] { new Vector2i(1,0), new Vector2i(-1,0), new Vector2i(0,1), new Vector2i(0,-1),
@@ -184,7 +189,7 @@ public static class RoadSiteApproach
                 if (current.cost > costs[key]) continue;
                 Vector2 here=Point(key); float height=Ground(here);
                 float distanceToSite=Vector2.Distance(here,centre);
-                if (parents.ContainsKey(key) && distanceToSite >= radius+margin && distanceToSite <= radius+margin+9f &&
+                if (parents.ContainsKey(key) && distanceToSite >= radius+margin && distanceToSite <= Mathf.Min(radius+margin+9f,farthest) &&
                     Mathf.Abs(height-desiredHeight.Value) <= 1.5f)
                 {
                     goals++;

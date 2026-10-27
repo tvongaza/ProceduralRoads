@@ -126,6 +126,29 @@ public class SiteApproachTests
         finally { RoadSiteProtection.Reset(); }
     }
 
+    private sealed class PlatformBeyondACliff : WorldGenerator
+    {
+        // The site's own height is only found 25 m out and further: below that, a cliff.
+        public override float GetHeight(float x, float z) => new Vector2(x, z).magnitude >= 25f ? 60f : 50f;
+    }
+
+    [Fact]
+    public void TheTerrainSearchNeverEndsFurtherOutThanTheNetworkCountsThePlaceReached()
+    {
+        // A road the contour search moved further out than the reached test looks counted
+        // its place unreached although it was built to it (two Crypt4s 42.7 and 43.6 m out
+        // against 42 m reached). Here the only platform height is past that
+        // reach (16 m keep-out edge + one 8 m cell), so the road keeps its own end.
+        RoadSpatialGrid.Clear();
+        RoadSiteProtection.Reset();
+        using var grade = GradeCap.At(0.35f);
+        var world = new PlatformBeyondACliff(); var original = Route();
+        float Ground(Vector2 p) => world.GetHeight(p.x,p.y);
+        float? Target(Vector2 p) => Mathf.Abs(Ground(p)-60f) <= 1.5f ? 60f : null;
+        var better = RoadSiteApproach.Improve(original,new Vector2(),16,4,world,false,Target,Ground,60f);
+        Assert.InRange(better[better.Count-1].magnitude,0f,16f+RoadPathfinder.CellSize+0.01f);
+    }
+
     [Fact]
     public void NetworkResetAlsoInvalidatesThePlacementHeightSnapshot()
     {
