@@ -769,8 +769,10 @@ public static partial class RoadStairRuns
         // first, the largest part of the slowest island's staircases (191 s in game).
         int share = retried ? HeldShare : 1;
         LastAllowance = GenerationTotalExpansions / share;
+        long began = SearchStats.Enabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         StairPlan plan = StairLayout.Build(a, b, ground, Width, kit, GenerationExpansions / share, arriving, leaving, corridor, GenerationTotalExpansions / share,
             GenerationStall / share, topLandings, sunkFoot: true, maxBuried: maxBuried, footHeight: footHeight, after: after, relayPads: relayPads, facing: facing, topFacing: topFacing);
+        if (SearchStats.Enabled) SearchStats.Record(SearchStats.StairLayout, plan.Reached, !plan.Reached, plan.Pieces.Count, began);
         return s_plans[key] = plan;
     }
 

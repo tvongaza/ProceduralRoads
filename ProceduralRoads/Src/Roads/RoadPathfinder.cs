@@ -1177,8 +1177,8 @@ public static class SearchStats
     /// tally lines. Off by default.</summary>
     internal static readonly bool Enabled = DebugSwitches.Flag("TIMINGS", false);
 
-    public const int Pricing = 0, Building = 1, Joining = 2;
-    private static readonly string[] Names = { "pricing searches", "build searches", "join searches" };
+    public const int Pricing = 0, Building = 1, Joining = 2, StairLayout = 3;
+    private static readonly string[] Names = { "pricing searches", "build searches", "join searches", "stair layouts" };
     private static readonly long[] s_count = new long[Names.Length], s_found = new long[Names.Length], s_maxed = new long[Names.Length], s_iterations = new long[Names.Length];
     private static readonly long[] s_ticks = new long[Names.Length], s_maxedTicks = new long[Names.Length];
 
