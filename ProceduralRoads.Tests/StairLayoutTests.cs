@@ -445,6 +445,45 @@ public class StairLayoutTests
         }
     }
 
+    /// <summary>Every column's base lies wholly under the finished ground beneath it
+    /// (after the staircase's own cuts and their batters), not only at its centre
+    /// (the whole bottom must clip into the ground; a support that did not fully clip its bottom into the ground was
+    /// 1.6 m short beside a cut's batter).</summary>
+    [Fact]
+    public void EveryColumnsBaseIsWhollyInTheGround()
+    {
+        Func<float, float, float> ground = FixtureGround("mountain-face-2m.txt");
+        StairPlan plan = StairLayout.Build(new Vector2(-2061.41f, 1504.82f), new Vector2(-2125f, 1460f), ground);
+        var columns = plan.Pieces.Where(p => p.Kind == StairPieceKind.Support)
+            .GroupBy(p => (Math.Round(p.Position.x, 2), Math.Round(p.Position.z, 2)));
+        Assert.NotEmpty(columns);
+        foreach (var column in columns)
+        {
+            StairPiece bottom = column.OrderBy(p => p.Position.y).First();
+            float baseY = bottom.Position.y - StairKit.Stone.SupportHeight / 2f;
+            float x = bottom.Position.x, z = bottom.Position.z;
+            // The finished ground: natural, lowered by every cut within reach, each
+            // flat to its radius and climbing back on a 1:1 batter for 3 m beyond.
+            float Finished(float px, float pz)
+            {
+                float h = ground(px, pz);
+                foreach (Vector3 c in plan.Cuts)
+                {
+                    float d = Vector2.Distance(new Vector2(c.x, c.z), new Vector2(px, pz));
+                    if (d <= StairLayout.CutRadius + 3f) h = Math.Min(h, c.y + Math.Max(0f, d - StairLayout.CutRadius));
+                }
+                return h;
+            }
+            float lowest = new[] { Finished(x - 0.5f, z - 0.5f), Finished(x + 0.5f, z - 0.5f), Finished(x - 0.5f, z + 0.5f), Finished(x + 0.5f, z + 0.5f) }.Min();
+            // SupportBury under the lowest corner, or already in the ground under all of the next pillar's grown footprint
+            // (the one column rule, BuriedPieces.ColumnGoesOn: no pillar wholly under the ground).
+            Assert.True(baseY <= lowest - StairLayout.SupportBury + 1e-3f
+                || BuriedPieces.Buried("stone_pillar", new Vector3(x, baseY - 1f, z), bottom.YawDegrees, (i, k) => Finished(i, k)),
+                $"column at {bottom.Position} ends at {baseY:F2}, finished ground as low as {lowest:F2}");
+            Assert.All(column, p => Assert.False(BuriedPieces.Buried("stone_pillar", p.Position, p.YawDegrees, (i, k) => Finished(i, k)), $"pillar at {p.Position} wholly under the ground"));
+        }
+    }
+
     /// <summary>A generated staircase ends on a floor carried on straight from its
     /// top step, level with it, and the road meets that floor's far edge (a flat 2x2 landing or two
     /// that clips into the road).</summary>

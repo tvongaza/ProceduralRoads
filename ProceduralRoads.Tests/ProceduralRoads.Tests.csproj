@@ -78,6 +78,7 @@
         <Compile Include="../ProceduralRoads/Src/Roads/StructurePiece.cs" Link="ModSrc/StructurePiece.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StructureSource.cs" Link="ModSrc/StructureSource.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/BridgeStructures.cs" Link="ModSrc/BridgeStructures.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/BuriedPieces.cs" Link="ModSrc/BuriedPieces.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/BridgeSupport.cs" Link="ModSrc/BridgeSupport.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StructurePlans.cs" Link="ModSrc/StructurePlans.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StructurePlacement.cs" Link="ModSrc/StructurePlacement.cs"/>

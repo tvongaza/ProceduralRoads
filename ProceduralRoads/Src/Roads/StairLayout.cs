@@ -845,6 +845,7 @@ public static partial class StairLayout
         plan.Rise = last.Height - first.Height;
         plan.End = new Vector3(last.Edge.x, last.Height, last.Edge.y);
         GuardEnds(plan, kit, first.Edge, last.Edge, ground);
+        SinkColumnsBelowCuts(plan, kit, ground);
     }
 
     /// <summary>Highest a walking surface may stand over the ground a player walks onto it from:
@@ -906,7 +907,8 @@ public static partial class StairLayout
         for (int cx = -1; cx <= 1; cx += 2)
             for (int cz = -1; cz <= 1; cz += 2)
                 lowest = Mathf.Min(lowest, ground(centre.x + cx * SupportHalfWidth, centre.y + cz * SupportHalfWidth));
-        for (float top = underside; top > lowest - SupportBury; top -= kit.SupportHeight)
+        Func<int, int, float> vertex = (i, k) => ground(i, k);
+        for (float top = underside; BuriedPieces.ColumnGoesOn(top, lowest, kit.Support, kit.SupportHeight, centre, heading, vertex); top -= kit.SupportHeight)
         {
             plan.Pieces.Add(new StairPiece
             {
