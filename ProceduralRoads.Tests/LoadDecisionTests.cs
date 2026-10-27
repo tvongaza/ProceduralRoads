@@ -293,21 +293,34 @@ public class LoadDecisionTests : System.IDisposable
     /// <summary>A saved network this build cannot read, in the forms that happen.</summary>
     private static byte[] Unreadable(string kind, out bool inBridgeAppends)
     {
-        inBridgeAppends = false;
+        inBridgeAppends = kind == "bridge appends";
         using var ms = new MemoryStream();
         using var w = new BinaryWriter(ms);
-        w.Write(99); w.Write(0); return ms.ToArray();
+        if (kind == "version 99") { w.Write(99); w.Write(0); return ms.ToArray(); }
+        if (kind == "bridge appends") { w.Write(99); return ms.ToArray(); }
+        // This build's own format 2 holding one bad point.
+        w.Write(2); w.Write(1);
+        w.Write(0); w.Write(0); w.Write(1);
+        w.Write(1f); w.Write(2f);
+        w.Write(kind == "width 0" ? 0f : 4f);
+        w.Write(kind == "NaN height" ? float.NaN : 40f);
+        w.Write(false);
+        return ms.ToArray();
     }
 
     [Theory]
     [InlineData("version 99")]
+    [InlineData("NaN height")]
+    [InlineData("width 0")]
+    [InlineData("bridge appends")]
     public void AnUnreadableSavedNetworkIsNeverReplaced(string kind)
     {
         ZoneSystem zones = SetUp(savedNetworkExists: true);
         int globalData = "ProceduralRoads_GlobalData".GetStableHashCode();
         ZDO metadata = m_heldBack.Single(z => z.GetPrefab() == RoadNetworkPersistence.MetadataPrefabName.GetStableHashCode());
         byte[] bad = Unreadable(kind, out bool inBridgeAppends);
-        metadata.Set(globalData, bad);
+        if (inBridgeAppends) metadata.Set("ProceduralRoads_AppendBridges".GetStableHashCode(), bad);
+        else metadata.Set(globalData, bad);
         byte[] saved = (byte[])metadata.GetByteArray(globalData)!.Clone();
 
         zones.LocationsGenerated = true;
