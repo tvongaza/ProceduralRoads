@@ -61,7 +61,7 @@ public static partial class RoadSpatialGrid
                 for (int i = 0; i < plan.Points.Count; i++)
                     AddRoadPoint(newPoints, plan.Points[i], plan.Width, plan.Heights[i], plan.FollowTerrain, addition);
             }
-            var combined = new Dictionary<Vector2i, RoadPoint[]>(m_roadPoints);
+            var combined = NewCells(m_roadPoints);
             foreach (var cell in newPoints)
             {
                 var points = combined.TryGetValue(cell.Key, out var old) ? new List<RoadPoint>(old) : new List<RoadPoint>();

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -52,7 +53,16 @@ public static partial class RoadSpatialGrid
     public const float GridSize = RoadConstants.SpatialGridSize;
     public const float DefaultRoadWidth = RoadConstants.DefaultRoadWidth;
 
-    private static Dictionary<Vector2i, RoadPoint[]> m_roadPoints = new Dictionary<Vector2i, RoadPoint[]>();
+    // Every step of every road search reads this grid (is there a road here?), on every worker.
+    // Point lookups (TryGetValue) take no lock: in the game's Mono a ReaderWriterLockSlim read
+    // takes a spin lock on entry and exit, one shared word for every thread. Writers, and readers
+    // that walk the whole grid, still take m_roadCacheLock. A lookup may see a road half merged;
+    // islands never share roads and one island's roads are built in turn. Never ask it for Count,
+    // IsEmpty, Keys or Values on a hot path: in Mono those take every one of its locks. Keyed with RoadGridComparer: Vector2i hashes x ^ y, a few hundred
+    // values for a world's 64 m cells.
+    private static ConcurrentDictionary<Vector2i, RoadPoint[]> m_roadPoints = NewCells();
+    private static ConcurrentDictionary<Vector2i, RoadPoint[]> NewCells(IEnumerable<KeyValuePair<Vector2i, RoadPoint[]>>? from = null) =>
+        from == null ? new(RoadGridComparer.Instance) : new(from, RoadGridComparer.Instance);
     private static ReaderWriterLockSlim m_roadCacheLock = new ReaderWriterLockSlim();
     private static bool m_initialized = false;
     
@@ -597,7 +607,7 @@ public static partial class RoadSpatialGrid
         Log.LogDebug($"Road network finalized: version={RoadNetworkVersion}, stored-records={StoredPointRecords}, cells={GridCellsWithRoads}");
     }
     // Caller owns the grid write lock; no locking getters or callbacks inside the hash publication.
-    private static int ComputeRoadNetworkVersion(Dictionary<Vector2i,RoadPoint[]> geometry,int worldSeed)
+    private static int ComputeRoadNetworkVersion(IReadOnlyDictionary<Vector2i,RoadPoint[]> geometry,int worldSeed)
     {
 #if ROADS_TESTS
         BeforeVersionCalculation?.Invoke();
@@ -809,7 +819,7 @@ public static partial class RoadSpatialGrid
 
     private static int DetectOverlap(List<Vector2> points, float width)
     {
-        if (!m_initialized || m_roadPoints.Count == 0)
+        if (!m_initialized || GridCellsWithRoads == 0)
             return 0;
 
         int overlapCount = 0;
@@ -819,8 +829,6 @@ public static partial class RoadSpatialGrid
         {
             Vector2i grid = GetRoadGrid(point.x, point.y);
             
-            m_roadCacheLock.EnterReadLock();
-            try
             {
                 if (m_roadPoints.TryGetValue(grid, out var existingPoints))
                 {
@@ -834,10 +842,6 @@ public static partial class RoadSpatialGrid
                     }
                 }
             }
-            finally
-            {
-                m_roadCacheLock.ExitReadLock();
-            }
         }
 
         return overlapCount;
@@ -845,7 +849,7 @@ public static partial class RoadSpatialGrid
 
     private static void BlendWithExistingRoads(List<Vector2> points, List<float> heights, float width)
     {
-        if (!m_initialized || m_roadPoints.Count == 0)
+        if (!m_initialized || GridCellsWithRoads == 0)
             return;
 
         float blendRadius = width * RoadConstants.OverlapBlendRadiusMultiplier;
@@ -854,8 +858,6 @@ public static partial class RoadSpatialGrid
         {
             Vector2i grid = GetRoadGrid(points[i].x, points[i].y);
             
-            m_roadCacheLock.EnterReadLock();
-            try
             {
                 if (m_roadPoints.TryGetValue(grid, out var existingPoints))
                 {
@@ -876,10 +878,6 @@ public static partial class RoadSpatialGrid
                     if (totalWeight > 1.0f)
                         heights[i] = weightedSum / totalWeight;
                 }
-            }
-            finally
-            {
-                m_roadCacheLock.ExitReadLock();
             }
         }
     }
@@ -934,7 +932,7 @@ public static partial class RoadSpatialGrid
                 }
                 else
                 {
-                    m_roadPoints.Add(kvp.Key, kvp.Value.ToArray());
+                    m_roadPoints[kvp.Key] = kvp.Value.ToArray();
                 }
             }
             
@@ -992,9 +990,7 @@ public static partial class RoadSpatialGrid
         Vector2i grid = GetRoadGrid(wx, wy);
 
         RoadPoint[]? points;
-        m_roadCacheLock.EnterReadLock();
-        try { m_roadPoints.TryGetValue(grid, out points); }
-        finally { m_roadCacheLock.ExitReadLock(); }
+        m_roadPoints.TryGetValue(grid, out points);
 
         if (points == null)
         {
@@ -1075,8 +1071,6 @@ public static partial class RoadSpatialGrid
         Vector3 zonePos = ZoneSystem.GetZonePos(zoneID);
         Vector2i grid = GetRoadGrid(zonePos.x, zonePos.z);
 
-        m_roadCacheLock.EnterReadLock();
-        try
         {
             for (int dy = -1; dy <= 1; dy++)
             {
@@ -1099,10 +1093,6 @@ public static partial class RoadSpatialGrid
                     }
                 }
             }
-        }
-        finally
-        {
-            m_roadCacheLock.ExitReadLock();
         }
 
         return result;
@@ -1180,8 +1170,6 @@ public static partial class RoadSpatialGrid
         bool found = false;
         int radius = Mathf.CeilToInt(reach / GridSize) + 1;
         Vector2i center = GetRoadGrid(position.x, position.y);
-        m_roadCacheLock.EnterReadLock();
-        try
         {
             for (int x = -radius; x <= radius; x++)
                 for (int y = -radius; y <= radius; y++)
@@ -1192,7 +1180,6 @@ public static partial class RoadSpatialGrid
                             if (distance <= best && !point.paintOnly) { best=distance; height=point.h; found=true; }
                         }
         }
-        finally { m_roadCacheLock.ExitReadLock(); }
         return found;
     }
 
@@ -1204,8 +1191,6 @@ public static partial class RoadSpatialGrid
         bool found = false;
         int radius = Mathf.CeilToInt(reach / GridSize) + 1;
         Vector2i center = GetRoadGrid(position.x, position.y);
-        m_roadCacheLock.EnterReadLock();
-        try
         {
             for (int x = -radius; x <= radius; x++)
                 for (int y = -radius; y <= radius; y++)
@@ -1216,7 +1201,6 @@ public static partial class RoadSpatialGrid
                             if (distance <= best && (allowed == null || allowed(point.p))) { best=distance; nearest=point.p; found=true; }
                         }
         }
-        finally { m_roadCacheLock.ExitReadLock(); }
         return found;
     }
 
@@ -1233,8 +1217,6 @@ public static partial class RoadSpatialGrid
         int cellRadius = Mathf.CeilToInt(radius / GridSize) + 1;
         Vector2i centerGrid = GetRoadGrid(worldPos.x, worldPos.z);
 
-        m_roadCacheLock.EnterReadLock();
-        try
         {
             for (int dy = -cellRadius; dy <= cellRadius; dy++)
             {
@@ -1251,10 +1233,6 @@ public static partial class RoadSpatialGrid
                     }
                 }
             }
-        }
-        finally
-        {
-            m_roadCacheLock.ExitReadLock();
         }
 
         result.Sort((a, b) => (a.p - pos2D).sqrMagnitude.CompareTo((b.p - pos2D).sqrMagnitude));
@@ -1413,9 +1391,13 @@ public static partial class RoadSpatialGrid
             writer.Write(4);
             writer.Write(appended ? 3 : 2);
             
-            writer.Write(m_roadPoints.Count);
+            // Cells in a fixed order, so the saved bytes depend on the network only:
+            // the grid's own order is its hash table's, and islands fill it in parallel.
+            var ordered = new List<KeyValuePair<Vector2i, RoadPoint[]>>(m_roadPoints);
+            ordered.Sort((a, b) => a.Key.x != b.Key.x ? a.Key.x.CompareTo(b.Key.x) : a.Key.y.CompareTo(b.Key.y));
+            writer.Write(ordered.Count);
             
-            foreach (var kvp in m_roadPoints)
+            foreach (var kvp in ordered)
             {
                 writer.Write(kvp.Key.x);
                 writer.Write(kvp.Key.y);
@@ -1555,12 +1537,13 @@ public static partial class RoadSpatialGrid
             }
             if (ms.Position != ms.Length) return false;
             int worldSeed=WorldGenerator.instance?.GetSeed() ?? 0;
+            var cells = NewCells(loadedPoints);
             m_roadCacheLock.EnterWriteLock();
             try
             {
-                int networkVersion=ComputeRoadNetworkVersion(loadedPoints,worldSeed);
+                int networkVersion=ComputeRoadNetworkVersion(cells,worldSeed);
                 s_appendParents=parents;
-                m_roadPoints = loadedPoints;
+                m_roadPoints = cells;
                 m_initialized = true;
                 GridCellsWithRoads = loadedPoints.Count;
                 m_storedPointRecords=totalPoints;

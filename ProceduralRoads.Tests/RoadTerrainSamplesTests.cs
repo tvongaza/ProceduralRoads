@@ -66,7 +66,22 @@ public class RoadTerrainSamplesTests
         var world = new CountingWorld(); var samples = new RoadTerrainSamples(world);
         var a = new Vector2i(0,0); var b = new Vector2i(RoadTerrainSamples.Capacity,0);
         float first = samples.Height(a); float other = samples.Height(b);
-        Assert.NotEqual(first,other); Assert.Equal(first,samples.Height(a)); Assert.Equal(3,world.Heights);
+        // Evicted from this memo, a's height comes back from the generation's shared
+        // terrain, not the world: two reads, not three.
+        Assert.NotEqual(first,other); Assert.Equal(first,samples.Height(a)); Assert.Equal(2,world.Heights);
+    }
+    /// <summary>Pathfinders of one generation share what any of them read: fifteen
+    /// workers each reading the same mountains made a world's first load in game
+    /// take 15 minutes.</summary>
+    [Fact]
+    public void ASecondPathfinderReadsWhatTheFirstAlreadyRead()
+    {
+        var world = new CountingWorld(); var p = new Vector2i(3,4);
+        var first = new RoadTerrainSamples(world); var second = new RoadTerrainSamples(world);
+        first.Height(p); first.Biome(p); first.River(p); first.Variance(p);
+        int heights = world.Heights, biomes = world.Biomes, rivers = world.Rivers;
+        Assert.Equal(first.Height(p), second.Height(p)); second.Biome(p); second.River(p); second.Variance(p);
+        Assert.Equal(heights, world.Heights); Assert.Equal(biomes, world.Biomes); Assert.Equal(rivers, world.Rivers);
     }
     [Fact]
     public void ResetDiscardsAllFacts()

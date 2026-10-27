@@ -38,7 +38,12 @@ internal sealed class RoadTerrainSamples
     private readonly Sample[] samples = new Sample[Capacity];
     private readonly WorldGenerator world;
     public RoadTerrainSamples(WorldGenerator world) { this.world = world; }
-    public void Reset() => Array.Clear(samples, 0, samples.Length);
+    /// <summary>Forget every fact, this memo's and the generation's shared ones.</summary>
+    public void Reset()
+    {
+        Array.Clear(samples, 0, samples.Length);
+        SharedTerrain.Clear();
+    }
 
     // How the memo is actually behaving, which a wall-clock second cannot say.
     // A memo belongs to one pathfinder and a pathfinder to one thread, so
@@ -56,6 +61,7 @@ internal sealed class RoadTerrainSamples
 
     internal static void ResetTotals()
     {
+        SharedTerrain.Clear();
         System.Threading.Interlocked.Exchange(ref TotalHits, 0);
         System.Threading.Interlocked.Exchange(ref TotalMisses, 0);
         System.Threading.Interlocked.Exchange(ref TotalReplacements, 0);
@@ -90,9 +96,14 @@ internal sealed class RoadTerrainSamples
         ref Sample sample = ref At(position);
         if ((sample.Flags & 1) == 0)
         {
-            Misses++; TerrainCalls++;
-            var p = World(position);
-            sample.Height = world.GetHeight(p.x, p.y);
+            Misses++;
+            if (!SharedTerrain.TryHeight(world, position, out sample.Height))
+            {
+                TerrainCalls++;
+                var p = World(position);
+                sample.Height = world.GetHeight(p.x, p.y);
+                SharedTerrain.PutHeight(world, position, sample.Height);
+            }
             sample.Flags |= 1;
         }
         else Hits++;
@@ -103,9 +114,14 @@ internal sealed class RoadTerrainSamples
         ref Sample sample = ref At(position);
         if ((sample.Flags & 2) == 0)
         {
-            Misses++; TerrainCalls++;
-            var p = World(position);
-            world.GetRiverWeight(p.x, p.y, out sample.River, out _);
+            Misses++;
+            if (!SharedTerrain.TryRiver(world, position, out sample.River))
+            {
+                TerrainCalls++;
+                var p = World(position);
+                world.GetRiverWeight(p.x, p.y, out sample.River, out _);
+                SharedTerrain.PutRiver(world, position, sample.River);
+            }
             sample.Flags |= 2;
         }
         else Hits++;
@@ -116,9 +132,14 @@ internal sealed class RoadTerrainSamples
         ref Sample sample = ref At(position);
         if ((sample.Flags & 4) == 0)
         {
-            Misses++; TerrainCalls++;
-            var p = World(position);
-            sample.Biome = world.GetBiome(p.x, p.y);
+            Misses++;
+            if (!SharedTerrain.TryBiome(world, position, out sample.Biome))
+            {
+                TerrainCalls++;
+                var p = World(position);
+                sample.Biome = world.GetBiome(p.x, p.y);
+                SharedTerrain.PutBiome(world, position, sample.Biome);
+            }
             sample.Flags |= 4;
         }
         else Hits++;
@@ -193,7 +214,15 @@ internal sealed class RoadTerrainSamples
     {
         float centerHeight = Height(position);
         ref Sample sample = ref At(position);
-        if ((sample.Flags & 8) == 0)
+        // Shared only as the default roughness measure computes it.
+        bool share = QuadVariance == DefaultQuadVariance;
+        if ((sample.Flags & 8) == 0 && share && SharedTerrain.TryVariance(world, position, out float shared))
+        {
+            Misses++;
+            sample.Variance = shared;
+            sample.Flags |= 8;
+        }
+        else if ((sample.Flags & 8) == 0)
         {
             Misses++; TerrainCalls += RoadConstants.TerrainVarianceSampleCount;
             var p = World(position);
@@ -214,8 +243,136 @@ internal sealed class RoadTerrainSamples
             else
                 sample.Variance = max - min;
             sample.Flags |= 8;
+            if (share) SharedTerrain.PutVariance(world, position, sample.Variance);
         }
         else Hits++;
         return sample.Variance;
+    }
+}
+
+/// <summary>
+/// The terrain facts every pathfinder of a generation shares: one lazily filled
+/// grid of the 8 m search cells, in 64-cell tiles, behind each thread's own
+/// memo. Each thread kept its own 65,536-slot memo, so up to fifteen workers
+/// pricing and building over the same mountains each read the same terrain
+/// from the world generator, and evicted and read it again; in game, where a
+/// read is the generator's noise, route searches took about 2.6 s each against
+/// 0.15 s offline, and a world's first load with stairs took 15 minutes.
+/// A value is written before the bit that says it is
+/// there, so a reader sees a whole value or none and reads the world itself;
+/// two threads that do so write the same value.
+/// </summary>
+internal static class SharedTerrain
+{
+    private const int TileCells = 64;
+    private sealed class Tile
+    {
+        public readonly float[] Height = new float[TileCells * TileCells];
+        public readonly float[] River = new float[TileCells * TileCells];
+        public readonly float[] Variance = new float[TileCells * TileCells];
+        public readonly int[] Biome = new int[TileCells * TileCells];
+        public readonly int[] Flags = new int[TileCells * TileCells];
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<long, Tile> s_tiles = new();
+    private static WorldGenerator? s_world;
+    private static readonly object s_gate = new();
+
+    /// <summary>Forget everything: a new generation, or another world.</summary>
+    internal static void Clear()
+    {
+        lock (s_gate)
+        {
+            s_tiles.Clear();
+            s_world = null;
+        }
+    }
+
+    private static Tile? Find(WorldGenerator world, Vector2i cell, bool create, out int index)
+    {
+        int tx = cell.x >= 0 ? cell.x / TileCells : (cell.x + 1) / TileCells - 1;
+        int tz = cell.y >= 0 ? cell.y / TileCells : (cell.y + 1) / TileCells - 1;
+        index = (cell.y - tz * TileCells) * TileCells + (cell.x - tx * TileCells);
+        if (!ReferenceEquals(s_world, world))
+        {
+            lock (s_gate)
+            {
+                if (!ReferenceEquals(s_world, world)) { s_tiles.Clear(); s_world = world; }
+            }
+        }
+        long key = ((long)tx << 32) ^ (uint)tz;
+        if (s_tiles.TryGetValue(key, out Tile? tile)) return tile;
+        return create ? s_tiles.GetOrAdd(key, _ => new Tile()) : null;
+    }
+
+    private static bool Has(Tile? tile, int index, int bit) =>
+        tile != null && (System.Threading.Volatile.Read(ref tile.Flags[index]) & bit) != 0;
+
+    private static void Mark(Tile tile, int index, int bit)
+    {
+        int seen = System.Threading.Volatile.Read(ref tile.Flags[index]);
+        while ((seen & bit) == 0)
+        {
+            int was = System.Threading.Interlocked.CompareExchange(ref tile.Flags[index], seen | bit, seen);
+            if (was == seen) return;
+            seen = was;
+        }
+    }
+
+    // Each Try reads the fact's bit ONCE. Read twice (once for the value, once for the answer),
+    // another worker's Put between the two made it answer true with the empty value: a height
+    // of 0 (deep sea), no river or the default biome, kept by that thread's memo for the rest of
+    // the generation.
+    internal static bool TryHeight(WorldGenerator world, Vector2i cell, out float value)
+    {
+        Tile? tile = Find(world, cell, false, out int i);
+        bool has = Has(tile, i, 1);
+        value = has ? tile!.Height[i] : 0f;
+        return has;
+    }
+    internal static void PutHeight(WorldGenerator world, Vector2i cell, float value)
+    {
+        Tile tile = Find(world, cell, true, out int i)!;
+        System.Threading.Volatile.Write(ref tile.Height[i], value);
+        Mark(tile, i, 1);
+    }
+    internal static bool TryRiver(WorldGenerator world, Vector2i cell, out float value)
+    {
+        Tile? tile = Find(world, cell, false, out int i);
+        bool has = Has(tile, i, 2);
+        value = has ? tile!.River[i] : 0f;
+        return has;
+    }
+    internal static void PutRiver(WorldGenerator world, Vector2i cell, float value)
+    {
+        Tile tile = Find(world, cell, true, out int i)!;
+        System.Threading.Volatile.Write(ref tile.River[i], value);
+        Mark(tile, i, 2);
+    }
+    internal static bool TryBiome(WorldGenerator world, Vector2i cell, out Heightmap.Biome value)
+    {
+        Tile? tile = Find(world, cell, false, out int i);
+        bool has = Has(tile, i, 4);
+        value = has ? (Heightmap.Biome)tile!.Biome[i] : default;
+        return has;
+    }
+    internal static void PutBiome(WorldGenerator world, Vector2i cell, Heightmap.Biome value)
+    {
+        Tile tile = Find(world, cell, true, out int i)!;
+        System.Threading.Volatile.Write(ref tile.Biome[i], (int)value);
+        Mark(tile, i, 4);
+    }
+    internal static bool TryVariance(WorldGenerator world, Vector2i cell, out float value)
+    {
+        Tile? tile = Find(world, cell, false, out int i);
+        bool has = Has(tile, i, 8);
+        value = has ? tile!.Variance[i] : 0f;
+        return has;
+    }
+    internal static void PutVariance(WorldGenerator world, Vector2i cell, float value)
+    {
+        Tile tile = Find(world, cell, true, out int i)!;
+        System.Threading.Volatile.Write(ref tile.Variance[i], value);
+        Mark(tile, i, 8);
     }
 }

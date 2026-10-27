@@ -646,19 +646,26 @@ public static partial class RoadNetworkGenerator
         
         NetworkCutoff.UseNewNetwork();
         m_roadsGenerated = true;
+        ReleasePathfinders();
+        
+        RoadNetworkPersistence.EnsureMetadataInstance();
+    }
+
+    /// <summary>Drop the generation's pathfinders and the terrain grid they shared
+    /// (<see cref="SharedTerrain"/>): kept, a world's grid held tens of MB for the
+    /// rest of the session, read by nothing until the next generation.</summary>
+    private static void ReleasePathfinders()
+    {
         m_pathfinder = null;
         m_threadPathfinders?.Dispose();
         m_threadPathfinders = null;
-        
-        RoadNetworkPersistence.EnsureMetadataInstance();
+        SharedTerrain.Clear();
     }
 
     internal static void ReleaseGenerationResources()
     {
         LocationLevelling.Unseal();
-        m_pathfinder = null;
-        m_threadPathfinders?.Dispose();
-        m_threadPathfinders = null;
+        ReleasePathfinders();
         m_generationWorld = null;
         m_generationOptions = null;
     }
@@ -1942,9 +1949,7 @@ public static partial class RoadNetworkGenerator
         RoadParallel.IslandsRunning = 1;
         if (!PrepareAndSeal())
         {
-            m_pathfinder = null;
-            m_threadPathfinders?.Dispose();
-            m_threadPathfinders = null;
+            ReleasePathfinders();
             summary = "Preparation failed: the site footprint index could not be built (see the log)";
             return false;
         }
@@ -1965,9 +1970,7 @@ public static partial class RoadNetworkGenerator
         LogTerrainMemoCounters();
         NetworkCutoff.UseNewNetwork();
         m_roadsGenerated = true;
-        m_pathfinder = null;
-        m_threadPathfinders?.Dispose();
-        m_threadPathfinders = null;
+        ReleasePathfinders();
         // Same as after global generation: without the metadata object the
         // save path has nowhere to put the network and logs an error instead.
         RoadNetworkPersistence.EnsureMetadataInstance();
@@ -2004,9 +2007,7 @@ public static partial class RoadNetworkGenerator
         m_roadsLoadedFromZDO = false;
         m_destinationsSelected = 0;
         m_destinationsConnected = 0;
-        m_pathfinder = null;
-        m_threadPathfinders?.Dispose();
-        m_threadPathfinders = null;
+        ReleasePathfinders();
         m_roadsGeneratedCount = 0;
         m_roadsRefusedForGrade = 0;
         m_refusalReasons.Clear();

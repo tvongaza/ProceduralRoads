@@ -138,6 +138,13 @@ public class RoadPathfinder
 
     public List<Vector2>? FindPath(Vector2 start, Vector2 end, int? iterationLimit)
     {
+        List<Vector2>? path = FindPathCore(start, end, iterationLimit);
+        FoldSqueezes();
+        return path;
+    }
+
+    private List<Vector2>? FindPathCore(Vector2 start, Vector2 end, int? iterationLimit)
+    {
         using var activity = new RoadSearchActivity(Activity);
         // The memo is NOT blanked here. It holds world-generator facts, and
         // the generator a pathfinder was built for does not change underneath
@@ -247,6 +254,13 @@ public class RoadPathfinder
     /// <summary>Search from a destination towards any existing road. Sampled hints
     /// guide the search; they do not promise a globally cheapest junction.</summary>
     public List<Vector2>? FindPathToNetwork(Vector2 start, float reach, IReadOnlyList<Vector2>? hints = null, System.Func<Vector2, bool>? targetAllowed = null)
+    {
+        List<Vector2>? path = FindPathToNetworkCore(start, reach, hints, targetAllowed);
+        FoldSqueezes();
+        return path;
+    }
+
+    private List<Vector2>? FindPathToNetworkCore(Vector2 start, float reach, IReadOnlyList<Vector2>? hints, System.Func<Vector2, bool>? targetAllowed)
     {
         using var activity = new RoadSearchActivity(Activity);
         LastPathCost = 0;
@@ -592,11 +606,22 @@ public class RoadPathfinder
     /// <summary>Where the squeeze refused something this generation, by the
     /// place it squeezed against: (centre x, centre z) -> steps, landings.</summary>
     internal static readonly System.Collections.Concurrent.ConcurrentDictionary<(int x, int z), (int steps, int landings)> SqueezeHits = new();
-    private static void RecordSqueeze(Vector2 p, bool landing)
+    /// <summary>This search's squeezes, folded into <see cref="SqueezeHits"/> once when it ends:
+    /// recorded there per step, every worker took a lock (and allocated) on each step into a squeezed cell.</summary>
+    private readonly Dictionary<(int x, int z), (int steps, int landings)> m_squeezeHits = new();
+    private void RecordSqueeze(Vector2 p, bool landing)
     {
         if (!RoadSiteProtection.NearestFootprint(p, SqueezeCorridor, out var f)) return;
-        SqueezeHits.AddOrUpdate((Mathf.RoundToInt(f.Centre.x), Mathf.RoundToInt(f.Centre.y)),
-            landing ? (0, 1) : (1, 0), (_, n) => landing ? (n.steps, n.landings + 1) : (n.steps + 1, n.landings));
+        var key = (Mathf.RoundToInt(f.Centre.x), Mathf.RoundToInt(f.Centre.y));
+        m_squeezeHits.TryGetValue(key, out var n);
+        m_squeezeHits[key] = landing ? (n.steps, n.landings + 1) : (n.steps + 1, n.landings);
+    }
+    private void FoldSqueezes()
+    {
+        if (m_squeezeHits.Count == 0) return;
+        foreach (var hit in m_squeezeHits)
+            SqueezeHits.AddOrUpdate(hit.Key, hit.Value, (_, n) => (n.steps + hit.Value.steps, n.landings + hit.Value.landings));
+        m_squeezeHits.Clear();
     }
 
     /// <summary>Water the search would not walk: a river, or ground under the
@@ -694,7 +719,11 @@ public class RoadPathfinder
 
         Vector2 fromWorld = GridToWorld(from);
 
-        float fromHeight = m_worldGen.GetHeight(fromWorld.x, fromWorld.y);
+        // The cells' height and river weight are the search memo's own facts (the same
+        // generator calls at the same cell centres): read through it, a scan repeated from
+        // every bank cell of a river reads each cell once, and stays out of the game's river
+        // cache, whose every miss takes a write lock all workers share.
+        float fromHeight = m_terrain.Height(from);
         bool sawRiverWater = false;
         float deepest = float.MaxValue;
         int maxCells = Bridges ? RoadConstants.MaxBridgeCrossingCells : RoadConstants.MaxRiverCrossingCells;
@@ -703,8 +732,8 @@ public class RoadPathfinder
         {
             Vector2i check = new Vector2i(from.x + direction.x * step, from.y + direction.y * step);
             Vector2 world = GridToWorld(check);
-            float height = m_worldGen.GetHeight(world.x, world.y);
-            m_worldGen.GetRiverWeight(world.x, world.y, out float riverWeight, out _);
+            float height = m_terrain.Height(check);
+            float riverWeight = m_terrain.River(check);
             bool water = height < LandingFloor;
             bool riverCore = riverWeight > RoadConstants.RiverImpassableThreshold;
 
