@@ -79,7 +79,8 @@ public static class RoadTerrainModifier
             Vector2s zoneID = ZoneSystem.GetZone(heightmap.transform.position);
             if (s_swept.Contains((zoneID, version))) continue;
             var roadPoints = RoadSpatialGrid.GetRoadPointsInZone(zoneID);
-            if (roadPoints.Count == 0) { s_swept.Add((zoneID, version)); continue; }
+            // Explored before this network: no compiler made or claimed, nothing written.
+            if (roadPoints.Count == 0 || NetworkCutoff.Excludes(zoneID)) { s_swept.Add((zoneID, version)); continue; }
             TerrainComp? terrainComp = TerrainComp.FindTerrainCompiler(heightmap.transform.position);
             if (terrainComp == null)
             {
@@ -289,6 +290,9 @@ public static class RoadTerrainModifier
         if (roadPoints == null || roadPoints.Count == 0 || heightmap == null || terrainComp == null ||
             terrainComp.m_nview == null || !terrainComp.m_nview.IsValid() || !terrainComp.m_nview.IsOwner())
             return;
+        // Only an operator's forced write reaches a zone explored before this network.
+        if (!force && NetworkCutoff.Excludes(zoneID))
+            return;
 
         // Multiple requests before the late pass coalesce, preserving an explicit
         // reapplication even if a normal zone-load request follows it.
@@ -331,7 +335,7 @@ public static class RoadTerrainModifier
         if (request.Version != RoadSpatialGrid.RoadNetworkVersion ||
             terrainComp.m_hmap != heightmap || terrainComp.m_nview == null ||
             !terrainComp.m_nview.IsValid() || !terrainComp.m_nview.IsOwner() ||
-            (!request.Force && CarriesCurrentRoads(terrainComp)))
+            (!request.Force && (NetworkCutoff.Excludes(request.Zone) || CarriesCurrentRoads(terrainComp))))
             return;
 
         int gridSize = terrainComp.m_width + 1;

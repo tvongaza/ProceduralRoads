@@ -133,8 +133,11 @@ public sealed class LegacyWorldTests : IDisposable
         RoadTerrainModifier.OnZoneSpawned(zone, RoadSpatialGrid.GetRoadPointsInZone(zone));
         // TerrainComp.Awake postfix.
         if (hm.m_terrainComp != null) RoadTerrainModifier.OnTerrainCompilerReady(hm.m_terrainComp);
+        // Plugin.Update, every 3 s.
+        for (int i = 0; i < 10; i++) RoadTerrainModifier.SweepUnstamped();
         // The load-time application to loaded zones.
         RoadTerrainModifier.ApplyToLoadedZones();
+        hm.RebuildTerrain();
     }
 
     [Fact]
@@ -166,6 +169,7 @@ public sealed class LegacyWorldTests : IDisposable
         Assert.Equal(0L, compiler.m_nview.GetZDO().GetOwner());
         Assert.Null(later.m_terrainComp);
         Assert.Equal(1, ZDOMan.instance!.CountWithPrefab(TerrainComp.PrefabName)); // no compiler made for the later zone
+        Assert.Equal(0, RoadTerrainModifier.PendingWriteCount);
 
         // And the save leaves 1.4.4's blob as 1.4.4 wrote it.
         RoadLifecycleManager.OnPrepareSave();
