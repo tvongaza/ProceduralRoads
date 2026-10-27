@@ -534,6 +534,9 @@ public static partial class RoadSpatialGrid
             if (minHeight > float.NegativeInfinity)
                 for (int k = 0; k < finalHeights.Count; k++)
                     finalHeights[k] = Mathf.Max(finalHeights[k], minHeight);
+
+            if (ShareNetworkHeights)
+                HoldToNetwork(densePoints, finalHeights, width, RoadGrade.Configured);
         }
 
         if (!followTerrain && turns != null && landings != null && landings.Contains(true) && !RoadSwitchbacks.Separated(densePoints, finalHeights, width,
@@ -815,6 +818,52 @@ public static partial class RoadSpatialGrid
         if (det <= 0)
             return mean;
         return (float)((sxx * sh - sx * sxh) / det);
+    }
+
+    /// <summary>A road near another takes that road's height (<see cref="HoldToNetwork"/>). Settable for tests.</summary>
+    internal static bool ShareNetworkHeights = true;
+
+    /// <summary>
+    /// Where a road comes within reach of a road already laid -- running along it, crossing it,
+    /// or the mouth where it joins -- it takes that road's height there: the nearest point's
+    /// within its width and the terrain blend on both sides, as far as the terrain writer mixes
+    /// the two. Elsewhere it keeps its own profile, eased to and from those held stretches at
+    /// <paramref name="cap"/>. The road already laid is never changed. Before, a joining road
+    /// kept its own grade up to its end point and a shared stretch kept its own heights, so the
+    /// same ground carried two road surfaces and the terrain between them became a step: 3.1 m
+    /// between points 1.8 m apart at a junction, 4 m beside a road at a TrollCave
+    /// (double roads, weird junctions).
+    /// </summary>
+    internal static void HoldToNetwork(List<Vector2> points, List<float> heights, float width, float cap)
+    {
+        if (!m_initialized || points.Count == 0) return;
+        float band = width + 2f * RoadConstants.TerrainBlendMargin;
+        int n = points.Count;
+        var held = new bool[n];
+        bool any = false;
+        for (int i = 0; i < n; i++)
+        {
+            if (TryGetRoadHeightWithin(points[i], band, out float h))
+            {
+                heights[i] = h; held[i] = true; any = true;
+            }
+        }
+        if (!any || !RoadGrade.Capped(cap)) return;
+        // Ease the road's own stretches to the held ones, both ways, within the cap; its two ends
+        // keep the heights they have to meet.
+        held[0] = held[n - 1] = true;
+        for (int i = 1; i < n; i++)
+        {
+            if (held[i]) continue;
+            float rise = cap * Vector2.Distance(points[i - 1], points[i]);
+            heights[i] = Mathf.Clamp(heights[i], heights[i - 1] - rise, heights[i - 1] + rise);
+        }
+        for (int i = n - 2; i >= 0; i--)
+        {
+            if (held[i]) continue;
+            float rise = cap * Vector2.Distance(points[i + 1], points[i]);
+            heights[i] = Mathf.Clamp(heights[i], heights[i + 1] - rise, heights[i + 1] + rise);
+        }
     }
 
     private static int DetectOverlap(List<Vector2> points, float width)
