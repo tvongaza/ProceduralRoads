@@ -80,7 +80,9 @@ public static class BridgePlacement
         // A zone explored before this network gets no pieces (NetworkCutoff).
         if (NetworkCutoff.Excludes(zoneID))
             return 0;
-        List<BridgePiece>? pieces = BridgePlans.PlanFor(zoneID);
+        // Nor does a bridge that reaches into such a zone anywhere else: it is built whole or not at all.
+        // The zone is not marked spawned, so the bridge is built if those zones stop being excluded.
+        List<BridgePiece>? pieces = BridgePlans.BuildablePlanFor(zoneID);
         if (pieces == null)
             return 0;
         if (BridgePlans.IsSpawned(zoneID))
@@ -142,8 +144,9 @@ public static class BridgePlacement
     }
 
     /// <summary>
-    /// Destroy every piece this mod spawned, loaded or not, and forget which
-    /// zones had them, so the current plans can be spawned afresh. Server only.
+    /// Destroy every piece this mod spawned, loaded or not, except in zones
+    /// explored before the network, and forget which zones had them, so the
+    /// current plans can be spawned afresh. Server only.
     /// </summary>
     public static int ClearSpawnedPieces(ICollection<ZDOID>? condemned = null)
     {
@@ -155,7 +158,9 @@ public static class BridgePlacement
         List<ZDO> tagged = new();
         foreach (var kv in ZDOMan.instance.m_objectsByID)
         {
-            if (kv.Value.GetInt(MarkerHash) == 1)
+            // A piece standing in a zone explored before this network stays, as everything there does
+            // (NetworkCutoff); nothing could be built back there.
+            if (kv.Value.GetInt(MarkerHash) == 1 && !NetworkCutoff.Excludes(ZoneSystem.GetZone(kv.Value.GetPosition())))
                 tagged.Add(kv.Value);
         }
 
@@ -191,7 +196,7 @@ public static class BridgePlacement
     public static List<ZoneSystem.ClearArea> GetClearAreas(Vector2s zoneID)
     {
         List<ZoneSystem.ClearArea> areas = new();
-        List<BridgePiece>? pieces = BridgePlans.PlanFor(zoneID);
+        List<BridgePiece>? pieces = BridgePlans.BuildablePlanFor(zoneID);
         if (pieces == null)
             return areas;
 

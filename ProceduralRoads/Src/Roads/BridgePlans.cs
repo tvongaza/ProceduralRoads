@@ -18,6 +18,8 @@ public static class BridgePlans
     private static ManualLogSource Log => ProceduralRoadsPlugin.ProceduralRoadsLogger;
 
     private static Dictionary<Vector2s, List<BridgePiece>>? s_plansByZone;
+    /// <summary>Every zone a planned piece's own bridge puts pieces in (one set per bridge, shared by its pieces).</summary>
+    private static Dictionary<BridgePiece, HashSet<Vector2s>>? s_bridgeZones;
     private static readonly HashSet<Vector2s> s_spawnedZones = new();
 
     /// <summary>Zones that have received their bridge pieces.</summary>
@@ -27,11 +29,16 @@ public static class BridgePlans
     public static void Reset()
     {
         s_plansByZone = null;
+        s_bridgeZones = null;
         s_spawnedZones.Clear();
     }
 
     /// <summary>Forget the plans only; they are recomputed on the next use.</summary>
-    public static void InvalidatePlans() => s_plansByZone = null;
+    public static void InvalidatePlans()
+    {
+        s_plansByZone = null;
+        s_bridgeZones = null;
+    }
 
     /// <summary>Forget which zones have pieces (they are being destroyed).</summary>
     public static void ForgetSpawned() => s_spawnedZones.Clear();
@@ -90,6 +97,37 @@ public static class BridgePlans
         return s_plansByZone != null && s_plansByZone.TryGetValue(zone, out List<BridgePiece>? list) ? list : null;
     }
 
+    /// <summary>
+    /// The pieces planned for a zone that may be built now, or null when there are none. A bridge that would put
+    /// any of its pieces (ends, piers, deck or stairs; debris on the riverbed does not count) in a zone
+    /// NetworkCutoff leaves as it is is not built at all, in any zone: no half bridge appears, and the road there is
+    /// left unbridged. Asked at spawn time, so if those zones stop being excluded the whole bridge can be built.
+    /// </summary>
+    public static List<BridgePiece>? BuildablePlanFor(Vector2s zone)
+    {
+        List<BridgePiece>? pieces = PlanFor(zone);
+        if (pieces == null || s_bridgeZones == null || NetworkCutoff.ExcludedCount == 0)
+            return pieces;
+        List<BridgePiece>? buildable = null;
+        for (int i = 0; i < pieces.Count; i++)
+        {
+            bool whole = !s_bridgeZones.TryGetValue(pieces[i], out HashSet<Vector2s>? zones) || !ReachesExcludedZone(zones);
+            if (buildable != null) { if (whole) buildable.Add(pieces[i]); }
+            else if (!whole) buildable = pieces.GetRange(0, i);
+        }
+        if (buildable == null)
+            return pieces;
+        return buildable.Count > 0 ? buildable : null;
+    }
+
+    private static bool ReachesExcludedZone(HashSet<Vector2s> zones)
+    {
+        foreach (Vector2s zone in zones)
+            if (NetworkCutoff.Excludes(zone))
+                return true;
+        return false;
+    }
+
     public static int PlannedPieceCount(Vector2s zone) => PlanFor(zone)?.Count ?? 0;
 
     public static int TotalPlannedPieces
@@ -124,10 +162,20 @@ public static class BridgePlans
             return;
 
         s_plansByZone = new Dictionary<Vector2s, List<BridgePiece>>();
+        s_bridgeZones = new Dictionary<BridgePiece, HashSet<Vector2s>>();
         int seed = WorldGenerator.instance.GetSeed();
         foreach (RoadCrossing crossing in BridgeLayout.DistinctSites(RoadNetworkGenerator.GetRoadCrossings()))
         {
-            foreach (BridgePiece piece in BridgeLayout.Solve(crossing, WorldGenerator.instance, seed))
+            List<BridgePiece> bridge = BridgeLayout.Solve(crossing, WorldGenerator.instance, seed);
+            var bridgeZones = new HashSet<Vector2s>();
+            foreach (BridgePiece piece in bridge)
+            {
+                // Debris on the riverbed is not part of the bridge: it never holds one back.
+                if (piece.Kind != BridgePieceKind.Debris)
+                    bridgeZones.Add(ZoneSystem.GetZone(piece.Position));
+                s_bridgeZones[piece] = bridgeZones;
+            }
+            foreach (BridgePiece piece in bridge)
             {
                 Vector2s zone = ZoneSystem.GetZone(piece.Position);
                 if (!s_plansByZone.TryGetValue(zone, out List<BridgePiece>? list))

@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using UnityEngine;
 using Xunit;
 
@@ -52,6 +54,65 @@ public sealed class BridgeLayoutTests
         {
             RoadNetworkPersistence.Reset(); RoadSpatialGrid.Clear(); RoadNetworkGenerator.Reset();
             ZDOMan.instance = null; WorldGenerator.instance = null;
+        }
+    }
+
+    private static void SetPathfinder(RoadPathfinder? pathfinder) =>
+        typeof(RoadNetworkGenerator).GetField("m_pathfinder", BindingFlags.NonPublic | BindingFlags.Static)!
+            .SetValue(null, pathfinder);
+
+    /// <summary>
+    /// A generated bridge that would put any piece in a zone explored before the network is not built at all, in any
+    /// zone: no half bridge. A bridge wholly in zones the network writes is planned exactly as before.
+    /// </summary>
+    [Fact]
+    public void ABridgeReachingAnExcludedZoneIsNotBuiltAnywhere()
+    {
+        var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
+        WorldGenerator.instance = world;
+        ZoneSystem.instance = new ZoneSystem();
+        NetworkCutoff.Forget();
+        RoadNetworkGenerator.Reset();
+        SetPathfinder(new RoadPathfinder(world) { Fords = true, Bridges = true, MaxGrade = 0f });
+        try
+        {
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-300f, 0f), 0f, new Vector2(400f, 0f), 0f, 4f, "Cross river"));
+            var crossing = Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
+            List<Vector2s> zones = BridgeLayout.Solve(crossing, world, world.GetSeed())
+                .Select(p => ZoneSystem.GetZone(p.Position)).Distinct().ToList();
+            Assert.True(zones.Count >= 2, $"the bridge spans {zones.Count} zone(s); the test needs one that crosses a zone line");
+
+            // A fresh world: every zone's plan, untouched.
+            NetworkCutoff.SnapshotWorld(new Vector2s[0]);
+            NetworkCutoff.UseNewNetwork();
+            foreach (Vector2s zone in zones)
+                Assert.Same(BridgePlans.PlanFor(zone), BridgePlans.BuildablePlanFor(zone));
+
+            // Explored land elsewhere: still untouched.
+            NetworkCutoff.SnapshotWorld(new[] { new Vector2s(40, 40) });
+            NetworkCutoff.UseNewNetwork();
+            foreach (Vector2s zone in zones)
+                Assert.Same(BridgePlans.PlanFor(zone), BridgePlans.BuildablePlanFor(zone));
+
+            // One of its zones explored before the network: no zone of this bridge gets a piece.
+            foreach (Vector2s explored in zones)
+            {
+                NetworkCutoff.SnapshotWorld(new[] { explored });
+                NetworkCutoff.UseNewNetwork();
+                foreach (Vector2s zone in zones)
+                {
+                    Assert.NotNull(BridgePlans.PlanFor(zone));
+                    Assert.Null(BridgePlans.BuildablePlanFor(zone));
+                }
+            }
+        }
+        finally
+        {
+            SetPathfinder(null);
+            NetworkCutoff.Forget();
+            RoadNetworkGenerator.Reset();
+            RoadCrossingDetector.SetFordStyleWeights(1f, 1f, 1f);
+            ZoneSystem.instance = null; WorldGenerator.instance = null;
         }
     }
 }
