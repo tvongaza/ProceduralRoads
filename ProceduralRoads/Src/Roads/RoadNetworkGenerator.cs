@@ -499,6 +499,7 @@ public static partial class RoadNetworkGenerator
         m_refusalReasons.Clear();
         m_roadsWithNoRoute = 0;
         m_earthworkReroutes = 0;
+        m_pullReroutes = 0;
         m_offLandEnds = 0;
         RoadPitches.ResetCounters();
         m_corridorSnapped = 0;
@@ -622,7 +623,7 @@ public static partial class RoadNetworkGenerator
             Log.LogInfo("  Roads refused when built, by rule: " + string.Join("; ",
                 System.Linq.Enumerable.Select(System.Linq.Enumerable.OrderByDescending(m_refusalReasons, kv => kv.Value), kv => $"{kv.Value} {kv.Key}")));
         if (EarthworkCap > 0f)
-            Log.LogInfo($"  Earthwork cap {EarthworkCap:F0} m: {m_earthworkReroutes} road(s) re-routed round deep cuts or fills, {m_earthworkUnavoided} refused as still past it");
+            Log.LogInfo($"  Earthwork cap {EarthworkCap:F0} m: {m_earthworkReroutes} road(s) re-routed round deep cuts or fills, {m_earthworkUnavoided} refused as still past it; {m_pullReroutes} re-routed round a stretch held over {HoldPullLimit:F0} m off its profile to a road already laid");
         if (RoadCrossingDetector.ToWater)
             Log.LogInfo($"  Bridge ends walked in off land above the deck: {m_offLandEnds}");
         if (RoadCrossingDetector.Shallows)
@@ -924,22 +925,28 @@ public static partial class RoadNetworkGenerator
             // up, up to EarthworkRetries times; a plan with none past the
             // limit is kept, and if none is found the road is refused.
             var where = new List<Vector2>();
-            int past = PastTerrainLimit(plans, EarthworkCap, where) + InvalidShallows(crossings, where);
-            Log.LogDebug($"Road {label}: {past} planned point(s) past the {EarthworkCap:F0} m earthwork cap in {plans.Count} piece(s)");
+            int past = PastTerrainLimit(plans, EarthworkCap, where) + InvalidShallows(crossings, where) + HeldRidges(plans, where);
+            // Stretches held to a road already laid far off this road's own profile are re-routed
+            // round too, but never refuse a road: the fill or cut they build is a ridge beside the
+            // network (at -2486,1716 a stretch held +8.8 m was a large earthwork ridge).
+            int pulled = HeldOffProfile(plans, where);
+            Log.LogDebug($"Road {label}: {past} planned point(s) past the {EarthworkCap:F0} m earthwork cap in {plans.Count} piece(s), {pulled} stretch(es) held over {HoldPullLimit:F0} m off its profile");
             finder.ClearEarthworkPenalty();
-            for (int attempt = 0; past > 0 && attempt < EarthworkRetries; attempt++)
+            for (int attempt = 0; (past > 0 || pulled > 0) && attempt < EarthworkRetries; attempt++)
             {
                 foreach (var w in where) finder.PenalizeAround(w, EarthworkPenaltyRadius);
                 var retry = Replan(finder, pathStart, pathEnd, startCenter, startRadius, endCenter, endRadius, width);
                 if (retry == null)
                 { Log.LogDebug($"Road {label}: earthwork re-route {attempt + 1} did not route or build ({RoadSpatialGrid.LastRefusal ?? "no route"}), {finder.EarthworkPenaltyCells} cell(s) priced up"); continue; }
                 var whereRetry = new List<Vector2>();
-                int pastRetry = PastTerrainLimit(retry.Value.plans, EarthworkCap, whereRetry) + InvalidShallows(retry.Value.crossings, whereRetry);
+                int pastRetry = PastTerrainLimit(retry.Value.plans, EarthworkCap, whereRetry) + InvalidShallows(retry.Value.crossings, whereRetry) + HeldRidges(retry.Value.plans, whereRetry);
+                int pulledRetry = HeldOffProfile(retry.Value.plans, whereRetry);
                 Log.LogDebug($"Road {label}: earthwork re-route {attempt + 1}: {pastRetry} point(s) past the cap (was {past}), {retry.Value.crossings.Count} crossing(s), {finder.EarthworkPenaltyCells} cell(s) priced up, {finder.PenalizedWaypoints(retry.Value.path)} of {retry.Value.path.Count} waypoints in them; first offending point {(whereRetry.Count > 0 ? whereRetry[0].ToString() : "-")}, crossing {(retry.Value.crossings.Count > 0 ? retry.Value.crossings[0].FromBank + "->" + retry.Value.crossings[0].ToBank : "-")}");
-                if (pastRetry < past)
+                if (pastRetry < past || (pastRetry == past && pulledRetry < pulled))
                 {
-                    Log.LogDebug($"Road {label}: re-routed round deep earthwork, {past} -> {pastRetry} points past {EarthworkCap:F0} m");
-                    System.Threading.Interlocked.Increment(ref m_earthworkReroutes);
+                    Log.LogDebug($"Road {label}: re-routed round deep earthwork, {past} -> {pastRetry} points past {EarthworkCap:F0} m, {pulled} -> {pulledRetry} held off its profile");
+                    System.Threading.Interlocked.Increment(ref pastRetry < past ? ref m_earthworkReroutes : ref m_pullReroutes);
+                    pulled = pulledRetry;
                     (path, crossings, plans, past) = (retry.Value.path, retry.Value.crossings, retry.Value.plans, pastRetry);
                     where = whereRetry;
                 }
@@ -951,10 +958,12 @@ public static partial class RoadNetworkGenerator
                 // A road the game cannot build as planned is not a road: it is
                 // refused, even if that leaves a destination unserved.
                 bool water = InvalidShallows(crossings, null) > 0;
+                bool ridge = !water && HeldRidges(plans, null) > 0 && PastTerrainLimit(plans, EarthworkCap, new List<Vector2>()) == 0;
                 if (!water) System.Threading.Interlocked.Increment(ref m_earthworkUnavoided);
                 plans = null;
                 RoadSpatialGrid.LastRefusal = water
                     ? "shallow water too long or deep to cross"
+                    : ridge ? $"a junction ridge: held to a road on more than {JunctionFillLimit:F0} m of fill"
                     : $"earthwork past the {EarthworkCap:F0} m terrain limit";
             }
         }
@@ -1426,6 +1435,37 @@ public static partial class RoadNetworkGenerator
             }
         }
         return past;
+    }
+
+    /// <summary>Furthest a stretch may be held to a road already laid from its own profile before the
+    /// road is re-routed round it (<see cref="HeldOffProfile"/>): two junction steps.</summary>
+    public const float HoldPullLimit = 3f;
+    private static int m_pullReroutes;
+
+    /// <summary>Most fill a stretch held to a road already laid may stand on: past it the junction is a
+    /// ridge across the slope, refused like earthwork past the cap (re-routed first). At 832,4359 a stretch
+    /// held 4.5-4.7 m over the ground was an awkward junction earthwork ridge.</summary>
+    public const float JunctionFillLimit = 4f;
+
+    /// <summary>Stretches of <paramref name="plans"/> held to a road already laid on more than
+    /// <see cref="JunctionFillLimit"/> of fill; each one's worst point goes in <paramref name="where"/>.</summary>
+    private static int HeldRidges(List<RoadSpatialGrid.PlannedPath> plans, List<Vector2>? where) =>
+        CountJunctions(plans, j => j.Earth > JunctionFillLimit, where);
+
+    /// <summary>Stretches of <paramref name="plans"/> held to a road already laid more than
+    /// <see cref="HoldPullLimit"/> off their own profile; each one's worst point goes in <paramref name="where"/>.</summary>
+    private static int HeldOffProfile(List<RoadSpatialGrid.PlannedPath> plans, List<Vector2> where) =>
+        CountJunctions(plans, j => Mathf.Abs(j.Pull) > HoldPullLimit, where);
+
+    /// <summary>The junctions of <paramref name="plans"/> that are <paramref name="past"/> a limit; each one's point goes in <paramref name="where"/>.</summary>
+    private static int CountJunctions(List<RoadSpatialGrid.PlannedPath> plans, Func<RoadSpatialGrid.Junction, bool> past, List<Vector2>? where)
+    {
+        int count = 0;
+        foreach (var plan in plans)
+            if (plan.Junctions != null)
+                foreach (var j in plan.Junctions)
+                    if (past(j)) { count++; where?.Add(j.At); }
+        return count;
     }
 
     /// <summary>The road searched and planned again, with the pathfinder's
@@ -1985,6 +2025,7 @@ public static partial class RoadNetworkGenerator
         m_refusalReasons.Clear();
         m_roadsWithNoRoute = 0;
         m_earthworkReroutes = 0;
+        m_pullReroutes = 0;
         m_offLandEnds = 0;
         RoadPathfinder.SqueezeHits.Clear();
         m_earthworkUnavoided = 0;
@@ -2060,6 +2101,7 @@ public static partial class RoadNetworkGenerator
         m_refusalReasons.Clear();
         m_roadsWithNoRoute = 0;
         m_earthworkReroutes = 0;
+        m_pullReroutes = 0;
         m_offLandEnds = 0;
         RoadPathfinder.SqueezeHits.Clear();
         m_earthworkUnavoided = 0;

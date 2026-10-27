@@ -102,6 +102,125 @@ public class JunctionHeightTests
         Assert.InRange(WorstOnTrunk(new Hill { Gz = 0f, Ridge = 14f }, Line(0, -100, 0, 100),
             Line(60, -120, 30, -70, 6, -40, 0, -30, 0, 0, 0, 30, 0, 50)), 0f, 0.3f);
     }
+    /// <summary>A road running along one laid on a 6 m fill rides on that road's own surface:
+    /// its junction's fill is measured over that surface, not the natural ground under it, so
+    /// it is not a new ridge. A road coming in square to the embankment from the low ground is
+    /// still held up on its own fill there.</summary>
+    [Fact]
+    public void AJunctionsFillIsMeasuredOverTheGroundTheRoadItMeetsLeft()
+    {
+        var world = new Hill { Gz = 0f };
+        using var worldScope = new ValheimWorldScope().WithWorld(world);
+        RoadSpatialGrid.Clear();
+        bool before = RoadSpatialGrid.JunctionFillOverLaidGround;
+        try
+        {
+            var trunk = RoadSpatialGrid.PlanRoadPath(Line(-60f, 0f, 60f, 0f), 4f, world)!;
+            for (int i = 0; i < trunk.Heights.Count; i++) trunk.Heights[i] = 66f;
+            RoadSpatialGrid.Commit(trunk);
+            float Earth(List<Vector2> branch)
+            {
+                var heights = new List<float>();
+                foreach (Vector2 p in branch) heights.Add(60f);
+                var junctions = RoadSpatialGrid.HoldToNetwork(branch, heights, 4f, 0.35f, p => world.GetHeight(p.x, p.y));
+                Assert.NotNull(junctions);
+                float worst = float.NegativeInfinity;
+                foreach (var j in junctions!) worst = Mathf.Max(worst, j.Earth);
+                return worst;
+            }
+            var along = new List<Vector2>();
+            for (int x = -20; x <= 20; x++) along.Add(new Vector2(x, 0f));
+            var square = new List<Vector2>();
+            for (int z = -24; z <= -1; z++) square.Add(new Vector2(0f, z));
+
+            Assert.InRange(Earth(along), -0.01f, RoadNetworkGenerator.JunctionFillLimit);
+            Assert.True(Earth(square) > RoadNetworkGenerator.JunctionFillLimit);
+            RoadSpatialGrid.JunctionFillOverLaidGround = false;
+            Assert.True(Earth(along) > RoadNetworkGenerator.JunctionFillLimit);
+        }
+        finally { RoadSpatialGrid.JunctionFillOverLaidGround = before; RoadSpatialGrid.Clear(); }
+    }
+
+    /// <summary>A pitched climb held to a road it crosses is eased to it within each edge's own limit, as the grade
+    /// limiter gave them: its rests stay rests. Eased at the cap everywhere, the rests near the held stretch climbed at
+    /// the cap, and the let-go rule could then refuse the road.</summary>
+    [Fact]
+    public void APitchedClimbIsEasedToARoadItMeetsWithinEachEdgesOwnLimit()
+    {
+        var world = new Hill { Gz = 0f };
+        using var worldScope = new ValheimWorldScope().WithWorld(world);
+        RoadSpatialGrid.Clear();
+        try
+        {
+            // Pitches of 10 m that may climb 0.5 and rests of 6 m that may climb 0.1; the road climbs 0.6 of each.
+            var points = new List<Vector2>();
+            var grades = new List<float> { 0f };
+            var own = new List<float> { 60f };
+            for (int i = 0; i <= 60; i++) points.Add(new Vector2(i * 2f, 0f));
+            for (int i = 1; i < points.Count; i++)
+            {
+                float limit = (i - 1) % 8 < 5 ? 0.5f : 0.1f;
+                grades.Add(limit);
+                own.Add(own[i - 1] + 0.6f * limit * 2f);
+            }
+            float cap = RoadPitches.LimitCap(RoadGrade.Configured, grades.ToArray());
+            // A road across it at x = 90, 1.5 m over this road's own height there.
+            var across = new List<Vector2>();
+            var acrossHeights = new List<float>();
+            for (int z = -40; z <= 40; z += 2) { across.Add(new Vector2(90f, z)); acrossHeights.Add(own[45] + 1.5f); }
+            RoadSpatialGrid.Commit(new RoadSpatialGrid.PlannedPath(across, acrossHeights, across.ConvertAll(_ => default(RoadPointDebugInfo)), 4f, 80f, false));
+
+            (List<float> heights, bool[] held) Hold(IReadOnlyList<float>? edgeGrades, float withCap)
+            {
+                var heights = new List<float>(own);
+                var held = new bool[points.Count];
+                RoadSpatialGrid.HoldToNetwork(points, heights, 4f, withCap, null, false, false, held, null, edgeGrades);
+                return (heights, held);
+            }
+            float WorstOver((List<float> heights, bool[] held) r)
+            {
+                float worst = 0f;
+                for (int i = 1; i < points.Count; i++)
+                {
+                    if (r.held[i - 1] && r.held[i]) continue;
+                    float grade = Mathf.Abs(r.heights[i] - r.heights[i - 1]) / 2f;
+                    worst = Mathf.Max(worst, grade - RoadGrade.EdgeLimit(grades, i, cap));
+                }
+                return worst;
+            }
+            var eased = Hold(grades, cap);
+            Assert.Contains(true, eased.held);
+            Assert.True(WorstOver(eased) <= 0.001f, $"an edge climbs {WorstOver(eased):F3} over its own limit");
+            // Eased at the cap, as before: a rest climbs at the cap.
+            Assert.True(WorstOver(Hold(null, RoadGrade.Configured)) > 0.1f);
+        }
+        finally { RoadSpatialGrid.Clear(); }
+    }
+
+    /// <summary>A road with a floor (a raised ford's surface) stays on it where it is held to a road below it: held after
+    /// the floor was put back, a stretch beside a raised ford dipped under its deck. Its junction record is of the height
+    /// it is held at, the floor, not the other road's.</summary>
+    [Fact]
+    public void ARoadsFloorHoldsWhereItIsHeldToARoadBelowIt()
+    {
+        var world = new Hill { Gz = 0f };
+        using var worldScope = new ValheimWorldScope().WithWorld(world);
+        RoadSpatialGrid.Clear();
+        try
+        {
+            var across = Line(0f, -40f, 0f, 40f);
+            RoadSpatialGrid.Commit(new RoadSpatialGrid.PlannedPath(across, across.ConvertAll(_ => 57f), across.ConvertAll(_ => default(RoadPointDebugInfo)), 4f, 80f, false));
+            var plan = RoadSpatialGrid.PlanRoadPath(Line(-40f, 0f, 40f, 0f), 4f, world, minHeight: 59.5f);
+            Assert.NotNull(plan);
+            // Held to the road below at its floor, and its junction record says so (pulled 0.5 m down, not 3 m).
+            Assert.NotNull(plan!.Junctions);
+            Assert.All(plan.Junctions!, j => Assert.InRange(j.Pull, -0.6f, 0.01f));
+            float lowest = float.MaxValue;
+            foreach (float h in plan.Heights) lowest = Mathf.Min(lowest, h);
+            Assert.True(lowest >= 59.5f - 0.001f, $"the road dips to {lowest:F2} under its 59.5 m floor");
+        }
+        finally { RoadSpatialGrid.Clear(); }
+    }
 
     /// <summary>A step in the ground: 70 m north of z = 0, 60 m south of z = -2.</summary>
     private sealed class Step : WorldGenerator

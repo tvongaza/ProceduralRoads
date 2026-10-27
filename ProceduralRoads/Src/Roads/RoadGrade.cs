@@ -75,6 +75,13 @@ public static class RoadGrade
         return steepest;
     }
 
+    /// <summary>The grade edge <paramref name="i"/> (from point i-1 to i) may climb: its own limit in
+    /// <paramref name="edgeGrades"/> (a pitch, a rest, a turn landing) under <paramref name="maxGrade"/>, their
+    /// steepest (<see cref="RoadPitches.LimitCap"/>); <paramref name="maxGrade"/> without them. The one reading of
+    /// per-edge limits, for the limiter and for a road eased to the roads it meets (RoadSpatialGrid.HoldToNetwork).</summary>
+    public static float EdgeLimit(IReadOnlyList<float>? edgeGrades, int i, float maxGrade) =>
+        edgeGrades != null && i < edgeGrades.Count ? Mathf.Min(maxGrade, Mathf.Max(0f, edgeGrades[i])) : maxGrade;
+
     /// <summary>
     /// Rewrite <paramref name="heights"/> in place as the closest profile no
     /// step of which exceeds <paramref name="maxGrade"/>, with the first and
@@ -103,8 +110,7 @@ public static class RoadGrade
         // of road travelled rather than per point.
         float[] s = new float[n];
         for (int i = 1; i < n; i++)
-            s[i] = s[i - 1] + Vector2.Distance(points[i - 1], points[i]) *
-                (edgeGrades == null ? 1f : Mathf.Min(maxGrade, Mathf.Max(0f, edgeGrades[i])) / maxGrade);
+            s[i] = s[i - 1] + Vector2.Distance(points[i - 1], points[i]) * (EdgeLimit(edgeGrades, i, maxGrade) / maxGrade);
         float length = s[n - 1];
         if (length <= 0f) return true;
 

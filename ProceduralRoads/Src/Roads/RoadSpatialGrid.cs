@@ -174,6 +174,8 @@ public static partial class RoadSpatialGrid
         public List<float>? Widths;
         public readonly float TotalLength;
         public readonly bool FollowTerrain;
+        /// <summary>Where it took the height of a road already laid (<see cref="HoldToNetwork"/>).</summary>
+        public List<Junction>? Junctions;
 
         internal PlannedPath(List<Vector2> points, List<float> heights,
             List<RoadPointDebugInfo> debugInfos, float width, float totalLength, bool followTerrain)
@@ -371,6 +373,7 @@ public static partial class RoadSpatialGrid
         // happens when most of the new road overlaps them, so a road joining
         // another on fill arrived metres low and the terrain blend built a
         // step between them.
+        List<Junction>? junctions = null;
         bool joinedStart = false, joinedEnd = false;
         if (JunctionMatch && !followTerrain && path.Count >= 2)
         {
@@ -531,9 +534,7 @@ public static partial class RoadSpatialGrid
             // The limiter may cut a point below a raised ford's surface; the
             // floor is a constant, so putting it back leaves the profile
             // inside the cap.
-            if (minHeight > float.NegativeInfinity)
-                for (int k = 0; k < finalHeights.Count; k++)
-                    finalHeights[k] = Mathf.Max(finalHeights[k], minHeight);
+            ApplyFloor(finalHeights, minHeight);
 
             if (ShareNetworkHeights)
             {
@@ -550,7 +551,11 @@ public static partial class RoadSpatialGrid
                 {
                     for (int k = 0; k < own.Count; k++) finalHeights[k] = own[k];
                     System.Array.Clear(heldAt, 0, heldAt.Length);
-                    HoldToNetwork(densePoints, finalHeights, width, RoadGrade.Configured, heldOut: heldAt, letGo: HeldPastCap ? letGo : null);
+                    junctions = HoldToNetwork(densePoints, finalHeights, width, cap, SampleTerrain, joinedStart, joinedEnd, heldAt,
+                        HeldPastCap ? letGo : null, edgeGrades, minHeight);
+                    // The floor again (a raised ford's surface, dry land's floor): held to a road below it, or eased
+                    // down to one, a stretch beside a raised ford dipped under its deck. Before the grade is judged.
+                    ApplyFloor(finalHeights, minHeight);
                     if (!HeldPastCap || !RoadGrade.Capped(RoadGrade.Configured)) break;
                     int worst = WorstOverCap(densePoints, finalHeights, cap, edgeGrades, heldAt);
                     if (worst < 0) break;
@@ -567,7 +572,16 @@ public static partial class RoadSpatialGrid
         if (!followTerrain && turns != null && landings != null && landings.Contains(true) && !RoadSwitchbacks.Separated(densePoints, finalHeights, width,
                 RoadSwitchbacks.StairTurns || tightTurns ? landings : null, surfaceOnly: RoadSwitchbacks.StairTurns || tightTurns, widths: shapeWidths))
         { LastRefusal = "switchback: legs too close at different heights"; Log.LogDebug("Road refused: switchback legs blend at different heights"); return null; }
-        return new PlannedPath(densePoints, finalHeights, debugInfos, width, totalLength, followTerrain) { Widths = shapeWidths };
+        return new PlannedPath(densePoints, finalHeights, debugInfos, width, totalLength, followTerrain) { Widths = shapeWidths, Junctions = junctions };
+    }
+
+    /// <summary>No point of a road below <paramref name="floor"/> (a raised ford's surface, dry land's floor): the one place
+    /// the floor is put back, after the grade limiter and again after the road is held to the roads it meets.</summary>
+    private static void ApplyFloor(List<float> heights, float floor)
+    {
+        if (floor > float.NegativeInfinity)
+            for (int k = 0; k < heights.Count; k++)
+                heights[k] = Mathf.Max(heights[k], floor);
     }
 
     /// <summary>Store a planned road. Nothing here can fail; every decision
@@ -845,6 +859,18 @@ public static partial class RoadSpatialGrid
         return (float)((sxx * sh - sx * sxh) / det);
     }
 
+    /// <summary>Where a road met one already laid: the point it was pulled furthest from its own
+    /// profile (metres, + up), and how far the held road stands over the natural ground there
+    /// (+ fill, - cut): a large one is an earthwork ridge (seen at 896,4416).</summary>
+    public readonly struct Junction
+    {
+        public readonly Vector2 At;
+        public readonly float Pull, Earth;
+        /// <summary>Where along the new road: "start", "end" (a held stretch touching that end) or "middle".</summary>
+        public readonly string Where;
+        public Junction(Vector2 at, float pull, float earth, string where = "middle") { At = at; Pull = pull; Earth = earth; Where = where; }
+    }
+
     /// <summary>A road near another takes that road's height (<see cref="HoldToNetwork"/>). Settable for tests.</summary>
     internal static bool ShareNetworkHeights = true;
     /// <summary>A road held to the roads it meets steeper than its cap lets those stretches go, or is refused. Settable for tests.</summary>
@@ -901,51 +927,85 @@ public static partial class RoadSpatialGrid
     /// own, read from their nearest points, and jitter by a few centimetres a metre.</summary>
     internal const float HeldCapMargin = 0.1f;
 
+    /// <summary>A junction's fill is measured over the ground the road it meets left (its surface and
+    /// blend), not the natural ground under that road. Settable for tests.</summary>
+    internal static bool JunctionFillOverLaidGround = true;
+
     /// <summary>
     /// Where a road comes within reach of a road already laid -- running along it, crossing it,
     /// or the mouth where it joins -- it takes that road's height there: the nearest point's
     /// within its width and the terrain blend on both sides, as far as the terrain writer mixes
-    /// the two. Elsewhere it keeps its own profile, eased to and from those held stretches at
-    /// <paramref name="cap"/>. The road already laid is never changed. Before, a joining road
+    /// the two. Elsewhere it keeps its own profile, eased to and from those held stretches within
+    /// each edge's own grade limit, as the grade limiter gave them (<paramref name="edgeGrades"/>:
+    /// a pitch steeper than the cap, a rest or a turn landing gentler; <see cref="RoadGrade.Limit"/>),
+    /// else at <paramref name="cap"/>; held no lower than <paramref name="floor"/>. Eased at the cap everywhere, it flattened a pitched climb's
+    /// pitches and steepened its rests, and the let-go rule then refused the road. The road already laid is never changed. Before, a joining road
     /// kept its own grade up to its end point and a shared stretch kept its own heights, so the
     /// same ground carried two road surfaces and the terrain between them became a step: 3.1 m
     /// between points 1.8 m apart at a junction, 4 m beside a road at a TrollCave
     /// (double roads, weird junctions).
     /// </summary>
-    /// <param name="heldOut">Set to which points were held.</param>
-    /// <param name="letGo">Points let go (<see cref="LetGoAround"/>): they keep their own height.</param>
-    internal static void HoldToNetwork(List<Vector2> points, List<float> heights, float width, float cap,
-        bool[]? heldOut = null, bool[]? letGo = null)
+    internal static List<Junction>? HoldToNetwork(List<Vector2> points, List<float> heights, float width, float cap,
+        System.Func<Vector2, float>? ground = null, bool joinedStart = false, bool joinedEnd = false, bool[]? heldOut = null,
+        bool[]? letGo = null, IReadOnlyList<float>? edgeGrades = null, float floor = float.NegativeInfinity)
     {
-        if (!m_initialized || points.Count == 0) return;
+        if (!m_initialized || points.Count == 0) return null;
         float band = width + 2f * RoadConstants.TerrainBlendMargin;
         int n = points.Count;
         var held = new bool[n];
         bool any = false;
+        List<Junction>? junctions = null;
+        Junction? stretch = null;
+        int stretchFrom = 0;
+        string Where(int to) => stretchFrom == 0 ? (joinedStart ? "start on a road" : "start at a place")
+            : to == n - 1 ? (joinedEnd ? "end on a road" : "end at a place") : "middle";
         for (int i = 0; i < n; i++)
         {
-            if ((letGo == null || !letGo[i]) && TryGetRoadHeightWithin(points[i], band, out float h))
+            if ((letGo == null || !letGo[i]) && TryGetRoadHeightWithin(points[i], band, out float h, out float near, out float nearWidth))
             {
+                // Never below this road's own floor (a raised ford's surface, dry land's floor): held to a road below it,
+                // it stands on the floor, and its junction record says so.
+                h = Mathf.Max(h, floor);
+                if (stretch == null) stretchFrom = i;
+                // Per held stretch, the point the road was pulled furthest from its own profile.
+                float pull = h - heights[i];
+                // Its fill over the ground the road it meets already left there: that road's own surface
+                // within its width, blended out to the natural ground over the terrain margin. Against
+                // the natural ground, a road running along one laid on a fill counted that road's own
+                // embankment as a new junction ridge, and was refused for a ridge it did not make.
+                float under = ground == null ? float.NaN
+                    : JunctionFillOverLaidGround ? Mathf.Lerp(ground(points[i]), h, RoadProfile.LevelBlend(near, nearWidth)) : ground(points[i]);
+                float earth = h - under;
+                if (stretch == null || Mathf.Abs(pull) > Mathf.Abs(stretch.Value.Pull))
+                    stretch = new Junction(points[i], pull, earth, Where(i));
                 heights[i] = h; held[i] = true; any = true;
             }
+            else if (stretch != null)
+            {
+                var j = stretch.Value;
+                (junctions ??= new List<Junction>()).Add(new Junction(j.At, j.Pull, j.Earth, Where(i - 1)));
+                stretch = null;
+            }
         }
+        if (stretch != null) { var j = stretch.Value; (junctions ??= new List<Junction>()).Add(new Junction(j.At, j.Pull, j.Earth, Where(n - 1))); }
         if (heldOut != null) System.Array.Copy(held, heldOut, System.Math.Min(n, heldOut.Length));
-        if (!any || !RoadGrade.Capped(cap)) return;
-        // Ease the road's own stretches to the held ones, both ways, within the cap; its two ends
-        // keep the heights they have to meet.
+        if (!any || !RoadGrade.Capped(cap)) return junctions;
+        // Ease the road's own stretches to the held ones, both ways, each edge within its own limit;
+        // its two ends keep the heights they have to meet.
         held[0] = held[n - 1] = true;
         for (int i = 1; i < n; i++)
         {
             if (held[i]) continue;
-            float rise = cap * Vector2.Distance(points[i - 1], points[i]);
+            float rise = RoadGrade.EdgeLimit(edgeGrades, i, cap) * Vector2.Distance(points[i - 1], points[i]);
             heights[i] = Mathf.Clamp(heights[i], heights[i - 1] - rise, heights[i - 1] + rise);
         }
         for (int i = n - 2; i >= 0; i--)
         {
             if (held[i]) continue;
-            float rise = cap * Vector2.Distance(points[i + 1], points[i]);
+            float rise = RoadGrade.EdgeLimit(edgeGrades, i + 1, cap) * Vector2.Distance(points[i + 1], points[i]);
             heights[i] = Mathf.Clamp(heights[i], heights[i + 1] - rise, heights[i + 1] + rise);
         }
+        return junctions;
     }
 
     private static int DetectOverlap(List<Vector2> points, float width)
