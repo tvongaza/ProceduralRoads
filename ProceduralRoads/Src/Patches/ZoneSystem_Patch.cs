@@ -72,7 +72,9 @@ public static class ZoneSystem_Patch
                 ServerTerrainBake.Tick();
                 if (FreezeWatchdog.Enabled) FreezeWatchdog.Leave();
             }
+            if (FreezeWatchdog.Enabled) FreezeWatchdog.Enter("site icons");
             RevealSiteIcons(__instance);
+            if (FreezeWatchdog.Enabled) FreezeWatchdog.Leave();
         }
 
         /// <summary>A place placed before its roads goes on the map once a player has come as near as the

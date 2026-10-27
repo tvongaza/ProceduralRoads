@@ -346,7 +346,9 @@ namespace ProceduralRoads
             RoadRockClearing.Tick();
             if (FreezeWatchdog.Enabled) FreezeWatchdog.Leave();
             // Approaches owed to places left for a player to find, laid once one has come by.
+            if (FreezeWatchdog.Enabled) FreezeWatchdog.Enter("site approaches");
             SiteApproachRunner.Tick();
+            if (FreezeWatchdog.Enabled) FreezeWatchdog.Leave();
         }
 
         private void OnDestroy()
