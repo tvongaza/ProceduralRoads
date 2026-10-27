@@ -23,10 +23,18 @@
       here; anything touching Harmony patches or engine runtime cannot.
     -->
     <ItemGroup>
+        <None Include="Fixtures/**" CopyToOutputDirectory="PreserveNewest"/>
+    </ItemGroup>
+
+    <ItemGroup>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadPreparation.cs" Link="ModSrc/RoadPreparation.cs"/>
         <Compile Include="../ProceduralRoads/Src/Utils/ManualRoadNetworkSync.cs" Link="ModSrc/ManualRoadNetworkSync.cs"/>
         <Compile Include="../ProceduralRoads/Src/Utils/ManualRoadCommands.cs" Link="ModSrc/ManualRoadCommands.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StructureAppendQueue.cs" Link="ModSrc/StructureAppendQueue.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/StairLayout.cs" Link="ModSrc/StairLayout.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/StairLayout.Columns.cs" Link="ModSrc/StairLayout.Columns.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/StairFiller.cs" Link="ModSrc/StairFiller.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/StairKit.cs" Link="ModSrc/StairKit.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadBeside.cs" Link="ModSrc/RoadBeside.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/ManualRoadDraft.cs" Link="ModSrc/ManualRoadDraft.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/ManualRoads.cs" Link="ModSrc/ManualRoads.cs"/>

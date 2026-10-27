@@ -1,0 +1,392 @@
+using System;
+using System.Linq;
+using UnityEngine;
+using Xunit;
+
+namespace ProceduralRoads.Tests;
+
+/// <summary>
+/// A stone staircase between two points, laid out on synthetic ground where
+/// the right answer is known. The rules come from a hand-built example: 2 m stone stairs that rise 1 m, level landings where the
+/// ground is gentler, contour-following on ground steeper than a flight,
+/// corner pivots by turn type, fillers in the wedge a convex turn opens, and
+/// a pillar column under every piece that does not rest on the ground.
+/// </summary>
+public class StairLayoutTests
+{
+    private static Func<float, float, float> PlaneAlongZ(float grade) => (x, z) => grade * z;
+
+    private static StairPiece[] Walked(StairPlan plan) =>
+        plan.Pieces.Where(p => p.Kind == StairPieceKind.Stair || p.Kind == StairPieceKind.Landing).ToArray();
+
+    /// <summary>Ground that rises exactly as a flight does gets one straight
+    /// flight up the fall line: no landings, no turns, nothing to prop up.</summary>
+    [Fact]
+    public void GroundAtFlightGradeIsOneStraightFlight()
+    {
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 20), PlaneAlongZ(0.5f));
+
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.Equal(10, plan.Stairs);
+        Assert.Equal(0, plan.Landings);
+        Assert.Equal(0, plan.Turns);
+        Assert.DoesNotContain(plan.Pieces, p => p.Kind == StairPieceKind.Support);
+        Assert.All(Walked(plan), p => Assert.Equal(180f, p.YawDegrees)); // climbing +z, so the piece faces -z
+        Assert.Equal(10f, plan.Rise, 3);
+    }
+
+    /// <summary>Each stair sits one rise above the last, and a piece's origin is its foot.</summary>
+    [Fact]
+    public void StairsStepUpOneRiseAtATime()
+    {
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 10), PlaneAlongZ(0.5f));
+        float[] feet = Walked(plan).Select(p => p.Position.y).ToArray();
+
+        for (int i = 0; i < feet.Length; i++) Assert.Equal(i * StairLayout.PieceRise, feet[i], 3);
+        Assert.Equal(1f, Walked(plan)[0].Position.z, 3); // centred one metre along from the start edge
+    }
+
+    /// <summary>Gentle ground climbs the same height but rests on landings in between.</summary>
+    [Fact]
+    public void GentleGroundMixesLandingsIntoTheFlight()
+    {
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 24), PlaneAlongZ(0.25f));
+
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.InRange(plan.Rise, 5.5f, 6.5f);
+        Assert.True(plan.Landings > 0, "a 0.25 slope should take landings");
+        Assert.True(plan.MaxBuried <= 1f, $"buried {plan.MaxBuried:F2}");
+    }
+
+    /// <summary>Ground twice as steep as a flight cannot be climbed straight:
+    /// the stair crosses the slope, so it walks at least twice the rise.
+    /// The goal is off to the side, so one traverse reaches it.</summary>
+    [Fact]
+    public void SteepGroundIsClimbedAcrossTheContours()
+    {
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(17, 10), PlaneAlongZ(1f));
+
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.True(plan.WalkedLength >= 2f * (plan.Rise - StairLayout.ReachHeight),
+            $"walked {plan.WalkedLength} for a rise of {plan.Rise}");
+        Assert.Contains(Walked(plan), p => p.Kind == StairPieceKind.Stair && p.YawDegrees != 180f);
+        Assert.True(plan.MaxBuried <= 1.5f, $"buried {plan.MaxBuried:F2}");
+    }
+
+    /// <summary>Asked downhill, the same staircase is laid from the bottom.</summary>
+    [Fact]
+    public void DownhillRequestIsLaidFromTheBottom()
+    {
+        StairPlan up = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 20), PlaneAlongZ(0.5f));
+        StairPlan down = StairLayout.Build(new Vector2(0, 20), new Vector2(0, 0), PlaneAlongZ(0.5f));
+
+        Assert.False(up.Reversed);
+        Assert.True(down.Reversed);
+        Assert.Equal(up.Pieces.Select(p => (p.Prefab, p.Position, p.YawDegrees)), down.Pieces.Select(p => (p.Prefab, p.Position, p.YawDegrees)));
+    }
+
+    [Fact]
+    public void SameInputSamePieces()
+    {
+        Func<float, float, float> hill = (x, z) => 0.8f * z + 2f * Mathf.Sin(x * 0.2f);
+        StairPlan a = StairLayout.Build(new Vector2(-3, 0), new Vector2(4, 12), hill);
+        StairPlan b = StairLayout.Build(new Vector2(-3, 0), new Vector2(4, 12), hill);
+
+        Assert.Equal(a.Pieces.Select(p => (p.Prefab, p.Position, p.YawDegrees)), b.Pieces.Select(p => (p.Prefab, p.Position, p.YawDegrees)));
+    }
+
+    /// <summary>Four metres wide is two pieces abreast, one either side of the line.</summary>
+    [Fact]
+    public void FourMetresWideIsTwoPiecesAbreast()
+    {
+        StairPlan narrow = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 20), PlaneAlongZ(0.5f));
+        StairPlan wide = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 20), PlaneAlongZ(0.5f), width: 4f);
+
+        Assert.Equal(2 * narrow.Stairs, wide.Stairs);
+        Assert.Equal(new[] { -1f, 1f }, Walked(wide).Select(p => p.Position.x).Distinct().OrderBy(x => x).ToArray());
+    }
+
+    /// <summary>Every turn, up the slope or down it, pivots on the inside
+    /// corner and leaves a wedge on the outside for a filler.</summary>
+    [Theory]
+    [InlineData(0.3f, 0.15f)]   // climbing +z the right is uphill, and the goal is to the right
+    [InlineData(0.5f, -0.3f)]   // climbing +z the right is downhill
+    public void EveryTurnPivotsOnTheInsideCornerAndFillsTheWedge(float alongZ, float alongX)
+    {
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(8, 12), (x, z) => alongZ * z + alongX * x);
+
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.True(plan.Turns > 0);
+        Assert.Contains(plan.Pieces, p => p.Kind == StairPieceKind.Filler);
+    }
+
+    /// <summary>No two pieces you walk on overlap: stairs overlapped
+    /// on the inside of turns that pivoted on the outside corner. Fillers
+    /// sit under the next stair by design and are left out.</summary>
+    [Theory]
+    [InlineData("spur")]
+    [InlineData("hollow")]
+    [InlineData("steep")]
+    [InlineData("gully")]
+    [InlineData("hill")]
+    public void WalkedPiecesNeverOverlap(string ground)
+    {
+        Func<float, float, float> g = ground switch
+        {
+            "spur" => (x, z) => 0.5f * z - 0.3f * x,
+            "hollow" => (x, z) => 0.3f * z + 0.15f * x,
+            "steep" => (x, z) => z,
+            "gully" => Gully,
+            _ => (x, z) => 0.8f * z + 2f * Mathf.Sin(x * 0.2f),
+        };
+        Vector2 to = ground == "gully" ? new Vector2(0, 16) : ground == "steep" ? new Vector2(17, 10) : new Vector2(8, 12);
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), to, g);
+        StairPiece[] walked = Walked(plan);
+
+        for (int i = 0; i < walked.Length; i++)
+            for (int j = i + 1; j < walked.Length; j++)
+            {
+                // Only pieces at overlapping heights can collide: a flight passing over another is fine.
+                if (Math.Abs(walked[i].Position.y - walked[j].Position.y) >= 1f - 1e-3f) continue;
+                // Floors may overlap each other at a turn (it looks better); stairs never.
+                if (walked[i].Kind == StairPieceKind.Landing && walked[j].Kind == StairPieceKind.Landing) continue;
+                Assert.False(FootprintsOverlap(walked[i], walked[j]),
+                    $"{walked[i].Prefab} at {walked[i].Position} yaw {walked[i].YawDegrees} overlaps {walked[j].Prefab} at {walked[j].Position} yaw {walked[j].YawDegrees}");
+            }
+    }
+
+    /// <summary>Separating-axis test on two 2 x 2 m footprints, shrunk by a
+    /// few centimetres so pieces that only share an edge or corner do not count.</summary>
+    private static bool FootprintsOverlap(StairPiece a, StairPiece b)
+    {
+        Vector2[] Corners(StairPiece p)
+        {
+            Vector2 c = new Vector2(p.Position.x, p.Position.z), f = StairLayout.Forward(p.YawDegrees), r = StairLayout.Right(p.YawDegrees);
+            const float h = StairLayout.PieceRun / 2f - 0.05f;
+            return new[] { c + f * h + r * h, c + f * h - r * h, c - f * h - r * h, c - f * h + r * h };
+        }
+        Vector2[] ca = Corners(a), cb = Corners(b);
+        foreach (Vector2 axis in new[] { StairLayout.Forward(a.YawDegrees), StairLayout.Right(a.YawDegrees), StairLayout.Forward(b.YawDegrees), StairLayout.Right(b.YawDegrees) })
+        {
+            float aMin = ca.Min(p => Vector2.Dot(p, axis)), aMax = ca.Max(p => Vector2.Dot(p, axis));
+            float bMin = cb.Min(p => Vector2.Dot(p, axis)), bMax = cb.Max(p => Vector2.Dot(p, axis));
+            if (aMax <= bMin || bMax <= aMin) return false;
+        }
+        return true;
+    }
+
+    /// <summary>Where the stair crosses a dip, pillars reach down into the ground.</summary>
+    [Fact]
+    public void PiecesOverADipStandOnPillarsBuriedInTheGround()
+    {
+        Func<float, float, float> dip = (x, z) => 0.5f * z - (z > 6f && z < 12f ? 5f : 0f);
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 20), dip);
+
+        Assert.True(plan.Reached, plan.Reason);
+        // Columns.
+        StairPiece[] supports = plan.Pieces.Where(p => p.Kind == StairPieceKind.Support && p.Prefab == StairKit.Stone.Support).ToArray();
+        Assert.NotEmpty(supports);
+        foreach (var column in supports.GroupBy(p => (p.Position.x, p.Position.z)))
+        {
+            float bottom = column.Min(p => p.Position.y) - StairKit.Stone.SupportHeight / 2f;
+            Assert.True(bottom <= dip(column.Key.x, column.Key.z) - StairLayout.SupportBury + 1e-3f,
+                $"column at {column.Key} ends at {bottom:F2}, ground {dip(column.Key.x, column.Key.z):F2}");
+        }
+    }
+
+    /// <summary>A gully up a face twice as steep as a flight, 12 m wide
+    /// between rock walls: too narrow to curve round, so the stair zigzags,
+    /// turning back on switchback landings.</summary>
+    private static float Gully(float x, float z) => z + (Math.Abs(x) > 6f ? 50f : 0f);
+
+    [Fact]
+    public void NarrowSteepGullyZigzagsOnSwitchbacks()
+    {
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 16), Gully);
+
+        Assert.True(plan.Reached, plan.Reason);
+        Assert.True(plan.Switchbacks > 0, "expected at least one switchback");
+        Assert.True(plan.MaxBuried <= 1.5f, $"buried {plan.MaxBuried:F2}");
+    }
+
+    /// <summary>A hand-built switchback: the flight arrives on one floor, a second
+    /// floor lies one stair-width beside it, and the next flight leaves that
+    /// floor heading back the way it came, from the same height.</summary>
+    [Fact]
+    public void SwitchbackIsTwoFloorsAbreastAndTheFlightTurnsBack()
+    {
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 16), Gully);
+        StairPiece[] walked = Walked(plan);
+        int i = Enumerable.Range(1, Math.Max(0, walked.Length - 3)).FirstOrDefault(k =>
+            walked[k - 1].Kind == StairPieceKind.Stair && walked[k].Kind == StairPieceKind.Landing &&
+            walked[k + 1].Kind == StairPieceKind.Landing && walked[k + 2].Kind == StairPieceKind.Stair &&
+            Vector2.Distance(new Vector2(walked[k].Position.x, walked[k].Position.z), new Vector2(walked[k + 1].Position.x, walked[k + 1].Position.z)) > 1.5f &&
+            walked[k].YawDegrees == walked[k + 1].YawDegrees);
+        Assert.True(i > 0, "no stair - floor - floor - stair switchback");
+
+        StairPiece arrive = walked[i - 1], a = walked[i], b = walked[i + 1], leave = walked[i + 2];
+        Assert.Equal(2f, Vector2.Distance(new Vector2(a.Position.x, a.Position.z), new Vector2(b.Position.x, b.Position.z)), 3);
+        Assert.Equal(a.Position.y, b.Position.y, 3);
+        Assert.Equal(arrive.Position.y + StairLayout.PieceRise, leave.Position.y, 3);
+        float bend = Math.Abs(StairLayout.Wrap(leave.YawDegrees - arrive.YawDegrees - 180f + 180f) - 180f);
+        Assert.True(bend <= StairLayout.MaxSwitchbackBendSteps * StairLayout.HeadingStep + 1e-3f,
+            $"leaves {bend} degrees off the reverse heading");
+    }
+
+    /// <summary>A 22.5 degree turn on a stair is filled with a flat
+    /// 1 m block at the old heading, level with the stair top before it.</summary>
+    [Fact]
+    public void ShallowTurnIsFilledWithAFlatBlock()
+    {
+        Func<float, float, float> uphillRight = (x, z) => 0.3f * z + 0.15f * x;
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(8, 12), uphillRight);
+
+        StairPiece[] blocks = plan.Pieces.Where(p => p.Prefab == "stone_wall_2x1").ToArray();
+        Assert.All(blocks, block => Assert.Equal(StairPieceKind.Filler, block.Kind));
+        Assert.All(plan.Pieces.Where(p => p.Kind == StairPieceKind.Filler), f =>
+            Assert.True(f.YawDegrees % StairLayout.HeadingStep < 1e-3f, $"filler yaw {f.YawDegrees} is off the hammer's grid"));
+    }
+
+    /// <summary>Every piece walked on has its body and 2 m of headroom kept
+    /// clear of rock: two stretches per stair, following the steps up.</summary>
+    [Fact]
+    public void EveryWalkedPieceHasAClearanceFromItsUndersideToHeadroom()
+    {
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 24), PlaneAlongZ(0.25f));
+        int walkedPieces = plan.Pieces.Count(p => p.Kind != StairPieceKind.Support);
+        int stairs = plan.Pieces.Count(p => p.Prefab == StairKit.Stone.Stair);
+
+        Assert.Equal(walkedPieces + stairs * (StairLayout.ClearanceStretches - 1), plan.Clearances.Count);
+        Assert.All(plan.Clearances, c =>
+        {
+            Assert.Equal(c.Surface + StairLayout.ClearanceHeight, c.Centre.y + c.Half.y, 3);
+            Assert.True(c.Centre.y - c.Half.y <= c.Surface, "the box starts at or below the walking surface");
+        });
+        // The first stair's two stretches step up a half rise apart.
+        Assert.Equal(0.5f, plan.Clearances[1].Surface - plan.Clearances[0].Surface, 3);
+    }
+
+    /// <summary>A landing lines up with the stair below it; the turn comes
+    /// as the next stair leaves it. A landing turned 45 degrees off the stair
+    /// below left a gap to the stair above.</summary>
+    [Theory]
+    [InlineData("face")]
+    [InlineData("gentle")]
+    [InlineData("hill")]
+    public void LandingLinesUpWithTheStairBelowIt(string ground)
+    {
+        StairPlan plan = ground switch
+        {
+            "face" => StairLayout.Build(new Vector2(-2061.41f, 1504.82f), new Vector2(-2125f, 1460f), FixtureGround("mountain-face-2m.txt")),
+            "gentle" => StairLayout.Build(new Vector2(0, 0), new Vector2(0, 24), PlaneAlongZ(0.25f)),
+            _ => StairLayout.Build(new Vector2(-3, 0), new Vector2(14, 22), (x, z) => 0.4f * z + 2f * Mathf.Sin(x * 0.2f)),
+        };
+        StairPiece[] walked = Walked(plan);
+        Assert.Contains(walked, p => p.Kind == StairPieceKind.Landing);
+        for (int i = 1; i < walked.Length; i++)
+        {
+            // A floor after a stair lines up with it (a stair faces back down its flight); a floor
+            // after a floor may turn, overlapping it.
+            if (walked[i].Kind != StairPieceKind.Landing || walked[i - 1].Kind != StairPieceKind.Stair) continue;
+            Assert.Equal(StairLayout.Wrap(walked[i - 1].YawDegrees + 180f), walked[i].YawDegrees, 3);
+        }
+    }
+
+    /// <summary>A road arriving at the foot going the other way from the climb:
+    /// the staircase sets off within 45 degrees of the road and switches back,
+    /// and finishes lined up with the road leaving the top (a mini switchback at the end so the direction of the
+    /// road mostly lines up with the direction of the stairs).</summary>
+    [Fact]
+    public void ItsEndsLineUpWithTheRoadAtThem()
+    {
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 20), PlaneAlongZ(0.5f), arriving: 180f, leaving: 90f);
+
+        Assert.True(plan.Reached, plan.Reason);
+        float Off(float a, float b) => Math.Abs(StairLayout.Wrap(a - b + 180f) - 180f);
+        Assert.True(Off(plan.StartHeading, 180f) <= 45.01f, $"sets off at {plan.StartHeading}");
+        Assert.True(Off(plan.EndHeading, 90f) <= 45.01f, $"finishes at {plan.EndHeading}");
+        Assert.True(plan.Switchbacks > 0 || plan.Turns > 0);
+        // The first piece really faces the way the plan says (a stair faces back down its flight).
+        StairPiece first = Walked(plan)[0];
+        Assert.Equal(plan.StartHeading, first.Kind == StairPieceKind.Stair ? StairLayout.Wrap(first.YawDegrees + 180f) : first.YawDegrees, 3);
+    }
+
+    /// <summary>A piece sitting on the ground hovers a few centimetres above it in
+    /// game and falls: every walked piece not sunk SupportBury into the ground
+    /// stands on a column (a black marble staircase lost a quarter of its pieces).</summary>
+    [Fact]
+    public void EveryPieceNotSunkIntoTheGroundStandsOnAColumn()
+    {
+        // Real ground: on an exact 0.5 slope a stair is sunk half a metre at its
+        // middle and needs nothing; floors and fillers on a rough face do.
+        Func<float, float, float> ground = FixtureGround("mountain-face-2m.txt");
+        StairPlan plan = StairLayout.Build(new Vector2(-2061.41f, 1504.82f), new Vector2(-2125f, 1460f), ground);
+        var columns = plan.Pieces.Where(p => p.Kind == StairPieceKind.Support).ToList();
+
+        Assert.NotEmpty(columns);
+        foreach (StairPiece piece in plan.Pieces.Where(p => p.Kind != StairPieceKind.Support))
+        {
+            float underside = piece.Prefab == StairKit.Stone.Stair ? piece.Position.y : piece.Position.y + StairKit.Stone.FloorTop - StairKit.Stone.FloorThickness;
+            float g = ground(piece.Position.x, piece.Position.z);
+            if (underside <= g - StairLayout.SupportBury) continue;
+            Assert.Contains(columns, c => Math.Abs(c.Position.x - piece.Position.x) < 0.01f && Math.Abs(c.Position.z - piece.Position.z) < 0.01f
+                && c.Position.y - StairKit.Stone.SupportHeight / 2f <= g - StairLayout.SupportBury + 1e-3f);
+        }
+    }
+
+    /// <summary>Ground from an x z height grid file, bilinear between samples, clamped at its edges.</summary>
+    internal static Func<float, float, float> FixtureGround(string name)
+    {
+        var heights = new System.Collections.Generic.Dictionary<(int, int), float>();
+        int minX = int.MaxValue, maxX = int.MinValue, minZ = int.MaxValue, maxZ = int.MinValue, step = 2;
+        foreach (string line in System.IO.File.ReadLines(System.IO.Path.Combine(AppContext.BaseDirectory, "Fixtures", name)))
+        {
+            if (line.StartsWith("#") || line.Trim().Length == 0) continue;
+            string[] f = line.Split(' ');
+            int x = (int)Math.Round(float.Parse(f[0], System.Globalization.CultureInfo.InvariantCulture));
+            int z = (int)Math.Round(float.Parse(f[1], System.Globalization.CultureInfo.InvariantCulture));
+            heights[(x, z)] = float.Parse(f[2], System.Globalization.CultureInfo.InvariantCulture);
+            minX = Math.Min(minX, x); maxX = Math.Max(maxX, x); minZ = Math.Min(minZ, z); maxZ = Math.Max(maxZ, z);
+        }
+        float H(int x, int z) => heights[(Math.Min(Math.Max(x, minX), maxX), Math.Min(Math.Max(z, minZ), maxZ))];
+        return (x, z) =>
+        {
+            int x0 = (int)Math.Floor(x / step) * step, z0 = (int)Math.Floor(z / step) * step;
+            float fx = Mathf.Clamp01((x - x0) / step), fz = Mathf.Clamp01((z - z0) / step);
+            return H(x0, z0) * (1 - fx) * (1 - fz) + H(x0 + step, z0) * fx * (1 - fz) + H(x0, z0 + step) * (1 - fx) * fz + H(x0 + step, z0 + step) * fx * fz;
+        };
+    }
+
+    /// <summary>A generated staircase ends on a floor carried on straight from its
+    /// top step, level with it, and the road meets that floor's far edge (a flat 2x2 landing or two
+    /// that clips into the road).</summary>
+    [Fact]
+    public void ItCanEndOnALandingForTheRoad()
+    {
+        Func<float, float, float> ground = PlaneAlongZ(0.5f);
+        StairPlan bare = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 20), ground);
+        StairPlan landed = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 20), ground, topLandings: 1);
+
+        Assert.True(landed.Reached, landed.Reason);
+        var walkedLanded = Walked(landed);
+        StairPiece last = walkedLanded[walkedLanded.Length - 1];
+        Assert.Equal(StairPieceKind.Landing, last.Kind);
+        Assert.Equal(bare.End.y, landed.End.y, 3);
+        Vector2 step = new Vector2(landed.End.x - bare.End.x, landed.End.z - bare.End.z);
+        Assert.Equal(StairLayout.PieceRun, step.magnitude, 2);
+        Assert.Equal(StairLayout.Wrap(landed.EndHeading), StairLayout.Bearing(new Vector2(0f, 0f), step), 1);
+        // Its walking surface is the top step's.
+        Assert.Equal(landed.End.y, last.Position.y + StairKit.Stone.FloorTop, 3);
+    }
+
+    /// <summary>A cliff the stair cannot climb within its piece budget is reported, not faked.</summary>
+    [Fact]
+    public void UnclimbableCliffIsReportedNotReached()
+    {
+        StairPlan plan = StairLayout.Build(new Vector2(0, 0), new Vector2(0, 4), (x, z) => z > 2f ? 400f : 0f);
+
+        Assert.False(plan.Reached);
+        Assert.NotEqual("", plan.Reason);
+    }
+
+}

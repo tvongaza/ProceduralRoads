@@ -1,0 +1,932 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace ProceduralRoads;
+
+public enum StairPieceKind
+{
+    Stair,    // one stone_stair: 2 m along, 1 m up
+    Landing,  // one stone_floor_2x2, level with the top of the stair before it
+    Filler,   // covers the wedge a turn leaves on its outside
+    Support,  // stone_pillar stacked from under a piece down into the ground
+}
+
+/// <summary>One piece of a planned staircase. Position is the prefab's origin.</summary>
+public sealed class StairPiece
+{
+    public StairPieceKind Kind;
+    public string Prefab = "";
+    public Vector3 Position;
+    public float YawDegrees;
+}
+
+/// <summary>
+/// Space a walker on the stair needs clear of rock: one stretch of a piece,
+/// from its underside to <see cref="StairLayout.ClearanceHeight"/> above its
+/// walking surface. <see cref="Centre"/> and <see cref="Half"/> are in the
+/// box's own frame, turned by <see cref="YawDegrees"/> (local +z along the walk).
+/// </summary>
+public readonly struct StairClearance
+{
+    public readonly Vector3 Centre;
+    public readonly Vector3 Half;
+    public readonly float YawDegrees;
+    public readonly float Surface;
+
+    public StairClearance(Vector3 centre, Vector3 half, float yawDegrees, float surface)
+    {
+        Centre = centre; Half = half; YawDegrees = yawDegrees; Surface = surface;
+    }
+}
+
+/// <summary>
+/// The top row of a staircase already laid, for another to carry on from: its
+/// far edge (the snap edge the next piece's back edge meets), the heading it
+/// walks and its walking surface there.
+/// </summary>
+public readonly struct StairContinuation
+{
+    public readonly Vector2 Edge;
+    public readonly float Heading;
+    public readonly float Height;
+    public readonly StairPieceKind Kind;
+
+    public StairContinuation(Vector2 edge, float heading, float height, StairPieceKind kind)
+    {
+        Edge = edge; Heading = heading; Height = height; Kind = kind;
+    }
+
+    /// <summary>The row's back edge: where it starts, a piece's run before its far edge.</summary>
+    public Vector2 Start => Edge - StairLayout.Forward(Heading) * StairLayout.PieceRun;
+}
+
+public sealed class StairPlan
+{
+    /// <summary>The <see cref="StairKit.Name"/> it is built of.</summary>
+    public string Kit = "";
+    /// <summary>The heading the climb sets off on from its foot, and the one it leaves its top on.</summary>
+    public float StartHeading, EndHeading;
+    public readonly List<StairPiece> Pieces = new();
+    /// <summary>What must be clear of rock before the pieces go down.</summary>
+    public readonly List<StairClearance> Clearances = new();
+    public bool Reached;
+    /// <summary>Search steps the layout spent, every leg and backtrack together.</summary>
+    public int Expansions;
+    public string Reason = "";
+    /// <summary>True when the request ran downhill and was laid out from the other end.</summary>
+    public bool Reversed;
+    /// <summary>Waypoints of the coarse route the search followed (1 when it went straight for the goal).</summary>
+    public int Waypoints = 1;
+    /// <summary>Times a leg was undone because the next one found nothing that fits.</summary>
+    public int Backtracks;
+    public int Stairs;
+    public int Landings;
+    public int Turns;
+    /// <summary>Sum of every turn's size in 22.5 degree steps, switchbacks' half-turns left out.</summary>
+    public int TurnSteps;
+    /// <summary>The part of <see cref="TurnSteps"/> taken floor to floor, overlapping, with no filler.</summary>
+    public int OverlapTurnSteps;
+    public int Switchbacks;
+    public float Rise;
+    public float WalkedLength;
+    /// <summary>Largest gap between a piece's underside and the ground below its centre, before supports.</summary>
+    public float MaxFloat;
+    /// <summary>Largest depth the ground stands above a walking surface anywhere it was sampled.</summary>
+    public float MaxBuried;
+    public Vector3 End;
+}
+
+/// <summary>
+/// Deterministic layout of a stone staircase between two points on the ground.
+/// Pure logic: the game samples the ground and places the returned pieces.
+///
+/// Rules from a hand-built example:
+///
+/// * Every vanilla stair piece is 2 m long and rises 1 m, so a flight is
+///   always a grade of 0.5. Ground gentler than that gets a level landing.
+/// * Follow the contours: each step picks the heading, in the hammer's 22.5
+///   degree steps, along which the ground best matches the piece, so on
+///   ground steeper than 0.5 the stair crosses the slope instead of
+///   climbing straight up it.
+/// * Every turn pivots on the inside corner of the previous piece's top
+///   edge, which opens a wedge on the outside that a filler covers. A pivot
+///   on the outside corner always pushes the new piece's inside corner back
+///   into the previous piece: the first two versions split turns into
+///   convex (inside) and concave (outside) by the slope, and the outside-pivot
+///   turns overlapped both ways round. The hand-built
+///   examples pivot on the inside corner every time.
+/// * The wedge of a 22.5 degree turn is filled with a 1 m stone block laid
+///   flat at the old heading, level with the stair top (a hand-built switchback
+///   example: less sticking out than a stair at the half angle, and it
+///   stays on the hammer's grid). A 45 degree turn on a landing is filled
+///   with a floor at the halfway heading.
+/// * A turn may be any size on the hammer's grid (as long as the stair
+///   corners snap as expected and the stairs don't overlap each other):
+///   a stair up to two steps (45 degrees) off the stair
+///   below it, four (90) off a landing, three off a switchback. A landing
+///   never turns: it lines up with the stair below it. Its wedge is filled with
+///   flat pieces on the hammer's grid that <see cref="StairFiller"/> chooses
+///   turn by turn: the fewest that cover it and show least. A single floor
+///   at the half angle (33.75 degrees for a 67.5 degree turn) left the
+///   wedge open and the junction did not connect up; a fan of 2x1 blocks
+///   hinged on the inside corner covered it but stuck out.
+/// * A switchback is a landing two lanes wide: the flight arrives on one
+///   floor, a second floor lies beside it, and the next flight leaves that
+///   one heading back the way it came. It is how a stair climbs ground too
+///   steep to cross in one traverse.
+/// * Every piece is supported down to the ground: stone loses its support
+///   within a metre sideways, so a piece not sunk into the ground stands on
+///   a column of pillars driven into it.
+///
+/// The search is best-first over whole pieces. A partial staircase is scored by
+/// the length walked so far, how badly its pieces fit the ground, and how
+/// often it turned, plus the least walking still needed: at least the
+/// distance left, and at least two metres for every metre still to climb.
+/// </summary>
+public static partial class StairLayout
+{
+    [ThreadStatic] private static long s_ids;
+
+    public const float PieceRun = 2f;
+    public const float PieceRise = 1f;
+    public const float HeadingStep = 22.5f;
+    /// <summary>
+    /// A generated staircase keeps this close to the stretch of road it
+    /// replaces. Left to find its own way from foot to top, a layout wandered
+    /// over its road and into the road's other staircases: on RoadSeedA, once
+    /// that was checked, 633 layouts were refused for it. At
+    /// 12 m it still reached the next switchback leg, 8 m over; at 6 m a face
+    /// steeper than a flight filled with mini switchbacks.
+    /// </summary>
+    public const float CorridorHalfWidth = 10f;
+    /// <summary>Waypoints taken from a followed line stand at least this far apart.</summary>
+    public const float FollowSpacing = 6f;
+    /// <summary>A staircase's ends line up with the road within this many heading steps (45 degrees).</summary>
+    public const int AlignSteps = 2;
+    public const int MaxStairTurnSteps = 2;
+    /// <summary>How far a stair may turn as it leaves a landing. The landing
+    /// itself never turns: it lines up with the stair below it (a landing turned 45 degrees off the stair below left a gap
+    /// to the stair above).</summary>
+    public const int MaxTurnOffLandingSteps = 4;
+    /// <summary>How far one floor may turn off the floor before it. Floors overlap
+    /// at a turn instead of leaving a wedge (unlike stairs, two flat stones
+    /// can overlap, which looks better): they pivot on the outside corner. Without it
+    /// a run of floors could only go straight, and a long gentle valley floor
+    /// could only bend by climbing a stair.</summary>
+    public const int MaxFloorTurnSteps = 2;
+    /// <summary>How far the flight leaving a switchback may bend off the straight
+    /// way back: one step, as in a hand-built example (157.5 degrees round). The
+    /// comment at its use said one, the value was three, and a 67.5 degree
+    /// departure left two fillers at two headings sticking off half-buried
+    /// floors, a landing that did not look clean.</summary>
+    public const int MaxSwitchbackBendSteps = 1;
+    public const int MaxPieces = 800;
+    /// <summary>A waypoint is passed when an edge comes this close to it, at any height: the route's flex.</summary>
+    public const float WaypointReach = 3.5f;
+    /// <summary>A leg to an intermediate waypoint ends with its walking surface this close to the ground.</summary>
+    public const float LegEndHeight = 1f;
+    /// <summary>How many kept legs the search may undo when the next one finds nothing that fits.</summary>
+    public const int MaxLegBacktrack = 4;
+    /// <summary>Deepest the ground may stand over a walking surface anywhere on a piece:
+    /// beyond it the piece is refused, not dug out. 1.5 m let leg-by-leg search cut 1.8 m
+    /// deep on the real face; with backtracking it routes round instead.</summary>
+    public const float MaxBuriedDepth = 1f;
+    public const int MaxExpansions = 100000;
+    /// <summary>Done when the last edge is this close to the goal and within half a step of its height.
+    /// Just under two pieces: at 2.5 m a stair a step from the top could overshoot it on every heading.</summary>
+    public const float ReachRadius = 3.5f;
+    public const float ReachHeight = 0.5f;
+    /// <summary>A staircase that may finish anywhere near its goal finishes no lower than this
+    /// below the goal's ground: at 6 m from a cave's ledge, without it, one stopped on the
+    /// slope in front, 2.5 m under the ledge.</summary>
+    public const float ArriveBelow = 1f;
+    /// <summary>Headroom kept clear of rock above every walking surface: player height, as a road's (one owner,
+    /// <see cref="RoadRockPolicy.ClearanceHeight"/>).</summary>
+    public const float ClearanceHeight = RoadRockPolicy.ClearanceHeight;
+    /// <summary>A stair's clearance is cut into this many stretches along it, so it follows the steps up.</summary>
+    public const int ClearanceStretches = 2;
+
+    /// <summary>Cost per metre a piece floats above the ground (mean over it). Prefer
+    /// hugging the terrain: at 1 a long climb kept stepping up over gentle ground on a
+    /// row of pillars, 46 pieces more than 1 m up and 3.8 m at worst (mostly hugging the terrain is preferred,
+    /// some variation is fine). At 3 the real face test
+    /// floats 1.9 m at worst, 10 pieces over 1 m; at 6 it no longer reaches the top.</summary>
+    private const float FloatWeight = 3f;
+    /// <summary>Cost per metre the ground stands over a walking surface (worst sample):
+    /// the earthwork that exposes it. Hugging is preferred to digging: at 3,
+    /// the cost of floating, the real face test cut 494 points, 109 over 1 m deep; at 6
+    /// it cuts 46, none over 0.73 m, and still floats under 2 m.</summary>
+    private const float BuriedWeight = 6f;
+    private const float TurnWeight = 0.5f;
+    private const float SwitchbackWeight = 1f;
+
+    private const float LandingWeight = 0.25f;
+    /// <summary>Above 1 the search prefers pieces that get closer over a
+    /// cheaper staircase it has not proved yet: weighted A*, which finds a
+    /// good staircase in a few hundred steps instead of the best in thousands.
+    /// At 2 a 12 m gully up a 1:1 face ran out of budget once every turn
+    /// pivoted on its inside corner; 3 solves it in a third of a second.</summary>
+    private const float HeuristicWeight = 3f;
+    /// <summary>
+    /// A new piece may not overlap, seen from above, any piece laid before the
+    /// previous one by more than this (pieces that merely touch are fine).
+    /// Centres kept 1.9 m apart was not enough: a switchback's return flight
+    /// bent back over the arriving one, and an upper flight overlapping a lower
+    /// one has nowhere for its supports to stand (upper stairs in tight switchbacks overlap).
+    /// </summary>
+    private const float OverlapTolerance = 0.1f;
+
+    private sealed class Node
+    {
+        public Node? Parent;
+        public StairPieceKind Kind;
+        /// <summary>Centre of the edge this piece starts from (its foot), and the heading it walks.</summary>
+        public Vector2 Start;
+        public Vector2 Edge; // centre of the edge it ends on: the next piece starts here
+        public float Heading;
+        public float Height; // walking surface at Edge
+        public int TurnSteps; // signed, relative to the parent; positive turns right
+        /// <summary>0, or the side (+1 right, -1 left) a switchback's return lane lies on.</summary>
+        public int Switchback;
+        /// <summary>Where this step stands, for the check that the stair never runs into itself.</summary>
+        public Vector2 Centre;
+        public Vector2 Pivot;
+        public int Depth;
+        public long Id;
+        /// <summary>Index of the waypoint this staircase is heading for.</summary>
+        public int Goal;
+        /// <summary>Turned on the outside corner (floor after floor): overlaps on the inside, no wedge to fill.</summary>
+        public bool Overlaps;
+        /// <summary>A row already laid that this staircase carries on from: the search's root, never emitted.</summary>
+        public bool Placed;
+        public float Cost;
+        public float Score;
+        public float Float;
+        public float Buried;
+    }
+
+    /// <summary>A staircase from <paramref name="from"/> to <paramref name="to"/>, built
+    /// of <paramref name="kit"/> (stone when none is given), searching at most
+    /// <paramref name="maxExpansions"/> pieces per leg before giving up.
+    /// <paramref name="arriving"/> and <paramref name="leaving"/>: the heading a
+    /// road arrives at <paramref name="from"/> on and leaves <paramref name="to"/>
+    /// on, if any. The staircase then sets off and finishes within
+    /// <see cref="AlignSteps"/> of them, turning or switching back on the way
+    /// as it must (a mini switchback at the end so the direction of the road mostly lines up with the direction of
+    /// the stairs; a staircase free to start any way went back over the road
+    /// it started from).</summary>
+    /// <paramref name="corridor"/>: a line from <paramref name="from"/> to
+    /// <paramref name="to"/> the staircase follows, through its points as
+    /// waypoints, every piece within <see cref="CorridorHalfWidth"/> of it, if
+    /// given: the stretch of road a generated staircase replaces, where the
+    /// road's own search found the climb.
+    /// <paramref name="maxBuried"/>: deepest the ground may stand over a walking
+    /// surface on any piece (<see cref="MaxBuriedDepth"/> unless asked otherwise).
+    /// <paramref name="arriveWithin"/>: the staircase may finish anywhere this close to
+    /// <paramref name="to"/>, meeting the ground where it does, not at <paramref name="to"/>'s height:
+    /// for an area to reach, such as the ledge in front of a cave, which whole-metre steps
+    /// from the road's height could not meet at one point.
+    /// <paramref name="allowed"/>: where a piece's centre may stand at all (round a cave's rock, say).
+    /// <paramref name="after"/>: the top row of a staircase already laid at <paramref name="from"/>. Climbing on
+    /// from it, the staircase carries on as that one would have: its first piece's back edge on the row's far
+    /// edge at its walking height, turning off it as any piece off the one below (inside-corner pivot, filler,
+    /// no switchback straight off it), and no sunk foot (MountainCave02 -2560,1536: the final staircase builds off the snap
+    /// points of what is already there). Laid
+    /// down to it (its goal below the row), it finishes head-on at the row, facing back along it.
+    public static StairPlan Build(Vector2 from, Vector2 to, Func<float, float, float> ground, float width = 2f, StairKit? kit = null,
+        int maxExpansions = MaxExpansions, float? arriving = null, float? leaving = null, IReadOnlyList<Vector2>? corridor = null,
+        int totalExpansions = int.MaxValue, int stallExpansions = int.MaxValue, int topLandings = 0,
+        float maxBuried = MaxBuriedDepth, float? arriveWithin = null, Func<Vector2, bool>? allowed = null, float? footHeight = null,
+        StairContinuation? after = null)
+    {
+        return BuildOnce(from, to, ground, width, kit, maxExpansions, arriving, leaving, corridor, totalExpansions, stallExpansions,
+            topLandings, maxBuried, arriveWithin, allowed, footHeight, after);
+    }
+
+    private static StairPlan BuildOnce(Vector2 from, Vector2 to, Func<float, float, float> ground, float width, StairKit? kit,
+        int maxExpansions, float? arriving, float? leaving, IReadOnlyList<Vector2>? corridor,
+        int totalExpansions, int stallExpansions, int topLandings,
+        float maxBuried, float? arriveWithin, Func<Vector2, bool>? allowed, float? footHeight,
+        StairContinuation? after)
+    {
+        if (after.HasValue)
+        {
+            from = after.Value.Edge;
+            arriving = after.Value.Heading;
+        }
+        kit ??= StairKit.Stone;
+        if (width < PieceRun - 0.01f) throw new ArgumentOutOfRangeException(nameof(width), "A stair is at least one piece (2 m) wide.");
+        var plan = new StairPlan { Kit = kit.Name };
+        List<Vector2>? line = corridor == null ? null : new List<Vector2>(corridor);
+        if (ground(to.x, to.y) < ground(from.x, from.y))
+        {
+            (from, to) = (to, from);
+            line?.Reverse();
+            plan.Reversed = true;
+            // Climbed the other way: it sets off back along the road that left the
+            // top, and finishes facing back down the road that arrived at the foot.
+            (arriving, leaving) = (leaving.HasValue ? Wrap(leaving.Value + 180f) : null, arriving.HasValue ? Wrap(arriving.Value + 180f) : null);
+            // Its top meets the row head-on: floors carried on past it would lie on the row.
+            if (after.HasValue) topLandings = 0;
+        }
+
+        var goals = new List<Vector2> { to };
+        if (line != null)
+        {
+            // The road's own cells, a few metres apart at least, ending on the goal.
+            // Left to search its own way between the ends, a generated staircase
+            // missed the climb the road had found more often than it met it: on
+            // RoadSeedA 699 layouts were not reached, and roads lost their stairs.
+            goals.Clear();
+            Vector2 last = from;
+            foreach (Vector2 p in line)
+            {
+                if (Vector2.Distance(p, last) < FollowSpacing || Vector2.Distance(p, to) < FollowSpacing) continue;
+                goals.Add(p);
+                last = p;
+            }
+            goals.Add(to);
+        }
+        // Down to a laid row, its top meets the row at the row's own height, over the ground or not.
+        var route = new Route(goals, after.HasValue && plan.Reversed ? after.Value.Height : ground(to.x, to.y)) { StartAligned = arriving.HasValue, EndHeading = leaving, Corridor = corridor, MaxBuried = maxBuried, ArriveWithin = arriveWithin, Allowed = allowed, Kit = kit };
+        plan.Waypoints = goals.Count;
+        var root = new Node
+        {
+            Edge = from,
+            Start = from,
+            Heading = SnapHeading(arriving ?? Bearing(from, goals[0])),
+            Height = footHeight ?? ground(from.x, from.y),
+        };
+        bool carriesOn = after.HasValue && !plan.Reversed;
+        if (carriesOn)
+        {
+            // The laid row itself, as though this search had laid it: its children turn off it by
+            // the rules for any piece. Its own parent only marks it as not the first.
+            StairContinuation row = after!.Value;
+            root = new Node
+            {
+                Kind = row.Kind,
+                Start = row.Start,
+                Edge = row.Edge,
+                Heading = row.Heading,
+                Height = row.Height,
+                Centre = row.Edge - Forward(row.Heading) * (PieceRun / 2f),
+                Placed = true,
+                Parent = new Node { Edge = row.Start, Start = row.Start, Heading = row.Heading,
+                    Height = row.Height - (row.Kind == StairPieceKind.Stair ? PieceRise : 0f) },
+            };
+        }
+        root.Score = Remaining(root, route);
+
+        // One leg per waypoint, each searched from where the last one ended and
+        // kept: a single search over a whole valley-to-summit route kept
+        // reopening pieces laid far back and ran out of steps. An intermediate
+        // waypoint is reached near the ground; only the last leg must meet the
+        // goal's height. A leg can end where nothing fits next: then the search
+        // steps back to where the previous leg started and aims one waypoint
+        // further, up to MaxLegBacktrack legs back.
+        Node current = root;
+        Node? best = null;
+        var legStarts = new List<Node>();
+        int g = 0, back = 0;
+        while (g < route.Goals.Count)
+        {
+            var leg = new Route(route.Goals.GetRange(g, route.Goals.Count - g), route.GoalHeight) { StartAligned = route.StartAligned, EndHeading = route.EndHeading, Corridor = route.Corridor, MaxBuried = route.MaxBuried, ArriveWithin = route.ArriveWithin, Allowed = route.Allowed, Kit = route.Kit };
+            current.Goal = 0;
+            bool last = g == route.Goals.Count - 1;
+            if (totalExpansions <= 0) { plan.Reason = "search budget spent"; break; }
+            Node? reached = Search(current, leg, last, ground, width, Math.Min(maxExpansions, totalExpansions), stallExpansions, out Node closest, out string reason, out int used);
+            totalExpansions -= used;
+            plan.Expansions += used;
+            if (reached != null)
+            {
+                legStarts.Add(current);
+                current = reached;
+                g++;
+                back = 0;
+                if (last) { best = reached; plan.Reached = true; }
+                continue;
+            }
+            if (legStarts.Count == 0 || back >= MaxLegBacktrack)
+            {
+                plan.Reason = route.Goals.Count > 1 ? $"{reason} (waypoint {g + 1} of {route.Goals.Count})" : reason;
+                best = closest;
+                break;
+            }
+            current = legStarts[legStarts.Count - 1];
+            legStarts.RemoveAt(legStarts.Count - 1);
+            back++;
+            plan.Backtracks++;
+        }
+        best ??= current;
+        // Floors carried on straight from the top step, level with it, for the road
+        // to meet: run up to the last step, the road's earthwork stopped short and a
+        // strip of natural ground and rock showed between (a flat 2x2 landing or two that clips into the road helps).
+        if (plan.Reached)
+            for (int i = 0; i < topLandings; i++)
+            {
+                Vector2 dir = Forward(best.Heading);
+                best = new Node
+                {
+                    Parent = best,
+                    Kind = StairPieceKind.Landing,
+                    Start = best.Edge,
+                    Edge = best.Edge + dir * PieceRun,
+                    Heading = best.Heading,
+                    Height = best.Height,
+                    Centre = best.Edge + dir * (PieceRun / 2f),
+                    Depth = best.Depth + 1,
+                };
+            }
+
+        Emit(plan, best, ground, width, kit);
+        return plan;
+    }
+
+    /// <summary>
+    /// Best-first over whole pieces from <paramref name="root"/> toward the route's first
+    /// goal: with <paramref name="final"/>, at the goal's height; otherwise anywhere within
+    /// reach of it. A state seen before (within a piece, same height, heading and goal) is not
+    /// expanded twice, so the search cannot circle; a budget bounds the work on ground
+    /// nothing can climb.
+    /// </summary>
+    private static Node? Search(Node root, Route route, bool final, Func<float, float, float> ground, float width, int maxExpansions,
+        int stallExpansions, out Node closest, out string reason, out int used)
+    {
+        // A leg ends near the ground, or the next one starts from a stair hanging in the air
+        // or buried in the slope (measured: a leg kept at 18 m up left nothing to reach).
+        bool Done(Node n) => final ? Arrived(n, route) && Mathf.Abs(ground(n.Edge.x, n.Edge.y) - n.Height) <= ReachHeight
+            : n.Goal > 0 && Mathf.Abs(ground(n.Edge.x, n.Edge.y) - n.Height) <= LegEndHeight;
+        root.Score = Remaining(root, route);
+        var open = new SortedSet<Node>(NodeOrder.Instance) { root };
+        var seen = new HashSet<(int, int, int, int, int)>();
+        closest = root;
+        reason = "";
+        int expansions = 0, improved = 0;
+        Node? best = null;
+        while (open.Count > 0 && expansions < maxExpansions)
+        {
+            // No nearer the goal in this many pieces: it is wandering, and will not
+            // get there. Failing searches took 70% of a whole world's generation,
+            // about 2 s each, most of it after they had stopped closing in.
+            if (expansions - improved > stallExpansions) { reason = $"no nearer the goal in {stallExpansions} steps of search"; break; }
+            Node node = open.Min!;
+            open.Remove(node);
+            if (node != root && Done(node)) { best = node; break; }
+            if (!seen.Add(Key(node)) || node.Depth >= MaxPieces) continue;
+            if (Remaining(node, route) < Remaining(closest, route) - 0.01f) { closest = node; improved = expansions; }
+            expansions++;
+            var children = new List<Node>();
+            Expand(node, route, ground, width, children);
+            foreach (Node child in children)
+            {
+                child.Id = ++s_ids;
+                // Taken as soon as it is made: waiting for it to come off the
+                // queue spent the budget on cheaper, unfinished staircases while
+                // one a step from the top sat behind them.
+                if (Done(child) && (best == null || child.Cost < best.Cost)) best = child;
+                open.Add(child);
+            }
+            if (best != null) break;
+        }
+        if (best == null && reason.Length == 0)
+            reason = open.Count == 0
+                ? "no piece fits: every heading is buried, crosses itself or turns too far"
+                : $"not reached within {maxExpansions} steps of search";
+        used = expansions;
+        return best;
+    }
+
+    /// <summary>Near the goal, at its height, facing the way the road leaves. The
+    /// search also asks that the staircase end level with the ground at its own
+    /// end: within reach of the goal on a steep slope, one stopped 2.4 m under
+    /// the ground there, and the road leaving it was dug 5 m into the hill.</summary>
+    private static bool Arrived(Node node, Route route) =>
+        node.Goal == route.Last && Vector2.Distance(node.Edge, route.Final) <= (route.ArriveWithin ?? ReachRadius) &&
+        (route.ArriveWithin.HasValue ? node.Height >= route.GoalHeight - ArriveBelow : Mathf.Abs(route.GoalHeight - node.Height) <= ReachHeight) &&
+        (!route.EndHeading.HasValue || Mathf.Abs(Wrap(node.Heading - route.EndHeading.Value + 180f) - 180f) <= AlignSteps * HeadingStep + 0.01f);
+
+    /// <summary>States closer than a piece apart, at the same height and heading,
+    /// are one state: at half a metre a 82 m climb up a real 1:1 to 2:1 face
+    /// drowned in near-copies and was not solved
+    /// in 100000 steps; at 2 m it is, in 1.7 s offline.</summary>
+    private const float StateCell = 2f;
+
+    private static (int, int, int, int, int) Key(Node node) =>
+        (Mathf.RoundToInt(node.Edge.x / StateCell), Mathf.RoundToInt(node.Edge.y / StateCell), Mathf.RoundToInt(node.Height),
+         Mathf.RoundToInt(node.Heading / HeadingStep) % 16, node.Goal);
+
+    /// <summary>Where the search is going: waypoints, the last being the goal, and the route length left after each.</summary>
+    private sealed class Route
+    {
+        public readonly List<Vector2> Goals;
+        public readonly float[] Tail;
+        public readonly float GoalHeight;
+        /// <summary>The first piece sets off within <see cref="AlignSteps"/> of the root's heading, not any way.</summary>
+        public bool StartAligned;
+        /// <summary>The last piece faces within <see cref="AlignSteps"/> of this, if set.</summary>
+        public float? EndHeading;
+        /// <summary>A line every piece keeps within <see cref="CorridorHalfWidth"/> of, if set.</summary>
+        public IReadOnlyList<Vector2>? Corridor;
+        /// <summary>Deepest the ground may stand over a walking surface on any piece.</summary>
+        public float MaxBuried = MaxBuriedDepth;
+        /// <summary>Set: the staircase may finish anywhere this close to the goal, at the
+        /// ground's height where it finishes and no more than <see cref="ArriveBelow"/> below
+        /// the goal's, rather than within <see cref="ReachRadius"/> at the goal's own height.</summary>
+        public float? ArriveWithin;
+
+        /// <summary>Set: where a piece may stand at all (its centre), beyond the corridor.</summary>
+        public Func<Vector2, bool>? Allowed;
+        /// <summary>What it is built of: whether a piece on a steep face can be held out from it.</summary>
+        public StairKit Kit = StairKit.Stone;
+
+        public bool InCorridor(Vector2 p)
+        {
+            if (Allowed != null && !Allowed(p)) return false;
+            if (Corridor == null || Corridor.Count == 0) return true;
+            if (Corridor.Count == 1) return Vector2.Distance(p, Corridor[0]) <= CorridorHalfWidth;
+            for (int i = 1; i < Corridor.Count; i++)
+            {
+                Vector2 a = Corridor[i - 1], ab = Corridor[i] - a;
+                float t = ab.sqrMagnitude < 1e-6f ? 0f : Mathf.Clamp01(Vector2.Dot(p - a, ab) / ab.sqrMagnitude);
+                if (Vector2.Distance(p, a + ab * t) <= CorridorHalfWidth) return true;
+            }
+            return false;
+        }
+        public Route(List<Vector2> goals, float goalHeight)
+        {
+            Goals = goals;
+            GoalHeight = goalHeight;
+            Tail = new float[goals.Count];
+            for (int g = goals.Count - 2; g >= 0; g--) Tail[g] = Tail[g + 1] + Vector2.Distance(goals[g], goals[g + 1]);
+        }
+        public Vector2 Final => Goals[Goals.Count - 1];
+        public int Last => Goals.Count - 1;
+
+        /// <summary>The waypoint an edge here heads for next. A waypoint is passed
+        /// once the edge comes close to it, or is already nearer the waypoint after
+        /// it than the waypoint itself is: a stair cannot always step onto a point.</summary>
+        public int Advance(int goal, Vector2 edge)
+        {
+            while (goal < Last && (Vector2.Distance(edge, Goals[goal]) <= WaypointReach ||
+                   Vector2.Distance(edge, Goals[goal + 1]) < Vector2.Distance(Goals[goal], Goals[goal + 1]))) goal++;
+            return goal;
+        }
+    }
+
+    private sealed class NodeOrder : IComparer<Node>
+    {
+        public static readonly NodeOrder Instance = new();
+        public int Compare(Node? a, Node? b)
+        {
+            int c = a!.Score.CompareTo(b!.Score);
+            return c != 0 ? c : a.Id.CompareTo(b.Id);
+        }
+    }
+
+    /// <summary>The least walking still needed: never less than the route left
+    /// (to the next waypoint, then waypoint to waypoint), and never less than one
+    /// stair run per stair rise still to climb. Climbing past the goal must be
+    /// walked back down.</summary>
+    private static float Remaining(Node node, Route route) => Remaining(node.Edge, node.Goal, node.Height, route);
+
+    private static float Remaining(Vector2 edge, int goal, float height, Route route)
+    {
+        float distance = Vector2.Distance(edge, route.Goals[goal]) + route.Tail[goal];
+        float rise = route.GoalHeight - height;
+        float climb = rise > 0f ? rise * PieceRun / PieceRise : -rise * PieceRun / PieceRise * 2f;
+        return Mathf.Max(distance, climb);
+    }
+
+    private static void Expand(Node node, Route route, Func<float, float, float> ground, float width, List<Node> next)
+    {
+        float half = width / 2f;
+        Vector2 right = Right(node.Heading);
+
+        foreach (StairPieceKind kind in new[] { StairPieceKind.Stair, StairPieceKind.Landing })
+        {
+            // The first piece may face any of the hammer's sixteen headings: on
+            // ground steeper than a flight it has to start across the slope.
+            bool first = node.Parent == null;
+            // Leaving a switchback the flight may bend one step off the
+            // reverse heading, like any stair turn (a hand-built second switchback
+            // turns 157.5 degrees). Three steps left a 67.5 degree wedge that
+            // no filler covered, so the junction did not connect up well.
+            bool floorOnFloor = kind == StairPieceKind.Landing && node.Kind == StairPieceKind.Landing && node.Switchback == 0 && !first;
+            int maxTurn = first ? (route.StartAligned ? AlignSteps : 8)
+                : node.Switchback != 0 ? MaxSwitchbackBendSteps
+                : kind == StairPieceKind.Landing ? (floorOnFloor ? MaxFloorTurnSteps : 0)
+                : node.Kind == StairPieceKind.Landing ? MaxTurnOffLandingSteps
+                : MaxStairTurnSteps;
+            for (int turn = first && !route.StartAligned ? -7 : -maxTurn; turn <= maxTurn; turn++)
+            {
+                float heading = Wrap(node.Heading + turn * HeadingStep);
+                Vector2 dir = Forward(heading);
+                (Vector2 start, Vector2 pivot) = first ? (node.Edge, node.Edge) : TurnOff(node.Edge, node.Heading, heading, turn, half, floorOnFloor);
+
+                Vector2 edge = start + dir * PieceRun;
+                Vector2 middle = start + dir * (PieceRun / 2f);
+                if (!route.InCorridor(middle)) continue;
+
+                float rise = kind == StairPieceKind.Stair ? PieceRise : 0f;
+                Fit(start, dir, Right(heading), half, node.Height, rise, ground, out float floatGap, out float buried);
+                if (buried > route.MaxBuried) continue; // the stair would disappear into the slope
+                if (CrossesItself(node, middle, heading, width)) continue;
+                var child = new Node
+                {
+                    Parent = node,
+                    Kind = kind,
+                    Start = start,
+                    Edge = edge,
+                    Heading = heading,
+                    Height = node.Height + rise,
+                    TurnSteps = first ? 0 : turn,
+                    Overlaps = floorOnFloor && turn != 0,
+                    Pivot = pivot,
+                    Centre = start + dir * (PieceRun / 2f),
+                    Depth = node.Depth + 1,
+                    Float = floatGap,
+                    Buried = buried,
+                };
+                child.Cost = node.Cost + PieceRun
+                    + FloatWeight * floatGap + BuriedWeight * buried
+                    + TurnWeight * Mathf.Abs(first ? 0 : turn)
+                    + (kind == StairPieceKind.Landing ? LandingWeight : 0f);
+                child.Goal = route.Advance(node.Goal, child.Edge);
+                child.Score = child.Cost + HeuristicWeight * Remaining(child, route);
+                next.Add(child);
+            }
+        }
+
+        if (node.Parent == null) return;
+        Vector2 forward = Forward(node.Heading);
+        for (int side = -1; side <= 1; side += 2)
+        {
+            // Floor A continues the lane; floor B lies beside it; the next flight leaves B heading back.
+            Vector2 returnStart = node.Edge + right * (side * width);
+            Vector2 centre = node.Edge + forward * (PieceRun / 2f) + right * (side * width / 2f);
+            if (CrossesItself(node, node.Edge + forward * (PieceRun / 2f), node.Heading, width)
+                || CrossesItself(node, centre + right * (side * width / 2f), node.Heading, width)
+                || !route.InCorridor(centre + right * (side * width / 2f))) continue;
+            Fit(node.Edge, forward, right, half, node.Height, 0f, ground, out float floatA, out float buriedA);
+            Fit(returnStart, forward, right, half, node.Height, 0f, ground, out float floatB, out float buriedB);
+            float buried = Mathf.Max(buriedA, buriedB);
+            if (buried > route.MaxBuried) continue;
+            float floatGap = (floatA + floatB) / 2f;
+            var child = new Node
+            {
+                Parent = node,
+                Kind = StairPieceKind.Landing,
+                Start = node.Edge,
+                Edge = returnStart,
+                Heading = Wrap(node.Heading + 180f),
+                Height = node.Height,
+                Switchback = side,
+                Centre = centre,
+                Depth = node.Depth + 1,
+                Float = floatGap,
+                Buried = buried,
+            };
+            child.Cost = node.Cost + PieceRun + width
+                + FloatWeight * floatGap + BuriedWeight * buried
+                + SwitchbackWeight;
+            child.Goal = route.Advance(node.Goal, child.Edge);
+            child.Score = child.Cost + HeuristicWeight * Remaining(child, route);
+            next.Add(child);
+        }
+    }
+
+    /// <summary>Where a piece turned <paramref name="turn"/> heading steps off one ending on <paramref name="edge"/>
+    /// starts (its back edge's centre), and the corner it pivots on: the inside corner (the right one on a right
+    /// turn), or for a floor after a floor the outside one, so the two overlap.</summary>
+    private static (Vector2 start, Vector2 pivot) TurnOff(Vector2 edge, float fromHeading, float heading, int turn, float half, bool floorOnFloor)
+    {
+        if (turn == 0) return (edge, edge);
+        float side = (turn > 0) != floorOnFloor ? 1f : -1f;
+        Vector2 pivot = edge + Right(fromHeading) * (side * half);
+        return (pivot - Right(heading) * (side * half), pivot);
+    }
+
+    /// <summary>How far the walking surface of a piece stands above the ground
+    /// (mean over its samples) and how deep the ground buries it (worst sample).</summary>
+    private static void Fit(Vector2 start, Vector2 dir, Vector2 right, float half, float baseHeight, float rise,
+        Func<float, float, float> ground, out float floatGap, out float buried)
+    {
+        floatGap = 0f;
+        buried = 0f;
+        int n = 0;
+        for (int i = 1; i <= 3; i++)
+        {
+            float along = PieceRun * i / 4f;
+            float surface = baseHeight + rise * along / PieceRun;
+            for (int s = -1; s <= 1; s++)
+            {
+                Vector2 p = start + dir * along + right * (s * half * 0.9f);
+                float g = ground(p.x, p.y);
+                floatGap += Mathf.Max(0f, surface - g);
+                buried = Mathf.Max(buried, g - surface);
+                n++;
+            }
+        }
+        floatGap /= n;
+    }
+
+    /// <summary>Whether a piece of <paramref name="width"/> across and a piece's run
+    /// along, centred at <paramref name="centre"/> facing <paramref name="heading"/>,
+    /// overlaps any piece laid before <paramref name="node"/>, seen from above. A piece
+    /// on columns may pass over nothing: its columns stand in whatever is below.</summary>
+    private static bool CrossesItself(Node node, Vector2 centre, float heading, float width)
+    {
+        bool Clash(Vector2 c, float h, float across) => Overlap(centre, heading, width, c, h, across);
+        for (Node? earlier = node.Parent; earlier != null && earlier.Parent != null; earlier = earlier.Parent)
+        {
+            if (Vector2.Distance(earlier.Centre, centre) > 2f * (width + PieceRun)) continue;
+            if (earlier.Switchback != 0)
+            {
+                // Its two floors, at the heading of the flight that arrived on them.
+                float h = earlier.Parent.Heading;
+                Vector2 a = earlier.Start + Forward(h) * (PieceRun / 2f);
+                Vector2 b = a + Right(h) * (earlier.Switchback * width);
+                if (Clash(a, h, width) || Clash(b, h, width)) return true;
+                continue;
+            }
+            if (Clash(earlier.Centre, earlier.Heading, width)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Two pieces, <paramref name="acrossA"/> by a run, overlap by more than
+    /// <see cref="OverlapTolerance"/> seen from above (separating axes).</summary>
+    private static bool Overlap(Vector2 ca, float ha, float acrossA, Vector2 cb, float hb, float acrossB)
+    {
+        Vector2 fa = Forward(ha), ra = Right(ha), fb = Forward(hb), rb = Right(hb);
+        foreach (Vector2 axis in new[] { fa, ra, fb, rb })
+        {
+            float Reach(Vector2 f, Vector2 r, float across) =>
+                Mathf.Abs(Vector2.Dot(f, axis)) * PieceRun / 2f + Mathf.Abs(Vector2.Dot(r, axis)) * across / 2f;
+            float apart = Mathf.Abs(Vector2.Dot(cb - ca, axis));
+            if (apart >= Reach(fa, ra, acrossA) + Reach(fb, rb, acrossB) - OverlapTolerance) return false;
+        }
+        return true;
+    }
+
+    private static void Emit(StairPlan plan, Node last, Func<float, float, float> ground, float width, StairKit kit)
+    {
+        var steps = new List<Node>();
+        for (Node? n = last; n != null && n.Parent != null && !n.Placed; n = n.Parent) steps.Add(n);
+        steps.Reverse();
+
+        int lanes = Mathf.Max(1, Mathf.RoundToInt(width / PieceRun));
+        foreach (Node step in steps)
+        {
+            Node parent = step.Parent!;
+            plan.MaxBuried = Mathf.Max(plan.MaxBuried, step.Buried);
+            if (step.Switchback != 0)
+            {
+                AddRow(plan, kit, StairPieceKind.Landing, kit.Floor, step.Start, parent.Heading, parent.Height, lanes, ground, mark: true);
+                AddRow(plan, kit, StairPieceKind.Landing, kit.Floor, step.Edge, parent.Heading, parent.Height, lanes, ground, mark: true);
+                plan.Landings += 2 * lanes;
+                plan.Switchbacks++;
+                plan.Turns++;
+                plan.WalkedLength += PieceRun + width;
+                continue;
+            }
+            if (step.TurnSteps != 0 && step.Overlaps)
+            {
+                plan.Turns++;
+                plan.TurnSteps += System.Math.Abs(step.TurnSteps);
+                plan.OverlapTurnSteps += System.Math.Abs(step.TurnSteps);
+            }
+            else if (step.TurnSteps != 0)
+            {
+                // The wedge, filled with flat pieces level with the top of the piece before.
+                foreach (FillerPiece filler in StairFiller.Choose(step.Pivot, parent.Heading, step.TurnSteps, width, parent.Kind == StairPieceKind.Landing, kit.Fillers))
+                    AddPiece(plan, kit, StairPieceKind.Filler, filler.Prefab, filler.Back, filler.Heading, parent.Height, filler.Across, filler.Depth, ground, mark: false);
+                plan.Turns++;
+                plan.TurnSteps += System.Math.Abs(step.TurnSteps);
+            }
+            AddRow(plan, kit, step.Kind, step.Kind == StairPieceKind.Stair ? kit.Stair : kit.Floor, step.Start, step.Heading, parent.Height, lanes, ground, mark: true);
+            if (step.Kind == StairPieceKind.Stair) plan.Stairs += lanes; else plan.Landings += lanes;
+            plan.WalkedLength += PieceRun;
+        }
+
+        Node first = steps.Count > 0 ? steps[0].Parent! : last;
+        plan.StartHeading = steps.Count > 0 ? steps[0].Heading : last.Heading;
+        plan.EndHeading = last.Heading;
+        plan.Rise = last.Height - first.Height;
+        plan.End = new Vector3(last.Edge.x, last.Height, last.Edge.y);
+    }
+
+    /// <summary>Highest a walking surface may stand over the ground a player walks onto it from:
+    /// the player has no step-up, so a stair's top over a clearing is climbed only by a jump.</summary>
+    public const float StepUp = 0.3f;
+
+    /// <summary>One row of pieces across the stair.</summary>
+    private static void AddRow(StairPlan plan, StairKit kit, StairPieceKind kind, string prefab, Vector2 start, float heading,
+        float baseHeight, int lanes, Func<float, float, float> ground, bool mark)
+    {
+        Vector2 right = Right(heading);
+        for (int lane = 0; lane < lanes; lane++)
+            AddPiece(plan, kit, kind, prefab, start + right * ((lane - (lanes - 1) / 2f) * PieceRun), heading, baseHeight, PieceRun, PieceRun, ground, mark);
+    }
+
+    /// <summary>One piece whose back edge is centred on <paramref name="back"/>, its
+    /// clearance and cuts, then a pillar column under it if it does not rest on the ground.</summary>
+    private static void AddPiece(StairPlan plan, StairKit kit, StairPieceKind kind, string prefab, Vector2 back, float heading,
+        float baseHeight, float across, float depth, Func<float, float, float> ground, bool mark)
+    {
+        Vector2 dir = Forward(heading);
+        Vector2 centre = back + dir * (depth / 2f);
+        var piece = new StairPiece { Kind = kind, Prefab = prefab };
+        float underside;
+        bool stair = prefab == kit.Stair;
+        if (stair)
+        {
+            piece.Position = new Vector3(centre.x, baseHeight, centre.y);
+            piece.YawDegrees = Wrap(heading + 180f); // the piece climbs toward its local -z
+            underside = baseHeight;
+        }
+        else
+        {
+            // A floor or a filler: its top is the walking surface.
+            piece.Position = new Vector3(centre.x, baseHeight - kit.FloorTop, centre.y);
+            piece.YawDegrees = prefab == kit.Floor ? heading : Wrap(heading + 180f);
+            underside = baseHeight - kit.FloorThickness;
+        }
+        plan.Pieces.Add(piece);
+        AddClearance(plan, stair, back, dir, heading, baseHeight, baseHeight - kit.FloorThickness, across, depth);
+
+        float g = ground(centre.x, centre.y);
+        float gap = underside - g;
+        if (mark) plan.MaxFloat = Mathf.Max(plan.MaxFloat, gap);
+        // A piece stands on the ground only sunk into it: one planned to sit on
+        // the surface hovers a few centimetres above it in game (the terrain is
+        // not the plan's to the centimetre, and the road levels the ground at a
+        // junction), is not grounded, and Valheim drops it -- a black marble
+        // staircase lost a quarter of its pieces that way. Anything less than
+        // SupportBury into the ground gets a column driven into it.
+        if (gap <= -SupportBury) return;
+        // Stack from the underside down until the lowest pillar's whole base is
+        // SupportBury under the lowest ground beneath it: sunk only at its centre,
+        // a pillar on a slope showed its base on the downhill side, and one broke
+        // (the whole base must clip into the ground).
+        float lowest = g;
+        for (int cx = -1; cx <= 1; cx += 2)
+            for (int cz = -1; cz <= 1; cz += 2)
+                lowest = Mathf.Min(lowest, ground(centre.x + cx * SupportHalfWidth, centre.y + cz * SupportHalfWidth));
+        for (float top = underside; top > lowest - SupportBury; top -= kit.SupportHeight)
+        {
+            plan.Pieces.Add(new StairPiece
+            {
+                Kind = StairPieceKind.Support,
+                Prefab = kit.Support,
+                Position = new Vector3(centre.x, top - kit.SupportHeight / 2f, centre.y),
+                YawDegrees = heading,
+            });
+        }
+    }
+
+    /// <summary>The piece's body and the headroom above it, in stretches along
+    /// the walk: a stair rises a step per stretch, a floor or block is level.</summary>
+    private static void AddClearance(StairPlan plan, bool stair, Vector2 laneStart, Vector2 dir, float heading, float baseHeight, float floorUnderside, float across, float depth)
+    {
+        int stretches = stair ? ClearanceStretches : 1;
+        float length = depth / stretches;
+        for (int i = 0; i < stretches; i++)
+        {
+            // A stair's walking surface at the middle of this stretch; a floor's or block's is its top.
+            float surface = stair ? baseHeight + PieceRise * (i + 0.5f) / stretches : baseHeight;
+            float bottom = stair ? baseHeight : floorUnderside;
+            float top = surface + ClearanceHeight;
+            Vector2 mid = laneStart + dir * (length * (i + 0.5f));
+            plan.Clearances.Add(new StairClearance(
+                new Vector3(mid.x, (bottom + top) / 2f, mid.y),
+                new Vector3(across / 2f, (top - bottom) / 2f, length / 2f),
+                heading, surface));
+        }
+    }
+
+    /// <summary>Unity's yaw: 0 faces +z, 90 faces +x.</summary>
+    public static Vector2 Forward(float headingDegrees)
+    {
+        float r = headingDegrees * Mathf.Deg2Rad;
+        return new Vector2(Mathf.Sin(r), Mathf.Cos(r));
+    }
+
+    public static Vector2 Right(float headingDegrees)
+    {
+        float r = headingDegrees * Mathf.Deg2Rad;
+        return new Vector2(Mathf.Cos(r), -Mathf.Sin(r));
+    }
+
+    public static float Bearing(Vector2 from, Vector2 to) => Wrap(Mathf.Atan2(to.x - from.x, to.y - from.y) * Mathf.Rad2Deg);
+
+    public static float SnapHeading(float degrees) => Wrap(Mathf.Round(degrees / HeadingStep) * HeadingStep);
+
+    public static float Wrap(float degrees)
+    {
+        float d = degrees % 360f;
+        return d < 0f ? d + 360f : d;
+    }
+}
