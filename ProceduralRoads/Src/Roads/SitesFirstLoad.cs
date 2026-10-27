@@ -102,7 +102,10 @@ public static class SitesFirstLoad
         if (!PlacedSites.NeedsPlacing(location.m_slopeRotation, location.m_randomRotation,
                 WorldGenerator.instance.GetBiome(position.x, position.z), LocationLevelling.OpsAt(centre))) return;
         if (PlacedSites.PlayerDecides(location.m_prefab.Name, location.m_unique, location.m_iconPlaced, location.m_iconAlways))
+        {
+            PlacedSites.MarkPlayerDecided(centre);
             return;
+        }
         if (PlacedSiteReader.Placed(zone, centre, out _)) { s_placing.Add((centre, zone)); return; }
         if (instance.m_placed || ZoneSystem.instance.IsZoneGenerated(zone)) return;
         // Shown on the map once placed (Hildir's quest sites): off the map until a player comes as near as

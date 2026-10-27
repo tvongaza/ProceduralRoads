@@ -133,6 +133,7 @@ public partial class SitesFirstTests : IDisposable
             RoadNetworkGenerator.Reset();
             RoadSpatialGrid.Clear();
             StairStructures.Reset();
+            SiteApproachQueue.Reset();
             PlacedSites.Reset();
             PlacedSite cave = Cave();
             PlacedSites.Ready(cave);
@@ -152,6 +153,7 @@ public partial class SitesFirstTests : IDisposable
                 // stops a little short of the shape's nominal landing, but inside the place's footprint.
                 Assert.True(toLanding <= 6f, $"placed: nearest the landing {cave.Shape.Landing} is {toLanding:F1} m off; {outcomes}");
                 Assert.Contains(walked, p => p.magnitude < Footprint);
+                Assert.Equal(0, SiteApproachQueue.Count);
                 // Reached because it was carried on onto the landing, wherever on it that ended.
                 Assert.True(PlacedSites.Landed(cave.Centre));
                 Assert.True(RoadNetworkGenerator.AlreadyServedByNetwork(Vector3.zero, 10f));

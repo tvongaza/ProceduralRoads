@@ -11,6 +11,8 @@ public static class ManualRoads
     private static readonly Dictionary<string, ManualRoadDraft> drafts = new();
     private static List<Island>? islands;
     private static int worldEpoch;
+    /// <summary>Changes whenever the world does: work planned in one world must not land in another.</summary>
+    public static int WorldEpoch => worldEpoch;
     public static bool Busy { get; private set; }
     public static ManualRoadDraft Draft(string actor)
     {
@@ -21,6 +23,7 @@ public static class ManualRoads
     {
         drafts.Clear(); islands = null; worldEpoch++; Busy = false;
         StructureAppendQueue.Reset();
+        SiteApproachQueue.Reset();
     }
 
     public sealed class Plan
@@ -238,6 +241,9 @@ public static partial class RoadNetworkGenerator
     {
         if (ManualRoads.Busy || IsGenerating) throw new InvalidOperationException("Road generation is busy.");
         ManualRoads.RefuseOnReleasedNetwork();
+        // The saved staircases could not be read: a staircase added now would never be saved.
+        if (RoadNetworkPersistence.StairRecordKept)
+            throw new InvalidOperationException("This world's saved staircases could not be read, so no staircase is added this session.");
         RoadNetworkPersistence.EnsureMetadataInstance();
         RoadSpatialGrid.CommitAppendCuts(cuts, StairLayout.CutRadius * 2f, expectedVersion);
         // Settled on the ground its cuts and the roads leave: columns carried down, pieces wholly under it not placed (BuriedPieces).
@@ -250,6 +256,22 @@ public static partial class RoadNetworkGenerator
         var additions = StructureAppendQueue.Prepare(run.Pieces);
         StairStructures.Add(run);
         StructureAppendQueue.Enqueue(additions);
+        m_roadsGenerated = true; // A loaded network is now dirty and must be saved in full.
+        m_roadsLoadedFromZDO = false;
+        StructurePlans.InvalidatePlans();
+        RoadClearAreaManager.ClearCache();
+    }
+
+    /// <summary>
+    /// Carry a road on onto a place's landing (<see cref="RoadSiteEntry"/>): one append whose
+    /// points level and paint inside the place's footprint along it.
+    /// </summary>
+    internal static void AppendSiteEntryRoad(RoadSpatialGrid.PlannedPath road, int expectedVersion)
+    {
+        if (ManualRoads.Busy || IsGenerating) throw new InvalidOperationException("Road generation is busy.");
+        ManualRoads.RefuseOnReleasedNetwork();
+        RoadNetworkPersistence.EnsureMetadataInstance();
+        RoadSpatialGrid.CommitAppend(new[] { road }, expectedVersion, intoSite: true);
         m_roadsGenerated = true; // A loaded network is now dirty and must be saved in full.
         m_roadsLoadedFromZDO = false;
         StructurePlans.InvalidatePlans();

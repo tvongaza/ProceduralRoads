@@ -64,10 +64,10 @@ public class RoadPathfinder
     /// little from site to site so a world gets long traverses, staircases and
     /// both. The steps bought are kept in
     /// <see cref="LastStairSteps"/>; the generator lays them with StairLayout.
-    /// The levers are "Stairs/Enabled", "Stairs/CostFixed" and "Stairs/CostPerMeterClimbed".
+    /// The levers are "Stairs/CostFixed" and "Stairs/CostPerMeterClimbed". Stairs are always on for generated
+    /// roads (no setting for them); a search may be made without them (manual roads).
     /// </summary>
-    public bool Stairs = ConfiguredStairs;
-    public static bool ConfiguredStairs = true;
+    public bool Stairs = true;
     public static float ConfiguredStairCostFixed = RoadConstants.DefaultStairCostFixed;
     public static float ConfiguredStairCostPerMeterClimbed = RoadConstants.DefaultStairCostPerMeterClimbed;
     public float StairCostFixed = ConfiguredStairCostFixed;
@@ -366,19 +366,25 @@ public class RoadPathfinder
     }
 
     /// <summary>Search from a destination towards any existing road. Sampled hints
-    /// guide the search; they do not promise a globally cheapest junction.</summary>
-    public List<Vector2>? FindPathToNetwork(Vector2 start, float reach, IReadOnlyList<Vector2>? hints = null, System.Func<Vector2, bool>? targetAllowed = null)
+    /// guide the search; they do not promise a globally cheapest junction.
+    /// <paramref name="served"/>: whether the place the search starts from is already served by the network
+    /// (RoadNetworkGenerator.PlaceServed), the caller's own test of it, asked first in place of a junction at the first cell
+    /// (AlreadyOnNetwork). Not served, a junction at the first cell is one the search finds like any other: a path from the
+    /// start to it.</summary>
+    public List<Vector2>? FindPathToNetwork(Vector2 start, float reach, IReadOnlyList<Vector2>? hints = null, System.Func<Vector2, bool>? targetAllowed = null,
+        System.Func<bool>? served = null)
     {
         long began = SearchStats.Enabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         m_lastIterations = 0;
-        List<Vector2>? path = FindPathToNetworkCore(start, reach, hints, targetAllowed);
+        List<Vector2>? path = FindPathToNetworkCore(start, reach, hints, targetAllowed, served);
         FoldSqueezes();
         if (SearchStats.Enabled)
             SearchStats.Record(SearchStats.Joining, path != null || AlreadyOnNetwork, m_lastIterations >= MaxIterations, m_lastIterations, began);
         return path;
     }
 
-    private List<Vector2>? FindPathToNetworkCore(Vector2 start, float reach, IReadOnlyList<Vector2>? hints, System.Func<Vector2, bool>? targetAllowed)
+    private List<Vector2>? FindPathToNetworkCore(Vector2 start, float reach, IReadOnlyList<Vector2>? hints, System.Func<Vector2, bool>? targetAllowed,
+        System.Func<bool>? served)
     {
         using var activity = new RoadSearchActivity(Activity);
         LastPathCost = 0;
@@ -427,7 +433,7 @@ public class RoadPathfinder
             !RoadSpatialGrid.TryGetRoadHeightWithin(junction, 1f, out float surface)
             || Mathf.Abs(surface - Ground(before)) <= 2f * JunctionStep;
 
-        if (Join(startGrid, out _))
+        if (served != null ? served() : Join(startGrid, out _))
         {
             // Already within reach. This is not a failure, and returning null
             // for it made the caller build a road to a place the network

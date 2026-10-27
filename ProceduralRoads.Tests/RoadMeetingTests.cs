@@ -162,6 +162,38 @@ public class RoadMeetingTests : IDisposable
         finally { RoadNetworkGenerator.EarthworkCap = cap; }
     }
 
+    /// <summary>The planner's join and its search ask one owner whether a place is already served, the same as the count
+    /// of places reached: a place 19 m from a trunk on a 3 m fill is reached (it is within the place's reach), and the
+    /// planner leaves it, where it used to search for a junction at grade from it again (none along the fill) and come
+    /// back with no join, or build a connector beside the trunk. A boss's entrance is not served by a road passing it.</summary>
+    [Fact]
+    public void APlaceTheNetworkServesIsServedForThePlannerAsForTheCount()
+    {
+        RoadNetworkGenerator.Reset();
+        RoadSiteProtection.Reset();
+        var world = new FlatWorld();
+        _scope.WithWorld(world);
+        var finder = new RoadPathfinder(world) { TerrainVarianceThreshold = 1000f, Meander = 0f };
+        SetPathfinder(finder);
+        float step = RoadPathfinder.JunctionStep;
+        RoadPathfinder.JunctionStep = RoadPathfinder.DefaultJunctionStep;
+        try
+        {
+            var points = new List<Vector2>();
+            for (int x = -60; x <= 60; x += 2) points.Add(new Vector2(x, 19f));
+            RoadSpatialGrid.Commit(new RoadSpatialGrid.PlannedPath(points, points.Select(_ => 43f).ToList(), points.Select(_ => default(RoadPointDebugInfo)).ToList(), 4f, 120f, false));
+            RoadSpatialGrid.FinalizeRoadNetwork();
+            float laid = RoadSpatialGrid.TotalRoadLength;
+            var hints = new List<Vector2>(points);
+
+            Assert.True(RoadNetworkGenerator.AlreadyServedByNetwork(Vector3.zero, 10f));
+            Assert.True(RoadNetworkGenerator.JoinPlace(finder, world, hints, new RoadConnectionPlanner.Place("Cave", Vector3.zero, 10f)));
+            Assert.Equal(laid, RoadSpatialGrid.TotalRoadLength);
+            Assert.False(RoadNetworkGenerator.PlaceServed("SomeBossEntrance", Vector3.zero, 10f));
+        }
+        finally { RoadPathfinder.JunctionStep = step; }
+    }
+
     /// <summary>An earthwork re-route passed over for crossing another road prices that crossing up for the next attempt,
     /// which goes round it: here past the end of the short road to the south. Without it the next attempt searched the same
     /// way, was passed over again, and the road kept its first plan, held 3.5 m up to the road on a fill beside it.</summary>
@@ -193,5 +225,70 @@ public class RoadMeetingTests : IDisposable
             Assert.Empty(RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(0f, 0f, 7f), 9f).Where(p => p.p.y < 5f));
         }
         finally { RoadNetworkGenerator.EarthworkCap = cap; }
+    }
+
+    /// <summary>A staircase onto a placed place's landing meets the network along its walk: one point a row, at the row's
+    /// middle and walking surface. Taken piece by piece, two pieces a row side by side read as a zig-zag across the width
+    /// and as a longer road, and a short pass beside another road could count as a braid.</summary>
+    [Fact]
+    public void AStaircaseOntoALandingMeetsTheNetworkAlongItsWalk()
+    {
+        var plan = new StairPlan();
+        for (int row = 0; row < 3; row++)
+            foreach (float x in new[] { -1f, 1f })
+                plan.Pieces.Add(new StairPiece { Kind = StairPieceKind.Stair, Prefab = "stone_stair", Position = new Vector3(x, 40f + row, 2f * row) });
+        var span = new RoadStairSpan { FromPoint = new Vector2(0f, -1f), ToPoint = new Vector2(0f, 5f), Plan = plan };
+        var road = new List<RoadSpatialGrid.PlannedPath> { new(new List<Vector2> { new(0f, -20f), new(0f, -2f) }, new List<float> { 40f, 40f },
+            new List<RoadPointDebugInfo> { default, default }, 4f, 18f, false) };
+
+        var all = RoadNetworkGenerator.WithEntry(false, road, new Vector2(0f, -2f), null, span);
+
+        var entry = all[all.Count - 1];
+        Assert.Equal(3, entry.Points.Count);
+        for (int row = 0; row < 3; row++)
+        {
+            Assert.Equal(new Vector2(0f, 2f * row), entry.Points[row]);
+            Assert.Equal(40.5f + row, entry.Heights[row], 3);
+        }
+    }
+
+    /// <summary>A place's join tries the next junction away from one whose road is refused: here the cheapest junction,
+    /// straight north on the trunk, can be reached only across a short road on a 5 m fill (not a junction: off grade),
+    /// and that road is refused for crossing it; a junction further east along the trunk is reached clear of it. The join
+    /// took its first junction only, and the place was left cut off (offline: the components the join-arrival rule added).</summary>
+    [Fact]
+    public void AJoinTriesTheNextJunctionWhereTheRoadToTheFirstIsRefused()
+    {
+        int retries = RoadNetworkGenerator.JoinRetries;
+        float step = RoadPathfinder.JunctionStep;
+        RoadPathfinder.JunctionStep = RoadPathfinder.DefaultJunctionStep;
+        try
+        {
+            bool Join(int tries)
+            {
+                RoadNetworkGenerator.Reset();
+                RoadSiteProtection.Reset();
+                var world = new FlatWorld();
+                _scope.WithWorld(world);
+                var finder = new RoadPathfinder(world) { TerrainVarianceThreshold = 1000f, Meander = 0f };
+                SetPathfinder(finder);
+                RoadNetworkGenerator.JoinRetries = tries;
+                RoadSpatialGrid.PlannedPath Laid(float x0, float z0, float x1, float z1, float h)
+                {
+                    var points = new List<Vector2>();
+                    int n = Mathf.CeilToInt(Vector2.Distance(new Vector2(x0, z0), new Vector2(x1, z1)));
+                    for (int i = 0; i <= n; i++) points.Add(Vector2.Lerp(new Vector2(x0, z0), new Vector2(x1, z1), i / (float)n));
+                    return new RoadSpatialGrid.PlannedPath(points, points.Select(_ => h).ToList(), points.Select(_ => default(RoadPointDebugInfo)).ToList(), 4f, n, false);
+                }
+                var trunk = Laid(-100f, 0f, 100f, 0f, 40f);
+                RoadSpatialGrid.Commit(trunk);
+                RoadSpatialGrid.Commit(Laid(-6f, -20f, 6f, -20f, 45f));
+                RoadSpatialGrid.FinalizeRoadNetwork();
+                return RoadNetworkGenerator.JoinPlace(finder, world, new List<Vector2>(trunk.Points), new RoadConnectionPlanner.Place("Cave", new Vector3(0f, 0f, -40f), 5f));
+            }
+            Assert.False(Join(0), "the road to the first junction was built");
+            Assert.True(Join(2), "refused: " + RoadSpatialGrid.LastRefusal);
+        }
+        finally { RoadNetworkGenerator.JoinRetries = retries; RoadPathfinder.JunctionStep = step; }
     }
 }

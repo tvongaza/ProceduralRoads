@@ -234,6 +234,12 @@ public static class LocationLevelling
         return height;
     }
 
+    /// <summary>Whether the location centred at a point turns to face downhill when
+    /// it is placed (ZoneLocation.m_slopeRotation). Set by LocationPrefabLevelling;
+    /// null: none does.</summary>
+    public static System.Func<Vector2, bool>? FacesDownhillSource;
+    public static bool FacesDownhill(Vector2 centre) => FacesDownhillSource?.Invoke(centre) ?? false;
+
     /// <summary>Where an operation stands from the location's centre once it is turned to <paramref name="yaw"/>.</summary>
     public static Vector2 OffsetAt(LevelOp op, float yaw)
     {

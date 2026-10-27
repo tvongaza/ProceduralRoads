@@ -11,7 +11,8 @@ public sealed class StairRun
     public Vector2 From;
     public Vector2 To;
     public float Width;
-    /// <summary>A staircase onto a place's landing, built with its road: its clearance never carves or removes a rock standing in a place's
+    /// <summary>A staircase onto a place's landing (built with its road, or laid in play by
+    /// SiteApproachRunner): its clearance never carves or removes a rock standing in a place's
     /// footprint that is the place's own (a frost cave's boulders are likely
     /// part of its prefab).</summary>
     public bool KeepsSiteRocks;

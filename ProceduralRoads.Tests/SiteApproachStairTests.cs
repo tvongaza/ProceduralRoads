@@ -58,7 +58,7 @@ public class SiteApproachStairTests : IDisposable
     {
         var path = new List<Vector2> { end + new Vector2(-30f, 0f), end };
         return RoadStairRuns.LaySiteApproach(end, _world.GetHeight(end.x, end.y), StairLayout.Bearing(path[0], end),
-            new Vector2(0f, 0f), 52f, ops, path, 1, new List<RoadStairSpan>(), _world, out why);
+            new Vector2(0f, 0f), 52f, ops, false, path, 1, new List<RoadStairSpan>(), _world, out why);
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public class SiteApproachStairTests : IDisposable
         var end = new Vector2(-24f, 0f);
         var path = new List<Vector2> { end + new Vector2(-30f, 0f), end };
         RoadStairSpan? span = RoadStairRuns.LaySiteApproach(end, world.GetHeight(end.x, end.y), StairLayout.Bearing(path[0], end),
-            new Vector2(0f, 0f), 52f, sunk, path, 1, new List<RoadStairSpan>(), world, out string why);
+            new Vector2(0f, 0f), 52f, sunk, false, path, 1, new List<RoadStairSpan>(), world, out string why);
 
         Assert.True(span != null, why);
         // Laid from the pit floor up: its top, with the landing the road meets, at the road's end.
@@ -179,16 +179,6 @@ public class SiteApproachStairTests : IDisposable
         Assert.Contains(RoadSpatialGrid.GetRoadPointsNearPosition(foot, 2f), p => p.IsRoad && Mathf.Abs(p.h - 40f) < 0.6f);
     }
 
-    [Fact]
-    public void WithoutStairsAGeneratedRoadToThePlaceStopsAsBefore()
-    {
-        LocationLevelling.Source = c => c.magnitude < 0.5f ? Apron : null;
-        SetPathfinder(new RoadPathfinder(_world) { Stairs = false, TerrainVarianceThreshold = 1000f, Meander = 0f });
-
-        Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-120f, 0f), 0f, new Vector2(0f, 0f), 10f, 4f, "to the apron"));
-
-        Assert.Empty(StairStructures.Runs);
-    }
     /// <summary>Ground falling at 0.8 towards +x from 12 m behind to 14 m in front, then at 0.3 (where a
     /// road can reach); level behind (a road can end there too); sea past 200 m.</summary>
     private sealed class HillsideWorld : WorldGenerator
@@ -226,6 +216,21 @@ public class SiteApproachStairTests : IDisposable
             Centre = new Vector2(0f, 0f), RoadTail = new List<Vector2> { before, end },
         };
         return RoadStairRuns.PlanPlacedSiteApproach(request, 90f, CaveFloor, CaveGround, (x, z) => Heightmap.Biome.Mountain, 77, out why, rock);
+    }
+
+    [Fact]
+    public void AnOffCentreFloorWaitsForThePlaceToBePlaced()
+    {
+        var world = new HillsideWorld();
+        _scope.WithWorld(world);
+        var end = new Vector2(24f, 0f);
+        var path = new List<Vector2> { new Vector2(54f, 0f), end };
+        Assert.Null(RoadStairRuns.LaySiteApproach(end, world.GetHeight(end.x, end.y), 270f, new Vector2(0f, 0f), 50f, CaveFloor, true,
+            path, 1, new List<RoadStairSpan>(), world, out string why));
+        Assert.Equal(RoadStairRuns.WaitsForItsZone, why);
+        Assert.Null(RoadStairRuns.LaySiteApproach(end, world.GetHeight(end.x, end.y), 270f, new Vector2(0f, 0f), 50f, CaveFloor, false,
+            path, 1, new List<RoadStairSpan>(), world, out why));
+        Assert.Equal("flat off its centre, turned at random", why);
     }
 
     [Fact]
@@ -404,6 +409,87 @@ public class SiteApproachStairTests : IDisposable
             Assert.True(piece.Position.y >= height - 0.01f, $"{piece.Kind} at {piece.Position} under the row at {height:F2}");
     }
 
+    /// <summary>A cave left for a player to find (unique, or shown on the map) is never placed before its
+    /// roads: its road ends at its ring and its approach is queued, laid once a player has come by (where
+    /// these places land is up to the player exploring, not the mod). Any other cave not placed in time keeps the ring end, with nothing queued.</summary>
+    [Fact]
+    public void AGeneratedRoadToACaveLeftForAPlayerQueuesItsApproachWithTheRoadsEnd()
+    {
+        LocationLevelling.Source = c => c.magnitude < 0.5f ? CaveFloor : null;
+        LocationLevelling.FacesDownhillSource = c => c.magnitude < 0.5f;
+        try
+        {
+            foreach (bool decided in new[] { false, true })
+            {
+                RoadNetworkGenerator.Reset();
+                RoadSpatialGrid.Clear();
+                SiteApproachQueue.Reset();
+                PlacedSites.Reset();
+                RoadSiteProtection.Set(new[] { new RoadSiteProtection.Footprint(new Vector2(0f, 0f), Footprint) });
+                if (decided) PlacedSites.MarkPlayerDecided(new Vector2(0f, 0f));
+                SetPathfinder(new RoadPathfinder(_world) { Stairs = true, TerrainVarianceThreshold = 1000f, Meander = 0f });
+
+                Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-120f, 0f), 0f, new Vector2(0f, 0f), 10f, 4f, "to the cave"));
+
+                Assert.Empty(StairStructures.Runs);
+                // Reached either way: at the ring, or (left for a player) within the shortening's slack.
+                Assert.True(RoadNetworkGenerator.AlreadyServedByNetwork(new Vector3(0f, 0f, 0f), 10f));
+                if (!decided)
+                {
+                    float nearest = RoadSpatialGrid.GetRoadPointsNearPosition(Vector3.zero, 80f).Min(p => p.p.magnitude);
+                    Assert.InRange(nearest, Footprint, Footprint + RoadNetworkGenerator.ApproachShortening - 1f);
+                    Assert.Equal(0, SiteApproachQueue.Count);
+                    continue;
+                }
+                SiteApproachRequest request = Assert.Single(SiteApproachQueue.Snapshot());
+                Assert.Equal(new Vector2(0f, 0f), request.Centre);
+                // The tail ends at the road's end, which stops ApproachShortening short of the ring the
+                // road was trimmed to: the approach, laid once a player comes by, carries it on (a cave's
+                // road ends short and the approach fills in the rest).
+                Assert.Equal(request.RoadEnd, request.RoadTail[request.RoadTail.Count - 1]);
+                Assert.InRange(request.RoadEnd.magnitude, Footprint + RoadNetworkGenerator.ApproachShortening - 1f,
+                    Footprint + RoadNetworkGenerator.ApproachShortening + 4f);
+                Assert.InRange(request.Arriving, 0f, 360f);
+            }
+        }
+        finally { LocationLevelling.FacesDownhillSource = null; PlacedSites.Reset(); }
+    }
+
+    /// <summary>A road whose last stretch to a cave facing downhill is a staircase queues the
+    /// cave's approach from the staircase's top (MountainCave02 -2560,1536,
+    /// where it was refused as "no road at the end").</summary>
+    [Fact]
+    public void ARoadEndingOnAStaircaseQueuesTheCavesApproachFromItsTop()
+    {
+        LocationLevelling.Source = c => c.magnitude < 0.5f ? CaveFloor : null;
+        LocationLevelling.FacesDownhillSource = c => c.magnitude < 0.5f;
+        try
+        {
+            // Road east to (-60, 0), then a staircase up to its top at (-40.5, 0), the path's end.
+            var path = new List<Vector2>();
+            for (int x = -120; x <= -40; x += 8) path.Add(new Vector2(x, 0f));
+            int foot = path.FindIndex(p => p.x == -64f);
+            var road = path.GetRange(0, foot + 1);
+            RoadSpatialGrid.PlannedPath plan = RoadSpatialGrid.PlanRoadPath(road, 4f, _world)!;
+            Assert.NotNull(plan);
+            var top = new Vector2(-40.5f, 0f);
+            var stairs = new List<RoadStairSpan> { new() { FromIndex = foot, ToIndex = path.Count - 1, FromPoint = path[foot], FromHeight = 40f, ToPoint = top, ToHeight = 50f } };
+            var pending = new List<(int index, Vector2 end, float height, float arriving, Vector2 centre)>();
+            var siteApproaches = typeof(RoadNetworkGenerator).GetMethod("SiteApproaches", BindingFlags.NonPublic | BindingFlags.Static)!;
+            // Queued only for a place left for a player to find.
+            PlacedSites.MarkPlayerDecided(new Vector2(0f, 0f));
+
+            siteApproaches.Invoke(null, new object[] { path, new List<RoadSpatialGrid.PlannedPath> { plan }, stairs,
+                path[0], 0f, new Vector2(0f, 0f), 10f, false, true, pending });
+
+            // Queued from the staircase's top, not refused as "no road at the end".
+            var queued = Assert.Single(pending);
+            Assert.Equal(top, queued.end);
+            Assert.Equal(50f, queued.height);
+        }
+        finally { LocationLevelling.FacesDownhillSource = null; PlacedSites.Reset(); }
+    }
+
     /// <summary>A place a staircase reaches is reached, with no road near it: the network counts its
     /// staircases (MountainCave02 -2560,1536: its staircase's top 38.8 m out, the nearest road
     /// 52 m, counted unreached).</summary>
@@ -542,4 +628,31 @@ public class SiteApproachStairTests : IDisposable
         Assert.True(RoadNetworkGenerator.AlreadyServedByNetwork(new Vector3(0f, 0f, 0f), 10f));
     }
 
+    [Fact]
+    public void TheQueueIsSavedAndLoadedWithTheNetwork()
+    {
+        SiteApproachQueue.Reset();
+        var path = new List<Vector2>();
+        for (int i = 0; i < 10; i++) path.Add(new Vector2(i * 8f, 1f));
+        SiteApproachQueue.Add(path, 9, 42.5f, 90f, new Vector2(100f, 1f));
+        SiteApproachQueue.Add(path, 0, 40f, 270f, new Vector2(-30f, 1f));
+        byte[] saved = SiteApproachQueue.Serialize();
+        SiteApproachQueue.Reset();
+
+        SiteApproachQueue.Load(saved);
+
+        var loaded = SiteApproachQueue.Snapshot();
+        Assert.Equal(2, loaded.Count);
+        Assert.Equal(path[9], loaded[0].RoadEnd);
+        Assert.Equal(path[9], loaded[0].RoadTail[loaded[0].RoadTail.Count - 1]);
+        Assert.Equal(SiteApproachRequest.TailPoints + 1, loaded[0].RoadTail.Count);
+        Assert.Equal(path[0], loaded[1].RoadEnd);
+        Assert.Equal(path[0], loaded[1].RoadTail[loaded[1].RoadTail.Count - 1]);
+        Assert.Equal(42.5f, loaded[0].RoadHeight);
+        Assert.Equal(new Vector2(-30f, 1f), loaded[1].Centre);
+        // A damaged record changes nothing.
+        Assert.ThrowsAny<System.IO.IOException>(() => SiteApproachQueue.Load(saved.Take(saved.Length - 3).ToArray()));
+        Assert.Equal(2, SiteApproachQueue.Count);
+        SiteApproachQueue.Reset();
+    }
 }

@@ -53,6 +53,7 @@ public static class LocationPrefabLevelling
     {
         LocationLevelling.Source = OpsAt;
         LocationLevelling.PlacementHeightSource = PlacementHeightAt;
+        LocationLevelling.FacesDownhillSource = FacesDownhillAt;
         // The SAME guarded door as Reset() uses. This was a lambda that
         // cleared the dictionary directly, so guarding Reset() left the
         // callback free to empty it under the island workers.
@@ -286,6 +287,17 @@ public static class LocationPrefabLevelling
             ProceduralRoadsPlugin.ProceduralRoadsLogger.LogDebug($"Could not replay {location.m_prefab.Name}'s placement: {e.GetType().Name} {e.Message}");
             return null;
         }
+    }
+
+    private static bool FacesDownhillAt(Vector2 centre)
+    {
+        if (ZoneSystem.instance == null) return false;
+        var list = ZoneSystem.instance.GetLocationList();
+        if (list == null) return false;
+        foreach (ZoneSystem.LocationInstance inst in list)
+            if (Mathf.Abs(inst.m_position.x - centre.x) <= 0.5f && Mathf.Abs(inst.m_position.z - centre.y) <= 0.5f)
+                return inst.m_location.m_slopeRotation;
+        return false;
     }
 
     private static IReadOnlyList<LevelOp> ForPrefab(ZoneSystem.ZoneLocation location)

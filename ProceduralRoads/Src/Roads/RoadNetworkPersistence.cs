@@ -50,6 +50,7 @@ public static class RoadNetworkPersistence
     /// Hash key for storing global road network data on the ZDO.
     /// </summary>
     private static readonly int AppendBridgesHash = "ProceduralRoads_AppendBridges".GetStableHashCode();
+    private static readonly int SiteApproachesHash = "ProceduralRoads_SiteApproaches".GetStableHashCode();
     /// <summary>Map icons of places placed before their roads, kept off the map until a player comes near (<see cref="HiddenSiteIcons"/>).</summary>
     private static readonly int HiddenSiteIconsHash = "ProceduralRoads_HiddenSiteIcons".GetStableHashCode();
 
@@ -83,7 +84,20 @@ public static class RoadNetworkPersistence
     public static void Reset()
     {
         s_metadataZdo = null;
+        s_keptStairRuns = s_keptSiteApproaches = s_keptHiddenSiteIcons = null;
     }
+
+    /// <summary>Saved records this build could not read at load, kept to be written back unchanged.</summary>
+    private static byte[]? s_keptStairRuns, s_keptSiteApproaches, s_keptHiddenSiteIcons;
+
+    /// <summary>Whether the saved staircases could not be read this session: none may be added (their record is kept as it was).</summary>
+    internal static bool StairRecordKept => s_keptStairRuns != null;
+
+    /// <summary>The bytes saved under a key of the network's metadata (tests).</summary>
+    internal static byte[]? SavedRecord(string key) => GetMetadataZDO()?.GetByteArray(key.GetStableHashCode(), null);
+
+    /// <summary>Replaces the bytes saved under a key of the network's metadata (tests).</summary>
+    internal static void SetSavedRecord(string key, byte[] bytes) => GetMetadataZDO()!.Set(key.GetStableHashCode(), bytes);
 
     /// <summary>
     /// Position far outside playable area to prevent ZNetScene from trying to instantiate.
@@ -186,8 +200,9 @@ public static class RoadNetworkPersistence
         Log.LogDebug($"[SAVE] Saved {roadCrossings.Count} river crossings ({crossingsData.Length} bytes)");
         WriteBridgeZones(metadataZdo, bridgeZones);
         metadataZdo.Set(AppendBridgesHash, StructureAppendQueue.Serialize());
-        metadataZdo.Set(StairRunsHash, StairStructures.Serialize());
-        metadataZdo.Set(HiddenSiteIconsHash, HiddenSiteIcons.Serialize());
+        metadataZdo.Set(StairRunsHash, s_keptStairRuns ?? StairStructures.Serialize());
+        metadataZdo.Set(SiteApproachesHash, s_keptSiteApproaches ?? SiteApproachQueue.Serialize());
+        metadataZdo.Set(HiddenSiteIconsHash, s_keptHiddenSiteIcons ?? HiddenSiteIcons.Serialize());
     }
 
     /// <summary>
@@ -206,8 +221,9 @@ public static class RoadNetworkPersistence
             metadataZdo.SetOwner(ZDOMan.instance.m_sessionID);
         WriteBridgeZones(metadataZdo, bridgeZones);
         metadataZdo.Set(AppendBridgesHash, StructureAppendQueue.Serialize());
-        metadataZdo.Set(StairRunsHash, StairStructures.Serialize());
-        metadataZdo.Set(HiddenSiteIconsHash, HiddenSiteIcons.Serialize());
+        metadataZdo.Set(StairRunsHash, s_keptStairRuns ?? StairStructures.Serialize());
+        metadataZdo.Set(SiteApproachesHash, s_keptSiteApproaches ?? SiteApproachQueue.Serialize());
+        metadataZdo.Set(HiddenSiteIconsHash, s_keptHiddenSiteIcons ?? HiddenSiteIcons.Serialize());
     }
 
     /// <summary>
@@ -297,6 +313,7 @@ public static class RoadNetworkPersistence
     {
         Log.LogDebug("[LOAD] TryLoadGlobalRoadData called");
         LastLoadUnreadable = false;
+        s_keptStairRuns = s_keptSiteApproaches = s_keptHiddenSiteIcons = null;
 
         if (ZDOMan.instance == null)
         {
@@ -345,19 +362,32 @@ public static class RoadNetworkPersistence
                 LastLoadUnreadable = true;
                 return false;
             }
-            // A damaged record shows the places' icons: the map as the game would have it once they are placed.
-            try { HiddenSiteIcons.Load(metadataZdo.GetByteArray(HiddenSiteIconsHash, null)); }
+            // A record this build cannot read costs the world neither its roads nor the record: it is not used this session,
+            // its bytes are kept and written back as they were on every save, and nothing new is saved under its key. Dropped and saved back empty, a world saved by this release lost its staircases for good.
+            byte[]? approaches = metadataZdo.GetByteArray(SiteApproachesHash, null);
+            try { SiteApproachQueue.Load(approaches); }
             catch (Exception e) when (e is System.IO.InvalidDataException || e is System.IO.IOException)
             {
-                Log.LogWarning($"[LOAD] Hidden site icons not loaded, saved data is damaged: {e.Message}");
-                HiddenSiteIcons.Reset();
+                Log.LogError($"[LOAD] Site approaches could not be read; none are laid this session, and the saved record is kept as it is: {e.Message}");
+                SiteApproachQueue.Reset();
+                s_keptSiteApproaches = approaches;
             }
-            // A damaged stair record must not cost the world its roads: drop the stairs and say so.
-            try { StairStructures.Load(metadataZdo.GetByteArray(StairRunsHash, null)); }
+            // Unread, the places' icons show: the map as the game would have it once they are placed.
+            byte[]? icons = metadataZdo.GetByteArray(HiddenSiteIconsHash, null);
+            try { HiddenSiteIcons.Load(icons); }
             catch (Exception e) when (e is System.IO.InvalidDataException || e is System.IO.IOException)
             {
-                Log.LogWarning($"[LOAD] Stair runs not loaded, saved data is damaged: {e.Message}");
+                Log.LogError($"[LOAD] Hidden site icons could not be read; their icons show this session, and the saved record is kept as it is: {e.Message}");
+                HiddenSiteIcons.Reset();
+                s_keptHiddenSiteIcons = icons;
+            }
+            byte[]? stairs = metadataZdo.GetByteArray(StairRunsHash, null);
+            try { StairStructures.Load(stairs); }
+            catch (Exception e) when (e is System.IO.InvalidDataException || e is System.IO.IOException)
+            {
+                Log.LogError($"[LOAD] Stair runs could not be read; the roads load without them, no staircase is added this session, and the saved record is kept as it is: {e.Message}");
                 StairStructures.Reset();
+                s_keptStairRuns = stairs;
             }
 
             return true;

@@ -8,7 +8,8 @@ namespace ProceduralRoads;
 /// What the game placed, read off the saved world: a place's placement (its LocationProxy: root, turn
 /// and seed), the levelling its placement kept (<see cref="LocationPrefabLevelling.PlacedOps"/>, the
 /// game's draw replayed), its own rocks, and the ground it leaves. One owner for the places placed
-/// before their roads (<see cref="SitesFirstLoad"/>) and the terrain writer, which levels a road onto a place's
+/// before their roads (<see cref="SitesFirstLoad"/>), the approaches laid once a player comes by
+/// (<see cref="SiteApproachRunner"/>) and the terrain writer, which levels a road onto a place's
 /// landing against the ground the place leaves (<see cref="RoadTerrainModifier.PlacedGround"/>).
 /// Main thread.
 /// </summary>

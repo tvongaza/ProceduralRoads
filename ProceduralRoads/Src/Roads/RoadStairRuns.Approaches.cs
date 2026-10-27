@@ -35,6 +35,10 @@ public static partial class RoadStairRuns
     /// <summary>The road's end must stand this close to the ground the staircase starts from.</summary>
     public const float SiteFootTolerance = 0.5f;
 
+    /// <summary>What <see cref="LaySiteApproach"/> answers for a flat the place's turn decides:
+    /// the road's end is queued (<see cref="SiteApproachQueue"/>) for the place's zone to load.</summary>
+    public const string WaitsForItsZone = "waits for its zone";
+
     /// <summary>
     /// A staircase from a road's end at a place up to the place's flat ground. A road stops
     /// outside a place's whole terrain footprint (at a frost cave 30 m from its
@@ -52,14 +56,16 @@ public static partial class RoadStairRuns
     /// refused where anything is buried deeper than <see cref="SiteMaxCover"/>.
     ///
     /// A flat off the centre lies wherever the place is turned, which is not
-    /// known until the place is placed, as its zone first loads: none is laid to it.
+    /// known until the place is placed, as its zone first loads: for a place
+    /// that turns to face downhill (a frost cave's floor dug behind its mouth)
+    /// the answer is <see cref="WaitsForItsZone"/>, and the staircase is laid
+    /// then, from the ground the game made (<see cref="PlanPlacedSiteApproach"/>).
     /// A model of that ground, from an estimated turn, buried six stairs of the
-    /// first one in the cliff below a frost cave's ledge; the
-    /// staircase onto a placed place's landing is <see cref="PlanPlacedSiteApproach"/>.
-    /// Null, with <paramref name="why"/>, where none is laid; the road is then as it was.
+    /// first one in the cliff below a frost cave's ledge.
+    /// Null, with <paramref name="why"/>, where none is laid now; the road is then as it was.
     /// </summary>
     public static RoadStairSpan? LaySiteApproach(Vector2 roadEnd, float roadHeight, float arriving, Vector2 centre,
-        float centreGround, IReadOnlyList<LevelOp>? ops, List<Vector2> path, int endIndex,
+        float centreGround, IReadOnlyList<LevelOp>? ops, bool facesDownhill, List<Vector2> path, int endIndex,
         IReadOnlyList<RoadStairSpan> stairs, WorldGenerator world, out string why)
     {
         why = "";
@@ -67,7 +73,7 @@ public static partial class RoadStairRuns
         if (!LocationLevelling.PlatformHeight(centreGround, ops).HasValue) { why = "no single flat level"; return null; }
         LevelOp? flat = Flat(ops);
         if (flat == null) { why = "no flat ground"; return null; }
-        if (!flat.Value.Concentric) { why = "flat off its centre"; return null; }
+        if (!flat.Value.Concentric) { why = facesDownhill ? WaitsForItsZone : "flat off its centre, turned at random"; return null; }
         Vector2 outward = roadEnd - centre;
         if (outward.sqrMagnitude < 1e-4f) { why = "road ends at its centre"; return null; }
         float Ground(float x, float z) =>

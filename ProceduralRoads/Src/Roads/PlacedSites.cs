@@ -70,11 +70,13 @@ public static class PlacedSites
     {
         s_known.Clear();
         s_ready.Clear();
+        s_playerDecided.Clear();
         s_landed.Clear();
     }
 
     /// <summary>The places ready for the roads, by centre: <see cref="Prepare"/>d from the records.</summary>
     private static readonly Dictionary<(int, int), PlacedSite> s_ready = new();
+    private static readonly HashSet<(int, int)> s_playerDecided = new();
 
     /// <summary>Off, a road to a place here is built as to any other (the outskirts end). Settable for tests.</summary>
     internal static bool Enabled = true;
@@ -145,11 +147,19 @@ public static class PlacedSites
     public static void ForgetLanded() => s_landed.Clear();
     public static bool Landed(Vector2 centre) => s_landed.ContainsKey(Key(centre));
 
+    /// <summary>
+    /// A place whose landing waits for its zone but whose placement is the player's to make: unique
+    /// (the first one placed is the real one) or shown on the map (where these places land is up to
+    /// the player exploring, not the mod). Never placed
+    /// before its roads; its approach is laid once a player has come by (<see cref="SiteApproachQueue"/>).
+    /// </summary>
+    public static void MarkPlayerDecided(Vector2 centre) => s_playerDecided.Add(Key(centre));
     /// <summary>Whether a place's placement is the player's to make: unique, or shown on the map once placed or always.</summary>
     /// <remarks>Not Hildir's quest sites while roads go to them (<see cref="RoadNetworkOptions.HildirQuestSites"/>): placed
     /// first like the other caves, their map icons held back until a player comes near (<see cref="HiddenSiteIcons"/>).</remarks>
     public static bool PlayerDecides(string prefab, bool unique, bool iconPlaced, bool iconAlways) =>
         !(RoadNetworkGenerator.NetworkOptions.HildirQuestSites && RoadNetworkGenerator.IsHildirQuestSite(prefab)) && (unique || iconPlaced || iconAlways);
+    public static bool IsPlayerDecided(Vector2 centre) => s_playerDecided.Contains(Key(centre));
 
     /// <summary>
     /// Whether a place's landing is only known once it is placed, so it is placed before its roads:
