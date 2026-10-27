@@ -4,7 +4,8 @@ using UnityEngine;
 
 namespace ProceduralRoads;
 
-/// <summary>A rock standing in a place's footprint: the place's own. Its colliders' box seen from above, turned with the rock
+/// <summary>A rock standing in a place's footprint: the place's own, read off its saved
+/// objects (PlacedSiteReader). Its colliders' box seen from above, turned with the rock
 /// about the vertical (<see cref="Yaw"/>, degrees, as Unity turns): a circle out to the box's
 /// corner made a long rock half as wide again as it is (rock1_mountain 17.5 m).</summary>
 public readonly struct SiteRock

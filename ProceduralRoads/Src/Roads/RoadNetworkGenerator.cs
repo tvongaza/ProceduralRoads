@@ -503,6 +503,15 @@ public static partial class RoadNetworkGenerator
     /// </summary>
     public static bool GenerateOnLoad = true;
 
+    /// <summary>
+    /// At world load, between choosing the destinations and building the roads: the preparation steps
+    /// that place the places their landing waits for (<see cref="SitesFirstLoad"/>), each step a stage
+    /// with its own progress on the loading panel. Only the load-time generation runs them
+    /// (<see cref="BeginPreparation"/> with placeSitesFirst): placing waits for the game's frames, which a
+    /// synchronous caller does not give it. Settable for tests.
+    /// </summary>
+    internal static Func<GenerationWork, RoadPreparation, IEnumerable<bool>>? SitesFirst;
+
     /// <summary>Load-time entry: generate unless GenerateOnLoad is off. Returns whether it generated.</summary>
     public static bool GenerateRoadsOnLoad()
     {
@@ -578,16 +587,18 @@ public static partial class RoadNetworkGenerator
         preparation.LogTimings();
         return preparation.TakeResult();
     }
-    internal static RoadPreparation BeginPreparation(bool force)
+    /// <param name="placeSitesFirst">The load-time generation: the places their landings wait for are placed
+    /// first (<see cref="SitesFirst"/>), over frames.</param>
+    internal static RoadPreparation BeginPreparation(bool force, bool placeSitesFirst = false)
     {
         var world=WorldGenerator.instance;
         var zones=ZoneSystem.instance;
         var options=NetworkOptions.Snapshot();
         var start=DateTime.Now;
         int percentage=IslandRoadPercentage,maxLocations=MaxLocationsPerIsland;
-        return new RoadPreparation(p=>PrepareSteps(force,world,zones,options,start,percentage,maxLocations,p));
+        return new RoadPreparation(p=>PrepareSteps(force,placeSitesFirst,world,zones,options,start,percentage,maxLocations,p));
     }
-    private static IEnumerable<bool> PrepareSteps(bool force,WorldGenerator? capturedWorld,ZoneSystem? capturedZones,
+    private static IEnumerable<bool> PrepareSteps(bool force,bool placeSitesFirst,WorldGenerator? capturedWorld,ZoneSystem? capturedZones,
         RoadNetworkOptions options,DateTime startTime,int percentage,int maxLocations,RoadPreparation preparation)
     {
         if (RoadsAvailable && !force) yield break;
@@ -685,6 +696,12 @@ public static partial class RoadNetworkGenerator
                 locations.Value.SpawnRadius));
             preparation.Checkpoint(); yield return true;
         }
+        // At world load the places whose landings wait for their placing are placed now, before their
+        // roads; then their ground is rebuilt and their landings found, before the islands share them.
+        // Both before "Reading saved location placements": it indexes the placements, these among them.
+        if (placeSitesFirst && SitesFirst != null)
+            foreach (var step in RoadPreparation.Own(SitesFirst(work, preparation))) yield return step;
+        foreach (var step in PlacedSites.PrepareSteps((x, z) => BiomeBlendedHeight.GetBlendedHeight(x, z, world), preparation)) yield return step;
         RoadParallel.IslandsRunning = Math.Min(work.Islands.Count, RoadParallel.IslandWorkers);
         foreach(var step in PrepareAndSealSteps(preparation)) yield return step;
         preparation.Result=work;
@@ -707,6 +724,8 @@ public static partial class RoadNetworkGenerator
         internal readonly List<IslandWork> Islands = new();
         internal readonly int Workers = RoadParallel.IslandWorkers;
         internal readonly System.Collections.Concurrent.ConcurrentQueue<string> Finished = new();
+        /// <summary>Every island's chosen destinations, in the order the islands were chosen.</summary>
+        internal IEnumerable<(string name, Vector3 position, float radius)> AllSelected => Islands.SelectMany(i => i.Locations);
         internal System.Threading.CancellationToken Cancellation;
         internal RoadIslandActivity? Activity;
         internal void Compute()
@@ -2723,6 +2742,9 @@ public static partial class RoadNetworkGenerator
         return true;
     }
 
+    /// <summary>Told when the network is reset (the world unloaded, or regenerated).</summary>
+    public static Action? OnReset;
+
     public static void Reset()
     {
         bool cancelled = RoadLifecycleManager.InitialGenerationActive;
@@ -2733,6 +2755,7 @@ public static partial class RoadNetworkGenerator
 
     internal static void ResetData()
     {
+        OnReset?.Invoke();
         ManualRoads.Reset();
         LocationLevelling.ResetPlacements?.Invoke();
         m_roadsGenerated = false;

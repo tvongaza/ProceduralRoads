@@ -131,6 +131,27 @@ public static class PlacedSites
 
     public static int ReadyCount => s_ready.Count;
 
+    /// <summary>Whether a place's placement is the player's to make: unique, or shown on the map once placed or always
+    /// (where these places land is up to the player
+    /// exploring, not the mod). Never placed before its roads.</summary>
+    public static bool PlayerDecides(bool unique, bool iconPlaced, bool iconAlways) => unique || iconPlaced || iconAlways;
+
+    /// <summary>
+    /// Whether a place's landing is only known once it is placed, so it is placed before its roads:
+    /// turned by the game at placement (to face downhill, or at random) with its flat off its centre,
+    /// so the flat moves with the turn. The Mistlands' and the mountains' places and the caves (the terrain
+    /// there is hard to navigate); a place turned at random elsewhere, swamp crypts included, keeps the
+    /// outskirts end.
+    /// </summary>
+    public static bool NeedsPlacing(bool slopeRotation, bool randomRotation, Heightmap.Biome biome, IReadOnlyList<LevelOp>? ops)
+    {
+        if (ops == null || ops.Count == 0) return false;
+        LevelOp? flat = RoadStairRuns.FlatOf(ops);
+        if (flat == null || flat.Value.Concentric) return false;
+        if (slopeRotation) return true;
+        return randomRotation && (biome == Heightmap.Biome.Mountain || biome == Heightmap.Biome.Mistlands);
+    }
+
     public static void Load(IEnumerable<PlacedSiteRecord> records) { foreach (var r in records) Remember(r); }
 
     private static string F(float v) => v.ToString("R", CultureInfo.InvariantCulture);

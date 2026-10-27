@@ -157,6 +157,8 @@ namespace ProceduralRoads
             // placed; roads are built before that happens, so the generator
             // needs a way to ask what that ground will be.
             LocationPrefabLevelling.Install();
+            PlacedSiteReader.Install();
+            SitesFirstLoad.Install();
             CustomLocationPriority = Config.Bind("Locations", "CustomLocationPriority", 80,
                 new ConfigDescription("Selection weight for custom locations discovered by prefix, config or API.",
                     new AcceptableValueRange<int>(1, 100)));

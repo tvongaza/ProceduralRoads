@@ -34,6 +34,8 @@ public static partial class RoadLifecycleManager
         m_subscribedZone = null;
         m_worldDataLoaded = false;
         RoadNetworkGenerator.Reset();
+        // This world's placed places: another world's are not its.
+        PlacedSites.Reset();
         NetworkCutoff.Forget(zoneSystem);
         RoadClearAreaManager.ClearCache();
         RoadTerrainModifier.ResetDebugCounters();
