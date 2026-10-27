@@ -1183,8 +1183,10 @@ public static class SearchStats
     /// tally lines. Off by default.</summary>
     internal static readonly bool Enabled = DebugSwitches.Flag("TIMINGS", false);
 
-    public const int Pricing = 0, Building = 1, Joining = 2, StairLayout = 3;
-    private static readonly string[] Names = { "pricing searches", "build searches", "join searches", "stair layouts" };
+    /// <summary>Kinds; a landing entry (the way onto a placed place's landing, every start tried) includes the
+    /// stair layouts it ran, which are also counted as stair layouts.</summary>
+    public const int Pricing = 0, Building = 1, Joining = 2, StairLayout = 3, LandingEntry = 4;
+    private static readonly string[] Names = { "pricing searches", "build searches", "join searches", "stair layouts", "landing entries" };
     private static readonly long[] s_count = new long[Names.Length], s_found = new long[Names.Length], s_maxed = new long[Names.Length], s_iterations = new long[Names.Length];
     private static readonly long[] s_ticks = new long[Names.Length], s_maxedTicks = new long[Names.Length];
 

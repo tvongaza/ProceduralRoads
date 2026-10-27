@@ -2471,6 +2471,10 @@ public static partial class RoadNetworkGenerator
         List<RoadStairSpan> stairs, float width, out RoadSpatialGrid.PlannedPath? road, out RoadStairSpan? span, out string why)
     {
         why = "";
+        long began = SearchStats.Enabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+        int tries = 0;
+        try
+        {
         // From the road's end, else from further back along its last stretch with the road cut there: the
         // way onto the landing then has more length to climb, and a staircase from there takes the road's
         // place instead of running beside it. From its end alone, 111 roads were refused at their
@@ -2483,6 +2487,7 @@ public static partial class RoadNetworkGenerator
             if (back > 0f && !CutBack(atStart, back, path, piece, stairs, out p, out piece, out shift)) break;
             var cutPlans = new List<RoadSpatialGrid.PlannedPath>(plans);
             cutPlans[atStart ? 0 : plans.Count - 1] = piece;
+            tries++;
             if (!PlanEntryFrom(site, atStart, p, cutPlans, stairs, width, shift, out road, out span, out string whyHere))
             {
                 if (back == 0f) why = whyHere;
@@ -2511,6 +2516,8 @@ public static partial class RoadNetworkGenerator
         span = null;
         why += FormattableString.Invariant($" (also from up to {EntryCutBacks[EntryCutBacks.Length - 1]:F0} m back along the road)");
         return false;
+        }
+        finally { if (SearchStats.Enabled) SearchStats.Record(SearchStats.LandingEntry, why == "", false, tries, began); }
     }
 
     /// <summary>The road's planned pieces with the way onto a placed place's landing (a road, or a staircase's walked pieces)
