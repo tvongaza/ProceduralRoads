@@ -291,6 +291,7 @@ public static class RoadNetworkGenerator
 
         RoadSpatialGrid.FinalizeRoadNetwork();
         
+        NetworkCutoff.UseNewNetwork();
         m_roadsGenerated = true;
         m_pathfinder = null;
         
@@ -688,6 +689,7 @@ public static class RoadNetworkGenerator
             GenerateIslandRoads(island, selected);
 
         RoadSpatialGrid.FinalizeRoadNetwork();
+        NetworkCutoff.UseNewNetwork();
         m_roadsGenerated = true;
         m_pathfinder = null;
         // Same as after global generation: without the metadata object the
@@ -831,7 +833,24 @@ public static class RoadNetworkGenerator
     /// <returns>True if road data was found and loaded</returns>
     public static bool TryLoadGlobalRoadData()
     {
-        return RoadNetworkPersistence.TryLoadGlobalRoadData(m_roadStartPoints);
+        bool loaded = RoadNetworkPersistence.TryLoadGlobalRoadData(m_roadStartPoints);
+        if (loaded)
+        {
+            // Before anything may write: which zones this network must leave alone.
+            NetworkCutoff.UseLoadedNetwork(RoadSpatialGrid.RoadNetworkVersion, RoadNetworkPersistence.LoadZonesWithNetwork());
+        }
+        return loaded;
+    }
+
+    /// <summary>
+    /// Save which zones were generated with this network in place
+    /// (NetworkCutoff), so the next session knows which zones it may write.
+    /// </summary>
+    public static void SaveNetworkCutoff()
+    {
+        if (!RoadsAvailable || ZoneSystem.instance == null) return;
+        byte[]? record = NetworkCutoff.Record(RoadSpatialGrid.RoadNetworkVersion, ZoneSystem.instance.m_generatedZones);
+        if (record != null) RoadNetworkPersistence.SaveZonesWithNetwork(record);
     }
 
     #endregion

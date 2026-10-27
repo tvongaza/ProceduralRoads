@@ -385,6 +385,9 @@ public class ZoneSystem
 
     public System.Collections.Generic.List<LocationInstance> GetLocationList() => Locations;
 
+    /// <summary>The zones the world has generated, in this session or (read from the save) in earlier ones.</summary>
+    public System.Collections.Generic.HashSet<Vector2s> m_generatedZones = new();
+
     // ---- locations-generated, as Valheim 1.0 actually behaves ----
     //
     // 1.0 kept the LocationsGenerated property and the GenerateLocationsCompleted

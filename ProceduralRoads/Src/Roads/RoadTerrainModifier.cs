@@ -71,8 +71,10 @@ public static class RoadTerrainModifier
 
         Vector2s zoneID = ZoneSystem.GetZone(terrainComp.m_hmap.transform.position);
         List<RoadSpatialGrid.RoadPoint> roadPoints = RoadSpatialGrid.GetRoadPointsInZone(zoneID);
+        // Forced only by an operator's command (ApplyToLoadedZones); otherwise a
+        // zone explored before this network is left exactly as it is.
         bool forced = s_pendingForcedZones.Remove(zoneID);
-        if (roadPoints.Count == 0 || (!forced && CarriesCurrentRoads(terrainComp)))
+        if (roadPoints.Count == 0 || (!forced && (NetworkCutoff.Excludes(zoneID) || CarriesCurrentRoads(terrainComp))))
             return;
 
         if (!terrainComp.m_nview.IsOwner())
@@ -107,6 +109,9 @@ public static class RoadTerrainModifier
     /// </summary>
     public static void ApplyRoadTerrainMods(Vector2s zoneID, List<RoadSpatialGrid.RoadPoint> roadPoints, bool force = false)
     {
+        // Before the compiler is asked for: a zone explored before this
+        // network gets no compiler and no write (NetworkCutoff).
+        if (!force && NetworkCutoff.Excludes(zoneID)) return;
         TerrainContext? context = GetTerrainContext(zoneID);
         if (context == null)
             return;
@@ -147,7 +152,10 @@ public static class RoadTerrainModifier
     /// paint is blended toward the paved colour each time, so the road edges
     /// come out a shade more solid on every explicit reapplication.
     /// </summary>
-    public static int ApplyToLoadedZones()
+    /// <param name="operatorRequest">An operator's command (road_generate, road_regen_island): the
+    /// zones loaded around them are written even if they were explored before this network.
+    /// Otherwise (a network just generated) those zones are left alone (NetworkCutoff).</param>
+    public static int ApplyToLoadedZones(bool operatorRequest = false)
     {
         var heightmaps = Heightmap.GetAllHeightmaps();
         int zonesWithRoads = 0;
@@ -161,6 +169,7 @@ public static class RoadTerrainModifier
             Vector2s zoneID = ZoneSystem.GetZone(heightmap.transform.position);
             var roadPoints = RoadSpatialGrid.GetRoadPointsInZone(zoneID);
             if (roadPoints.Count == 0) continue;
+            if (!operatorRequest && NetworkCutoff.Excludes(zoneID)) continue;
 
             bool existed = TerrainComp.FindTerrainCompiler(heightmap.transform.position) != null;
             if (!existed && HasSavedTerrainCompiler(zoneID))

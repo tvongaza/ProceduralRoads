@@ -466,7 +466,7 @@ public static class ConsoleCommands
 
         // Apply roads to currently loaded zones
         args.Context.AddString("Applying to loaded zones...");
-        int zonesWithRoads = RoadTerrainModifier.ApplyToLoadedZones();
+        int zonesWithRoads = RoadTerrainModifier.ApplyToLoadedZones(operatorRequest: true);
         args.Context.AddString($"Applied roads to {zonesWithRoads} visible zones.");
     }
 
@@ -494,7 +494,7 @@ public static class ConsoleCommands
             return;
         }
 
-        int zones = RoadTerrainModifier.ApplyToLoadedZones();
+        int zones = RoadTerrainModifier.ApplyToLoadedZones(operatorRequest: true);
         args.Context.AddString(summary);
         args.Context.AddString($"Applied to {zones} loaded zone(s).");
     }

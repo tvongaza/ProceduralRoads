@@ -37,6 +37,11 @@ public static class RoadNetworkPersistence
     private static readonly int GlobalRoadDataHash = "ProceduralRoads_GlobalData".GetStableHashCode();
 
     /// <summary>
+    /// Hash key for the zones generated with the saved network in place (see NetworkCutoff).
+    /// </summary>
+    private static readonly int ZonesWithNetworkHash = "ProceduralRoads_ZonesWithNetwork".GetStableHashCode();
+
+    /// <summary>
     /// Cached reference to the metadata ZDO.
     /// </summary>
     private static ZDO? s_metadataZdo;
@@ -177,6 +182,23 @@ public static class RoadNetworkPersistence
 
         Log.LogWarning("[LOAD] DeserializeAllRoadPoints returned false!");
         return false;
+    }
+
+    /// <summary>The saved record of zones generated with the network in place (NetworkCutoff), if any.</summary>
+    public static byte[]? LoadZonesWithNetwork() => GetMetadataZDO()?.GetByteArray(ZonesWithNetworkHash, null);
+
+    /// <summary>Save the record of zones generated with the network in place (NetworkCutoff).</summary>
+    public static void SaveZonesWithNetwork(byte[] record)
+    {
+        ZDO? metadataZdo = GetMetadataZDO();
+        if (metadataZdo == null)
+        {
+            Log.LogWarning("[SAVE] No metadata ZDO: zones generated with the network not saved");
+            return;
+        }
+        if (!metadataZdo.IsOwner())
+            metadataZdo.SetOwner(ZDOMan.instance.m_sessionID);
+        metadataZdo.Set(ZonesWithNetworkHash, record);
     }
 
     /// <summary>
