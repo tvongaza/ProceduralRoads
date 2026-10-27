@@ -63,7 +63,10 @@ public static class ZoneSystem_Patch
         [HarmonyPostfix]
         public static void Postfix()
         {
-            if (!RoadLifecycleManager.IsGenerating) ServerTerrainBake.Tick();
+            if (RoadLifecycleManager.IsGenerating) return;
+            if (FreezeWatchdog.Enabled) FreezeWatchdog.Enter("terrain bake");
+            ServerTerrainBake.Tick();
+            if (FreezeWatchdog.Enabled) FreezeWatchdog.Leave();
         }
     }
 
@@ -88,14 +91,18 @@ public static class ZoneSystem_Patch
             // Bridge pieces (prototype) go in under every mode: as ZDOs only
             // under ghost generation, the way the game places its own
             // objects, and a zone that already has them is left alone.
+            if (FreezeWatchdog.Enabled) FreezeWatchdog.Enter("zone pieces");
             StructurePlacement.OnZoneSpawned(zoneID, mode);
+            if (FreezeWatchdog.Enabled) FreezeWatchdog.Leave();
 
             if (mode == ZoneSystem.SpawnMode.Ghost)
                 return;
 
             List<RoadSpatialGrid.RoadPoint> roadPoints = RoadSpatialGrid.GetRoadPointsInZone(zoneID);
-            if (roadPoints.Count > 0)
-                RoadTerrainModifier.OnZoneSpawned(zoneID, roadPoints);
+            if (roadPoints.Count == 0) return;
+            if (FreezeWatchdog.Enabled) FreezeWatchdog.Enter("zone terrain");
+            RoadTerrainModifier.OnZoneSpawned(zoneID, roadPoints);
+            if (FreezeWatchdog.Enabled) FreezeWatchdog.Leave();
         }
     }
 

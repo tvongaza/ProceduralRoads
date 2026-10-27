@@ -70,6 +70,7 @@ namespace ProceduralRoads
         {
             // Register the metadata prefab with Jotunn FIRST - must happen before ZNetScene.Awake
             RegisterMetadataPrefab();
+            FreezeWatchdog.Start();
             
             bool saveOnSet = Config.SaveOnConfigSet;
             Config.SaveOnConfigSet = false;
@@ -304,19 +305,33 @@ namespace ProceduralRoads
         // Road terrain the zone-spawn path missed (see RoadTerrainModifier.SweepUnstamped).
         private void Update()
         {
+            bool watched = FreezeWatchdog.Enabled;
+            if (watched)
+            {
+                FreezeWatchdog.Frame();
+                FreezeWatchdog.Enter("road generation");
+            }
             RoadLifecycleManager.Tick();
+            if (watched) FreezeWatchdog.Enter("road generation panel");
             RoadGenerationPanel.Synchronize();
+            if (watched) FreezeWatchdog.Leave();
             if (m_configurationPending && !RoadLifecycleManager.IsGenerating) ApplyConfiguration();
             if (Time.time < m_nextTerrainSweep) return;
             m_nextTerrainSweep = Time.time + 3f;
             if (RoadNetworkGenerator.RoadsAvailable && ZNet.instance != null)
+            {
+                if (watched) FreezeWatchdog.Enter("terrain sweep");
                 RoadTerrainModifier.SweepUnstamped();
+                if (watched) FreezeWatchdog.Leave();
+            }
         }
 
         // Rocks clipping the roads, on their own half-second cadence (RoadRockClearing).
         private void LateUpdate()
         {
+            if (FreezeWatchdog.Enabled) FreezeWatchdog.Enter("road rocks");
             RoadRockClearing.Tick();
+            if (FreezeWatchdog.Enabled) FreezeWatchdog.Leave();
         }
 
         private void OnDestroy()
