@@ -51,8 +51,9 @@ public sealed class RoadCrossing
     /// <summary>The road that built this crossing, for logs and road_crossings.</summary>
     public string? Road;
     /// <summary>A Mistlands viaduct the search bought over a dry valley (DvergrViaduct.ValleyCrossing),
-    /// not a river jump. Generation only: not persisted (a loaded one is planned the same way, by
-    /// DvergrViaduct.Applies, from its banks and bed).</summary>
+    /// not a river jump. Saved with the crossing (RoadNetworkPersistence.CrossingsFormat 2), so a loaded
+    /// network knows its valley viaducts: their keep-out comes back with them. Its pieces are planned
+    /// the same either way, by DvergrViaduct.Applies, from its banks and bed.</summary>
     public bool ValleyJump;
 
     /// <summary>Midpoint between the banks.</summary>

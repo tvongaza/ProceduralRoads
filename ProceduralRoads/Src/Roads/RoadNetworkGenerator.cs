@@ -3589,6 +3589,10 @@ public static partial class RoadNetworkGenerator
             // Zones whose pieces stand keep them, whatever layout made them
             // (RoadNetworkPersistence.BridgeLayoutIsStale).
             StructurePlans.MarkSpawned(bridgeZones);
+            // The valley viaducts' keep-out, as the generation left it: no later road (a manual one) under a deck.
+            DvergrViaduct.ResetStanding();
+            foreach (RoadCrossing c in m_roadCrossings)
+                if (c.ValleyJump) DvergrViaduct.MarkStanding(c);
             var cleared = new HashSet<Vector2s>();
             if (RoadNetworkPersistence.TryLoadClearedZones(out int clearedVersion, cleared))
                 VegetationClearing.Load(clearedVersion, cleared, RoadSpatialGrid.RoadNetworkVersion);

@@ -598,15 +598,16 @@ public static class RoadNetworkPersistence
 
     /// <summary>
     /// Serialize river crossings to binary format.
-    /// Format: [version=1][count] then per crossing [fromX][fromY][toX][toY][riverbed][fairwayX][fairwayY][fairwayWidth][kind][style].
-    /// The rest of a crossing is derived from its banks on load.
+    /// Format: [version=2][count] then per crossing [fromX][fromY][toX][toY][riverbed][fairwayX][fairwayY][fairwayWidth][kind][style][flags].
+    /// flags: bit 0, a Mistlands viaduct the search bought over a dry valley (<see cref="RoadCrossing.ValleyJump"/>),
+    /// not a river's bridge. Version 1, read too, had no flags. The rest of a crossing is derived from its banks on load.
     /// </summary>
     internal static byte[] SerializeRoadCrossings(IReadOnlyList<RoadCrossing> roadCrossings)
     {
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms);
 
-        writer.Write(1);
+        writer.Write(CrossingsFormat);
         writer.Write(roadCrossings.Count);
         foreach (RoadCrossing crossing in roadCrossings)
         {
@@ -620,6 +621,7 @@ public static class RoadNetworkPersistence
             writer.Write(crossing.FairwayWidth);
             writer.Write((int)crossing.Kind);
             writer.Write((int)crossing.Style);
+            writer.Write(crossing.ValleyJump ? 1 : 0);
         }
 
         return ms.ToArray();
@@ -707,6 +709,10 @@ public static class RoadNetworkPersistence
         return ms.ToArray();
     }
 
+    /// <summary>The crossings record's format: 2 carries each crossing's flags (a valley viaduct's
+    /// <see cref="RoadCrossing.ValleyJump"/>, which the load puts its keep-out back from). 1 is read too.</summary>
+    internal const int CrossingsFormat = 2;
+
     internal static bool DeserializeRoadCrossings(byte[] data, List<RoadCrossing> roadCrossings)
     {
         try
@@ -715,7 +721,7 @@ public static class RoadNetworkPersistence
             using var reader = new BinaryReader(ms);
 
             int version = reader.ReadInt32();
-            if (version != 1)
+            if (version != 1 && version != CrossingsFormat)
             {
                 Log.LogWarning($"Unknown river crossing data version: {version}");
                 return false;
@@ -738,7 +744,10 @@ public static class RoadNetworkPersistence
                 float fairwayWidth = reader.ReadSingle();
                 CrossingKind kind = (CrossingKind)reader.ReadInt32();
                 FordStyle style = (FordStyle)reader.ReadInt32();
-                roadCrossings.Add(RoadCrossing.Between(fromBank, toBank, riverbed, fairwayCenter, fairwayWidth, kind, style));
+                int flags = version >= 2 ? reader.ReadInt32() : 0;
+                RoadCrossing crossing = RoadCrossing.Between(fromBank, toBank, riverbed, fairwayCenter, fairwayWidth, kind, style);
+                crossing.ValleyJump = (flags & 1) != 0;
+                roadCrossings.Add(crossing);
             }
 
             return true;
