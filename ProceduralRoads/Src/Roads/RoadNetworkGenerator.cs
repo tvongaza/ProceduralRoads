@@ -627,6 +627,7 @@ public static partial class RoadNetworkGenerator
     {
         LocationLevelling.Unseal();
         ReportMissesAfterSealing();
+        DropBuriedPieces();
         LogTerrainMemoCounters();
 
         TimeSpan elapsed = DateTime.Now - work.StartTime;
@@ -1848,6 +1849,19 @@ public static partial class RoadNetworkGenerator
     }
 
     /// <summary>
+    /// The network's staircases settled on the ground the terrain writer will leave (natural, the roads' earthwork and
+    /// the staircases' cuts): columns carried down where it lies lower than their layout read, then pieces wholly under
+    /// it not placed, which the game breaks once it weighs them and drops their resources (<see cref="BuriedPieces"/>).
+    /// Once, after every island is built.
+    /// </summary>
+    private static void DropBuriedPieces()
+    {
+        WorldGenerator? world = WorldGenerator.instance;
+        if (world == null || StairStructures.Runs.Count == 0) return;
+        StairStructures.SettleOnFinishedGround(RoadTerrainModifier.FinishedGround((x, z) => BiomeBlendedHeight.GetBlendedHeight(x, z, world)));
+    }
+
+    /// <summary>
     /// Convenience overload using Vector3 positions (extracts X/Z as Vector2).
     /// </summary>
     public static bool GenerateRoad(
@@ -2265,6 +2279,7 @@ public static partial class RoadNetworkGenerator
         }
         finally { LocationLevelling.Unseal(); }
         ReportMissesAfterSealing();
+        DropBuriedPieces();
         // As the whole-world pass does per island; without it the summary
         // reported 0/0 destinations.
         CountDestinationsReached(selected);

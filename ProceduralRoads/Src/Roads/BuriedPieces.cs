@@ -165,4 +165,78 @@ public static class BuriedPieces
     /// </summary>
     public static bool ColumnGoesOn(float bottom, float lowestCorner, string prefab, float height, Vector2 at, float yaw, Func<int, int, float> vertex) =>
         bottom > lowestCorner - StairLayout.SupportBury && !Buried(prefab, new Vector3(at.x, bottom - height / 2f, at.y), yaw, vertex);
+
+    /// <summary>Most pillars <see cref="CarryColumns"/> adds under one column (the most the terrain writer lowers ground, 8 m, in stone pillars).</summary>
+    public const int MostCarried = 4;
+
+    /// <summary>
+    /// Each of the run's columns (its kit's support pieces stacked at one spot, not a cantilever's clipped into a face)
+    /// carried on down by <see cref="ColumnGoesOn"/> over <paramref name="vertex"/>'s ground: where the network's earthwork
+    /// (a road's cut beside a staircase's end, another staircase's cut) lowered the ground under a column after the layout
+    /// sized it, its base hung in the air, lost its support and broke (leaving stray
+    /// stones, at a staircase foot at 6497,-1497). Returns the pillars added.
+    /// </summary>
+    public static int CarryColumns(StairRun run, Func<int, int, float> vertex)
+    {
+        var bottoms = new Dictionary<(int, int), StructurePiece>();
+        foreach (StructurePiece p in run.Pieces)
+        {
+            if (p.Kind != StructurePieceKind.StairSupport || p.Cantilevered || ColumnHeight(p.Prefab) is not float) continue;
+            var key = (Mathf.RoundToInt(p.Position.x * 100f), Mathf.RoundToInt(p.Position.z * 100f));
+            if (!bottoms.TryGetValue(key, out StructurePiece? lowest) || p.Position.y < lowest.Position.y) bottoms[key] = p;
+        }
+        int added = 0;
+        foreach (StructurePiece bottom in bottoms.Values)
+        {
+            float height = ColumnHeight(bottom.Prefab)!.Value;
+            var at = new Vector2(bottom.Position.x, bottom.Position.z);
+            // A corner on ground not known (NaN) leaves the column as it is, whichever corner it is: Mathf.Min drops a NaN
+            // read before a number, so one read first was ignored and the column carried down by the corners known alone.
+            float lowest = float.PositiveInfinity;
+            for (int cx = -1; cx <= 1; cx += 2)
+                for (int cz = -1; cz <= 1; cz += 2)
+                {
+                    float corner = MeshHeight(at.x + cx * StairLayout.SupportHalfWidth, at.y + cz * StairLayout.SupportHalfWidth, vertex);
+                    lowest = float.IsNaN(corner) || float.IsNaN(lowest) ? float.NaN : Mathf.Min(lowest, corner);
+                }
+            if (float.IsNaN(lowest)) continue;
+            float base_ = bottom.Position.y - height / 2f;
+            for (int n = 0; n < MostCarried && ColumnGoesOn(base_, lowest, bottom.Prefab, height, at, bottom.YawDegrees, vertex); n++, base_ -= height)
+            {
+                run.Pieces.Add(new StructurePiece
+                {
+                    Kind = StructurePieceKind.StairSupport, Prefab = bottom.Prefab,
+                    Position = new Vector3(at.x, base_ - height / 2f, at.y), YawDegrees = bottom.YawDegrees,
+                });
+                added++;
+            }
+        }
+        return added;
+    }
+
+    /// <summary>The height of a kit's column piece, null for any other piece.</summary>
+    private static float? ColumnHeight(string prefab)
+    {
+        foreach (StairKit kit in new[] { StairKit.Stone, StairKit.BlackMarble, StairKit.Wood })
+            if (kit.Support == prefab) return kit.SupportHeight;
+        return null;
+    }
+
+    /// <summary>
+    /// Drop the run's pieces wholly under <paramref name="vertex"/>'s ground; returns how many, adding each to
+    /// <paramref name="byPrefab"/> when given.
+    /// </summary>
+    public static int Drop(StairRun run, Func<int, int, float> vertex, IDictionary<string, int>? byPrefab = null)
+    {
+        int dropped = 0;
+        for (int i = run.Pieces.Count - 1; i >= 0; i--)
+        {
+            StructurePiece p = run.Pieces[i];
+            if (p.RollDegrees != 0f || !Buried(p.Prefab, p.Position, p.YawDegrees, vertex, p.PitchDegrees)) continue;
+            run.Pieces.RemoveAt(i);
+            dropped++;
+            if (byPrefab != null) byPrefab[p.Prefab] = byPrefab.TryGetValue(p.Prefab, out int n) ? n + 1 : 1;
+        }
+        return dropped;
+    }
 }

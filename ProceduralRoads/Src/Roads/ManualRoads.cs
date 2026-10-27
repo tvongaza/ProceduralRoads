@@ -239,6 +239,13 @@ public static partial class RoadNetworkGenerator
         ManualRoads.RefuseOnReleasedNetwork();
         RoadNetworkPersistence.EnsureMetadataInstance();
         RoadSpatialGrid.CommitAppendCuts(cuts, StairLayout.CutRadius * 2f, expectedVersion);
+        // Settled on the ground its cuts and the roads leave: columns carried down, pieces wholly under it not placed (BuriedPieces).
+        if (WorldGenerator.instance is WorldGenerator world)
+        {
+            Func<int, int, float> finished = RoadTerrainModifier.FinishedGround((x, z) => BiomeBlendedHeight.GetBlendedHeight(x, z, world));
+            BuriedPieces.CarryColumns(run, finished);
+            BuriedPieces.Drop(run, finished);
+        }
         var additions = StructureAppendQueue.Prepare(run.Pieces);
         StairStructures.Add(run);
         StructureAppendQueue.Enqueue(additions);

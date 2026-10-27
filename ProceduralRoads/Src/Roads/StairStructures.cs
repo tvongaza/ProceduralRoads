@@ -141,6 +141,24 @@ public sealed class StairStructures : IStructureSource
         return null;
     }
 
+    /// <summary>
+    /// Every run settled on the finished ground (<see cref="BuriedPieces"/>): its columns carried on down where the
+    /// earthwork lowered the ground under them, then its pieces wholly under the ground dropped, which the game breaks as
+    /// soon as it weighs them. Returns how many pillars were added and pieces dropped, adding each dropped to <paramref name="byPrefab"/>.
+    /// </summary>
+    public static (int carried, int dropped) SettleOnFinishedGround(Func<int, int, float> vertex, IDictionary<string, int>? byPrefab = null)
+    {
+        int carried = 0, dropped = 0;
+        lock (s_runs)
+            foreach (StairRun run in s_runs)
+            {
+                carried += BuriedPieces.CarryColumns(run, vertex);
+                dropped += BuriedPieces.Drop(run, vertex, byPrefab);
+            }
+        if (carried + dropped > 0) StructurePlans.InvalidatePlans();
+        return (carried, dropped);
+    }
+
     /// <summary>Add a run; the structure plans are recomputed on their next use.</summary>
     public static void Add(StairRun run)
     {

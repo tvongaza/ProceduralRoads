@@ -612,6 +612,40 @@ public static class RoadTerrainModifier
     }
 
     /// <summary>
+    /// The ground the terrain writer will leave at whole-metre vertices (the game's heightmap vertices), for a
+    /// zone no player has dug, built from the network as it now stands: the natural height, then the road's
+    /// earthwork and the staircases' cuts, exactly as <see cref="ModifyVertexHeights"/> writes them from the zone's
+    /// points. NaN inside any place's footprint, whose own levelling is not known until it spawns. Cached per vertex
+    /// and per zone; one caller at a time (built for a pass after generation).
+    /// </summary>
+    internal static System.Func<int, int, float> FinishedGround(System.Func<int, int, float> natural)
+    {
+        var zones = new Dictionary<Vector2s, (List<RoadSpatialGrid.RoadPoint> all, float[]? fill, List<RoadSpatialGrid.RoadPoint> cuts)>();
+        var heights = new Dictionary<(int, int), float>();
+        return (x, z) =>
+        {
+            if (heights.TryGetValue((x, z), out float known)) return known;
+            var v = new Vector2(x, z);
+            float h = float.NaN;
+            if (!RoadSiteProtection.Contains(v))
+            {
+                float baseHeight = natural(x, z);
+                h = baseHeight;
+                Vector2s zone = ZoneSystem.GetZone(new Vector3(x, 0f, z));
+                if (!zones.TryGetValue(zone, out var points))
+                {
+                    var all = RoadSpatialGrid.GetRoadPointsInZone(zone);
+                    zones[zone] = points = (all, FillExtras(all, WorldGenerator.instance), all.FindAll(rp => rp.cutOnly));
+                }
+                if (WrittenDelta(v, baseHeight, baseHeight, points.all, points.fill, points.cuts, out _) is float delta)
+                    h = baseHeight + delta;
+            }
+            heights[(x, z)] = h;
+            return h;
+        };
+    }
+
+    /// <summary>
     /// How far past a cut's own reach its batter runs: the cut climbs back to
     /// the natural ground at <see cref="CutBatterSlope"/> instead of standing
     /// as a wall. Cut flat to its reach and no further, a staircase sat in a

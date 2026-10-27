@@ -22,7 +22,8 @@ public static partial class StairLayout
     /// to the ground over the next few metres, can lower the ground under a column after it was sized, leaving its base in
     /// the air (one stood 1.6 m
     /// short). Each column is carried on by the one column rule (<see cref="BuriedPieces.ColumnGoesOn"/>) over the ground
-    /// as its own cuts and their batters leave it.
+    /// as its own cuts and their batters leave it. The road's earthwork beside a staircase's ends is not known here: the
+    /// network carries columns on over it once it is built (<see cref="BuriedPieces.CarryColumns"/>).
     /// </summary>
     private static void SinkColumnsBelowCuts(StairPlan plan, StairKit kit, Func<float, float, float> ground)
     {
