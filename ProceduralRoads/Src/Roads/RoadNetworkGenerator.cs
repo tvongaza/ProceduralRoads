@@ -492,6 +492,7 @@ public static partial class RoadNetworkGenerator
         m_threadPathfinders = new System.Threading.ThreadLocal<RoadPathfinder>(
             () => new RoadPathfinder(world) { SiteClearance = clearance }, true);
         RoadTerrainSamples.ResetTotals();
+        SearchStats.Reset();
         m_destinationsSelected = 0;
         m_destinationsConnected = 0;
         m_roadsGeneratedCount = 0;
@@ -590,10 +591,14 @@ public static partial class RoadNetworkGenerator
                     try
                     {
                     m_islandRoads = 0;
+                    if (SearchStats.Enabled) SearchStats.ResetThread();
                     GenerateIslandRoads(island.Island, island.Locations, island.Spawn, island.Radius);
                     Cancellation.ThrowIfCancellationRequested();
                     CountDestinationsReached(island.Locations);
-                    Finished.Enqueue($"island {number + 1}: {m_islandRoads} road(s) from {island.Locations.Count} destination(s) in {clock.Elapsed.TotalSeconds:F0}s");
+                    Finished.Enqueue(SearchStats.Enabled
+                        ? $"island {number + 1} (id {island.Island.Id}): {m_islandRoads} road(s) from {island.Locations.Count} destination(s) " +
+                          $"in {clock.Elapsed.TotalSeconds:F0}s ({SearchStats.BriefThread()}); so far {SearchStats.Brief()}"
+                        : $"island {number + 1}: {m_islandRoads} road(s) from {island.Locations.Count} destination(s) in {clock.Elapsed.TotalSeconds:F0}s");
                     }
                     finally { if(Finder!=null) Finder.Activity=null; IslandActivity=null; token?.Finish(); }
                 });
@@ -619,6 +624,21 @@ public static partial class RoadNetworkGenerator
             Log.LogInfo($"  {unconnected} destination(s) left unconnected after every candidate was tried: " +
                         $"{m_roadsWithNoRoute} attempt(s) found no route, " +
                         $"{m_roadsRefusedForGrade} could not be built (grade, turn room, footprint or water).");
+        if (SearchStats.Enabled)
+        {
+            List<RoadSpatialGrid.Junction> junctions;
+            lock (RoadSpatialGrid.RecordGate) junctions = new List<RoadSpatialGrid.Junction>(RoadSpatialGrid.Junctions);
+            if (junctions.Count > 0)
+                // Where a road took another's height: the largest earthworks are where to look for
+                // ridges (at 896,4416 a junction created a large earthwork ridge that looked bad).
+                Log.LogInfo($"  Junctions (step {RoadPathfinder.JunctionStep:0.##} m): {junctions.Count} stretch(es) held to a road already laid; " +
+                    FormattableString.Invariant($"pulled over 2 m {junctions.Count(j => Mathf.Abs(j.Pull) > 2f)}, over 4 m {junctions.Count(j => Mathf.Abs(j.Pull) > 4f)}; ") +
+                    FormattableString.Invariant($"earthwork over 2 m {junctions.Count(j => Mathf.Abs(j.Earth) > 2f)}, over 4 m {junctions.Count(j => Mathf.Abs(j.Earth) > 4f)}; ") +
+                    "pulled over 2 m by place: " + string.Join(", ", junctions.Where(j => Mathf.Abs(j.Pull) > 2f).GroupBy(j => j.Where).Select(g => $"{g.Key} {g.Count()}")) + "; " +
+                    "largest earthwork (+ fill, - cut; pulled from the road's own profile): " +
+                    string.Join(", ", junctions.Where(j => !float.IsNaN(j.Earth)).OrderByDescending(j => Mathf.Abs(j.Earth)).Take(12)
+                        .Select(j => FormattableString.Invariant($"({j.At.x:F0}, {j.At.y:F0}) {j.Earth:+0.0;-0.0} m, pulled {j.Pull:+0.0;-0.0}"))));
+        }
         if (!m_refusalReasons.IsEmpty)
             Log.LogInfo("  Roads refused when built, by rule: " + string.Join("; ",
                 System.Linq.Enumerable.Select(System.Linq.Enumerable.OrderByDescending(m_refusalReasons, kv => kv.Value), kv => $"{kv.Value} {kv.Key}")));
@@ -640,6 +660,9 @@ public static partial class RoadNetworkGenerator
             Log.LogInfo($"  Sway (planned pieces, candidates included): kept {RoadSpatialGrid.SwayKept}, dropped as refused {RoadSpatialGrid.SwayRefused}, dropped for more earth {RoadSpatialGrid.SwayMoreEarth}; fades out at {RoadWiggle.Flat:P0} ground grade, meander at {RoadPathfinder.MeanderFlat:P0}");
         if (RoadPitches.Enabled)
             Log.LogInfo($"  Climbs that lost rests (too steep even with pitches the whole way): {RoadPitches.ClimbsThatLostEases}");
+        if (SearchStats.Enabled)
+            foreach (string line in SearchStats.Describe())
+                Log.LogInfo("  " + line);
         LogSqueeze();
         LogGenerationStats(m_roadsGeneratedCount, elapsed);
 
@@ -734,6 +757,14 @@ public static partial class RoadNetworkGenerator
         Log.LogDebug($"Terrain memo: {asked} fact(s) asked, {hits} held ({100.0 * hits / asked:F1}%), " +
                      $"{misses} read from the world ({RoadTerrainSamples.TotalTerrainCalls} generator call(s)), " +
                      $"{RoadTerrainSamples.TotalReplacements} slot(s) evicted.");
+        if (!SearchStats.Enabled) return;
+        // Info, beside the search times it is part of: in game the generator's share
+        // of a search (its river cache takes a write lock on every miss) can only be
+        // read here; offline it is a dump lookup and says nothing.
+        double seconds = RoadTerrainSamples.TotalTerrainTicks / (double)System.Diagnostics.Stopwatch.Frequency;
+        long calls = RoadTerrainSamples.TotalTerrainCalls;
+        Log.LogInfo(FormattableString.Invariant($"  World generator behind the search memo: {seconds:F0} s summed over threads, ") +
+                    FormattableString.Invariant($"{calls} call(s), {(calls > 0 ? seconds * 1e6 / calls : 0):F1} us each"));
     }
 
     internal static float? LocationGround(Vector2 endPoint, Vector2 center, float radius)
@@ -2147,6 +2178,7 @@ public static partial class RoadNetworkGenerator
         m_threadPathfinders = new System.Threading.ThreadLocal<RoadPathfinder>(
             () => new RoadPathfinder(GenerationWorld) { SiteClearance = RoadWidth * 0.5f + 2f }, true);
         RoadTerrainSamples.ResetTotals();
+        SearchStats.Reset();
         m_destinationsSelected = 0;
         m_destinationsConnected = 0;
         m_roadsGeneratedCount = 0;

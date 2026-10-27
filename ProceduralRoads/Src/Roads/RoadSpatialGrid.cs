@@ -68,6 +68,7 @@ public static partial class RoadSpatialGrid
     
     private static Dictionary<Vector2, RoadPointDebugInfo> m_debugInfo = new Dictionary<Vector2, RoadPointDebugInfo>();
     private static readonly object m_recordGate = new object();
+    internal static object RecordGate => m_recordGate;
 
     /// <summary>
     /// Keep each road point's smoothing record for road_debug_markers and
@@ -133,6 +134,7 @@ public static partial class RoadSpatialGrid
             s_appendParents.Clear();
             m_initialized = false;
             m_storedPointRecords = 0;
+            lock (m_recordGate) Junctions.Clear();
             GridCellsWithRoads = 0;
             m_committedPathLength = 0f;
             RoadNetworkVersion = 0;
@@ -600,6 +602,7 @@ public static partial class RoadSpatialGrid
         }
 
         MergePoints(tempPoints,plan.TotalLength,true);
+        if (plan.Junctions != null && SearchStats.Enabled) lock (m_recordGate) Junctions.AddRange(plan.Junctions);
         RoadNetworkGenerator.IslandActivity?.Committed(plan.TotalLength);
     }
 
@@ -870,6 +873,10 @@ public static partial class RoadSpatialGrid
         public readonly string Where;
         public Junction(Vector2 at, float pull, float earth, string where = "middle") { At = at; Pull = pull; Earth = earth; Where = where; }
     }
+
+    /// <summary>Every junction of the roads committed this generation (under m_recordGate), for the
+    /// generation summary: recorded only with PROCEDURALROADS_TIMINGS (<see cref="SearchStats.Enabled"/>).</summary>
+    public static readonly List<Junction> Junctions = new();
 
     /// <summary>A road near another takes that road's height (<see cref="HoldToNetwork"/>). Settable for tests.</summary>
     internal static bool ShareNetworkHeights = true;

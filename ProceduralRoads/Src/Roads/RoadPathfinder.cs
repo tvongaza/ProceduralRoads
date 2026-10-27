@@ -144,10 +144,17 @@ public class RoadPathfinder
 
     public List<Vector2>? FindPath(Vector2 start, Vector2 end, int? iterationLimit)
     {
+        long began = SearchStats.Enabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+        m_lastIterations = 0;
         List<Vector2>? path = FindPathCore(start, end, iterationLimit);
         FoldSqueezes();
+        if (SearchStats.Enabled)
+            SearchStats.Record(iterationLimit.HasValue ? SearchStats.Pricing : SearchStats.Building, path != null,
+                m_lastIterations >= (iterationLimit ?? MaxIterations), m_lastIterations, began);
         return path;
     }
+
+    private int m_lastIterations;
 
     private List<Vector2>? FindPathCore(Vector2 start, Vector2 end, int? iterationLimit)
     {
@@ -193,6 +200,7 @@ public class RoadPathfinder
             if ((iterations & 255) == 0) RoadLifecycleManager.ThrowIfCancellationRequested();
             iterations++;
             activity.Step();
+            m_lastIterations = iterations;
 
             var current = openSet.Min;
             openSet.Remove(current);
@@ -261,8 +269,12 @@ public class RoadPathfinder
     /// guide the search; they do not promise a globally cheapest junction.</summary>
     public List<Vector2>? FindPathToNetwork(Vector2 start, float reach, IReadOnlyList<Vector2>? hints = null, System.Func<Vector2, bool>? targetAllowed = null)
     {
+        long began = SearchStats.Enabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+        m_lastIterations = 0;
         List<Vector2>? path = FindPathToNetworkCore(start, reach, hints, targetAllowed);
         FoldSqueezes();
+        if (SearchStats.Enabled)
+            SearchStats.Record(SearchStats.Joining, path != null || AlreadyOnNetwork, m_lastIterations >= MaxIterations, m_lastIterations, began);
         return path;
     }
 
@@ -349,6 +361,7 @@ public class RoadPathfinder
             if ((iterations & 255) == 0) RoadLifecycleManager.ThrowIfCancellationRequested();
             iterations++;
             activity.Step();
+            m_lastIterations = iterations;
             var current = openSet.Min;
             openSet.Remove(current);
             Vector2i currentPos = current.pos;
@@ -884,5 +897,90 @@ public class RoadPathfinder
         path.Add(start);
         path.Reverse();
         return path;
+    }
+}
+
+/// <summary>
+/// Where generation time goes, by kind of search: how many, how many found
+/// a road, how many spent their whole iteration budget, and the wall time of
+/// each group summed over threads. Added after a full-world generation with
+/// stairs ran 10-100x longer than without. Thread-safe; reset per generation. Off unless
+/// PROCEDURALROADS_TIMINGS is on: off, no search reads the clock or counts.
+/// </summary>
+public static class SearchStats
+{
+    /// <summary>PROCEDURALROADS_TIMINGS: time the searches and print the generation's timing and
+    /// tally lines. Off by default.</summary>
+    internal static readonly bool Enabled = DebugSwitches.Flag("TIMINGS", false);
+
+    public const int Pricing = 0, Building = 1, Joining = 2;
+    private static readonly string[] Names = { "pricing searches", "build searches", "join searches" };
+    private static readonly long[] s_count = new long[Names.Length], s_found = new long[Names.Length], s_maxed = new long[Names.Length], s_iterations = new long[Names.Length];
+    private static readonly long[] s_ticks = new long[Names.Length], s_maxedTicks = new long[Names.Length];
+
+    public static void Reset()
+    {
+        foreach (long[] a in new[] { s_count, s_found, s_maxed, s_iterations, s_ticks, s_maxedTicks }) System.Array.Clear(a, 0, a.Length);
+    }
+
+    // The same, for the thread's own island: an island is built on one worker, so these say
+    // where ONE island's time went (searches lent to other threads are not in them).
+    [System.ThreadStatic] private static long[]? t_count, t_maxed, t_ticks;
+
+    /// <summary>Start this thread's island tally.</summary>
+    public static void ResetThread()
+    {
+        t_count = new long[Names.Length]; t_maxed = new long[Names.Length]; t_ticks = new long[Names.Length];
+    }
+
+    /// <summary>This thread's island so far: seconds/searches (spent their budget) per kind.</summary>
+    public static string BriefThread()
+    {
+        if (t_count == null) return "nothing timed";
+        var parts = new List<string>();
+        for (int k = 0; k < Names.Length; k++)
+            if (t_count[k] > 0) parts.Add($"{Names[k]} {Seconds(t_ticks![k]):F0}s/{t_count[k]} ({t_maxed![k]} spent the budget)");
+        return parts.Count == 0 ? "nothing timed" : string.Join(", ", parts);
+    }
+
+    public static void Record(int kind, bool found, bool maxed, long iterations, long beganTimestamp)
+    {
+        long ticks = System.Diagnostics.Stopwatch.GetTimestamp() - beganTimestamp;
+        if (t_count != null)
+        {
+            t_count[kind]++; t_ticks![kind] += ticks;
+            if (maxed) t_maxed![kind]++;
+        }
+        System.Threading.Interlocked.Increment(ref s_count[kind]);
+        if (found) System.Threading.Interlocked.Increment(ref s_found[kind]);
+        System.Threading.Interlocked.Add(ref s_iterations[kind], iterations);
+        System.Threading.Interlocked.Add(ref s_ticks[kind], ticks);
+        if (!maxed) return;
+        System.Threading.Interlocked.Increment(ref s_maxed[kind]);
+        System.Threading.Interlocked.Add(ref s_maxedTicks[kind], ticks);
+    }
+
+    private static double Seconds(long ticks) => ticks / (double)System.Diagnostics.Stopwatch.Frequency;
+
+    /// <summary>Thread time so far by kind, on one line: for the per-island
+    /// progress lines, so a run still loading says where its time goes.</summary>
+    public static string Brief()
+    {
+        var parts = new List<string>();
+        for (int k = 0; k < Names.Length; k++)
+            if (s_count[k] > 0) parts.Add($"{Names[k]} {Seconds(System.Threading.Interlocked.Read(ref s_ticks[k])):F0}s/{System.Threading.Interlocked.Read(ref s_count[k])}");
+        return parts.Count == 0 ? "nothing timed" : string.Join(", ", parts);
+    }
+
+    /// <summary>One line per kind that ran.</summary>
+    public static IEnumerable<string> Describe()
+    {
+        for (int k = 0; k < Names.Length; k++)
+        {
+            if (s_count[k] == 0) continue;
+            yield return $"{Names[k]}: {s_count[k]}, {s_found[k]} succeeded, {s_maxed[k]} spent the whole budget " +
+                         $"({Seconds(s_maxedTicks[k]):F0} s of {Seconds(s_ticks[k]):F0} s summed over threads), " +
+                         $"{s_iterations[k] / (double)s_count[k]:F0} iterations each";
+        }
     }
 }

@@ -53,11 +53,17 @@ internal sealed class RoadTerrainSamples
     // evicted by a different position, which is what says the memo is too
     // small for the way it is being asked.
     internal long Hits, Misses, Replacements, TerrainCalls;
+    /// <summary>Stopwatch ticks spent inside the world generator for this memo: the
+    /// share of a search that is the game's terrain (and its river cache's lock),
+    /// which in game cannot be told from the search's own work any other way.
+    /// Counted only with PROCEDURALROADS_TIMINGS (<see cref="SearchStats.Enabled"/>).</summary>
+    internal long TerrainTicks;
+    private static long Now => SearchStats.Enabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
 
     // Whole-generation totals. A memo is folded in when its owner is done,
     // so a pathfinder discarded mid-generation does not take its numbers with
     // it. Interlocked because several island workers fold at once.
-    internal static long TotalHits, TotalMisses, TotalReplacements, TotalTerrainCalls;
+    internal static long TotalHits, TotalMisses, TotalReplacements, TotalTerrainCalls, TotalTerrainTicks;
 
     internal static void ResetTotals()
     {
@@ -66,6 +72,7 @@ internal sealed class RoadTerrainSamples
         System.Threading.Interlocked.Exchange(ref TotalMisses, 0);
         System.Threading.Interlocked.Exchange(ref TotalReplacements, 0);
         System.Threading.Interlocked.Exchange(ref TotalTerrainCalls, 0);
+        System.Threading.Interlocked.Exchange(ref TotalTerrainTicks, 0);
     }
 
     internal void FoldIntoTotals()
@@ -74,7 +81,8 @@ internal sealed class RoadTerrainSamples
         System.Threading.Interlocked.Add(ref TotalMisses, Misses);
         System.Threading.Interlocked.Add(ref TotalReplacements, Replacements);
         System.Threading.Interlocked.Add(ref TotalTerrainCalls, TerrainCalls);
-        Hits = Misses = Replacements = TerrainCalls = 0;
+        System.Threading.Interlocked.Add(ref TotalTerrainTicks, TerrainTicks);
+        Hits = Misses = Replacements = TerrainCalls = TerrainTicks = 0;
     }
 
     private ref Sample At(Vector2i position)
@@ -101,7 +109,9 @@ internal sealed class RoadTerrainSamples
             {
                 TerrainCalls++;
                 var p = World(position);
+                long began = Now;
                 sample.Height = world.GetHeight(p.x, p.y);
+                TerrainTicks += Now - began;
                 SharedTerrain.PutHeight(world, position, sample.Height);
             }
             sample.Flags |= 1;
@@ -119,7 +129,9 @@ internal sealed class RoadTerrainSamples
             {
                 TerrainCalls++;
                 var p = World(position);
+                long began = Now;
                 world.GetRiverWeight(p.x, p.y, out sample.River, out _);
+                TerrainTicks += Now - began;
                 SharedTerrain.PutRiver(world, position, sample.River);
             }
             sample.Flags |= 2;
@@ -137,7 +149,9 @@ internal sealed class RoadTerrainSamples
             {
                 TerrainCalls++;
                 var p = World(position);
+                long began = Now;
                 sample.Biome = world.GetBiome(p.x, p.y);
+                TerrainTicks += Now - began;
                 SharedTerrain.PutBiome(world, position, sample.Biome);
             }
             sample.Flags |= 4;
@@ -230,6 +244,7 @@ internal sealed class RoadTerrainSamples
             float radius = RoadConstants.TerrainVarianceSampleRadius;
             float min = centerHeight, max = centerHeight;
             float[] ring = new float[n];
+            long began = Now;
             for (int i = 0; i < n; i++)
             {
                 float angle = i * Mathf.PI * 2f / n;
@@ -238,6 +253,7 @@ internal sealed class RoadTerrainSamples
                 min = Mathf.Min(min, h);
                 max = Mathf.Max(max, h);
             }
+            TerrainTicks += Now - began;
             if (QuadVariance)
                 sample.Variance = QuadraticRoughness(centerHeight, ring, radius);
             else
