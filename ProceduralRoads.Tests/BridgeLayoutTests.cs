@@ -38,16 +38,16 @@ public sealed class BridgeLayoutTests
             }
             ZDO piece = ZDOMan.instance.CreateNewZDO(ZoneSystem.GetZonePos(zone), "wood_beam".GetStableHashCode());
             piece.Persistent = true;
-            piece.Set(BridgePlans.MarkerHash, 1);
+            piece.Set(StructurePlans.MarkerHash, 1);
 
             RoadSpatialGrid.Clear(); RoadNetworkPersistence.Reset();
             Assert.True(RoadNetworkGenerator.TryLoadGlobalRoadData());
 
             Assert.True(RoadNetworkPersistence.BridgeLayoutIsStale);
-            Assert.True(BridgePlans.IsSpawned(zone), "the zone's old pieces must stay its pieces");
+            Assert.True(StructurePlans.IsSpawned(zone), "the zone's old pieces must stay its pieces");
             Assert.Contains(piece, ZDOMan.instance.Zdos);
             Assert.DoesNotContain(piece, ZDOMan.instance.DestroyQueue);   // destruction is queued in the doubles
-            Assert.Equal(1, piece.GetInt(BridgePlans.MarkerHash));
+            Assert.Equal(1, piece.GetInt(StructurePlans.MarkerHash));
         }
         finally
         {
@@ -83,13 +83,13 @@ public sealed class BridgeLayoutTests
             NetworkCutoff.SnapshotWorld(new Vector2s[0]);
             NetworkCutoff.UseNewNetwork();
             foreach (Vector2s zone in zones)
-                Assert.Same(BridgePlans.PlanFor(zone), BridgePlans.BuildablePlanFor(zone));
+                Assert.Same(StructurePlans.PlanFor(zone), StructurePlans.BuildablePlanFor(zone));
 
             // Explored land elsewhere: still untouched.
             NetworkCutoff.SnapshotWorld(new[] { new Vector2s(40, 40) });
             NetworkCutoff.UseNewNetwork();
             foreach (Vector2s zone in zones)
-                Assert.Same(BridgePlans.PlanFor(zone), BridgePlans.BuildablePlanFor(zone));
+                Assert.Same(StructurePlans.PlanFor(zone), StructurePlans.BuildablePlanFor(zone));
 
             // One of its zones explored before the network: no zone of this bridge gets a piece.
             foreach (Vector2s explored in zones)
@@ -98,8 +98,8 @@ public sealed class BridgeLayoutTests
                 NetworkCutoff.UseNewNetwork();
                 foreach (Vector2s zone in zones)
                 {
-                    Assert.NotNull(BridgePlans.PlanFor(zone));
-                    Assert.Null(BridgePlans.BuildablePlanFor(zone));
+                    Assert.NotNull(StructurePlans.PlanFor(zone));
+                    Assert.Null(StructurePlans.BuildablePlanFor(zone));
                 }
             }
         }

@@ -5,7 +5,7 @@ using UnityEngine;
 namespace ProceduralRoads;
 
 /// <summary>
-/// Spawns the bridge plans (bridges prototype, see BridgePlans) into the
+/// Spawns the structure plans (bridges today, see StructurePlans) into the
 /// world as persistent ZDOs of vanilla prefabs, so unmodded clients see
 /// them too. Only the server creates or destroys pieces: clients receive
 /// them like any other object. A zone gets its pieces once, when it first
@@ -13,13 +13,13 @@ namespace ProceduralRoads;
 /// persisted spawned set, and every piece carries a ZDO marker so debug
 /// tooling can find it and a zone whose record was lost is still left alone.
 /// </summary>
-public static class BridgePlacement
+public static class StructurePlacement
 {
     private static ManualLogSource Log => ProceduralRoadsPlugin.ProceduralRoadsLogger;
 
     /// <summary>ZDO marker on every piece this mod spawned. Vanilla clients
     /// ignore unknown ZDO variables, so the marker is crossplay-safe.</summary>
-    private static int MarkerHash => BridgePlans.MarkerHash;
+    private static int MarkerHash => StructurePlans.MarkerHash;
 
     private static readonly HashSet<string> s_warnedPrefabs = new();
 
@@ -110,7 +110,7 @@ public static class BridgePlacement
             return 0;
 
         int zones = 0;
-        foreach (Vector2s zone in BridgePlans.ZonesNeedingPieces(ZoneSystem.instance.IsZoneGenerated))
+        foreach (Vector2s zone in StructurePlans.ZonesNeedingPieces(ZoneSystem.instance.IsZoneGenerated))
         {
             if (SpawnInZone(zone, ghost: true, condemned) > 0)
                 zones++;
@@ -125,23 +125,23 @@ public static class BridgePlacement
         // A zone explored before this network gets no pieces (NetworkCutoff).
         if (NetworkCutoff.Excludes(zoneID))
             return 0;
-        if (BridgeAppendQueue.ForZone(zoneID) != null) return SpawnAppend(zoneID);
+        if (StructureAppendQueue.ForZone(zoneID) != null) return SpawnAppend(zoneID);
         // Nor does a bridge that reaches into such a zone anywhere else: it is built whole or not at all.
         // The zone is not marked spawned, so the bridge is built if those zones stop being excluded.
-        List<BridgePiece>? pieces = BridgePlans.BuildablePlanFor(zoneID);
+        List<StructurePiece>? pieces = StructurePlans.BuildablePlanFor(zoneID);
         if (pieces == null)
             return 0;
-        if (BridgePlans.IsSpawned(zoneID))
+        if (StructurePlans.IsSpawned(zoneID))
             return 0;
         // A zone whose pieces are already standing is recorded as spawned and
         // left alone; pieces condemned moments ago do not count as standing.
-        if (BridgePlans.ZoneHasLivePieces(zoneID, condemned))
+        if (StructurePlans.ZoneHasLivePieces(zoneID, condemned))
         {
-            BridgePlans.MarkSpawned(zoneID);
+            StructurePlans.MarkSpawned(zoneID);
             return 0;
         }
 
-        BridgePlans.MarkSpawned(zoneID);
+        StructurePlans.MarkSpawned(zoneID);
         int spawned = SpawnPieces(pieces, ghost);
         if (spawned > 0)
             Log.LogInfo($"[BRIDGES] zone {zoneID}: spawned {spawned} bridge pieces");
@@ -153,7 +153,7 @@ public static class BridgePlacement
     {
         if (RoadLifecycleManager.WorkersOwnWorld) return;
         if (!IsServer || ZNetScene.instance == null || ZDOMan.instance == null) return;
-        var zones = new List<Vector2s>(BridgeAppendQueue.Zones);
+        var zones = new List<Vector2s>(StructureAppendQueue.Zones);
         if (zones.Count == 0) return;
         // One zone / at most 64 new objects per retry. A missing prefab in one
         // zone must not starve every other pending bridge.
@@ -164,7 +164,7 @@ public static class BridgePlacement
     private static readonly int AppendPieceHash = "ProceduralRoads_AppendPiece".GetStableHashCode();
     private static int SpawnAppend(Vector2s zone)
     {
-        var pieces = BridgeAppendQueue.ForZone(zone);
+        var pieces = StructureAppendQueue.ForZone(zone);
         if (pieces == null || NetworkCutoff.Excludes(zone)) return 0;
         var zdos = new List<ZDO>();
         ZDOMan.instance.FindObjects(zone, zdos, new HashSet<ZoneSystem.SectorIndex>());
@@ -180,7 +180,7 @@ public static class BridgePlacement
             while (pieces.Count > 0 && count < 64)
             {
                 var piece = pieces[0];
-                string key = BridgeAppendQueue.Key(piece);
+                string key = StructureAppendQueue.Key(piece);
                 if (!existing.Contains(key))
                 {
                     if (ZNetScene.instance.GetPrefab(piece.Prefab) == null)
@@ -189,23 +189,23 @@ public static class BridgePlacement
                             Log.LogWarning($"[BRIDGES] append pending in {zone}: missing prefab {piece.Prefab}");
                         return count;
                     }
-                    count += SpawnPieces(new List<BridgePiece> { piece }, ghost: true, appendKey: key);
+                    count += SpawnPieces(new List<StructurePiece> { piece }, ghost: true, appendKey: key);
                     existing.Add(key);
                 }
                 // Once emitted, a piece is no longer owed, even if physics or
                 // a player destroys it before the rest of the bridge is built.
-                BridgeAppendQueue.Acknowledge(zone, key);
+                StructureAppendQueue.Acknowledge(zone, key);
             }
-            if (pieces.Count == 0) BridgeAppendQueue.Complete(zone);
+            if (pieces.Count == 0) StructureAppendQueue.Complete(zone);
             return count;
         }
         finally { RoadNetworkGenerator.SaveBridgeZones(); }
     }
 
-    private static int SpawnPieces(List<BridgePiece> pieces, bool ghost, string? appendKey = null)
+    private static int SpawnPieces(List<StructurePiece> pieces, bool ghost, string? appendKey = null)
     {
         int spawned = 0;
-        foreach (BridgePiece piece in pieces)
+        foreach (StructurePiece piece in pieces)
         {
             GameObject? prefab = ZNetScene.instance.GetPrefab(piece.Prefab);
             if (prefab == null)
@@ -261,8 +261,8 @@ public static class BridgePlacement
         if (RoadLifecycleManager.WorkersOwnWorld) return 0;
         if (!IsServer || ZDOMan.instance == null || ZNetScene.instance == null)
             return 0;
-        BridgePlans.InvalidatePlans();
-        BridgePlans.ForgetSpawned();
+        StructurePlans.InvalidatePlans();
+        StructurePlans.ForgetSpawned();
 
         List<ZDO> tagged = new();
         foreach (var kv in ZDOMan.instance.m_objectsByID)
@@ -298,29 +298,14 @@ public static class BridgePlacement
         return destroyed;
     }
 
-    /// <summary>
-    /// Clear-areas around the plan so vegetation does not spawn through the
-    /// deck (a bridge zone often carries no painted road points of its own).
-    /// </summary>
+    /// <summary>Clear-areas round a zone's planned structure pieces, so vegetation
+    /// does not spawn through them (each source decides its own; see StructurePlans).</summary>
     public static List<ZoneSystem.ClearArea> GetClearAreas(Vector2s zoneID)
     {
         if (RoadLifecycleManager.WorkersOwnWorld) return new List<ZoneSystem.ClearArea>();
         List<ZoneSystem.ClearArea> areas = new();
-        List<BridgePiece>? pieces = BridgePlans.BuildablePlanFor(zoneID);
-        if (pieces == null)
-            return areas;
-
-        Vector3? last = null;
-        foreach (BridgePiece piece in pieces)
-        {
-            if (last.HasValue && Vector3.Distance(last.Value, piece.Position) < 2f)
-                continue;
-            // Wide enough for a two-lane deck: pieces sit up to DeckHalfWidth
-            // either side of the crossing line, and the clearing has to keep
-            // trees out of BOTH lanes, not just the centreline.
-            areas.Add(new ZoneSystem.ClearArea(piece.Position, BridgeLayout.DeckHalfWidth + 1.5f));
-            last = piece.Position;
-        }
+        foreach (var (centre, radius) in StructurePlans.ClearAreas(zoneID))
+            areas.Add(new ZoneSystem.ClearArea(centre, radius));
         return areas;
     }
 }

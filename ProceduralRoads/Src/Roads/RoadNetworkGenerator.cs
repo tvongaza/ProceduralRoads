@@ -397,7 +397,7 @@ public static partial class RoadNetworkGenerator
         // exist before the network does; give them their roads now.
         int zones = RoadTerrainModifier.ApplyToLoadedZones();
         Log.LogDebug($"Queued road terrain for {zones} zone(s) loaded before generation");
-        int bridgeZones = BridgePlacement.SpawnInLoadedZones();
+        int bridgeZones = StructurePlacement.SpawnInLoadedZones();
         if (bridgeZones > 0)
             Log.LogDebug($"Spawned bridges into {bridgeZones} zone(s) loaded before generation");
     }
@@ -2019,7 +2019,7 @@ public static partial class RoadNetworkGenerator
         RoadSiteProtection.Reset();
         m_roadStartPoints.Clear();
         m_roadCrossings.Clear();
-        BridgePlans.Reset();
+        StructurePlans.Reset();
         VegetationClearing.Reset();
         RoadNetworkPersistence.Reset();
         RoadSpatialGrid.Clear();
@@ -2142,7 +2142,7 @@ public static partial class RoadNetworkGenerator
             return;
         }
 
-        RoadNetworkPersistence.SaveGlobalRoadData(m_roadStartPoints, m_roadCrossings, BridgePlans.SpawnedZones);
+        RoadNetworkPersistence.SaveGlobalRoadData(m_roadStartPoints, m_roadCrossings, StructurePlans.SpawnedZones);
     }
 
     /// <summary>
@@ -2156,7 +2156,7 @@ public static partial class RoadNetworkGenerator
         if (IsGenerating) return;
         if (!RoadsAvailable)
             return;
-        RoadNetworkPersistence.SaveBridgeZones(BridgePlans.SpawnedZones);
+        RoadNetworkPersistence.SaveBridgeZones(StructurePlans.SpawnedZones);
     }
 
     /// <summary>
@@ -2175,7 +2175,7 @@ public static partial class RoadNetworkGenerator
             NetworkCutoff.UseLoadedNetwork(RoadSpatialGrid.RoadNetworkVersion, RoadNetworkPersistence.LoadZonesWithNetwork());
             // Zones whose pieces stand keep them, whatever layout made them
             // (RoadNetworkPersistence.BridgeLayoutIsStale).
-            BridgePlans.MarkSpawned(bridgeZones);
+            StructurePlans.MarkSpawned(bridgeZones);
             var cleared = new HashSet<Vector2s>();
             if (RoadNetworkPersistence.TryLoadClearedZones(out int clearedVersion, cleared))
                 VegetationClearing.Load(clearedVersion, cleared, RoadSpatialGrid.RoadNetworkVersion);

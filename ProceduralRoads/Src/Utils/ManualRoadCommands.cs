@@ -82,9 +82,9 @@ public static class ManualRoadCommands
             if (plan.ExploredZonesWritten.Count > 0) args.Context.AddString(ManualRoads.ExploredZonesWarning(plan.ExploredZonesWritten));
             ManualRoadNetworkSync.Publish();
             RoadTerrainModifier.ApplyAdditionsToLoadedZones();
-            BridgePlacement.ApplyPendingAppends();
+            StructurePlacement.ApplyPendingAppends();
             RoadNetworkGenerator.SaveGlobalRoadData();
-            if (BridgeAppendQueue.Count > 0) args.Context.AddString($"Bridge additions pending in {BridgeAppendQueue.Count} zone(s).");
+            if (StructureAppendQueue.Count > 0) args.Context.AddString($"Bridge additions pending in {StructureAppendQueue.Count} zone(s).");
         }
         catch (Exception ex)
         {

@@ -101,7 +101,7 @@ public sealed class Plugin : BaseUnityPlugin
             ["lengthMeters"] = statistics.CommittedPathLengthMeters, ["lengthKnown"] = statistics.LengthKnown,
             ["lengthMetric"] = "committed-planned-path-length",
             ["crossings"] = RoadNetworkGenerator.GetRoadCrossings().Count,
-            ["pendingZones"] = BridgeAppendQueue.Count, ["loadedFromSave"] = RoadNetworkGenerator.RoadsLoadedFromZDO
+            ["pendingZones"] = StructureAppendQueue.Count, ["loadedFromSave"] = RoadNetworkGenerator.RoadsLoadedFromZDO
         }); yield break;
     }
     private static IEnumerator SiteMetrics(ExtensionContext context)
@@ -151,7 +151,7 @@ public sealed class Plugin : BaseUnityPlugin
         { context.Fail("usage", "bridge-zone <zoneX> <zoneZ> within +/-" + ZoneTerrain.MaxZoneIndex); yield break; }
         // Every saved object in the zone, loaded or not; the census limit below is Roads' own, reported rather than thrown.
         var found = ZoneTerrain.ZoneObjects(new Vector2s(x, z), int.MaxValue);
-        var pieces = found.Where(item => item.GetInt(BridgePlans.MarkerHash) == 1).ToArray();
+        var pieces = found.Where(item => item.GetInt(StructurePlans.MarkerHash) == 1).ToArray();
         if (pieces.Length > 512) { context.Fail("census_limit", "More than 512 marked pieces in one zone; result omitted, not truncated."); yield break; }
         context.Succeed(new Dictionary<string, object?>
         {

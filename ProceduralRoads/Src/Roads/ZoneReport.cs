@@ -63,7 +63,7 @@ public static class ZoneReport
         var pieces = new List<string>();
         foreach (ZDO zdo in zdos)
         {
-            if (zdo.GetInt(BridgePlans.MarkerHash) != 1)
+            if (zdo.GetInt(StructurePlans.MarkerHash) != 1)
                 continue;
             Vector3 p = zdo.GetPosition();
             Vector3 euler = zdo.GetRotation().eulerAngles;
@@ -85,8 +85,8 @@ public static class ZoneReport
                 }
             }
         }
-        return $"BRIDGES pieces {pieces.Count} planned {BridgePlans.PlannedPieceCount(zone)} " +
-               $"spawned {BridgePlans.IsSpawned(zone)} hash {hash:x8}";
+        return $"BRIDGES pieces {pieces.Count} planned {StructurePlans.PlannedPieceCount(zone)} " +
+               $"spawned {StructurePlans.IsSpawned(zone)} hash {hash:x8}";
     }
 
     private static string VegetationLine(Vector2s zone, int version)

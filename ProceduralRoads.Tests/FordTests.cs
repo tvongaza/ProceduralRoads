@@ -231,7 +231,7 @@ public class FordTests
 
         // Every piece it lays out inherits that heading.
         foreach (var piece in BridgeLayout.SolveComplete(bridge, world, 11)
-                     .Where(x => x.Kind != BridgePieceKind.Debris))
+                     .Where(x => x.Kind != StructurePieceKind.Debris))
             Assert.True(BridgeLayout.HeadingIsPlaceable(piece.YawDegrees, 0.06f),
                 $"{piece.Prefab} at yaw {piece.YawDegrees:F2}");
     }

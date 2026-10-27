@@ -108,11 +108,11 @@ public class BridgeFreeSpanTests
 
         var pieces = BridgeLayout.Solve(crossing, world, worldSeed: 1);
         var postsInWater = pieces
-            .Where(p => p.Kind == BridgePieceKind.Post)
+            .Where(p => p.Kind == StructurePieceKind.Post)
             .Where(p => Mathf.Abs(p.Position.x) < 7f)
             .ToList();
         Assert.Empty(postsInWater);
-        Assert.Contains(pieces, p => p.Kind == BridgePieceKind.Deck);
+        Assert.Contains(pieces, p => p.Kind == StructurePieceKind.Deck);
     }
 
     /// <summary>And it is a continuous deck, not two stubs: removing the
@@ -122,7 +122,7 @@ public class BridgeFreeSpanTests
     {
         var (crossing, world) = Narrow();
         var deck = BridgeLayout.Solve(crossing, world, worldSeed: 1)
-            .Where(p => p.Kind == BridgePieceKind.Deck)
+            .Where(p => p.Kind == StructurePieceKind.Deck)
             .Select(p => Vector2.Distance(new Vector2(p.Position.x, p.Position.z), crossing.FromBank))
             .ToList();
         Assert.NotEmpty(deck);

@@ -17,6 +17,9 @@ public enum RockClearingMode
 /// <summary>Known natural boulders only, never ore, fragments or arbitrary destructibles.</summary>
 public static class RoadRockPolicy
 {
+    /// <summary>Height of the clearance over a walking surface: a player's.</summary>
+    public const float ClearanceHeight = 2f;
+
     public const Heightmap.Biome SupportedBiomes = Heightmap.Biome.Mountain |
         Heightmap.Biome.Plains | Heightmap.Biome.BlackForest | Heightmap.Biome.Meadows | Heightmap.Biome.Swamp;
 

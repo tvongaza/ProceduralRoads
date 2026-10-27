@@ -686,7 +686,7 @@ public static class ConsoleCommands
         int zonesWithRoads = RoadTerrainModifier.ApplyToLoadedZones(operatorRequest: true, out var admitted);
         ReportAdmitted(args, admitted);
         args.Context.AddString($"Queued road terrain for {zonesWithRoads} visible zones.");
-        ReportBridgeRespawn(args, BridgePlacement.RespawnFromPlans());
+        ReportBridgeRespawn(args, StructurePlacement.RespawnFromPlans());
     }
 
     private static void ReportAdmitted(Terminal.ConsoleEventArgs args, List<Vector2s> admitted)
@@ -734,7 +734,7 @@ public static class ConsoleCommands
                 // support can reach the deck. The two differ a lot: a 2.3 m deep
                 // channel between high banks carries a 12 m structure.
                 $"{(site.Kind == CrossingKind.Bridge && WorldGenerator.instance != null ? $"pier {BridgeLayout.PierHeight(site, WorldGenerator.instance):F1} m, " : "")}" +
-                $"{BridgePlans.PiecesAt(site)} pieces");
+                $"{BridgeStructures.PiecesAt(site)} pieces");
         }
     }
 
@@ -751,7 +751,7 @@ public static class ConsoleCommands
 
         if (args.Length > 1 && args[1] == "respawn")
         {
-            (int destroyed, int zones) = BridgePlacement.RespawnFromPlans();
+            (int destroyed, int zones) = StructurePlacement.RespawnFromPlans();
             args.Context.AddString($"Destroyed {destroyed} bridge pieces; spawned the current plans into {zones} zone(s). Zones the world has not generated yet get theirs when it does.");
             return;
         }
@@ -759,7 +759,7 @@ public static class ConsoleCommands
         List<RoadCrossing> sites = BridgeLayout.DistinctSites(RoadNetworkGenerator.GetRoadCrossings());
         args.Context.AddString(
             $"{sites.Count} crossing site(s), " +
-            $"{BridgePlans.TotalPlannedPieces} pieces planned across {BridgePlans.PlannedZoneCount} zone(s), {BridgePlans.SpawnedZones.Count} zone(s) spawned. road_crossings lists them.");
+            $"{StructurePlans.TotalPlannedPieces} pieces planned across {StructurePlans.PlannedZoneCount} zone(s), {StructurePlans.SpawnedZones.Count} zone(s) spawned. road_crossings lists them.");
     }
 
     /// <summary>
@@ -809,8 +809,8 @@ public static class ConsoleCommands
 
         RoadCrossing site = sites.OrderBy(c => Vector2.Distance(c.Center, at)).First();
         int seed = WorldGenerator.instance.GetSeed();
-        List<BridgePiece> complete = BridgeLayout.SolveComplete(site, WorldGenerator.instance, seed);
-        List<BridgePiece> shipped = BridgeLayout.Solve(site, WorldGenerator.instance, seed);
+        List<StructurePiece> complete = BridgeLayout.SolveComplete(site, WorldGenerator.instance, seed);
+        List<StructurePiece> shipped = BridgeLayout.Solve(site, WorldGenerator.instance, seed);
 
         (float dropFrom, float dropTo) = BridgeLayout.BankDrop(site, WorldGenerator.instance);
         (bool nearLands, bool farLands) = BridgeLayout.StairRunsLand(site, WorldGenerator.instance);
@@ -834,7 +834,7 @@ public static class ConsoleCommands
                 "so the crossing kept the bearing the router priced. The pieces below are NOT hand-replaceable at this site.");
         int gap = 0, ruined = 0;
         List<string> lines = new();
-        foreach (BridgePiece piece in complete)
+        foreach (StructurePiece piece in complete)
         {
             if (shipped.Any(b => b.Prefab == piece.Prefab && Vector3.Distance(b.Position, piece.Position) < 0.05f))
                 continue;
@@ -882,7 +882,7 @@ public static class ConsoleCommands
         ReportAdmitted(args, admitted);
         args.Context.AddString(summary);
         args.Context.AddString($"Queued terrain for {zones} loaded zone(s).");
-        ReportBridgeRespawn(args, BridgePlacement.RespawnFromPlans());
+        ReportBridgeRespawn(args, StructurePlacement.RespawnFromPlans());
     }
 
 

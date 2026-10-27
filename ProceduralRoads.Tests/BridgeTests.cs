@@ -457,7 +457,7 @@ public class BridgeTests
                 new Vector2(-half, 0f), new Vector2(half, 0f), 26f, new Vector2(0f, 0f), 60f,
                 CrossingKind.Bridge);
             var beams = BridgeLayout.Solve(crossing, world, 4242)
-                .Where(p => p.Kind == BridgePieceKind.Beam)
+                .Where(p => p.Kind == StructurePieceKind.Beam)
                 .OrderBy(p => p.Position.x).ToList();
             for (int i = 0; i + 1 < beams.Count; i++)
             {
@@ -482,17 +482,17 @@ public class BridgeTests
         foreach (var piece in plan)
         {
             float along = crossing.Along(new Vector2(piece.Position.x, piece.Position.z));
-            float reach = piece.Kind == BridgePieceKind.Deck ? BridgeLayout.DeckSpan * 0.5f : 0f;
+            float reach = piece.Kind == StructurePieceKind.Deck ? BridgeLayout.DeckSpan * 0.5f : 0f;
             Assert.True(Mathf.Abs(along - fairwayMid) - reach >= gapHalf - 0.01f,
                 $"{piece.Kind} at along={along:F1} inside the {BridgeLayout.FairwayGap(crossing):F0} m navigation gap around {fairwayMid:F1}");
         }
 
         // Piers march in from BOTH banks: a ruined bridge, not two abutments.
-        int west = plan.Count(p => p.Kind == BridgePieceKind.Post && p.Position.x < 0f);
-        int east = plan.Count(p => p.Kind == BridgePieceKind.Post && p.Position.x > 0f);
+        int west = plan.Count(p => p.Kind == StructurePieceKind.Post && p.Position.x < 0f);
+        int east = plan.Count(p => p.Kind == StructurePieceKind.Post && p.Position.x > 0f);
         Assert.True(west >= 4 && east >= 4, $"Piers west={west} east={east}");
-        Assert.Contains(plan, p => p.Kind == BridgePieceKind.Deck);
-        Assert.Contains(plan, p => p.Kind == BridgePieceKind.Beam);
+        Assert.Contains(plan, p => p.Kind == StructurePieceKind.Deck);
+        Assert.Contains(plan, p => p.Kind == StructurePieceKind.Beam);
     }
 
     [Fact]
@@ -509,7 +509,7 @@ public class BridgeTests
         // to the lower bank is the stair run's job.
         float deckLevel = BridgeLayout.DeckHeight(crossing, world);
         Assert.InRange(deckLevel, Mathf.Max(fromH, toH) - 0.01f, Mathf.Max(fromH, toH) + 0.01f);
-        foreach (var deck in plan.Where(p => p.Kind == BridgePieceKind.Deck))
+        foreach (var deck in plan.Where(p => p.Kind == StructurePieceKind.Deck))
         {
             Assert.True(deck.Position.y >= crossing.WaterLevel + BridgeLayout.DeckFreeboard - 0.01f, "Deck below the freeboard");
             Assert.InRange(deck.Position.y, deckLevel - 0.01f, deckLevel + 0.01f);
@@ -527,12 +527,12 @@ public class BridgeTests
         {
             // Two lanes: each end station carries a beam per lane, LaneOffset
             // either side of the crossing line, and the stair comes two abreast.
-            Assert.Equal(2, plan.Count(p => p.Kind == BridgePieceKind.Beam && Vector2.Distance(new Vector2(p.Position.x, p.Position.z), end) < BridgeLayout.LaneOffset + 0.1f));
+            Assert.Equal(2, plan.Count(p => p.Kind == StructurePieceKind.Beam && Vector2.Distance(new Vector2(p.Position.x, p.Position.z), end) < BridgeLayout.LaneOffset + 0.1f));
             // The whole run on this side of the end: the stair marches outward
             // until a step's foot is in the dirt, and on a bank whose ground
             // near the end differs from the plateau that can be several steps.
             Vector2 outward = end == crossing.FromBank ? -crossing.Direction : crossing.Direction;
-            var stairs = plan.Where(p => p.Kind == BridgePieceKind.Stair
+            var stairs = plan.Where(p => p.Kind == StructurePieceKind.Stair
                                          && Vector2.Dot(new Vector2(p.Position.x, p.Position.z) - end, outward) > 0f
                                          && Vector2.Dot(new Vector2(p.Position.x, p.Position.z) - end, outward) < 2f * BridgeLayout.MaxStairSteps + 2f).ToList();
             Assert.NotEmpty(stairs);
@@ -557,7 +557,7 @@ public class BridgeTests
         // miss astronomically unlikely without lowering the bar.
         bool anyDebris = false;
         for (int seed = 1; seed <= 100 && !anyDebris; seed++)
-            foreach (var d in BridgeLayout.Solve(crossing, world, seed).Where(p => p.Kind == BridgePieceKind.Debris))
+            foreach (var d in BridgeLayout.Solve(crossing, world, seed).Where(p => p.Kind == StructurePieceKind.Debris))
             {
                 anyDebris = true;
                 Assert.True(d.PitchDegrees > 30f, "Debris should be toppled");
@@ -631,7 +631,7 @@ public class BridgeTests
             Assert.True(RoadCrossing.SameBanks(crossings[0], crossings[2], 0.001f),
                 $"third road crossed at {crossings[2].FromBank}-{crossings[2].ToBank} instead of the shared bridge");
             Assert.Single(BridgeLayout.DistinctSites(crossings));
-            Assert.Equal(BridgeLayout.Solve(crossings[0], world, 0).Count, BridgePlans.TotalPlannedPieces);
+            Assert.Equal(BridgeLayout.Solve(crossings[0], world, 0).Count, StructurePlans.TotalPlannedPieces);
         }
         finally { TearDownGeneration(); }
     }
@@ -847,27 +847,73 @@ public class BridgeTests
             var crossing = Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
             var plan = BridgeLayout.Solve(crossing, world, world.GetSeed());
             Assert.NotEmpty(plan);
-            Assert.Equal(plan.Count, BridgePlans.TotalPlannedPieces);
-            Assert.True(BridgePlans.PlannedZoneCount >= 1);
+            Assert.Equal(plan.Count, StructurePlans.TotalPlannedPieces);
+            Assert.True(StructurePlans.PlannedZoneCount >= 1);
 
             Vector2s zone = ZoneSystem.GetZone(plan[0].Position);
-            Assert.True(BridgePlans.PlannedPieceCount(zone) > 0);
-            Assert.Equal(plan.Count(p => ZoneSystem.GetZone(p.Position) == zone), BridgePlans.PlannedPieceCount(zone));
-            Assert.Null(BridgePlans.PlanFor(new Vector2s(500, 500)));
+            Assert.True(StructurePlans.PlannedPieceCount(zone) > 0);
+            Assert.Equal(plan.Count(p => ZoneSystem.GetZone(p.Position) == zone), StructurePlans.PlannedPieceCount(zone));
+            Assert.Null(StructurePlans.PlanFor(new Vector2s(500, 500)));
 
-            Assert.False(BridgePlans.IsSpawned(zone));
-            BridgePlans.MarkSpawned(zone);
-            Assert.True(BridgePlans.IsSpawned(zone));
-            Assert.Contains(zone, BridgePlans.SpawnedZones);
+            Assert.False(StructurePlans.IsSpawned(zone));
+            StructurePlans.MarkSpawned(zone);
+            Assert.True(StructurePlans.IsSpawned(zone));
+            Assert.Contains(zone, StructurePlans.SpawnedZones);
 
-            BridgePlans.ForgetSpawned();
-            Assert.False(BridgePlans.IsSpawned(zone));
-            Assert.Equal(plan.Count, BridgePlans.TotalPlannedPieces);
+            StructurePlans.ForgetSpawned();
+            Assert.False(StructurePlans.IsSpawned(zone));
+            Assert.Equal(plan.Count, StructurePlans.TotalPlannedPieces);
 
-            BridgePlans.MarkSpawned(zone);
+            StructurePlans.MarkSpawned(zone);
             RoadNetworkGenerator.Reset();
-            Assert.Empty(BridgePlans.SpawnedZones);
-            Assert.Equal(0, BridgePlans.TotalPlannedPieces);
+            Assert.Empty(StructurePlans.SpawnedZones);
+            Assert.Equal(0, StructurePlans.TotalPlannedPieces);
+        }
+        finally { TearDownGeneration(); }
+    }
+
+    /// <summary>Bridges reach the zone pipeline as a structure source: the
+    /// structure plans hand out their vegetation clear areas and the rock
+    /// clearance along their decks, as the bridge code did before it had a
+    /// source.</summary>
+    [Fact]
+    public void BridgesGiveTheirClearAreasAndDeckClearancesThroughTheStructurePlans()
+    {
+        var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
+        using var worldScope = new ValheimWorldScope().WithWorld(world);
+        RoadNetworkGenerator.Reset();
+        SetPathfinder(Pathfinder(world, true));
+        try
+        {
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-300f, 0f), 0f, new Vector2(400f, 0f), 0f, 4f, "Cross river"));
+            var crossing = Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
+            Assert.Contains(StructurePlans.Sources, s => s is BridgeStructures);
+
+            // Clear areas: every planned piece lies inside one, each two lanes plus a margin wide.
+            foreach (Vector2s zone in StructurePlans.PlannedZones)
+            {
+                var areas = StructurePlans.ClearAreas(zone);
+                Assert.NotEmpty(areas);
+                Assert.All(areas, a => Assert.Equal(BridgeLayout.DeckHalfWidth + 1.5f, a.radius));
+                Assert.All(StructurePlans.PlanFor(zone)!, piece =>
+                    Assert.Contains(areas, a => Vector3.Distance(a.centre, piece.Position) <= a.radius));
+            }
+            Assert.Empty(StructurePlans.ClearAreas(new Vector2s(500, 500)));
+
+            // Deck clearance: every metre of the span, from a metre under the deck, rock removed whole.
+            Assert.Equal(CrossingKind.Bridge, crossing.Kind);
+            {
+                Vector2 mid = (crossing.FromBank + crossing.ToBank) * 0.5f;
+                var deck = StructurePlans.ClearancesNear(new Vector3(mid.x, 0f, mid.y), 10f);
+                Assert.Equal(Mathf.CeilToInt(Vector2.Distance(crossing.FromBank, crossing.ToBank)) + 1, deck.Count);
+                Assert.All(deck, c =>
+                {
+                    Assert.True(c.WholeOnly);
+                    Assert.Equal(c.Point.h - BridgeStructures.DeckBelow, c.Surface, 3);
+                    Assert.Equal(BridgeStructures.DeckBelow + RoadRockPolicy.ClearanceHeight, c.Height, 3);
+                });
+                Assert.Empty(StructurePlans.ClearancesNear(new Vector3(mid.x + 2000f, 0f, mid.y), 10f));
+            }
         }
         finally { TearDownGeneration(); }
     }
@@ -887,28 +933,28 @@ public class BridgeTests
         try
         {
             Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-300f, 0f), 0f, new Vector2(400f, 0f), 0f, 4f, "Cross river"));
-            Assert.True(BridgePlans.PlannedZoneCount >= 1);
-            var planned = BridgePlans.PlannedZones;
+            Assert.True(StructurePlans.PlannedZoneCount >= 1);
+            var planned = StructurePlans.PlannedZones;
 
             // Nothing generated yet: those zones get their pieces when they are
             // generated, so a respawn must not try to build them now.
-            Assert.Empty(BridgePlans.ZonesNeedingPieces(_ => false));
+            Assert.Empty(StructurePlans.ZonesNeedingPieces(_ => false));
 
             // Everything generated, nothing recorded as spawned: all of them.
-            Assert.Equal(planned.Count, BridgePlans.ZonesNeedingPieces(_ => true).Count);
+            Assert.Equal(planned.Count, StructurePlans.ZonesNeedingPieces(_ => true).Count);
 
             // A zone already rebuilt by the loaded-zone pass is left alone, so
             // the two passes cannot spawn one zone twice.
-            BridgePlans.MarkSpawned(planned[0]);
-            var need = BridgePlans.ZonesNeedingPieces(_ => true);
+            StructurePlans.MarkSpawned(planned[0]);
+            var need = StructurePlans.ZonesNeedingPieces(_ => true);
             Assert.DoesNotContain(planned[0], need);
             Assert.Equal(planned.Count - 1, need.Count);
 
             // And a zone the world has not generated stays out even when it is
             // the only one left.
-            BridgePlans.ForgetSpawned();
+            StructurePlans.ForgetSpawned();
             Assert.Equal(new List<Vector2s> { planned[0] },
-                BridgePlans.ZonesNeedingPieces(z => z == planned[0]));
+                StructurePlans.ZonesNeedingPieces(z => z == planned[0]));
         }
         finally { TearDownGeneration(); }
     }
@@ -926,7 +972,7 @@ public class BridgeTests
             RoadSpatialGrid.FinalizeRoadNetwork();
             RoadNetworkPersistence.EnsureMetadataInstance();
             var zoneA = new Vector2s(12, 0);
-            BridgePlans.MarkSpawned(zoneA);
+            StructurePlans.MarkSpawned(zoneA);
             typeof(RoadNetworkGenerator).GetField("m_roadsGenerated", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, true);
             RoadNetworkGenerator.SaveGlobalRoadData();
 
@@ -935,16 +981,16 @@ public class BridgeTests
             RoadNetworkGenerator.Reset();
             Assert.True(RoadNetworkGenerator.TryLoadGlobalRoadData());
             RoadNetworkGenerator.MarkRoadsLoadedFromZDO();
-            Assert.True(BridgePlans.IsSpawned(zoneA));
+            Assert.True(StructurePlans.IsSpawned(zoneA));
             Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
             var zoneB = new Vector2s(13, 0);
-            BridgePlans.MarkSpawned(zoneB);
+            StructurePlans.MarkSpawned(zoneB);
             RoadNetworkGenerator.SaveBridgeZones();
 
             RoadNetworkGenerator.Reset();
             Assert.True(RoadNetworkGenerator.TryLoadGlobalRoadData());
-            Assert.True(BridgePlans.IsSpawned(zoneA));
-            Assert.True(BridgePlans.IsSpawned(zoneB));
+            Assert.True(StructurePlans.IsSpawned(zoneA));
+            Assert.True(StructurePlans.IsSpawned(zoneB));
             Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
         }
         finally
@@ -974,7 +1020,7 @@ public class BridgeTests
         {
             Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-300f, 0f), 0f, new Vector2(400f, 0f), 0f, 4f, "Cross river"));
             var zone = new Vector2s(12, 0);
-            BridgePlans.MarkSpawned(zone);
+            StructurePlans.MarkSpawned(zone);
 
             // Nothing to regenerate here: an ocean point, then an island with no locations.
             Assert.False(RoadNetworkGenerator.RegenerateIslandAt(new Vector3(3000f, 0f, 3000f), out string ocean));
@@ -983,8 +1029,8 @@ public class BridgeTests
             Assert.Contains("no road-eligible", empty);
 
             Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
-            Assert.True(BridgePlans.IsSpawned(zone));
-            Assert.True(BridgePlans.TotalPlannedPieces > 0);
+            Assert.True(StructurePlans.IsSpawned(zone));
+            Assert.True(StructurePlans.TotalPlannedPieces > 0);
         }
         finally
         {
@@ -1004,8 +1050,8 @@ public class BridgeTests
         {
             (byte r, byte g, byte b) c = piece.Kind switch
             {
-                BridgePieceKind.Post => ((byte)230, (byte)180, (byte)60),
-                BridgePieceKind.Deck => ((byte)250, (byte)240, (byte)120),
+                StructurePieceKind.Post => ((byte)230, (byte)180, (byte)60),
+                StructurePieceKind.Deck => ((byte)250, (byte)240, (byte)120),
                 _ => ((byte)200, (byte)80, (byte)80),
             };
             markers.Add((new Vector2(piece.Position.x, piece.Position.z), c.r, c.g, c.b));
@@ -1151,15 +1197,15 @@ public class BridgeTests
             Assert.Equal(FordStyle.Span, crossing.Style);
             Assert.Empty(RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(crossing.Center.x, 0f, crossing.Center.y), 3f));
 
-            // The same seed BridgePlans uses, or the two ruins differ and so
+            // The same seed StructurePlans uses, or the two ruins differ and so
             // do the counts compared below.
             var plan = BridgeLayout.Solve(crossing, world, world.GetSeed());
-            Assert.Contains(plan, p => p.Kind == BridgePieceKind.Deck);
-            Assert.All(plan.Where(p => p.Kind == BridgePieceKind.Deck), d => Assert.True(d.Position.y >= 33f + RoadConstants.FordSpanDeckRise - 0.01f));
+            Assert.Contains(plan, p => p.Kind == StructurePieceKind.Deck);
+            Assert.All(plan.Where(p => p.Kind == StructurePieceKind.Deck), d => Assert.True(d.Position.y >= 33f + RoadConstants.FordSpanDeckRise - 0.01f));
             // two abreast at each end: four top steps meet the deck
-            Assert.Equal(4, plan.Count(p => p.Kind == BridgePieceKind.Stair && Mathf.Abs(p.Position.y + 1f - 34f) < 0.05f));
+            Assert.Equal(4, plan.Count(p => p.Kind == StructurePieceKind.Stair && Mathf.Abs(p.Position.y + 1f - 34f) < 0.05f));
             Assert.Empty(Floaters(plan, world));
-            Assert.Equal(plan.Count, BridgePlans.TotalPlannedPieces);
+            Assert.Equal(plan.Count, StructurePlans.TotalPlannedPieces);
 
             // Without bridges the same site is an ordinary ford, no span offered.
             var fordsOnly = RoadCrossingDetector.Detect(Pathfinder(world, true).FindPath(new Vector2(-80f, 0f), new Vector2(80f, 0f))!, world, false);
@@ -1282,20 +1328,20 @@ public class BridgeTests
         (float fromH, float toH) = BridgeLayout.DeckEndHeights(crossing, world);
         Assert.InRange(fromH, 35.9f, 36.1f);
         Assert.InRange(toH, 35.9f, 36.1f);
-        Assert.All(plan.Where(p => p.Kind == BridgePieceKind.Deck), d => Assert.InRange(d.Position.y, 35.9f, 36.1f));
+        Assert.All(plan.Where(p => p.Kind == StructurePieceKind.Deck), d => Assert.InRange(d.Position.y, 35.9f, 36.1f));
         Assert.Empty(Floaters(plan, world));
         // Piers over the water reach from the deck down to the 26 m bed: at least four segments.
-        Assert.True(plan.Count(p => p.Kind == BridgePieceKind.Post && Mathf.Abs(p.Position.x) < 20f) >= 8, "no tall piers over the water");
+        Assert.True(plan.Count(p => p.Kind == StructurePieceKind.Post && Mathf.Abs(p.Position.x) < 20f) >= 8, "no tall piers over the water");
     }
 
     // ---- support model (test-side) ----
 
-    private static (float bottom, float top, float reach) Extent(BridgePiece p) => p.Kind switch
+    private static (float bottom, float top, float reach) Extent(StructurePiece p) => p.Kind switch
     {
-        BridgePieceKind.Post => (-BridgeLayout.PostSegment * 0.5f, BridgeLayout.PostSegment * 0.5f, 0.25f),
-        BridgePieceKind.Beam => (-0.15f, 0.15f, 1f),
-        BridgePieceKind.Deck => (-0.1f, 0f, 1f),
-        BridgePieceKind.Stair => (0f, 1f, 1f),      // step: 2 m run, 1 m rise, origin at the foot
+        StructurePieceKind.Post => (-BridgeLayout.PostSegment * 0.5f, BridgeLayout.PostSegment * 0.5f, 0.25f),
+        StructurePieceKind.Beam => (-0.15f, 0.15f, 1f),
+        StructurePieceKind.Deck => (-0.1f, 0f, 1f),
+        StructurePieceKind.Stair => (0f, 1f, 1f),      // step: 2 m run, 1 m rise, origin at the foot
         _ => (-0.5f, 0.5f, 1f),
     };
 
@@ -1306,7 +1352,7 @@ public class BridgeTests
     /// here stands in the game and Valheim's support system has nothing to
     /// knock down when the zone loads.
     /// </summary>
-    private static List<int> Floaters(List<BridgePiece> plan, WorldGenerator world)
+    private static List<int> Floaters(List<StructurePiece> plan, WorldGenerator world)
     {
         const float groundTolerance = 0.15f, contactTolerance = 0.3f;
         int n = plan.Count;
@@ -1353,7 +1399,7 @@ public class BridgeTests
         for (int i = 0; i < n; i++)
         {
             ZDO zdo = ZDOMan.instance!.CreateNewZDO(at, 0);
-            zdo.Set(BridgePlans.MarkerHash, 1);
+            zdo.Set(StructurePlans.MarkerHash, 1);
             ids.Add(zdo.m_uid);
         }
         return ids;
@@ -1379,18 +1425,18 @@ public class BridgeTests
             List<ZDOID> condemned = PlacePieces(zone, 5);
 
             // Before the respawn: the pieces are standing, so the zone is built.
-            Assert.True(BridgePlans.ZoneHasLivePieces(zone));
+            Assert.True(StructurePlans.ZoneHasLivePieces(zone));
 
             // Mid-respawn: the same ZDOs are still there, but all are condemned.
-            Assert.False(BridgePlans.ZoneHasLivePieces(zone, condemned),
+            Assert.False(StructurePlans.ZoneHasLivePieces(zone, condemned),
                 "condemned pieces were mistaken for a bridge that is still standing");
 
             // A piece that is NOT being retired still counts -- a zone someone
             // else's build already populated must not be doubled up on.
             PlacePieces(zone, 1);
-            Assert.True(BridgePlans.ZoneHasLivePieces(zone, condemned));
+            Assert.True(StructurePlans.ZoneHasLivePieces(zone, condemned));
         }
-        finally { BridgePlans.Reset(); }
+        finally { StructurePlans.Reset(); }
     }
 
     [Fact]
@@ -1406,10 +1452,10 @@ public class BridgeTests
             var zone = new Vector2s(7, 7);
             PlacePieces(zone, 2);
 
-            Assert.True(BridgePlans.ZoneHasLivePieces(zone));
-            Assert.False(BridgePlans.IsSpawned(zone), "asking recorded the zone as spawned");
+            Assert.True(StructurePlans.ZoneHasLivePieces(zone));
+            Assert.False(StructurePlans.IsSpawned(zone), "asking recorded the zone as spawned");
         }
-        finally { BridgePlans.Reset(); }
+        finally { StructurePlans.Reset(); }
     }
 
     // ---- the swamp shelf ----

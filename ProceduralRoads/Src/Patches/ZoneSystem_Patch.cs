@@ -31,7 +31,7 @@ public static class ZoneSystem_Patch
 
             List<ZoneSystem.ClearArea> roadClearAreas = RoadClearAreaManager.GetOrCreateClearAreas(zoneID);
             clearAreas.AddRange(roadClearAreas);
-            List<ZoneSystem.ClearArea> bridgeClearAreas = BridgePlacement.GetClearAreas(zoneID);
+            List<ZoneSystem.ClearArea> bridgeClearAreas = StructurePlacement.GetClearAreas(zoneID);
             clearAreas.AddRange(bridgeClearAreas);
 
             // Generated with the road's clear areas: its vegetation matches the
@@ -88,7 +88,7 @@ public static class ZoneSystem_Patch
             // Bridge pieces (prototype) go in under every mode: as ZDOs only
             // under ghost generation, the way the game places its own
             // objects, and a zone that already has them is left alone.
-            BridgePlacement.OnZoneSpawned(zoneID, mode);
+            StructurePlacement.OnZoneSpawned(zoneID, mode);
 
             if (mode == ZoneSystem.SpawnMode.Ghost)
                 return;

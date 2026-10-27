@@ -20,7 +20,7 @@ public static class ManualRoads
     public static void Reset()
     {
         drafts.Clear(); islands = null; worldEpoch++; Busy = false;
-        BridgeAppendQueue.Reset();
+        StructureAppendQueue.Reset();
     }
 
     public sealed class Plan
@@ -59,7 +59,7 @@ public static class ManualRoads
         var world = WorldGenerator.instance;
         if (world != null)
             foreach (RoadCrossing crossing in BridgeLayout.DistinctSites(crossings.ToList()))
-                foreach (BridgePiece piece in BridgeLayout.Solve(crossing, world, world.GetSeed()))
+                foreach (StructurePiece piece in BridgeLayout.Solve(crossing, world, world.GetSeed()))
                     zones.Add(ZoneSystem.GetZone(piece.Position));
         return zones;
     }
@@ -199,10 +199,10 @@ public static partial class RoadNetworkGenerator
         // An explicit manual road is built in full, explored zones included; before the bridge plans are read, so
         // a bridge this makes whole is built whole.
         List<Vector2s> explored = NetworkCutoff.Admit(ManualRoads.ZonesReached(paths, crossings));
-        Dictionary<Vector2s, List<BridgePiece>> bridgeAdditions;
+        Dictionary<Vector2s, List<StructurePiece>> bridgeAdditions;
         try
         {
-            bridgeAdditions = BridgeAppendQueue.Prepare(crossings);
+            bridgeAdditions = StructureAppendQueue.Prepare(crossings);
             RoadNetworkPersistence.EnsureMetadataInstance();
             RoadSpatialGrid.CommitAppend(paths, expectedVersion);
         }
@@ -213,12 +213,12 @@ public static partial class RoadNetworkGenerator
         }
         if (explored.Count > 0)
             Log.LogWarning(ManualRoads.ExploredZonesWarning(explored));
-        BridgeAppendQueue.Enqueue(bridgeAdditions);
+        StructureAppendQueue.Enqueue(bridgeAdditions);
         m_roadCrossings.AddRange(crossings);
         m_roadStartPoints.Add((start, $"Manual road {RoadSpatialGrid.AppendCount}"));
         m_roadsGenerated = true; // A loaded network is now dirty and must be saved in full.
         m_roadsLoadedFromZDO = false;
-        BridgePlans.InvalidatePlans();
+        StructurePlans.InvalidatePlans();
         RoadClearAreaManager.ClearCache();
         return explored;
     }
@@ -242,6 +242,6 @@ public static partial class RoadNetworkGenerator
         m_roadCrossings.Clear(); m_roadCrossings.AddRange(newCrossings);
         m_roadsLoadedFromZDO = true;
         m_roadsGenerated = false;
-        BridgePlans.InvalidatePlans(); RoadClearAreaManager.ClearCache();
+        StructurePlans.InvalidatePlans(); RoadClearAreaManager.ClearCache();
     }
 }

@@ -51,7 +51,7 @@ public static class ManualRoadNetworkSync
             try
             {
                 RoadTerrainModifier.ApplyAdditionsToLoadedZones();
-                if (ZNet.instance.IsServer()) BridgePlacement.ApplyPendingAppends();
+                if (ZNet.instance.IsServer()) StructurePlacement.ApplyPendingAppends();
             }
             catch (Exception ex) { ProceduralRoadsPlugin.ProceduralRoadsLogger.LogWarning($"Manual road application remains pending: {ex.Message}"); }
         }

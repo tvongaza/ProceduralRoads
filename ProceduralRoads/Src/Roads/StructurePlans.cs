@@ -6,21 +6,28 @@ using UnityEngine;
 namespace ProceduralRoads;
 
 /// <summary>
-/// The bridge plans of the current network (bridges prototype), bucketed by
-/// zone, and the record of which zones have received their pieces. Plans
-/// are recomputed deterministically from the recorded crossings and the
-/// world seed, never stored; the spawned-zone set is persisted with the
-/// network (see RoadNetworkPersistence), so a zone whose pieces were all
-/// destroyed does not get them again on the next load. Pure logic: the
-/// game-facing spawning lives in BridgePlacement.
+/// The structure plans of the current network -- the pieces the network
+/// builds out of vanilla prefabs, bridges today -- bucketed by zone, and the
+/// record of which zones have received their pieces. The one owner of
+/// structures: placement, appends, the server bake and the zone report all
+/// read from here. Plans are recomputed deterministically from the network
+/// and the world seed, never stored; the spawned-zone set is persisted with
+/// the network (see RoadNetworkPersistence; its saved key and the pieces'
+/// ZDO marker keep their bridge names, so existing worlds load unchanged), so
+/// a zone whose pieces were all destroyed does not get them again on the next
+/// load. Pure logic: the game-facing spawning lives in StructurePlacement.
 /// </summary>
-public static class BridgePlans
+public static class StructurePlans
 {
     private static ManualLogSource Log => ProceduralRoadsPlugin.ProceduralRoadsLogger;
 
-    private static Dictionary<Vector2s, List<BridgePiece>>? s_plansByZone;
-    /// <summary>Every zone a planned piece's own bridge puts pieces in (one set per bridge, shared by its pieces).</summary>
-    private static Dictionary<BridgePiece, HashSet<Vector2s>>? s_bridgeZones;
+    /// <summary>Every kind of structure the network builds. Each plans its own
+    /// pieces; everything after that is shared.</summary>
+    public static readonly IReadOnlyList<IStructureSource> Sources = new IStructureSource[] { new BridgeStructures() };
+
+    private static Dictionary<Vector2s, List<StructurePiece>>? s_plansByZone;
+    /// <summary>The same pieces, by source and then zone: clear areas are each source's own business.</summary>
+    private static Dictionary<IStructureSource, Dictionary<Vector2s, List<StructurePiece>>>? s_plansBySource;
     private static readonly HashSet<Vector2s> s_spawnedZones = new();
 
     /// <summary>Zones that have received their bridge pieces.</summary>
@@ -30,7 +37,7 @@ public static class BridgePlans
     public static void Reset()
     {
         s_plansByZone = null;
-        s_bridgeZones = null;
+        s_plansBySource = null;
         s_spawnedZones.Clear();
     }
 
@@ -38,7 +45,7 @@ public static class BridgePlans
     public static void InvalidatePlans()
     {
         s_plansByZone = null;
-        s_bridgeZones = null;
+        s_plansBySource = null;
     }
 
     /// <summary>All emitted pieces are being destroyed for a full respawn.
@@ -47,7 +54,7 @@ public static class BridgePlans
     public static void ForgetSpawned()
     {
         s_spawnedZones.Clear();
-        BridgeAppendQueue.Reset();
+        StructureAppendQueue.Reset();
     }
 
     public static bool IsSpawned(Vector2s zone) => s_spawnedZones.Contains(zone);
@@ -98,10 +105,10 @@ public static class BridgePlans
     }
 
     /// <summary>The pieces planned for a zone, or null when it has none.</summary>
-    public static List<BridgePiece>? PlanFor(Vector2s zone)
+    public static List<StructurePiece>? PlanFor(Vector2s zone)
     {
         EnsurePlans();
-        return s_plansByZone != null && s_plansByZone.TryGetValue(zone, out List<BridgePiece>? list) ? list : null;
+        return s_plansByZone != null && s_plansByZone.TryGetValue(zone, out List<StructurePiece>? list) ? list : null;
     }
 
     /// <summary>
@@ -110,15 +117,18 @@ public static class BridgePlans
     /// NetworkCutoff leaves as it is is not built at all, in any zone: no half bridge appears, and the road there is
     /// left unbridged. Asked at spawn time, so if those zones stop being excluded the whole bridge can be built.
     /// </summary>
-    public static List<BridgePiece>? BuildablePlanFor(Vector2s zone)
+    public static List<StructurePiece>? BuildablePlanFor(Vector2s zone) => Buildable(PlanFor(zone));
+
+    /// <summary>The pieces of a list that may be built now (see BuildablePlanFor), or null when none may.</summary>
+    private static List<StructurePiece>? Buildable(List<StructurePiece>? pieces)
     {
-        List<BridgePiece>? pieces = PlanFor(zone);
-        if (pieces == null || s_bridgeZones == null || NetworkCutoff.ExcludedCount == 0)
+        if (pieces == null || NetworkCutoff.ExcludedCount == 0)
             return pieces;
-        List<BridgePiece>? buildable = null;
+        List<StructurePiece>? buildable = null;
         for (int i = 0; i < pieces.Count; i++)
         {
-            bool whole = !s_bridgeZones.TryGetValue(pieces[i], out HashSet<Vector2s>? zones) || !ReachesExcludedZone(zones);
+            HashSet<Vector2s>? zones = pieces[i].StructureZones;
+            bool whole = zones == null || !ReachesExcludedZone(zones);
             if (buildable != null) { if (whole) buildable.Add(pieces[i]); }
             else if (!whole) buildable = pieces.GetRange(0, i);
         }
@@ -197,9 +207,28 @@ public static class BridgePlans
         return zones;
     }
 
-    /// <summary>Pieces the plan puts at a crossing (0 for a ford that is not spanned).</summary>
-    public static int PiecesAt(RoadCrossing crossing) =>
-        WorldGenerator.instance == null ? 0 : BridgeLayout.Solve(crossing, WorldGenerator.instance, WorldGenerator.instance.GetSeed()).Count;
+    /// <summary>Circles to keep vegetation out of round a zone's planned pieces, from every source.</summary>
+    public static List<(Vector3 centre, float radius)> ClearAreas(Vector2s zone)
+    {
+        var areas = new List<(Vector3 centre, float radius)>();
+        EnsurePlans();
+        if (s_plansBySource == null)
+            return areas;
+        foreach (IStructureSource source in Sources)
+            if (s_plansBySource.TryGetValue(source, out var byZone) && byZone.TryGetValue(zone, out List<StructurePiece>? planned)
+                && Buildable(planned) is { } pieces)
+                source.AddClearAreas(pieces, areas);
+        return areas;
+    }
+
+    /// <summary>Where a walker on any structure needs rock cleared, within reach of a point.</summary>
+    public static List<StructureClearance> ClearancesNear(Vector3 centre, float radius)
+    {
+        var clearances = new List<StructureClearance>();
+        foreach (IStructureSource source in Sources)
+            source.AddClearances(centre, radius, clearances);
+        return clearances;
+    }
 
     private static void EnsurePlans()
     {
@@ -207,36 +236,33 @@ public static class BridgePlans
         if (s_plansByZone != null || WorldGenerator.instance == null)
             return;
 
-        s_plansByZone = new Dictionary<Vector2s, List<BridgePiece>>();
-        s_bridgeZones = new Dictionary<BridgePiece, HashSet<Vector2s>>();
+        s_plansByZone = new Dictionary<Vector2s, List<StructurePiece>>();
+        s_plansBySource = new Dictionary<IStructureSource, Dictionary<Vector2s, List<StructurePiece>>>();
         int seed = WorldGenerator.instance.GetSeed();
-        foreach (RoadCrossing crossing in BridgeLayout.DistinctSites(RoadNetworkGenerator.GetRoadCrossings()))
+        foreach (IStructureSource source in Sources)
         {
-            List<BridgePiece> bridge = BridgeLayout.Solve(crossing, WorldGenerator.instance, seed);
-            var bridgeZones = new HashSet<Vector2s>();
-            foreach (BridgePiece piece in bridge)
-            {
-                // Debris on the riverbed is not part of the bridge: it never holds one back.
-                if (piece.Kind != BridgePieceKind.Debris)
-                    bridgeZones.Add(ZoneSystem.GetZone(piece.Position));
-                s_bridgeZones[piece] = bridgeZones;
-            }
-            foreach (BridgePiece piece in bridge)
+            var byZone = new Dictionary<Vector2s, List<StructurePiece>>();
+            s_plansBySource[source] = byZone;
+            int total = 0;
+            foreach (StructurePiece piece in source.Plan(WorldGenerator.instance, seed))
             {
                 Vector2s zone = ZoneSystem.GetZone(piece.Position);
-                if (!s_plansByZone.TryGetValue(zone, out List<BridgePiece>? list))
+                if (!s_plansByZone.TryGetValue(zone, out List<StructurePiece>? list))
                 {
-                    list = new List<BridgePiece>();
+                    list = new List<StructurePiece>();
                     s_plansByZone[zone] = list;
                 }
                 list.Add(piece);
+                if (!byZone.TryGetValue(zone, out List<StructurePiece>? own))
+                {
+                    own = new List<StructurePiece>();
+                    byZone[zone] = own;
+                }
+                own.Add(piece);
+                total++;
             }
+            if (total > 0)
+                Log.LogInfo($"{source.LogTag} planned {total} pieces across {byZone.Count} zones");
         }
-
-        int total = 0;
-        foreach (var kv in s_plansByZone)
-            total += kv.Value.Count;
-        if (total > 0)
-            Log.LogInfo($"[BRIDGES] planned {total} pieces across {s_plansByZone.Count} zones");
     }
 }

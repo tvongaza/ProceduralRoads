@@ -180,7 +180,7 @@ public static class RoadNetworkPersistence
         metadataZdo.Set(RoadCrossingsHash, crossingsData);
         Log.LogDebug($"[SAVE] Saved {roadCrossings.Count} river crossings ({crossingsData.Length} bytes)");
         WriteBridgeZones(metadataZdo, bridgeZones);
-        metadataZdo.Set(AppendBridgesHash, BridgeAppendQueue.Serialize());
+        metadataZdo.Set(AppendBridgesHash, StructureAppendQueue.Serialize());
     }
 
     /// <summary>
@@ -198,7 +198,7 @@ public static class RoadNetworkPersistence
         if (!metadataZdo.IsOwner())
             metadataZdo.SetOwner(ZDOMan.instance.m_sessionID);
         WriteBridgeZones(metadataZdo, bridgeZones);
-        metadataZdo.Set(AppendBridgesHash, BridgeAppendQueue.Serialize());
+        metadataZdo.Set(AppendBridgesHash, StructureAppendQueue.Serialize());
     }
 
     /// <summary>
@@ -322,7 +322,7 @@ public static class RoadNetworkPersistence
                 TryLoadRoadMetadata(roadStartPoints);
                 TryLoadRoadCrossings(metadataZdo, roadCrossings);
                 TryLoadBridgeZones(metadataZdo, bridgeZones);
-                BridgeAppendQueue.Load(metadataZdo.GetByteArray(AppendBridgesHash, null));
+                StructureAppendQueue.Load(metadataZdo.GetByteArray(AppendBridgesHash, null));
             }
             catch (Exception ex)
             {

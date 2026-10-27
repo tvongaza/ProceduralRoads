@@ -9,39 +9,39 @@ namespace ProceduralRoads;
 
 /// <summary>Durable outstanding bridge additions, separate from the older zone-level
 /// spawned flag. Retrying an addition must not resurrect a player's old ruined bridge.</summary>
-public static class BridgeAppendQueue
+public static class StructureAppendQueue
 {
-    private static readonly Dictionary<Vector2s, List<BridgePiece>> pending = new();
+    private static readonly Dictionary<Vector2s, List<StructurePiece>> pending = new();
     public static IEnumerable<Vector2s> Zones => pending.Keys.ToArray();
     public static int Count => pending.Count;
     public static void Reset() => pending.Clear();
-    public static List<BridgePiece>? ForZone(Vector2s zone) => pending.TryGetValue(zone, out var p) ? p : null;
-    public static void Complete(Vector2s zone) { pending.Remove(zone); BridgePlans.MarkSpawned(zone); }
+    public static List<StructurePiece>? ForZone(Vector2s zone) => pending.TryGetValue(zone, out var p) ? p : null;
+    public static void Complete(Vector2s zone) { pending.Remove(zone); StructurePlans.MarkSpawned(zone); }
     public static void Acknowledge(Vector2s zone, string key)
     {
         if (!pending.TryGetValue(zone, out var pieces)) return;
         int index = pieces.FindIndex(p => Key(p) == key);
         if (index >= 0) pieces.RemoveAt(index);
     }
-    public static string Key(BridgePiece p) => p.Prefab + ":" + string.Join(":", new[] {
+    public static string Key(StructurePiece p) => p.Prefab + ":" + string.Join(":", new[] {
         p.Position.x, p.Position.y, p.Position.z, p.PitchDegrees, p.YawDegrees, p.RollDegrees }.Select(x => x.ToString("R", CultureInfo.InvariantCulture)));
 
-    internal static Dictionary<Vector2s, List<BridgePiece>> Prepare(IEnumerable<RoadCrossing> crossings)
+    internal static Dictionary<Vector2s, List<StructurePiece>> Prepare(IEnumerable<RoadCrossing> crossings)
     {
-        var result = new Dictionary<Vector2s, List<BridgePiece>>();
+        var result = new Dictionary<Vector2s, List<StructurePiece>>();
         foreach (var crossing in BridgeLayout.DistinctSites(crossings.ToList()))
             foreach (var piece in BridgeLayout.Solve(crossing, WorldGenerator.instance, WorldGenerator.instance.GetSeed()))
             {
                 var zone = ZoneSystem.GetZone(piece.Position);
                 if (!result.TryGetValue(zone, out var pieces))
                 {
-                    pieces = new List<BridgePiece>(); result.Add(zone, pieces);
+                    pieces = new List<StructurePiece>(); result.Add(zone, pieces);
                     // An unspawned zone must receive its old plans too, since we
                     // will mark the zone spawned when this operation completes.
-                    if (!BridgePlans.IsSpawned(zone) && !BridgePlans.ZoneHasLivePieces(zone))
+                    if (!StructurePlans.IsSpawned(zone) && !StructurePlans.ZoneHasLivePieces(zone))
                     {
                         // Not the pieces of a generated bridge withheld for reaching an explored zone.
-                        var old = BridgePlans.BuildablePlanFor(zone);
+                        var old = StructurePlans.BuildablePlanFor(zone);
                         if (old != null) pieces.AddRange(old);
                     }
                 }
@@ -49,11 +49,11 @@ public static class BridgeAppendQueue
             }
         return result;
     }
-    internal static void Enqueue(Dictionary<Vector2s, List<BridgePiece>> additions)
+    internal static void Enqueue(Dictionary<Vector2s, List<StructurePiece>> additions)
     {
         foreach (var entry in additions)
         {
-            if (!pending.TryGetValue(entry.Key, out var pieces)) pending.Add(entry.Key, pieces = new List<BridgePiece>());
+            if (!pending.TryGetValue(entry.Key, out var pieces)) pending.Add(entry.Key, pieces = new List<StructurePiece>());
             var keys = new HashSet<string>(pieces.Select(Key));
             foreach (var piece in entry.Value) if (keys.Add(Key(piece))) pieces.Add(piece);
         }
@@ -75,7 +75,7 @@ public static class BridgeAppendQueue
     }
     public static void Load(byte[]? bytes)
     {
-        var loaded = new Dictionary<Vector2s, List<BridgePiece>>();
+        var loaded = new Dictionary<Vector2s, List<StructurePiece>>();
         if (bytes != null && bytes.Length > 0)
         {
             using var stream = new MemoryStream(bytes); using var reader = new BinaryReader(stream);
@@ -88,7 +88,7 @@ public static class BridgeAppendQueue
                 int x = reader.ReadInt32(), y = reader.ReadInt32(), count = reader.ReadInt32();
                 if (Math.Abs((long)x) > 200 || Math.Abs((long)y) > 200 || count < 0 || count > 100000 || (total += count) > 100000)
                     throw new InvalidDataException("Invalid bridge append record.");
-                var zone = new Vector2s((short)x, (short)y); var pieces = new List<BridgePiece>();
+                var zone = new Vector2s((short)x, (short)y); var pieces = new List<StructurePiece>();
                 for (int j = 0; j < count; j++)
                 {
                     string prefab = reader.ReadString();
@@ -98,7 +98,7 @@ public static class BridgeAppendQueue
                         !ManualRoadDraft.IsFinite(pos.y) || !ManualRoadDraft.IsFinite(pitch) || !ManualRoadDraft.IsFinite(yaw) ||
                         !ManualRoadDraft.IsFinite(roll) || !ManualRoadDraft.IsFinite(health) || health < 0 || health > 1)
                         throw new InvalidDataException("Invalid pending bridge piece.");
-                    pieces.Add(new BridgePiece { Prefab = prefab, Position = pos, PitchDegrees = pitch, YawDegrees = yaw, RollDegrees = roll, HealthFraction = health });
+                    pieces.Add(new StructurePiece { Prefab = prefab, Position = pos, PitchDegrees = pitch, YawDegrees = yaw, RollDegrees = roll, HealthFraction = health });
                 }
                 loaded.Add(zone, pieces);
             }

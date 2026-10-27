@@ -233,25 +233,25 @@ public class ManualRoadTests : IDisposable
     [Fact] public void AnEmittedPieceIsNotRecreatedIfItIsDestroyedBeforeTheBatchCompletes()
     {
         var zone = new Vector2s(0,0);
-        var emitted = new BridgePiece { Prefab="wood_floor", Position=new Vector3(0,40,0) };
-        var waiting = new BridgePiece { Prefab="wood_floor", Position=new Vector3(2,40,0) };
-        BridgeAppendQueue.Enqueue(new Dictionary<Vector2s,List<BridgePiece>> { { zone,new(){emitted,waiting} } });
-        BridgeAppendQueue.Acknowledge(zone,BridgeAppendQueue.Key(emitted));
-        var saved=BridgeAppendQueue.Serialize(); BridgeAppendQueue.Reset(); BridgeAppendQueue.Load(saved);
-        Assert.Single(BridgeAppendQueue.ForZone(zone)!);
-        Assert.Equal(BridgeAppendQueue.Key(waiting),BridgeAppendQueue.Key(BridgeAppendQueue.ForZone(zone)![0]));
+        var emitted = new StructurePiece { Prefab="wood_floor", Position=new Vector3(0,40,0) };
+        var waiting = new StructurePiece { Prefab="wood_floor", Position=new Vector3(2,40,0) };
+        StructureAppendQueue.Enqueue(new Dictionary<Vector2s,List<StructurePiece>> { { zone,new(){emitted,waiting} } });
+        StructureAppendQueue.Acknowledge(zone,StructureAppendQueue.Key(emitted));
+        var saved=StructureAppendQueue.Serialize(); StructureAppendQueue.Reset(); StructureAppendQueue.Load(saved);
+        Assert.Single(StructureAppendQueue.ForZone(zone)!);
+        Assert.Equal(StructureAppendQueue.Key(waiting),StructureAppendQueue.Key(StructureAppendQueue.ForZone(zone)![0]));
     }
 
     [Fact] public void PendingBridgeQueueSurvivesReloadAndDeduplicatesRepeatedEnqueue()
     {
-        var zone=new Vector2s(0,0);var piece=new BridgePiece {Prefab="wood_floor",Position=new Vector3(0,40,0),RollDegrees=15,HealthFraction=.5f};
-        var additions=new Dictionary<Vector2s,List<BridgePiece>>{{zone,new(){piece}}};
-        BridgeAppendQueue.Enqueue(additions);BridgeAppendQueue.Enqueue(additions);Assert.Single(BridgeAppendQueue.ForZone(zone)!);
-        var data=BridgeAppendQueue.Serialize();BridgeAppendQueue.Reset();BridgeAppendQueue.Load(data);
-        Assert.Equal(BridgeAppendQueue.Key(piece),BridgeAppendQueue.Key(BridgeAppendQueue.ForZone(zone)![0]));
-        Assert.Throws<EndOfStreamException>(()=>BridgeAppendQueue.Load(data.Take(data.Length-1).ToArray()));
-        Assert.Equal(data,BridgeAppendQueue.Serialize());
-        BridgeAppendQueue.Complete(zone);Assert.True(BridgePlans.IsSpawned(zone));Assert.Empty(BridgeAppendQueue.Zones);
+        var zone=new Vector2s(0,0);var piece=new StructurePiece {Prefab="wood_floor",Position=new Vector3(0,40,0),RollDegrees=15,HealthFraction=.5f};
+        var additions=new Dictionary<Vector2s,List<StructurePiece>>{{zone,new(){piece}}};
+        StructureAppendQueue.Enqueue(additions);StructureAppendQueue.Enqueue(additions);Assert.Single(StructureAppendQueue.ForZone(zone)!);
+        var data=StructureAppendQueue.Serialize();StructureAppendQueue.Reset();StructureAppendQueue.Load(data);
+        Assert.Equal(StructureAppendQueue.Key(piece),StructureAppendQueue.Key(StructureAppendQueue.ForZone(zone)![0]));
+        Assert.Throws<EndOfStreamException>(()=>StructureAppendQueue.Load(data.Take(data.Length-1).ToArray()));
+        Assert.Equal(data,StructureAppendQueue.Serialize());
+        StructureAppendQueue.Complete(zone);Assert.True(StructurePlans.IsSpawned(zone));Assert.Empty(StructureAppendQueue.Zones);
     }
 }
 
@@ -283,7 +283,7 @@ public class ManualRoadFailureTests : IDisposable
         var d=ManualRoads.Draft("host");d.Add(new Vector2(-80,0));d.Add(new Vector2(-16,0));d.Add(new Vector2(160,0));
         var error=Assert.Throws<InvalidOperationException>(()=>ManualRoads.Prepare(d.Points,false,new[]{Island()}));
         Assert.Contains("Leg 2",error.Message);Assert.False(RoadSpatialGrid.IsInitialized);
-        Assert.Empty(RoadNetworkGenerator.GetRoadCrossings());Assert.Empty(BridgeAppendQueue.Zones);Assert.Equal(3,d.Points.Count);Assert.False(ManualRoads.Busy);
+        Assert.Empty(RoadNetworkGenerator.GetRoadCrossings());Assert.Empty(StructureAppendQueue.Zones);Assert.Equal(3,d.Points.Count);Assert.False(ManualRoads.Busy);
     }
     [Fact] public void OwnershipDefersTheAdditionUntilTheCompilerCanBeWritten()
     {
@@ -342,23 +342,23 @@ public class ManualBridgeTests : IDisposable
         for(int x=-27;x<=27;x++)for(int z=-15;z<=15;z++)island.Cells.Add(new Vector2Int(x,z));
         var plan=ManualRoads.Prepare(new[]{new Vector2(-160,0),new Vector2(160,0)},false,new[]{island});
         ManualRoads.Commit(plan);
-        var zone=BridgeAppendQueue.Zones.First(z=>BridgeAppendQueue.ForZone(z)!.Count>1);
-        int fullCount=BridgePlans.PlannedPieceCount(zone);
-        var first=BridgeAppendQueue.ForZone(zone)![0];
-        BridgeAppendQueue.Acknowledge(zone,BridgeAppendQueue.Key(first));
-        Assert.True(BridgeAppendQueue.ForZone(zone)!.Count<fullCount);
+        var zone=StructureAppendQueue.Zones.First(z=>StructureAppendQueue.ForZone(z)!.Count>1);
+        int fullCount=StructurePlans.PlannedPieceCount(zone);
+        var first=StructureAppendQueue.ForZone(zone)![0];
+        StructureAppendQueue.Acknowledge(zone,StructureAppendQueue.Key(first));
+        Assert.True(StructureAppendQueue.ForZone(zone)!.Count<fullCount);
         // Ordinary retry/reload keeps acknowledgements: do not resurrect damage.
-        var pending=BridgeAppendQueue.Serialize(); BridgeAppendQueue.Load(pending);
-        Assert.DoesNotContain(BridgeAppendQueue.ForZone(zone)!,p=>BridgeAppendQueue.Key(p)==BridgeAppendQueue.Key(first));
-        BridgePlans.MarkSpawned(zone);
+        var pending=StructureAppendQueue.Serialize(); StructureAppendQueue.Load(pending);
+        Assert.DoesNotContain(StructureAppendQueue.ForZone(zone)!,p=>StructureAppendQueue.Key(p)==StructureAppendQueue.Key(first));
+        StructurePlans.MarkSpawned(zone);
         // The real clear/respawn path calls these two methods before spawning.
-        BridgePlans.InvalidatePlans(); BridgePlans.ForgetSpawned();
-        Assert.Null(BridgeAppendQueue.ForZone(zone));
-        Assert.False(BridgePlans.IsSpawned(zone));
-        Assert.Equal(fullCount,BridgePlans.PlannedPieceCount(zone));
+        StructurePlans.InvalidatePlans(); StructurePlans.ForgetSpawned();
+        Assert.Null(StructureAppendQueue.ForZone(zone));
+        Assert.False(StructurePlans.IsSpawned(zone));
+        Assert.Equal(fullCount,StructurePlans.PlannedPieceCount(zone));
         // Persisting and restoring the queue cannot reinstate the stale remainder.
-        var after=BridgeAppendQueue.Serialize(); BridgeAppendQueue.Load(after);
-        Assert.Empty(BridgeAppendQueue.Zones);
+        var after=StructureAppendQueue.Serialize(); StructureAppendQueue.Load(after);
+        Assert.Empty(StructureAppendQueue.Zones);
     }
 
     [Fact] public void AManualRiverCrossingQueuesNewPiecesInAnAlreadySpawnedZoneAndKeepsOldObjects()
@@ -367,17 +367,17 @@ public class ManualBridgeTests : IDisposable
         for(int x=-27;x<=27;x++)for(int z=-15;z<=15;z++)island.Cells.Add(new Vector2Int(x,z));
         var plan=ManualRoads.Prepare(new[]{new Vector2(-160,0),new Vector2(160,0)},false,new[]{island});
         Assert.NotEmpty(plan.NewCrossings);
-        var planned=BridgeAppendQueue.Prepare(plan.NewCrossings);Assert.NotEmpty(planned);
-        foreach(var zone in planned.Keys)BridgePlans.MarkSpawned(zone);
+        var planned=StructureAppendQueue.Prepare(plan.NewCrossings);Assert.NotEmpty(planned);
+        foreach(var zone in planned.Keys)StructurePlans.MarkSpawned(zone);
         var existing=ZDOMan.instance!.CreateNewZDO(new Vector3(0,40,0),"wood_floor".GetStableHashCode());
-        existing.Set(BridgePlans.MarkerHash,1);
+        existing.Set(StructurePlans.MarkerHash,1);
         int oldCount=ZDOMan.instance.CountWithPrefab("wood_floor");
         ManualRoads.Commit(plan);RoadNetworkGenerator.SaveGlobalRoadData();
         Assert.Equal(oldCount,ZDOMan.instance.CountWithPrefab("wood_floor"));
-        Assert.NotEmpty(BridgeAppendQueue.Zones);
-        var queue=BridgeAppendQueue.Serialize();
+        Assert.NotEmpty(StructureAppendQueue.Zones);
+        var queue=StructureAppendQueue.Serialize();
         RoadNetworkGenerator.Reset();Assert.True(RoadNetworkGenerator.TryLoadGlobalRoadData());
-        Assert.Equal(queue,BridgeAppendQueue.Serialize());Assert.Equal(oldCount,ZDOMan.instance.CountWithPrefab("wood_floor"));
-        foreach(var zone in BridgeAppendQueue.Zones)Assert.True(BridgePlans.IsSpawned(zone));
+        Assert.Equal(queue,StructureAppendQueue.Serialize());Assert.Equal(oldCount,ZDOMan.instance.CountWithPrefab("wood_floor"));
+        foreach(var zone in StructureAppendQueue.Zones)Assert.True(StructurePlans.IsSpawned(zone));
     }
 }

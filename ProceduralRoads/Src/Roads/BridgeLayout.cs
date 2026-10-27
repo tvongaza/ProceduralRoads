@@ -3,28 +3,6 @@ using UnityEngine;
 
 namespace ProceduralRoads;
 
-public enum BridgePieceKind
-{
-    Post,    // vertical pole segment, stacked down into the riverbed
-    Beam,    // crossbeam tying a station's post pair under the deck
-    Deck,    // walkable plank plate resting on a station pair
-    Stair,   // a step piece from the road up onto the deck
-    Debris,  // a collapsed pole settled on the riverbed, outside the fairway
-}
-
-/// <summary>One placed piece of a bridge (a persistent ZDO once spawned).</summary>
-public sealed class BridgePiece
-{
-    public BridgePieceKind Kind;
-    public string Prefab = "";
-    public Vector3 Position;
-    public float YawDegrees;
-    public float PitchDegrees;
-    public float RollDegrees;
-    /// <summary>WearNTear health fraction (drives the vanilla damage visuals).</summary>
-    public float HealthFraction = 1f;
-}
-
 /// <summary>
 /// Deterministic layout of a ruined wooden bridge at a recorded crossing
 /// (bridges prototype). Pure logic; the game places the returned plan later.
@@ -327,7 +305,7 @@ public static class BridgeLayout
     /// local vector in the order roll, pitch, yaw). This is what "two pieces
     /// meet" means for a player: a snap of one lands on a snap of the other.
     /// </summary>
-    public static Vector3[] SnapPoints(BridgePiece piece)
+    public static Vector3[] SnapPoints(StructurePiece piece)
     {
         Vector3[] local = piece.Prefab switch
         {
@@ -429,15 +407,15 @@ public static class BridgeLayout
     /// of bays a player COULD fill, and if the grid did not continue across it
     /// they could not.
     /// </summary>
-    internal static List<BridgePiece> SolveComplete(RoadCrossing crossing, WorldGenerator world, int worldSeed) =>
+    internal static List<StructurePiece> SolveComplete(RoadCrossing crossing, WorldGenerator world, int worldSeed) =>
         Solve(crossing, world, worldSeed, ruin: false);
 
-    public static List<BridgePiece> Solve(RoadCrossing crossing, WorldGenerator world, int worldSeed) =>
+    public static List<StructurePiece> Solve(RoadCrossing crossing, WorldGenerator world, int worldSeed) =>
         Solve(crossing, world, worldSeed, ruin: true);
 
-    private static List<BridgePiece> Solve(RoadCrossing crossing, WorldGenerator world, int worldSeed, bool ruin)
+    private static List<StructurePiece> Solve(RoadCrossing crossing, WorldGenerator world, int worldSeed, bool ruin)
     {
-        List<BridgePiece> pieces = new();
+        List<StructurePiece> pieces = new();
         if (crossing == null || world == null || crossing.Width < DeckSpan)
             return pieces;
 
@@ -572,7 +550,7 @@ public static class BridgeLayout
     /// same two-lane grid as a bridge: a footbridge a player cannot repair
     /// with an ordinary wood_floor is no better than one they cannot walk.
     /// </summary>
-    private static void EmitShallowSpan(List<BridgePiece> pieces, RoadCrossing crossing, WorldGenerator world, Ruin r, bool ruin)
+    private static void EmitShallowSpan(List<StructurePiece> pieces, RoadCrossing crossing, WorldGenerator world, Ruin r, bool ruin)
     {
         Vector2 from = crossing.FromBank;
         Vector2 to = crossing.ToBank;
@@ -628,12 +606,12 @@ public static class BridgeLayout
     /// centre is the midpoint and it is LEVEL -- yaw only, the one orientation
     /// a player's hammer can reproduce -- so its two ends land on the stations
     /// that are DeckSpan apart.</summary>
-    private static void EmitDeck(List<BridgePiece> pieces, Vector2 a, Vector2 b, float deckH, Vector2 laneOffset, float yaw, float health)
+    private static void EmitDeck(List<StructurePiece> pieces, Vector2 a, Vector2 b, float deckH, Vector2 laneOffset, float yaw, float health)
     {
         Vector2 mid2 = (a + b) * 0.5f + laneOffset;
-        pieces.Add(new BridgePiece
+        pieces.Add(new StructurePiece
         {
-            Kind = BridgePieceKind.Deck,
+            Kind = StructurePieceKind.Deck,
             Prefab = DeckPrefab,
             Position = new Vector3(mid2.x, deckH, mid2.y),
             YawDegrees = yaw,
@@ -661,7 +639,7 @@ public static class BridgeLayout
     /// nothing floats -- but the walk stops above the dirt, and the caller
     /// is told so rather than the comment claiming every run reaches it.
     /// </summary>
-    private static bool EmitSteps(List<BridgePiece> pieces, WorldGenerator world,
+    private static bool EmitSteps(List<StructurePiece> pieces, WorldGenerator world,
         Vector2 anchor, Vector2 inward, Vector2 side, float deckH, Ruin r, int bayKey)
     {
         float stepYaw = YawDegrees(inward) + 180f; // the stair prefab rises toward local -z
@@ -677,9 +655,9 @@ public static class BridgeLayout
             {
                 Vector2 p = c + side * (lane * LaneOffset);
                 float health = r.Health(bayKey, lane, Ruin.RoleStairHealth, k);
-                pieces.Add(new BridgePiece
+                pieces.Add(new StructurePiece
                 {
-                    Kind = BridgePieceKind.Stair,
+                    Kind = StructurePieceKind.Stair,
                     Prefab = StairPrefab,
                     Position = new Vector3(p.x, foot, p.y),
                     YawDegrees = stepYaw,
@@ -733,7 +711,7 @@ public static class BridgeLayout
         float deckH = span ? SpanDeckHeight(crossing, world) : DeckHeight(crossing, world);
         Vector2 deckEnd = crossing.FromBank + dir * BuiltLength(crossing.Width);
         Ruin r = new(0, crossing);   // ruin sets health, never a position
-        List<BridgePiece> scratch = new();
+        List<StructurePiece> scratch = new();
         return (EmitSteps(scratch, world, crossing.FromBank, dir, side, deckH, r, 0),
                 EmitSteps(scratch, world, deckEnd, -dir, side, deckH, r, 1));
     }
@@ -741,7 +719,7 @@ public static class BridgeLayout
     /// <summary>One surviving station: two post pairs stacked down into the
     /// riverbed under the outer halves of the deck, tied by two crossbeams
     /// just under it -- one per lane, meeting at the centre seam.</summary>
-    private static void EmitStation(List<BridgePiece> pieces, WorldGenerator world,
+    private static void EmitStation(List<StructurePiece> pieces, WorldGenerator world,
         Vector2 pos, Vector2 side, float deckH, float yaw, Ruin r, int bay)
     {
         float postTop = deckH - PostTopBelowDeck;
@@ -754,9 +732,9 @@ public static class BridgeLayout
         foreach (int lane in new[] { Ruin.Left, Ruin.Right })
         {
             Vector2 beamPos = pos + side * (lane * LaneOffset);
-            pieces.Add(new BridgePiece
+            pieces.Add(new StructurePiece
             {
-                Kind = BridgePieceKind.Beam,
+                Kind = StructurePieceKind.Beam,
                 Prefab = BeamPrefab,
                 Position = new Vector3(beamPos.x, deckH - BeamBelowDeck, beamPos.y),
                 YawDegrees = yaw, // the beam runs along its local x: across the deck
@@ -767,16 +745,16 @@ public static class BridgeLayout
 
     /// <summary>A column of PostSegment poles from topHeight down until one is
     /// buried in the ground (grounded by construction).</summary>
-    private static void EmitColumn(List<BridgePiece> pieces, Vector2 pos, float ground, float topHeight, float yaw, float health)
+    private static void EmitColumn(List<StructurePiece> pieces, Vector2 pos, float ground, float topHeight, float yaw, float health)
     {
         if (topHeight <= ground - PostSegment)
             return;
         for (float top = topHeight; ; top -= PostSegment)
         {
             float center = top - PostSegment * 0.5f;
-            pieces.Add(new BridgePiece
+            pieces.Add(new StructurePiece
             {
-                Kind = BridgePieceKind.Post,
+                Kind = StructurePieceKind.Post,
                 Prefab = PostPrefab,
                 Position = new Vector3(pos.x, center, pos.y),
                 YawDegrees = yaw,
@@ -789,7 +767,7 @@ public static class BridgeLayout
 
     /// <summary>A toppled pole settled into the bed, displaced to the side of
     /// the crossing line (never along it toward the fairway).</summary>
-    private static void EmitDebris(List<BridgePiece> pieces, Vector2 station, Vector2 dir, WorldGenerator world, Ruin r, int bay)
+    private static void EmitDebris(List<StructurePiece> pieces, Vector2 station, Vector2 dir, WorldGenerator world, Ruin r, int bay)
     {
         Vector2 side = new(-dir.y, dir.x);
         float offset = 1f + r.Roll(bay, Ruin.Centre, Ruin.RoleDebris, 1) * 2f;
@@ -797,9 +775,9 @@ public static class BridgeLayout
 
         Vector2 pos = station + side * offset;
         float ground = BiomeBlendedHeight.GetBlendedHeight(pos.x, pos.y, world);
-        pieces.Add(new BridgePiece
+        pieces.Add(new StructurePiece
         {
-            Kind = BridgePieceKind.Debris,
+            Kind = StructurePieceKind.Debris,
             Prefab = DebrisPrefab,
             Position = new Vector3(pos.x, ground + 0.2f, pos.y),
             YawDegrees = r.Roll(bay, Ruin.Centre, Ruin.RoleDebris, 3) * 360f,
