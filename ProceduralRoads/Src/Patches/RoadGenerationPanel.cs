@@ -8,7 +8,7 @@ using UnityEngine.EventSystems;
 namespace ProceduralRoads;
 
 /// <summary>One host-only loading panel, projected exclusively from the owner's detached snapshots.</summary>
-internal static class RoadGenerationPanel
+internal static partial class RoadGenerationPanel
 {
     private static GameObject? panel;
     private static Hud? hud;
@@ -159,18 +159,17 @@ internal static class RoadGenerationPanel
         Vector2 size=viewport.rect.size;
         if(size==layoutSize && laidOutCount==visibleCount) return;
         layoutSize=size; laidOutCount=visibleCount;
-        int columns=visibleCount>8?2:1;
-        int lines=Math.Max(1,(visibleCount+columns-1)/columns);
+        int lines=Math.Max(1,(visibleCount+Columns-1)/Columns);
         // Recompute from the current viewport: no stale sizing after a resolution/UI-scale change.
-        float rowHeight=Math.Min(52f,Math.Max(1f,size.y)/8f);
+        var (fontSize,rowHeight)=Metrics(size.y);
         content.sizeDelta=new Vector2(0,Math.Max(size.y,lines*rowHeight));
         for(int i=0;i<visibleCount;i++)
         {
             var cell=(RectTransform)rows[i].transform;
-            int column=i/lines,row=i%lines;
-            cell.anchorMin=new Vector2(column/(float)columns,1); cell.anchorMax=new Vector2((column+1)/(float)columns,1);
+            var (column,row)=Cell(i);
+            cell.anchorMin=new Vector2(column/(float)Columns,1); cell.anchorMax=new Vector2((column+1)/(float)Columns,1);
             cell.pivot=new Vector2(.5f,1); cell.offsetMin=new Vector2(6,-(row+1)*rowHeight+2); cell.offsetMax=new Vector2(-6,-row*rowHeight);
-            rows[i].fontSize=Math.Min(columns==1?22f:18f,rowHeight/2.3f);
+            rows[i].fontSize=fontSize;
         }
     }
 
