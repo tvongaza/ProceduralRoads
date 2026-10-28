@@ -194,3 +194,142 @@ public sealed class DvergrWoodLightTests : IDisposable
         Assert.All(Enumerable.Range(1, 40), s => Assert.Empty(Lights(BridgeStructures.Solve(_crossing, meadows, s))));
     }
 }
+
+/// <summary>Vines on Dvergr viaducts, hung as the vanilla viaduct hangs them (a vanilla viaduct has vines): each pier's eight curtains at 40 %, every vine on a stone face, turned as
+/// vanilla's.</summary>
+public sealed class DvergrViaductVineTests : IDisposable
+{
+    private readonly ValheimWorldScope _scope = new();
+
+    public DvergrViaductVineTests() { RoadNetworkGenerator.Reset(); RoadSpatialGrid.Clear(); }
+    public void Dispose() { RoadNetworkGenerator.Reset(); RoadSpatialGrid.Clear(); _scope.Dispose(); }
+
+    private (RoadCrossing c, WorldGenerator w) Valley()
+    {
+        var w = new DvergrViaductTests.MistValley();
+        _scope.WithWorld(w);
+        return (DvergrViaduct.ValleyCrossing(new Vector2(-24f, 0f), new Vector2(24f, 0f), w, out _)!, w);
+    }
+
+    private (RoadCrossing c, WorldGenerator w) River()
+    {
+        var w = new DvergrViaductTests.MistRiver();
+        _scope.WithWorld(w);
+        return (DvergrViaductTests.River(), w);
+    }
+
+    private static List<StructurePiece> Vines(List<StructurePiece> ps) => ps.Where(p => p.Prefab == DvergrViaduct.Vine).ToList();
+
+    /// <summary>A vine on the bridge's axes relative to its nearest pier: (along, across, under the deck).</summary>
+    private static (float du, float v, float dy) Local(RoadCrossing c, float deck, StructurePiece p, List<float> piers)
+    {
+        float along = DvergrViaductTests.Along(c, p);
+        float pier = piers.OrderBy(a => Mathf.Abs(a - along)).First();
+        Vector2 dir = c.Direction, side = new(-dir.y, dir.x);
+        return (along - pier, Vector2.Dot(new Vector2(p.Position.x, p.Position.z) - c.FromBank, side), p.Position.y - deck);
+    }
+
+    [Theory]
+    [InlineData("valley")]
+    [InlineData("river")]
+    public void EveryVineHangsOnAStoneFaceAndNoneIsInTheGround(string where)
+    {
+        var (c, w) = where == "river" ? River() : Valley();
+        Assert.True(DvergrViaduct.Applies(c, w));
+        Vector2 dir = c.Direction, side = new(-dir.y, dir.x);
+        int vines = 0;
+        for (int s = 1; s <= 20; s++)
+        {
+            var pieces = DvergrViaduct.Solve(c, w, s);
+            var stone = pieces.Where(p => p.Kind != StructurePieceKind.Flair && p.Kind != StructurePieceKind.Stair).ToList();
+            foreach (StructurePiece v in Vines(pieces))
+            {
+                vines++;
+                Assert.Equal(StructurePieceKind.Flair, v.Kind);
+                Assert.True(v.Position.y >= BiomeBlendedHeight.GetBlendedHeight(v.Position.x, v.Position.z, w) + 1.2f, $"vine at {v.Position} in the ground");
+                // Its origin on (or within 0.2 m of) a stone piece's bounds: the box reaches into the stone, as vanilla's.
+                Assert.Contains(stone, p =>
+                {
+                    var (hu, hv, hy) = DvergrViaduct.Extents(p.Prefab);
+                    Vector2 d = new Vector2(v.Position.x - p.Position.x, v.Position.z - p.Position.z);
+                    return Mathf.Abs(Vector2.Dot(d, dir)) <= hu + 0.2f && Mathf.Abs(Vector2.Dot(d, side)) <= hv + 0.2f && Mathf.Abs(v.Position.y - p.Position.y) <= hy + 0.2f;
+                });
+            }
+        }
+        Assert.True(vines > 0, "no vines in twenty seeds");
+    }
+
+    [Fact]
+    public void TheVinesAreVanillasPierVinesTurnedAsVanillasAre()
+    {
+        var (c, w) = River();     // piers about 19 m: the curtains' lower vines too
+        float deck = DvergrViaduct.DeckHeight(c, w), yaw = BridgeLayout.YawDegrees(c.Direction);
+        List<float> piers = DvergrViaduct.PierAlongs(c);
+        // A sample of Mistlands_Viaduct1's middle pier, read from the game's assets (GameObject/GameObject/pillar/vines*/vines*: x, y,
+        // z, pitch, yaw, roll), on the bridge's axes (du = z - 0.25, v = -x, dy = y - 17).
+        var sample = new (float du, float v, float dy, float pitch, float yaw, float roll)[]
+        {
+            (0.03f, -2f, -17f, 0f, 270f, 180f),      // vines (curtain 0): (2, 0, 0.28), yaw 270, roll 180
+            (0.03f, -2f, -9f, 0f, 270f, 90f),        // vines: (2, 8, 0.28), roll 90, sideways
+            (-3.55f, 0.1f, -6.96f, -26f, 0f, 180f),  // vines (2): (-0.1, 10.04, -3.3), pitch 334 on a corbel's slope
+            (1.78f, -1f, -12.75f, 0f, 270f, 180f),   // vines (4): (1, 4.25, 2.03)
+        };
+        var all = Enumerable.Range(1, 40).SelectMany(s => Vines(DvergrViaduct.Solve(c, w, s))).ToList();
+        foreach (var e in sample)
+            Assert.Contains(all, v =>
+            {
+                var (du, vv, dy) = Local(c, deck, v, piers);
+                float turn = ((v.YawDegrees - yaw) % 360f + 360f) % 360f;
+                return Mathf.Abs(du - e.du) < 0.01f && Mathf.Abs(vv - e.v) < 0.01f && Mathf.Abs(dy - e.dy) < 0.01f
+                    && Mathf.Abs(v.PitchDegrees - e.pitch) < 0.01f && Mathf.Abs(((turn - e.yaw) % 360f + 540f) % 360f - 180f) < 0.01f && Mathf.Abs(v.RollDegrees - e.roll) < 0.01f;
+            });
+        // Every vine: hanging (roll 180), sideways (90) or upright (0); level or pitched 26 degrees on a corbel; turned a
+        // quarter at a time from the deck's heading (vanilla's faces).
+        Assert.All(all, v =>
+        {
+            Assert.Contains(v.RollDegrees, new[] { 0f, 90f, 180f });
+            Assert.Contains(v.PitchDegrees, new[] { 0f, -26f });
+            float turn = ((v.YawDegrees - yaw) % 360f + 360f) % 360f;
+            Assert.True(Mathf.Abs(turn - 90f * Mathf.Round(turn / 90f)) < 0.01f, $"turn {turn}");
+        });
+    }
+
+    [Fact]
+    public void ACurtainIsThereFourTimesInTenAndTheVinesAreFixedPerCrossingAndSeed()
+    {
+        var (c, w) = River();
+        float deck = DvergrViaduct.DeckHeight(c, w);
+        List<float> piers = DvergrViaduct.PierAlongs(c);
+        string Sig(List<StructurePiece> ps) => string.Join("|", Vines(ps).Select(p => FormattableString.Invariant($"{p.Position.x:F2},{p.Position.y:F2},{p.Position.z:F2}/{p.YawDegrees:F1}/{p.RollDegrees:F0}/{p.HealthFraction:F3}")));
+        int curtains = 0, could = 0;
+        for (int s = 1; s <= 200; s++)
+        {
+            var pieces = DvergrViaduct.Solve(c, w, s);
+            if (s <= 10) Assert.Equal(Sig(pieces), Sig(DvergrViaduct.Solve(c, w, s)));
+            // A curtain is seen by its vine 12.75 m under the deck on a shaft face: one per curtain (vanilla's y 4.25).
+            var marks = Vines(pieces).Where(v => Mathf.Abs(Local(c, deck, v, piers).dy + 12.75f) < 0.01f)
+                .Select(v => (Mathf.Round(v.Position.x * 100f), Mathf.Round(v.Position.z * 100f))).Distinct().Count();
+            curtains += marks;
+            could += 8 * piers.Count(a => deck - DvergrViaduct.PierGround(c, a, w) >= 12.75f + 1.2f + 1f);
+        }
+        Assert.True(could > 400);
+        Assert.InRange(curtains / (float)could, 0.4f - 0.05f, 0.4f + 0.05f);
+        // Worn as every viaduct piece (vanilla's location damage).
+        Assert.All(Vines(DvergrViaduct.Solve(c, w, 3)), v => Assert.InRange(v.HealthFraction, BridgeLayout.LocationDamageMin, BridgeLayout.LocationDamageMax));
+    }
+
+    [Fact]
+    public void ARuinedCorbelTakesItsVinesWithIt()
+    {
+        // Every vine on the complete viaduct's corbels that the ruined one lacks the corbel of is gone too.
+        var (c, w) = River();
+        for (int s = 1; s <= 20; s++)
+        {
+            var pieces = DvergrViaduct.Solve(c, w, s);
+            var stone = pieces.Where(p => p.Kind != StructurePieceKind.Flair).ToList();
+            foreach (StructurePiece v in Vines(pieces).Where(v => v.PitchDegrees != 0f))
+                Assert.Contains(stone, p => (p.Prefab == DvergrViaduct.Corbel || p.Prefab == DvergrViaduct.CorbelCorner || p.Prefab == DvergrViaduct.Block)
+                    && Vector3.Distance(p.Position, v.Position) < 2.5f);
+        }
+    }
+}

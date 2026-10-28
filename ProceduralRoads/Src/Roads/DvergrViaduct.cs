@@ -162,13 +162,137 @@ public static class DvergrViaduct
     /// running, so every gap is one module, 2 m, which a player jumps.</summary>
     public const float HoleRuinShare = 0.05f;
 
+    // ------------------------------------------------------------- vines
+    /// <summary>Vanilla's hanging vine: networked, WearNTear 20 / Wood, no support of its own to give; its box 1 x 1 x 0.3
+    /// about its origin, its leaves 2.3 x 2.4 m on its local -z side. Hung with its origin on
+    /// a stone face, local +z into the stone, as vanilla's are, so its box reaches into the stone it hangs from.</summary>
+    public const string Vine = "vines";
+    /// <summary>Each of a pier's eight vine curtains is there at the vanilla viaduct's 40 % (Mistlands_Viaduct1 GameObject/pillar/vines .. vines (7), RandomSpawn 40 each; Mistlands_Viaduct2's the same).</summary>
+    public const float VineCurtainChance = 0.4f;
+    /// <summary>A vine is hung only where its origin stands this far over the ground: its leaves reach 1.17 m under it
+    /// (the vines' meshes span y -1.17..1.26), so none is in the ground.</summary>
+    public const float VineGroundClear = 1.2f;
+    /// <summary>A vine is hung only within this of a stone piece the viaduct has (its origin inside the piece's bounds grown
+    /// by this): never in the air where a ruined corbel was. A vine with no piece under its box would wear away (vines'
+    /// WearNTear m_noSupportWear).</summary>
+    public const float VineTouch = 0.2f;
+
+    /// <summary>One vine of the pier pattern: its curtain (0-7), offsets from the pier's centre on the deck line (du along, v
+    /// across), its height under the deck surface D, and its turn (pitch, yaw from the deck's heading, roll).</summary>
+    private readonly struct VinePart
+    {
+        public readonly int Curtain;
+        public readonly float Du, V, Dy, Pitch, Turn, Roll;
+        public VinePart(int curtain, float du, float v, float dy, float pitch, float turn, float roll)
+        {
+            Curtain = curtain; Du = du; V = v; Dy = dy; Pitch = pitch; Turn = turn; Roll = roll;
+        }
+    }
+
+    /// <summary>
+    /// The vines of a pier: vanilla's middle pier, vine for vine (Mistlands_Viaduct1
+    /// GameObject/GameObject/pillar/vines*/vines*, the pier centred at x 0, z 0.25, the deck surface at y 17; turned onto the
+    /// bridge's axes as the pier pattern is: du = z - 0.25, v = -x, dy = y - 17; two vines vanilla has twice taken once).
+    /// Eight curtains, one on each outer face of the four shafts, hanging (roll 180) every 2 m from 21 m under the deck up
+    /// onto the corbels, every fifth turned sideways (roll 90), the lowest upright (roll 0), and on the corbels' slopes
+    /// pitched 26 degrees. 84 vines.
+    /// </summary>
+    private static readonly VinePart[] PierVines =
+    {
+        new(0, -2.1f, -2.55f, -2.96f, -26f, -90f, 180f),
+        new(0, -0.97f, -2f, -4.75f, 0f, -90f, 180f),
+        new(0, 0.03f, -2f, -19f, 0f, -90f, 90f),
+        new(0, 0.03f, -2f, -17f, 0f, -90f, 180f),
+        new(0, 0.03f, -2f, -14.75f, 0f, -90f, 180f),
+        new(0, 0.03f, -2f, -12.75f, 0f, -90f, 180f),
+        new(0, 0.03f, -2f, -10.75f, 0f, -90f, 180f),
+        new(0, 0.03f, -2f, -9f, 0f, -90f, 90f),
+        new(0, 0.03f, -2f, -7f, 0f, -90f, 180f),
+        new(0, 0.28f, -2f, -21f, 0f, -90f, 0f),
+        new(0, 1.03f, -2f, -4.75f, 0f, -90f, 180f),
+        new(0, 1.9f, -2.55f, -2.96f, -26f, -90f, 180f),
+        new(1, -1.9f, 2.55f, -2.96f, -26f, 90f, 180f),
+        new(1, -1.03f, 2f, -5f, 0f, 90f, 180f),
+        new(1, -0.28f, 2f, -21f, 0f, 90f, 0f),
+        new(1, -0.03f, 2f, -19f, 0f, 90f, 90f),
+        new(1, -0.03f, 2f, -17f, 0f, 90f, 180f),
+        new(1, -0.03f, 2f, -14.75f, 0f, 90f, 180f),
+        new(1, -0.03f, 2f, -12.75f, 0f, 90f, 180f),
+        new(1, -0.03f, 2f, -10.75f, 0f, 90f, 180f),
+        new(1, -0.03f, 2f, -9f, 0f, 90f, 90f),
+        new(1, -0.03f, 2f, -7f, 0f, 90f, 180f),
+        new(1, 1.22f, 2f, -5f, 0f, 90f, 180f),
+        new(1, 2.1f, 2.55f, -2.96f, -26f, 90f, 180f),
+        new(2, -5.55f, 0.1f, -3.21f, -26f, 0f, 180f),
+        new(2, -4.55f, 0.1f, -4.96f, -26f, 0f, 180f),
+        new(2, -3.55f, 0.1f, -6.96f, -26f, 0f, 180f),
+        new(2, -3f, -0.28f, -21f, 0f, 0f, 0f),
+        new(2, -3f, -0.03f, -19f, 0f, 0f, 90f),
+        new(2, -3f, -0.03f, -17f, 0f, 0f, 180f),
+        new(2, -3f, -0.03f, -14.75f, 0f, 0f, 180f),
+        new(2, -3f, -0.03f, -12.75f, 0f, 0f, 180f),
+        new(2, -3f, -0.03f, -10.75f, 0f, 0f, 180f),
+        new(2, -3f, -0.03f, -9f, 0f, 0f, 90f),
+        new(3, 3f, -0.22f, -19f, 0f, 180f, 90f),
+        new(3, 3f, -0.22f, -17f, 0f, 180f, 180f),
+        new(3, 3f, -0.22f, -14.75f, 0f, 180f, 180f),
+        new(3, 3f, -0.22f, -12.75f, 0f, 180f, 180f),
+        new(3, 3f, -0.22f, -10.75f, 0f, 180f, 180f),
+        new(3, 3f, -0.22f, -9f, 0f, 180f, 90f),
+        new(3, 3f, 0.03f, -21f, 0f, 180f, 0f),
+        new(3, 3.55f, -0.35f, -6.96f, -26f, 180f, 180f),
+        new(3, 4.55f, -0.35f, -4.96f, -26f, 180f, 180f),
+        new(3, 5.55f, -0.35f, -2.96f, -26f, 180f, 180f),
+        new(4, 1.78f, -1f, -19f, 0f, -90f, 90f),
+        new(4, 1.78f, -1f, -17f, 0f, -90f, 180f),
+        new(4, 1.78f, -1f, -14.75f, 0f, -90f, 180f),
+        new(4, 1.78f, -1f, -12.75f, 0f, -90f, 180f),
+        new(4, 1.78f, -1f, -10.75f, 0f, -90f, 180f),
+        new(4, 1.78f, -1f, -9f, 0f, -90f, 90f),
+        new(4, 2.03f, -1f, -21f, 0f, -90f, 0f),
+        new(4, 2.03f, -1f, -7f, 0f, -90f, 180f),
+        new(4, 3.28f, -1f, -5f, 0f, -90f, 180f),
+        new(4, 4.28f, -1f, -3f, 0f, -90f, 180f),
+        new(5, -4.22f, -1f, -3f, 0f, -90f, 180f),
+        new(5, -2.97f, -1f, -5f, 0f, -90f, 180f),
+        new(5, -1.97f, -1f, -19f, 0f, -90f, 90f),
+        new(5, -1.97f, -1f, -17f, 0f, -90f, 180f),
+        new(5, -1.97f, -1f, -14.75f, 0f, -90f, 180f),
+        new(5, -1.97f, -1f, -12.75f, 0f, -90f, 180f),
+        new(5, -1.97f, -1f, -10.75f, 0f, -90f, 180f),
+        new(5, -1.97f, -1f, -9f, 0f, -90f, 90f),
+        new(5, -1.97f, -1f, -7f, 0f, -90f, 180f),
+        new(5, -1.72f, -1f, -21f, 0f, -90f, 0f),
+        new(6, 1.72f, 1f, -21f, 0f, 90f, 0f),
+        new(6, 1.97f, 1f, -19f, 0f, 90f, 90f),
+        new(6, 1.97f, 1f, -17f, 0f, 90f, 180f),
+        new(6, 1.97f, 1f, -14.75f, 0f, 90f, 180f),
+        new(6, 1.97f, 1f, -12.75f, 0f, 90f, 180f),
+        new(6, 1.97f, 1f, -10.75f, 0f, 90f, 180f),
+        new(6, 1.97f, 1f, -9f, 0f, 90f, 90f),
+        new(6, 2.22f, 1f, -7f, 0f, 90f, 180f),
+        new(6, 3.22f, 1f, -5f, 0f, 90f, 180f),
+        new(6, 3.97f, 1f, -3f, 0f, 90f, 180f),
+        new(7, -4.03f, 1f, -3f, 0f, 90f, 180f),
+        new(7, -3.28f, 1f, -5f, 0f, 90f, 180f),
+        new(7, -2.28f, 1f, -7f, 0f, 90f, 180f),
+        new(7, -2.03f, 1f, -21f, 0f, 90f, 0f),
+        new(7, -1.78f, 1f, -19f, 0f, 90f, 90f),
+        new(7, -1.78f, 1f, -17f, 0f, 90f, 180f),
+        new(7, -1.78f, 1f, -14.75f, 0f, 90f, 180f),
+        new(7, -1.78f, 1f, -12.75f, 0f, 90f, 180f),
+        new(7, -1.78f, 1f, -10.75f, 0f, 90f, 180f),
+        new(7, -1.78f, 1f, -9f, 0f, 90f, 90f),
+    };
+
     /// <summary>Heights relative to the deck surface D (the course's top).</summary>
     public const float FloorDrop = 2f, CourseDrop = 1f, ArchRise = 1f;
     /// <summary>The corbel band's lowest level; the shafts stand below it.</summary>
     private const float ShaftTop = -8f;
 
     // Ruin roles, apart from the wooden kit's own (1-10) so a key never means two things.
-    private const int RoleFloor = 21, RoleCourse = 22, RoleArch = 23, RoleOrnament = 24, RoleScreen = 25, RoleHead = 26, RoleHole = 27;
+    private const int RoleFloor = 21, RoleCourse = 22, RoleArch = 23, RoleOrnament = 24, RoleScreen = 25, RoleHead = 26, RoleHole = 27,
+        RoleVine = 28;
 
     /// <summary>One piece of the pier pattern: offsets from the pier's centre on the deck line
     /// (du along, v across), its centre's height under D, its turn from the deck's heading, and
@@ -891,10 +1015,13 @@ public static class DvergrViaduct
         // (StructureEnds.JoinOverlap), so that module is not dropped as buried under a bank the road cuts away.
         var (nearEnd, farEnd) = Ends(crossing, world);
         float G(Vector2 p) => StructureEnds.FinishedGround(p, Ground(p, world), nearEnd, farEnd, HalfWidth + BuriedPieces.Growth);
+        // Every stone piece laid, on the bridge's axes, for the vines to hang from.
+        var laid = new List<(string prefab, float along, float v, float y)>();
         void Add(StructurePieceKind kind, string prefab, float along, float v, float y, float turn, float health)
         {
             Vector2 p = At(along, v);
             if (WhollyBuried(prefab, p, dir, side, y, G)) return;
+            laid.Add((prefab, along, v, y));
             pieces.Add(new StructurePiece
             {
                 Kind = kind, Prefab = prefab, Position = new Vector3(p.x, y, p.y),
@@ -904,12 +1031,14 @@ public static class DvergrViaduct
 
         // ----- piers
         var pierTops = new List<float>();
+        var pierKeys = new List<int>();
         for (int k = 0; k < piers.Count; k++)
         {
             float a = piers[k];
             float pierSurvival = BridgeLayout.PierSurvival(BridgeLayout.SpanSurvival(Mid(a)));
             if (deck - PierGround(crossing, a, world) < MinPier) continue;   // the bank itself: nothing to stand
             pierTops.Add(a);
+            pierKeys.Add(k);
             foreach (Part part in CorbelBand)
             {
                 int key = PartKey(part);
@@ -1098,8 +1227,40 @@ public static class DvergrViaduct
                 pieces.Add(s);
             }
         }
+
+        // ----- vines, as the vanilla viaduct's: each pier's curtains at 40 %, every vine on a stone face it has, none in the
+        // ground.
+        for (int k = 0; k < pierTops.Count; k++)
+        {
+            float a = pierTops[k];
+            foreach (VinePart vine in PierVines)
+            {
+                if (r.Roll(pierKeys[k], vine.Curtain, RoleVine) >= VineCurtainChance) continue;
+                float along = a + vine.Du, y = deck + vine.Dy;
+                if (y < G(At(along, vine.V)) + VineGroundClear || !OnStone(laid, along, vine.V, y)) continue;
+                Vector2 p = At(along, vine.V);
+                pieces.Add(new StructurePiece
+                {
+                    Kind = StructurePieceKind.Flair, Prefab = Vine, Position = new Vector3(p.x, y, p.y),
+                    PitchDegrees = vine.Pitch, YawDegrees = Wrap(yaw + vine.Turn), RollDegrees = vine.Roll,
+                });
+            }
+        }
         if (ruin) r.ApplyLocationDamage(pieces); // vanilla's Location.m_applyRandomDamage (BridgeLayout.LocationDamageMin)
         return pieces;
+    }
+
+    /// <summary>Whether a vine's origin lies within <see cref="VineTouch"/> of a stone piece laid (its bounds,
+    /// <see cref="Extents"/>), on the bridge's axes.</summary>
+    private static bool OnStone(List<(string prefab, float along, float v, float y)> laid, float along, float v, float y)
+    {
+        foreach (var (prefab, pa, pv, py) in laid)
+        {
+            var (hu, hv, hy) = Extents(prefab);
+            if (Mathf.Abs(along - pa) <= hu + VineTouch && Mathf.Abs(v - pv) <= hv + VineTouch && Mathf.Abs(y - py) <= hy + VineTouch)
+                return true;
+        }
+        return false;
     }
 
     /// <summary>A stable small number per pier part, for its ruin key.</summary>

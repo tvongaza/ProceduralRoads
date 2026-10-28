@@ -71,7 +71,8 @@ public sealed class DvergrViaductTests : IDisposable
 
     internal static float Along(RoadCrossing c, StructurePiece p) => c.Along(new Vector2(p.Position.x, p.Position.z));
 
-    internal static bool IsDvergr(StructurePiece p) => p.Prefab.StartsWith("blackmarble_", StringComparison.Ordinal) || p.Prefab.StartsWith("iron_", StringComparison.Ordinal);
+    internal static bool IsDvergr(StructurePiece p) => p.Prefab.StartsWith("blackmarble_", StringComparison.Ordinal) || p.Prefab.StartsWith("iron_", StringComparison.Ordinal)
+        || p.Prefab == DvergrViaduct.Vine;   // the vines it hangs, as the vanilla viaduct's
 
     // ---------------------------------------------------------------- piers
 
