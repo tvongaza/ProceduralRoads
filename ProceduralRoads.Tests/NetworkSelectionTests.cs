@@ -17,6 +17,19 @@ public class NetworkSelectionTests
             name => name.StartsWith("required"), seed, options ?? new RoadNetworkOptions());
 
 
+    /// <summary>The draw does not change when the places' positions are read to 0.1 m, as an offline world
+    /// carries them: rounded to the metre, 4815.48 (the game's float) and 4815.5 (the dump) drew different
+    /// places.</summary>
+    [Fact]
+    public void TheDrawIsTheSameForPositionsReadToATenthOfAMetre()
+    {
+        var places = Enumerable.Range(0, 40).Select(i => Place(i % 3 == 0 ? "high" : "low", i * 97f + 0.48f, (i * 53) % 700 + 0.46f)).ToList();
+        var dumped = places.Select(p => (p.name, new Vector3(Mathf.Round(p.position.x * 10f) / 10f, 0, Mathf.Round(p.position.z * 10f) / 10f), p.radius)).ToList();
+        foreach (int seed in new[] { 1, 301358575 })
+            Assert.Equal(Choose(places, 9, seed).Select(p => Mathf.FloorToInt(p.position.x)),
+                Choose(dumped, 9, seed).Select(p => Mathf.FloorToInt(p.position.x)));
+    }
+
     [Fact]
     public void ExclusionsApplyToBiomeFlags()
     {
