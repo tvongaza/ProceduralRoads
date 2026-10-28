@@ -240,6 +240,85 @@ public static class RoadCrossingDetector
         return clips ? bank + dir * last : bank;
     }
 
+    /// <summary>
+    /// The step a deck line is sampled at between its banks (<see cref="GroundThroughDeck"/>): 1 m, the valley
+    /// viaduct's own (DvergrViaduct.ValleyCrossing). Every other look at a crossing's ground is coarser or looks
+    /// elsewhere: the router's cells are 8 m apart, the bank searches walk the ROAD rather than the deck, and
+    /// <see cref="OffLand"/> walks only from a bank to the water. A 103 m bridge's deck
+    /// ran through a ridge 12 m over it between the river and its far bank.
+    /// </summary>
+    public const float DeckLineStep = 1f;
+
+    /// <summary>
+    /// Where a deck line meets the ground: the first point, every <see cref="DeckLineStep"/> from
+    /// <paramref name="from"/> to <paramref name="to"/>, whose ground stands more than <see cref="DeckClip"/> over the
+    /// deck's walking surface <paramref name="deck"/>; null when the line is clear. The valley viaduct's rule
+    /// (DvergrViaduct.ValleyCrossing, "ground over the deck") for every crossing that carries a deck. Measured against
+    /// the walking surface, not the underside: a deck stands at its higher bank's ground by construction, so that
+    /// bank's own ground is already in the planks' depth, and the ground in under each end is cut below the deck when
+    /// it is built (RoadNetworkGenerator.GroundUnderDeck). Ground over the walking surface is ground a player walks
+    /// into, and no earthwork under the deck is planned to remove it.
+    /// </summary>
+    internal static Vector2? GroundThroughDeck(Vector2 from, Vector2 to, float deck, WorldGenerator world)
+    {
+        float length = Vector2.Distance(from, to);
+        int samples = Mathf.Max(1, Mathf.CeilToInt(length / DeckLineStep));
+        for (int i = 0; i <= samples; i++)
+        {
+            Vector2 p = Vector2.Lerp(from, to, i / (float)samples);
+            if (BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world) > deck + DeckClip) return p;
+        }
+        return null;
+    }
+
+    /// <summary>The deck a crossing that carries one would be built with: a ford span's, else the bridge's in its kit.</summary>
+    internal static float DeckOf(RoadCrossing crossing, WorldGenerator world) =>
+        crossing.Kind == CrossingKind.Ford ? BridgeLayout.SpanDeckHeight(crossing, world) : BridgeStructures.DeckHeight(crossing, world);
+
+    /// <summary>What the deck-line rule did, for the generator's summary: bridges whose ends were walked in to the
+    /// water's edge, bridges refused (the road goes round or is not built), ford spans laid as another ford style.</summary>
+    public static int DeckLineWalkedIn, DeckLineRefused, DeckLineSpanDropped;
+
+    /// <summary>
+    /// The last word on where a bridge's banks are: its deck line, sampled every <see cref="DeckLineStep"/>, meets no
+    /// ground over the deck (<see cref="GroundThroughDeck"/>). Where it does, each end whose land stands over the deck
+    /// before the water is walked in to the last road ground there (<see cref="OffLand"/>, with this deck), so the bridge
+    /// ends at the first dry ground and the road goes on over the land it gave up (FromLand / ToLand: the strip is cut
+    /// to a ramp and held to the earthwork cap, as for any end walked in). A bank-top climb gives way to it: a bridge
+    /// springing from a top is not worth a deck through a ridge. Where the line still meets ground (a bar or hump in the
+    /// water itself), the crossing is INVALID: the generator searches round it and refuses the road if it cannot
+    /// (RoadNetworkGenerator.InvalidCrossings), as for shallow water no ford may cross. Runs on the geometry every
+    /// other rule here has settled, and the line it walks along is the crossing's own, so the heading holds.
+    /// </summary>
+    private static RoadCrossing ClearOfGround(RoadCrossing crossing, WorldGenerator world)
+    {
+        float deck = DeckOf(crossing, world);
+        if (GroundThroughDeck(crossing.FromBank, crossing.ToBank, deck, world) == null) return crossing;
+        Vector2 from = OffLand(crossing.FromBank, crossing.ToBank, deck, world);
+        Vector2 to = OffLand(crossing.ToBank, from, deck, world);
+        if ((from != crossing.FromBank || to != crossing.ToBank) && Vector2.Distance(from, to) >= 1f)
+        {
+            (float bed, Vector2 fairwayCenter, float fairwayWidth) = Profile(from, to, world);
+            if (bed < RoadConstants.SeaLevel)
+            {
+                RoadCrossing walked = RoadCrossing.Between(from, to, bed, fairwayCenter, fairwayWidth, crossing.Kind, crossing.Style);
+                walked.FromIndex = crossing.FromIndex;
+                walked.ToIndex = crossing.ToIndex;
+                // The strip the road takes over runs from the outermost end the bridge ever had.
+                walked.FromLand = from != crossing.FromBank ? crossing.FromLand ?? crossing.FromBank : crossing.FromLand;
+                walked.ToLand = to != crossing.ToBank ? crossing.ToLand ?? crossing.ToBank : crossing.ToLand;
+                if (GroundThroughDeck(from, to, DeckOf(walked, world), world) == null)
+                {
+                    System.Threading.Interlocked.Increment(ref DeckLineWalkedIn);
+                    return walked;
+                }
+            }
+        }
+        System.Threading.Interlocked.Increment(ref DeckLineRefused);
+        crossing.Invalid = true;
+        return crossing;
+    }
+
     /// <summary>Minimum water depth that counts as sailable fairway.</summary>
     public const float FairwayMinDepth = 1.2f;
 
@@ -397,6 +476,18 @@ public static class RoadCrossingDetector
                     }
                 }
                 c.Style = PickFordStyle(eligible, SiteHash(c.Center));
+                // The deck-line rule (ClearOfGround) for the span this pool would get.
+                if (c.Style == FordStyle.Span && spanTo.HasValue)
+                {
+                    var span = RoadCrossing.Between(runStart, spanTo.Value, bed, (runStart + spanTo.Value) * 0.5f, 0f, CrossingKind.Ford, FordStyle.Span);
+                    if (GroundThroughDeck(span.FromBank, span.ToBank, DeckOf(span, world), world) != null)
+                    {
+                        System.Threading.Interlocked.Increment(ref DeckLineSpanDropped);
+                        eligible.Remove(FordStyle.Span);
+                        spanTo = null;
+                        c.Style = PickFordStyle(eligible, SiteHash(c.Center));
+                    }
+                }
                 if (c.Style == FordStyle.Span && spanTo.HasValue && spanTo.Value != end)
                 {
                     var turned = RoadCrossing.Between(runStart, spanTo.Value, bed, (runStart + spanTo.Value) * 0.5f, 0f, CrossingKind.Ford, FordStyle.Span);
@@ -713,6 +804,17 @@ public static class RoadCrossingDetector
         crossing.ToIndex = toIndex;
         crossing.FromLand = fromLand;
         crossing.ToLand = toLand;
+
+        // Last, on the settled geometry: no deck through the ground between its banks (ClearOfGround). A ford span
+        // whose deck would meet ground is laid as another ford style, as for one no hammer can place.
+        if (!ford)
+            crossing = ClearOfGround(crossing, world);
+        else if (style == FordStyle.Span && GroundThroughDeck(from, to, DeckOf(crossing, world), world) != null)
+        {
+            System.Threading.Interlocked.Increment(ref DeckLineSpanDropped);
+            eligible.Remove(FordStyle.Span);
+            crossing.Style = PickFordStyle(eligible, SiteHash(center));
+        }
         return crossing;
     }
 

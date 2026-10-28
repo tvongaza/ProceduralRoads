@@ -160,6 +160,11 @@ public static class ManualRoads
         foreach (var crossing in crossings)
             foreach (var old in RoadNetworkGenerator.GetRoadCrossings())
                 if (RoadCrossing.SameBanks(old, crossing)) { crossing.SnapTo(old); break; }
+        // A crossing that may not be built (shallow water no ford crosses, a bridge deck through the ground): the generator
+        // goes round it or refuses the road (RoadNetworkGenerator.InvalidCrossings); a marked road has no search to go round.
+        if (crossings.Find(c => c.Invalid) is RoadCrossing invalid)
+            throw new InvalidOperationException(FormattableString.Invariant(
+                $"The requested road would {(invalid.Shallow ? "cross shallow water too long or deep for a ford" : "put a bridge deck through the ground")} at ({invalid.Center.x:F0}, {invalid.Center.y:F0}). Move a mark. Nothing added."));
         float Ground(Vector2 p)
         {
             var near = RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(p.x, 0, p.y), 1f);
