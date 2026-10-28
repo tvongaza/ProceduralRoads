@@ -2411,8 +2411,8 @@ public static partial class RoadNetworkGenerator
         }
         List<RoadCrossing> crossings = Find();
         if (!finder.Bridges) return crossings;
-        // Every bridge end, either kit, meets the road through its apron (StructureEnds): a deck end walked in off land
-        // (FromLand/ToLand) keeps the road it had.
+        // Every viaduct end meets the road through its apron (StructureEnds): a deck end walked in off land
+        // (FromLand/ToLand) keeps the road it had, as does a wooden bridge (MeetsTheRoad).
         var viaducts = crossings.FindAll(MeetsTheRoad);
         if (viaducts.Count == 0) return crossings;
         var steps = finder.LastStairSteps;
@@ -2433,10 +2433,13 @@ public static partial class RoadNetworkGenerator
         return turned + pinned > 0 ? Find() : crossings;
     }
 
-    /// <summary>A crossing whose two ends the one owner brings the road to (StructureEnds): a bridge of either kit, not a
-    /// ford, neither deck end walked in off land.</summary>
+    /// <summary>A crossing whose two ends the one owner brings the road to (StructureEnds): a Dvergr viaduct, neither deck end
+    /// walked in off land. A wooden bridge's ends keep the road they had: brought through the owner too, the road to every
+    /// wooden river bridge was turned onto its stair runs' line and levelled to their feet, and on six test worlds that
+    /// cost 11 destinations and 20 network components (about 150 more roads refused as crossing a protected site), where
+    /// the viaducts alone cost none.</summary>
     internal static bool MeetsTheRoad(RoadCrossing c) =>
-        c.Kind == CrossingKind.Bridge && c.FromLand == null && c.ToLand == null && BridgeStructures.Ends(c, GenerationWorld).near.IsSet;
+        c.Kind == CrossingKind.Bridge && c.FromLand == null && c.ToLand == null && DvergrViaduct.Applies(c, GenerationWorld) && BridgeStructures.Ends(c, GenerationWorld).near.IsSet;
 
     /// <summary>
     /// The final check of the one owner (StructureEnds.Reachable): every end of every bridge on the road, as planned, met by

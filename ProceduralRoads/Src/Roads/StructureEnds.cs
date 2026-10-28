@@ -4,10 +4,11 @@ using UnityEngine;
 namespace ProceduralRoads;
 
 /// <summary>
-/// How a built structure's end meets the road: the one owner, so blocks/stairs and roads
-/// meet each other consistently. Every bridge end asks it, the Dvergr
-/// viaduct's and the wooden bridge's (BridgeStructures.Ends); a staircase's foot and top keep their own rule
-/// (RoadStairRuns.Feet / Tops), whose reach of the road's travel and step tolerance are the same numbers.
+/// How a built structure's end meets the road: the one owner, so blocks/stairs and roads meet each other consistently. Every viaduct end asks it
+/// (BridgeStructures.Ends, DvergrViaduct.Ends). A wooden bridge's ends are described by it (BridgeLayout.Ends) but the road
+/// is not yet brought to them through it: that cost reach (RoadNetworkGenerator.MeetsTheRoad). A
+/// staircase's foot and top keep their own rule (RoadStairRuns.Feet / Tops), with the same 8 m reach of the
+/// road's travel (RoadStairRuns.TravelReach).
 /// <para>It decides, for each end:</para>
 /// <list type="number">
 /// <item>its height from the ground the road arrives on (<see cref="Arrival"/>), over the last <see cref="ApronLength"/>
