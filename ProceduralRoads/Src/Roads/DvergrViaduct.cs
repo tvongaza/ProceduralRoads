@@ -349,6 +349,28 @@ public static class DvergrViaduct
         return tallest;
     }
 
+    /// <summary>
+    /// The tallest pier over the FINISHED ground: under each pier, the higher of the generator's ground and any road built
+    /// there (<see cref="StructureEnds.BuiltRoadNear"/>: the network so far and <paramref name="plans"/>), since a road's
+    /// fill raises the valley floor. The floor (<see cref="MinViaductPier"/>) holds on what a player sees: a
+    /// viaduct (16 m, centre 5288, 4640) stood about 9 m over its floor, with a road running partly under it, and was
+    /// built because the floor was judged on the generator's ground alone.
+    /// </summary>
+    public static float TallestPierOnFinishedGround(RoadCrossing crossing, WorldGenerator world, IReadOnlyList<RoadSpatialGrid.PlannedPath>? plans)
+    {
+        float deck = DeckHeight(crossing, world), tallest = 0f;
+        Vector2 dir = crossing.Direction;
+        foreach (float a in PierAlongs(crossing))
+        {
+            float ground = PierGround(crossing, a, world);
+            Vector2 at = crossing.FromBank + dir * a;
+            foreach (var (_, h, w) in StructureEnds.BuiltRoadNear(at, HalfWidth + RoadConstants.DefaultRoadWidth * 0.5f + 1f, plans))
+                if (h < deck) ground = Mathf.Max(ground, h);
+            tallest = Mathf.Max(tallest, deck - ground);
+        }
+        return tallest;
+    }
+
     // --------------------------------------------------------------- valleys
 
     /// <summary>The longest dry valley a viaduct is laid over (six bays).</summary>

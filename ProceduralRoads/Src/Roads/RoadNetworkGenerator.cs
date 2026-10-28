@@ -1462,6 +1462,8 @@ public static partial class RoadNetworkGenerator
         {
             Vector2 at = default;
             RoadCrossing? unmet = plans != null ? UnreachableEnd(plans, crossings, out at) : null;
+            // The floor on the finished ground (DvergrViaduct.TallestPierOnFinishedGround): a road's fill under a pier.
+            if (unmet == null && plans != null && UnderTheFloor(plans, crossings) is RoadCrossing low) { unmet = low; at = low.Center; }
             var jumps = unmet != null ? (unmet.ValleyJump ? new List<RoadCrossing> { unmet } : new List<RoadCrossing>())
                 : plans == null ? crossings.FindAll(c => c.ValleyJump && !c.Shared) : new List<RoadCrossing>();
             if (jumps.Count > 0)
@@ -2465,6 +2467,18 @@ public static partial class RoadNetworkGenerator
                 }
                 if (!met) { where = end.Meet; return c; }
             }
+        }
+        return null;
+    }
+
+    /// <summary>A valley viaduct on the road whose tallest pier over the finished ground (the road built under it, this
+    /// road's plans and the network so far) is under the floor (DvergrViaduct.MinViaductPier), or null.</summary>
+    internal static RoadCrossing? UnderTheFloor(List<RoadSpatialGrid.PlannedPath> plans, List<RoadCrossing> crossings)
+    {
+        foreach (RoadCrossing c in crossings)
+        {
+            if (!c.ValleyJump || c.Shared || !DvergrViaduct.Applies(c, GenerationWorld)) continue;
+            if (DvergrViaduct.TallestPierOnFinishedGround(c, GenerationWorld, plans) < DvergrViaduct.MinViaductPier - 1e-3f) return c;
         }
         return null;
     }

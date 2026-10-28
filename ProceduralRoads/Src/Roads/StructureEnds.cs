@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace ProceduralRoads;
@@ -98,4 +99,37 @@ public static class StructureEnds
     /// <summary>Whether a player walks from road at <paramref name="roadHeight"/> where the road meets
     /// <paramref name="end"/> onto it.</summary>
     public static bool Reachable(float roadHeight, End end) => Mathf.Abs(roadHeight - end.MeetHeight) <= StepTolerance;
+    // ------------------------------------------------------- the built road
+
+    /// <summary>
+    /// The road as built near <paramref name="at"/>, within <paramref name="reach"/>: every road point laid before
+    /// (RoadSpatialGrid, the network so far) and this road's own planned pieces, walked every metre. The built-result
+    /// checks judge a structure on this, not on the road as one search planned it (a check that looked only at
+    /// the ends of this road's own pieces never saw another road under a deck, or a fill under a pier).
+    /// </summary>
+    internal static IEnumerable<(Vector2 p, float h, float w)> BuiltRoadNear(Vector2 at, float reach, IReadOnlyList<RoadSpatialGrid.PlannedPath>? plans)
+    {
+        foreach (RoadSpatialGrid.RoadPoint rp in RoadSpatialGrid.GetRoadPointsNearPosition(new Vector3(at.x, 0f, at.y), reach))
+            if (rp.IsRoad) yield return (rp.p, rp.h, rp.w);
+        if (plans == null) yield break;
+        float reach2 = reach * reach;
+        foreach (RoadSpatialGrid.PlannedPath plan in plans)
+        {
+            int n = plan.Points.Count;
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 a = plan.Points[i];
+                float ha = plan.Heights[i];
+                if ((a - at).sqrMagnitude <= reach2) yield return (a, ha, plan.Width);
+                if (i + 1 >= n) continue;
+                Vector2 b = plan.Points[i + 1];
+                float len = Vector2.Distance(a, b);
+                for (float d = 1f; d < len; d += 1f)
+                {
+                    Vector2 q = Vector2.Lerp(a, b, d / len);
+                    if ((q - at).sqrMagnitude <= reach2) yield return (q, Mathf.Lerp(ha, plan.Heights[i + 1], d / len), plan.Width);
+                }
+            }
+        }
+    }
 }
