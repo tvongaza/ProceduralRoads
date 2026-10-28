@@ -112,25 +112,31 @@ public sealed class DvergrViaductTests : IDisposable
         Assert.True(DvergrViaduct.OverKnownRiver(c));
         float f = c.Along(c.FairwayCenter);
         Assert.Equal(25f, f, 3);
-        // The bay's two piers at the fairway +- 8 m, then every 16 m outward while inside the gap (1 m from the near
-        // bank and 65 m are not).
-        Assert.Equal(new[] { 17f, 33f, 49f }, DvergrViaduct.PierAlongs(c));
+        // The bay's two piers at the fairway +- 16 m (two vanilla bays), then every 16 m outward while inside
+        // the gap (-7 m is not).
+        Assert.Equal(new[] { 9f, 41f, 57f }, DvergrViaduct.PierAlongs(c));
         Assert.True(DvergrViaduct.Applies(c, world), DvergrViaduct.Refusal(c, world));
 
-        // The deck is missing over the fairway, 10-12 m of it, and stands 2-3 m out from each bay pier.
+        // The deck is missing over the fairway: at least the wooden kit's gap (BridgeLayout.FairwayGap, 18.6 m here), in
+        // whole modules centred on it (22 m), and stands 5 m out from each bay pier.
+        Assert.Equal(18.6f, BridgeLayout.FairwayGap(c), 3);
+        Assert.Equal(22f, DvergrViaduct.NavigationGapFor(c), 3);
         List<StructurePiece> complete = DvergrViaduct.SolveComplete(c, world, 1);
         var floors = complete.Where(p => p.Prefab == DvergrViaduct.Floor).Select(p => Along(c, p)).ToList();
-        Assert.DoesNotContain(floors, a => Mathf.Abs(a - f) < 5f);
         float nearEdge = floors.Where(a => a < f).Max() + 1f, farEdge = floors.Where(a => a > f).Min() - 1f;
-        Assert.InRange(farEdge - nearEdge, 10f - 1e-3f, 12f + 1e-3f);
-        Assert.InRange(nearEdge - (f - 8f), 2f, 3f + 1e-3f);
-        Assert.InRange((f + 8f) - farEdge, 2f, 3f + 1e-3f);
+        Assert.Equal(22f, farEdge - nearEdge, 3);
+        Assert.Equal(f, (nearEdge + farEdge) * 0.5f, 3);
+        Assert.True(farEdge - nearEdge >= BridgeLayout.FairwayGap(c));
+        Assert.Equal(5f, nearEdge - (f - 16f), 3);
+        Assert.Equal(5f, (f + 16f) - farEdge, 3);
+        // No pier piece in the bay between them: nothing stands in the boat's way.
+        Assert.DoesNotContain(complete, p => p.Kind == StructurePieceKind.ViaductPier && Mathf.Abs(Along(c, p) - f) < 16f - 6.01f);
         // The bay's piers stand: pier pieces under both of them.
-        foreach (float pier in new[] { f - 8f, f + 8f })
+        foreach (float pier in new[] { f - 16f, f + 16f })
             Assert.Contains(complete, p => p.Kind == StructurePieceKind.ViaductPier && Mathf.Abs(Along(c, p) - pier) <= 2.01f && p.Prefab == DvergrViaduct.Footing);
         // The ruined one keeps the gap open too, and its piers.
         List<StructurePiece> built = DvergrViaduct.Solve(c, world, 1);
-        Assert.DoesNotContain(built, p => p.Prefab == DvergrViaduct.Floor && Mathf.Abs(Along(c, p) - f) < 5f);
+        Assert.DoesNotContain(built, p => p.Prefab == DvergrViaduct.Floor && Mathf.Abs(Along(c, p) - f) < 11f);
         Assert.Equal(3 * 4, built.Count(p => p.Prefab == DvergrViaduct.Footing));
     }
 

@@ -24,9 +24,10 @@ namespace ProceduralRoads;
 /// Off a known river, one at the crossing's midpoint and then every 16 m
 /// outward while inside the gap; a short crossing still gets the middle one.
 /// On a known river (<see cref="BridgeLayout.FairwayGap"/>'s fairway, the
-/// wooden kit's one test of "sailable"), the navigation bay first: piers at
-/// the fairway centre +-8 m with <see cref="NavigationGap"/> of deck missing
-/// between them, then every 16 m outward. Each pier is four shafts in a
+/// wooden kit's one test of "sailable"), the navigation bay first: two vanilla
+/// bays wide, piers at the fairway centre +-16 m with <see cref="NavigationGapFor"/>
+/// of deck missing between them (the wooden kit's <see cref="BridgeLayout.FairwayGap"/>),
+/// then every 16 m outward. Each pier is four shafts in a
 /// diamond, (u +-2, v 0) and (u 0, v +-1): a blackmarble_column_3 footing, then
 /// blackmarble_2x2x2 stacks with a blackmarble_2x2_enforced band every 8 m,
 /// then the corbel band of the top 8 m (out_1, outcorner, 2x2x1 and the
@@ -108,11 +109,27 @@ public static class DvergrViaduct
     /// has to be measured in game (cli_piece_support on the tallest generated pier) before this is trusted.
     /// </summary>
     public const float PierCeiling = 20f;
-    /// <summary>The navigation bay over a known river: one 16 m bay centred on the fairway ...</summary>
-    public const float NavigationBay = 16f;
-    /// <summary>... with this much deck missing in it: five modules, leaving 3 m of deck on each
-    /// pier's side (a gap of about 10-12 m, stubs of 2-3 m).</summary>
-    public const float NavigationGap = 10f;
+    /// <summary>The navigation bay over a known river: two vanilla bays (32 m) centred on the fairway, the pier on the
+    /// fairway's line left out (a boat found a 16 m bay too tight, so the gap over a river is
+    /// wider if possible).</summary>
+    public const float NavigationBay = 2f * PierSpacing;
+    /// <summary>Least deck kept out from each bay pier's centre: past its shafts, onto its corbels.</summary>
+    public const float NavigationStub = 3f;
+
+    /// <summary>
+    /// The deck missing over the fairway, centred on it: at least the wooden kit's gap
+    /// (<see cref="BridgeLayout.FairwayGap"/>, the one owner of how wide a boat's way is: 16 m or more, growing with the
+    /// river), in whole modules, an odd number of them centred on the fairway (4 k + 2 m), and never closer than
+    /// <see cref="NavigationStub"/> to a bay pier. At 16 m that is 18 m open and 7 m stubs; the corbels over the
+    /// fairway are kept for now.
+    /// </summary>
+    public static float NavigationGapFor(RoadCrossing crossing)
+    {
+        float want = Mathf.Max(BridgeLayout.FairwayGapWidth, BridgeLayout.FairwayGap(crossing));
+        int k = Mathf.CeilToInt((want - Module) / (2f * Module) - 1e-4f);
+        int most = Mathf.FloorToInt((NavigationBay - 2f * NavigationStub - Module) / (2f * Module) + 1e-4f);
+        return (2 * Mathf.Clamp(k, 0, most) + 1) * Module;
+    }
     /// <summary>A pier stands only this far or more inside each bank (half its corbelled length
     /// along the deck is 6 m; its shafts reach 3 m).</summary>
     public const float PierBankMargin = 3f;
@@ -246,8 +263,8 @@ public static class DvergrViaduct
     /// Where the piers stand, metres along the crossing from its near bank, nearest first.
     /// <paramref name="fairway"/>: the fairway centre along the crossing on a known river, else null.
     /// Off a river, the midpoint and then every <see cref="PierSpacing"/> outward while inside the
-    /// gap, at least the midpoint. On a river, the navigation bay's two piers at the fairway +- 8 m
-    /// first, then every 16 m outward; a bay pier that falls outside the gap is left out.
+    /// gap, at least the midpoint. On a river, the navigation bay's two piers at the fairway +- 16 m
+    /// (<see cref="NavigationBay"/>) first, then every 16 m outward; a bay pier that falls outside the gap is left out.
     /// </summary>
     public static List<float> PierAlongs(float width, float? fairway)
     {
@@ -650,6 +667,7 @@ public static class DvergrViaduct
         float deck = DeckHeight(crossing, world);
         float width = crossing.Width;
         float? fairway = FairwayAlong(crossing);
+        float navigationGap = fairway.HasValue ? NavigationGapFor(crossing) : 0f;
         // The first module reaches onto the near bank (its centre within a metre of it, or behind it), the last onto the far.
         var (piers, anchor, first, last) = DeckGrid(crossing);
         int modules = Mathf.RoundToInt((last - first) / Module) + 1;
@@ -721,7 +739,7 @@ public static class DvergrViaduct
         for (int m = 0; m < modules; m++)
         {
             float c = first + m * Module;
-            gap[m] = fairway is float f && Mathf.Abs(c - f) <= NavigationGap * 0.5f - Module * 0.5f + 1e-3f;
+            gap[m] = fairway is float f && Mathf.Abs(c - f) <= navigationGap * 0.5f - Module * 0.5f + 1e-3f;
             bool end = m == 0 || m == modules - 1;
             for (int lane = 0; lane < 2; lane++)
                 floor[m, lane] = !gap[m] && (!ruin || end || r.Roll(m, lane == 0 ? -1 : 1, RoleFloor) < Survives(c, DeckRuinShare));
