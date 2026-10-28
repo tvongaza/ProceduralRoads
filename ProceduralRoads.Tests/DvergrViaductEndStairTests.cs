@@ -48,6 +48,7 @@ public sealed class DvergrViaductEndStairTests : IDisposable
     public void Dispose()
     {
         DvergrViaduct.MaxEndStairRise = _maxEndStairRise;
+        DvergrViaduct.MinViaductPier = DvergrViaduct.DefaultMinViaductPier;
         RoadNetworkGenerator.PieceCommitted = null;
         SetPathfinder(null);
         RoadNetworkGenerator.Reset();
@@ -120,6 +121,8 @@ public sealed class DvergrViaductEndStairTests : IDisposable
     [Fact]
     public void ATallerViaductIsPricedUnderAShorterOne()
     {
+        // Priced all the way down to the 6 m least, under the viaduct floor too (that floor is DvergrViaductHeightTests').
+        DvergrViaduct.MinViaductPier = DvergrViaduct.MinClearance;
         float last = float.MaxValue, lastBase = 0f;
         foreach (float depth in new[] { 7f, 10f, 14f, 18f })
         {
@@ -132,7 +135,7 @@ public sealed class DvergrViaductEndStairTests : IDisposable
             // height brings it under the shallower one's.
             Assert.True(ownBase > lastBase);
             Assert.True(price < last, $"{depth} m: {price:F0}, not under {last:F0}");
-            Assert.Equal(ownBase * DvergrViaduct.PriceHeight / Mathf.Clamp(DvergrViaduct.TallestPier(c, world), DvergrViaduct.MinClearance, DvergrViaduct.PierCeiling), price, 1);
+            Assert.Equal(ownBase * DvergrViaduct.HeightFactor(DvergrViaduct.TallestPier(c, world)), price, 1);
             last = price;
             lastBase = ownBase;
         }

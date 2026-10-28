@@ -96,11 +96,12 @@ public static class RoadConstants
     /// at least one staircase start (1000 x the Mistlands' 1, varied +-30 %: 700 at the
     /// cheapest site) plus 10 per metre climbed down and up, so 820 and up at the 6 m least.
     /// <para>The viaduct's own price, this plus <see cref="DefaultViaductCostPerMeter"/> per
-    /// metre of span, is what it costs on piers 10 m tall (DvergrViaduct.PriceHeight); it goes
-    /// in inverse to how tall its tallest pier is, up to the ceiling (the
-    /// price falls as the piers get taller, up to the pier ceiling, so a deep valley crossed
-    /// high beats a shallow one crossed low). 400 + 4 x 64 = 656 for a 64 m valley at 10 m,
-    /// 437 at 15 m, 328 at the 20 m ceiling, 1093 at the 6 m least. On top come the end stairs
+    /// metre of span, is what it costs on piers 10 m tall (DvergrViaduct.PriceHeight); lower it
+    /// goes in inverse to the height, higher it falls steeply to a quarter at the 20 m ceiling
+    /// (DvergrViaduct.HeightFactor: the price falls as the piers get taller,
+    /// up to the pier ceiling, so a deep valley crossed high beats a shallow one crossed low).
+    /// 400 + 4 x 64 = 656 for a 64 m valley at 10 m, 1093 at the 6 m least, 377 at 14 m, 164 at
+    /// the ceiling. On top come the end stairs
     /// (<see cref="DefaultViaductEndStairCostPerMeter"/>) and the road's own 1 per metre. Easy
     /// road (about 1 per metre) keeps a valley the road can walk through.</para>
     /// </summary>

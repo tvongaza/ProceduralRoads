@@ -44,8 +44,9 @@ namespace ProceduralRoads;
 /// (<see cref="MeetTheRoad"/>); a bank at the deck's height has none.</para>
 ///
 /// <para><b>Price</b> (<see cref="Price"/>): dearer the
-/// lower its piers, and its end stairs at ten times an ordinary staircase's
-/// metre, so a deep valley crossed high from level banks is the one bought.</para>
+/// lower its piers, steeply cheaper over 10 m (<see cref="HeightFactor"/>),
+/// and its end stairs at ten times an ordinary staircase's metre, so a deep
+/// valley crossed high from level banks is the one bought.</para>
 ///
 /// <para><b>Ruin</b> is the wooden kit's rule (<see cref="BridgeLayout.Ruin"/>,
 /// <see cref="BridgeLayout.SpanSurvival"/>, <see cref="BridgeLayout.PierSurvival"/>):
@@ -83,6 +84,13 @@ public static class DvergrViaduct
     public const string StepPrefab = "blackmarble_stair";
 
     // ------------------------------------------------------------- the rules
+
+    /// <summary>The floor: no viaduct whose tallest pier is under it. A valley then has its road cross lower or take its stairs, and
+    /// a river its wooden bridge: <see cref="Refusal"/> is the one owner of the kit, and this carries its "under 6 m
+    /// stays wood" (<see cref="MinClearance"/>) up to the floor. Its default.</summary>
+    public const float DefaultMinViaductPier = 12f;
+    /// <summary>As set: PROCEDURALROADS_VIADUCT_MIN_PIER (metres, 6-20). Settable for tests.</summary>
+    public static float MinViaductPier = DebugSwitches.Number("VIADUCT_MIN_PIER", DefaultMinViaductPier, MinClearance, PierCeiling);
 
     /// <summary>Pier centre to pier centre, as the vanilla viaduct.</summary>
     public const float PierSpacing = 16f;
@@ -193,7 +201,8 @@ public static class DvergrViaduct
     /// <summary>
     /// Whether a crossing is built as a Dvergr viaduct rather than the wooden kit: a bridge
     /// (never a ford) in the Mistlands whose deck stands <see cref="MinClearance"/> or more over
-    /// the ground or the water, on piers no taller than <see cref="PierCeiling"/>, with no more
+    /// the ground or the water, its tallest pier at least <see cref="MinViaductPier"/> and no taller than
+    /// <see cref="PierCeiling"/>, with no more
     /// than <see cref="MaxEndStairRise"/> of stairs at either end (<see cref="EndStairs"/>). The
     /// one owner of that choice: the plan, the search's valley jumps and the dev command all ask it.
     /// </summary>
@@ -209,6 +218,7 @@ public static class DvergrViaduct
         if (clearance < MinClearance) return FormattableString.Invariant($"deck {clearance:F1} m over the ground or water, under {MinClearance:F0} m");
         float tallest = TallestPier(crossing, world);
         if (tallest > PierCeiling) return FormattableString.Invariant($"a pier {tallest:F1} m tall, over the {PierCeiling:F0} m ceiling");
+        if (tallest < MinViaductPier - 1e-3f) return FormattableString.Invariant($"tallest pier {tallest:F1} m, under the {MinViaductPier:F0} m floor");
         var (near, far) = EndStairs(crossing, world);
         foreach (EndStair end in new[] { near, far })
             if (!end.Landed || end.Rise > MaxEndStairRise + 1e-3f)
@@ -496,26 +506,50 @@ public static class DvergrViaduct
 
     /// <summary>
     /// What the search pays for a viaduct, the road on it apart. Its own price,
-    /// <paramref name="fixedCost"/> plus <paramref name="perMeter"/> per metre of span, is what it costs on piers
-    /// <see cref="PriceHeight"/> tall, and goes in inverse to its tallest pier's height (taken between
-    /// <see cref="MinClearance"/> and <see cref="PierCeiling"/>): "the price falls as the piers get taller, up to the
-    /// pier ceiling". On top, <paramref name="endStairPerMeter"/> per metre of its end stairs (<see cref="EndStairs"/>):
-    /// "stairs to or from a viaduct cost much more than ordinary stairs", so level banks win.
+    /// <paramref name="fixedCost"/> plus <paramref name="perMeter"/> per metre of span, times
+    /// <see cref="HeightFactor"/> of its tallest pier: "the price falls as the piers get taller, up to the pier
+    /// ceiling", and steeply over <see cref="PriceHeight"/> (height pays more, then a lower crossing is the fallback
+    /// if nothing is found). On top, <paramref name="endStairPerMeter"/> per metre of its end stairs
+    /// (<see cref="EndStairs"/>): "stairs to or from a viaduct cost much more than ordinary stairs", so level banks win.
+    /// The one owner of a viaduct's price: the search's valley jump asks it.
     /// </summary>
     public static float Price(RoadCrossing crossing, WorldGenerator world, float fixedCost, float perMeter, float endStairPerMeter)
     {
-        float height = Mathf.Clamp(TallestPier(crossing, world), MinClearance, PierCeiling);
         var (near, far) = EndStairs(crossing, world);
-        return (fixedCost + perMeter * crossing.Width) * (PriceHeight / height) + endStairPerMeter * (near.Rise + far.Rise);
+        return (fixedCost + perMeter * crossing.Width) * HeightFactor(TallestPier(crossing, world)) + endStairPerMeter * (near.Rise + far.Rise);
     }
 
-    /// <summary>The pier height at which a viaduct costs its base price (<see cref="Price"/>): half as much on piers
-    /// twice as tall. Its default, about the median tallest pier (9.8 m on six test worlds): at 20 m (the
-    /// ceiling) 16 valley viaducts were left of 79, at 10 m 59, a third more of them 14 m and up, and two in three on
-    /// level banks.</summary>
+    /// <summary>
+    /// The share of its base price a viaduct with its tallest pier <paramref name="tallest"/> m pays (taken between
+    /// <see cref="MinClearance"/> and <see cref="PierCeiling"/>).
+    /// <para>Up to <see cref="PriceHeight"/> it is the plain inverse of the height (1 at 10 m, 1.67 at 6 m), so a low
+    /// viaduct costs what it did and is never priced out into stairs: the fallback is the same search, not a second
+    /// pass. Over it the share falls geometrically to <see cref="CeilingPriceShare"/> at the ceiling (0.57 at 14 m,
+    /// 0.38 at 17 m, 0.25 at 20 m, against the inverse's 0.71, 0.59 and 0.5), and never above the inverse: a valley that
+    /// offers a high crossing and a low one has the high one win clearly. With <see cref="CeilingPriceShare"/> 0.5 it
+    /// is the inverse price exactly.</para>
+    /// </summary>
+    public static float HeightFactor(float tallest)
+    {
+        float h = Mathf.Clamp(tallest, MinClearance, PierCeiling);
+        float inverse = PriceHeight / h;
+        if (h <= PriceHeight || PierCeiling <= PriceHeight) return inverse;
+        float steep = (float)Math.Pow(CeilingPriceShare, (h - PriceHeight) / (PierCeiling - PriceHeight));
+        return Mathf.Min(inverse, steep);
+    }
+
+    /// <summary>The pier height at which a viaduct costs its base price (<see cref="Price"/>), and under which it is
+    /// priced as the plain inverse. Its default, about the median tallest pier (9.8 m on six test
+    /// worlds): with the inverse price anchored at 20 m (the ceiling) 16 valley viaducts were left of 79, at 10 m
+    /// 59.</summary>
     public const float DefaultPriceHeight = 10f;
     /// <summary>Settable for tests.</summary>
     public static float PriceHeight = DefaultPriceHeight;
+    /// <summary>The share of its base price a viaduct on piers at the ceiling pays (about a quarter).
+    /// Its default.</summary>
+    public const float DefaultCeilingPriceShare = 0.25f;
+    /// <summary>Settable for tests (0.5: the inverse price).</summary>
+    public static float CeilingPriceShare = DefaultCeilingPriceShare;
 
     // ------------------------------------------------------- meeting the road
 
