@@ -164,7 +164,6 @@ public static class DvergrViaduct
 
     // Ruin roles, apart from the wooden kit's own (1-10) so a key never means two things.
     private const int RoleFloor = 21, RoleCourse = 22, RoleArch = 23, RoleOrnament = 24, RoleScreen = 25, RoleHead = 26, RoleHole = 27;
-    private const int RoleHealth = 35;
 
     /// <summary>One piece of the pier pattern: offsets from the pier's centre on the deck line
     /// (du along, v across), its centre's height under D, its turn from the deck's heading, and
@@ -1090,41 +1089,8 @@ public static class DvergrViaduct
                 pieces.Add(s);
             }
         }
-        if (ruin) ApplyRandomDamage(pieces, r);
+        if (ruin) r.ApplyLocationDamage(pieces); // vanilla's Location.m_applyRandomDamage (BridgeLayout.LocationDamageMin)
         return pieces;
-    }
-
-    /// <summary>The health a ruined viaduct's piece is placed with, as a fraction of its prefab's: vanilla's
-    /// Location.m_applyRandomDamage range. ZoneSystem.SpawnLocation sets WearNTear.m_randomInitialDamage for a location that
-    /// applies it (the Mistlands viaducts do), and WearNTear.Awake then puts every piece at Random.Range(0.1, 0.6) of its
-    /// health (decompiled game, WearNTear.cs 322-325). A ruin follows what the game does to the Mistlands prefabs it places, not 100 % health.</summary>
-    public const float RandomDamageMin = 0.1f, RandomDamageMax = 0.6f;
-
-    /// <summary>
-    /// Every piece of a ruined viaduct damaged as vanilla damages a location's pieces (<see cref="RandomDamageMin"/> to
-    /// <see cref="RandomDamageMax"/> of its health), fixed per crossing and world seed: the roll is keyed by the piece's
-    /// place and prefab, not drawn from Unity's random state, so the server and every reload agree.
-    /// </summary>
-    internal static void ApplyRandomDamage(List<StructurePiece> pieces, BridgeLayout.Ruin r)
-    {
-        foreach (StructurePiece p in pieces)
-        {
-            int key = unchecked(Mathf.RoundToInt(p.Position.x * 2f) * 73856093 ^ Mathf.RoundToInt(p.Position.z * 2f) * 19349663);
-            int side = Mathf.RoundToInt(p.Position.y * 2f);
-            int extra = StableHash(p.Prefab) ^ Mathf.RoundToInt(p.YawDegrees);
-            p.HealthFraction = RandomDamageMin + r.Roll(key, side, RoleHealth, extra) * (RandomDamageMax - RandomDamageMin);
-        }
-    }
-
-    /// <summary>A hash of a prefab name that is the same in every process (string.GetHashCode is not on .NET Core).</summary>
-    private static int StableHash(string? s)
-    {
-        unchecked
-        {
-            int h = 17;
-            if (s != null) foreach (char ch in s) h = h * 31 + ch;
-            return h;
-        }
     }
 
     /// <summary>A stable small number per pier part, for its ruin key.</summary>

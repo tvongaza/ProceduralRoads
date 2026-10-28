@@ -95,10 +95,59 @@ public static class BridgeLayout
     /// banks, falling to <see cref="MidSurvival"/> at mid-span. <paramref name="midCloseness"/> is 0
     /// at a bank and 1 at mid-span. The one owner of the profile: the Dvergr viaduct
     /// (<see cref="DvergrViaduct"/>) ruins by it too, at its own material's share.</summary>
-    public static float SpanSurvival(float midCloseness) => Mathf.Lerp(BankSurvival, MidSurvival, midCloseness);
+    public static float SpanSurvival(float midCloseness) => WoodRuin.Span(midCloseness);
 
     /// <summary>A pier's survival where the deck's is <paramref name="survival"/>: piers outlive the deck.</summary>
-    public static float PierSurvival(float survival) => survival + (1f - survival) * PierPersistence;
+    public static float PierSurvival(float survival) => WoodRuin.Pier(survival);
+
+    /// <summary>The health a vanilla location's piece is placed with, as a fraction of its prefab's: ZoneSystem.SpawnLocation
+    /// sets WearNTear.m_randomInitialDamage for a location with Location.m_applyRandomDamage (the Mistlands viaducts and
+    /// harbours have it), and WearNTear.Awake then puts every piece at Random.Range(0.1, 0.6) of its health (decompiled
+    /// game, WearNTear.cs 322-325, ZoneSystem.cs ~2828). Read on a Mistlands_Harbour1 in
+    /// game (cli_piece_health on 40 pieces): 10-57 %, median 35 %.</summary>
+    public const float LocationDamageMin = 0.1f, LocationDamageMax = 0.6f;
+
+    /// <summary>
+    /// How one kit ruins (vanilla's damage as closely as possible, to match the biome). The
+    /// plain wooden kit's is <see cref="WoodRuin"/> (the constants above); the Dvergr wood kit's is <see cref="DvergrWoodRuin"/>.
+    /// The rolls are <see cref="Ruin"/>'s, keyed by what they decide; a profile only says the rates.
+    /// </summary>
+    public sealed class RuinProfile
+    {
+        /// <summary>A deck piece's survival at a bank and at mid-span (<see cref="Span"/>).</summary>
+        public readonly float BankSurvival, MidSurvival;
+        /// <summary>How much piers outlive the deck (<see cref="Pier"/>): 1 is a pier that never falls.</summary>
+        public readonly float PierPersistence;
+        /// <summary>Where a pier fell, the chance it leaves a stub, else a piece of debris on the bed.</summary>
+        public readonly float StubChance, DebrisChance;
+
+        public RuinProfile(float bankSurvival, float midSurvival, float pierPersistence, float stubChance, float debrisChance)
+        {
+            BankSurvival = bankSurvival; MidSurvival = midSurvival; PierPersistence = pierPersistence;
+            StubChance = stubChance; DebrisChance = debrisChance;
+        }
+
+        /// <summary>The deck's survival at a point of a span, 0 at a bank, 1 at mid-span.</summary>
+        public float Span(float midCloseness) => Mathf.Lerp(BankSurvival, MidSurvival, midCloseness);
+        /// <summary>A pier's survival where the deck's is <paramref name="survival"/>.</summary>
+        public float Pier(float survival) => survival + (1f - survival) * PierPersistence;
+    }
+
+    /// <summary>The plain wooden kit: a long span reads as a row of piers with a collapsed deck.</summary>
+    public static readonly RuinProfile WoodRuin = new(BankSurvival, MidSurvival, PierPersistence, StubChance, DebrisChance);
+
+    /// <summary>
+    /// A plank missing from a Dvergr wood deck, anywhere on the span: 5 in 36. Vanilla's harbour planks go missing by
+    /// RandomSpawn children (ZoneSystem.cs ~2810: each keeps its object at m_chanceToSpawn), not by damage; two
+    /// Mistlands_Harbour1 read in game had 36 and 31 dvergrprops_wood_beam (one at (4168.6, 6598.3)), about
+    /// one in seven gone; planks should only rarely be missing. The prefab's own RandomSpawn chances are unread.
+    /// </summary>
+    public const float DvergrWoodPlankLoss = 5f / 36f;
+
+    /// <summary>The Dvergr wood kit, as the vanilla harbour it is copied from: every pile stands (the harbours' do), a plank
+    /// is missing <see cref="DvergrWoodPlankLoss"/> of the time, and every piece is worn <see cref="LocationDamageMin"/> to
+    /// <see cref="LocationDamageMax"/> (<see cref="Ruin.ApplyLocationDamage"/>). No pier falls, so none leaves a stub.</summary>
+    public static readonly RuinProfile DvergrWoodRuin = new(1f - DvergrWoodPlankLoss, 1f - DvergrWoodPlankLoss, 1f, 0f, 0f);
 
     /// <summary>The navigation gap kept clear of piers and deck: at least
     /// FairwayGapWidth (a longship plus room to line up), growing with the
@@ -409,6 +458,37 @@ public static class BridgeLayout
         public float Health(int bay, int side, int role, int extra = 0) =>
             RuinHealthMin + Roll(bay, side, role, extra) * (RuinHealthMax - RuinHealthMin);
 
+        /// <summary>Its own role, apart from every kit's (wood 1-10, Dvergr wood 11-14, viaduct 21-27).</summary>
+        private const int RoleLocationHealth = 35;
+
+        /// <summary>
+        /// Every piece damaged as vanilla damages a location's pieces (<see cref="LocationDamageMin"/> to
+        /// <see cref="LocationDamageMax"/> of its health), fixed per crossing and world seed: the roll is keyed by the piece's
+        /// place and prefab, not drawn from Unity's random state, so the server and every reload agree. The Dvergr viaduct and
+        /// the Dvergr wood kit both damage their pieces here.
+        /// </summary>
+        public void ApplyLocationDamage(List<StructurePiece> pieces)
+        {
+            foreach (StructurePiece p in pieces)
+            {
+                int key = unchecked(Mathf.RoundToInt(p.Position.x * 2f) * 73856093 ^ Mathf.RoundToInt(p.Position.z * 2f) * 19349663);
+                int side = Mathf.RoundToInt(p.Position.y * 2f);
+                int extra = StableHash(p.Prefab) ^ Mathf.RoundToInt(p.YawDegrees);
+                p.HealthFraction = LocationDamageMin + Roll(key, side, RoleLocationHealth, extra) * (LocationDamageMax - LocationDamageMin);
+            }
+        }
+
+        /// <summary>A hash of a prefab name that is the same in every process (string.GetHashCode is not on .NET Core).</summary>
+        private static int StableHash(string? s)
+        {
+            unchecked
+            {
+                int h = 17;
+                if (s != null) foreach (char ch in s) h = h * 31 + ch;
+                return h;
+            }
+        }
+
         /// <summary>murmur3's 32-bit finaliser.</summary>
         private static uint Fmix(uint h)
         {
@@ -667,7 +747,7 @@ public static class BridgeLayout
     /// </summary>
     internal static bool EmitSteps(List<StructurePiece> pieces, WorldGenerator world,
         Vector2 anchor, Vector2 inward, Vector2 side, float deckH, Ruin r, int bayKey,
-        string stairPrefab = StairPrefab, string postPrefab = PostPrefab, int? count = null)
+        string stairPrefab = StairPrefab, string postPrefab = PostPrefab, int? count = null, float postSegment = PostSegment)
     {
         float stepYaw = YawDegrees(inward) + 180f; // the stair prefab rises toward local -z
         float yaw = YawDegrees(inward);
@@ -699,7 +779,7 @@ public static class BridgeLayout
                 float under = BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
                 bool centreGrounded = foot <= under + StairFootTolerance;
                 if (!centreGrounded)
-                    EmitColumn(pieces, p, under, foot, yaw, health, postPrefab);
+                    EmitColumn(pieces, p, under, foot, yaw, health, postPrefab, postSegment);
                 if (!centreGrounded || !FootEdgeIsGrounded(world, p, outward, side, foot))
                     bothLanded = false;
             }
@@ -793,16 +873,16 @@ public static class BridgeLayout
         }
     }
 
-    /// <summary>A column of PostSegment poles from topHeight down until one is
-    /// buried in the ground (grounded by construction).</summary>
+    /// <summary>A column of <paramref name="segment"/>-long posts (origin at their centre) from topHeight down until one
+    /// is buried in the ground (grounded by construction).</summary>
     private static void EmitColumn(List<StructurePiece> pieces, Vector2 pos, float ground, float topHeight, float yaw, float health,
-        string postPrefab = PostPrefab)
+        string postPrefab = PostPrefab, float segment = PostSegment)
     {
-        if (topHeight <= ground - PostSegment)
+        if (topHeight <= ground - segment)
             return;
-        for (float top = topHeight; ; top -= PostSegment)
+        for (float top = topHeight; ; top -= segment)
         {
-            float center = top - PostSegment * 0.5f;
+            float center = top - segment * 0.5f;
             pieces.Add(new StructurePiece
             {
                 Kind = StructurePieceKind.Post,
