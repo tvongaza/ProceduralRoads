@@ -661,6 +661,7 @@ public static partial class RoadStairRuns
     {
         s_laid[run] = (plan, kit);
         s_plans.Commit(plan);
+        RoadNetworkGenerator.IslandActivity?.BuiltStaircases(1);
     }
 
     /// <summary>The plan a run was laid from, if laid this generation (tests).</summary>

@@ -93,4 +93,27 @@ public class StairJoinTests : IDisposable
         Assert.Equal(before, Pieces(RoadStairRuns.LaidPlan(run)!));
         Assert.Equal(floored, RoadStairRuns.LaidPlan(run)!.CrestFloored);
     }
+
+    /// <summary>The road generation panel counts a staircase when it joins the network, once, on the island laying it.</summary>
+    [Fact]
+    public void ALaidStaircaseIsCountedOnTheIslandsProgressRow()
+    {
+        var world = new SharpRidgeWorld { Valley = true };
+        _scope.WithWorld(world);
+        var path = new List<Vector2>();
+        for (float x = -40f; x <= 0.01f; x += 8f) path.Add(new Vector2(x, 0f));
+        var steps = new List<(Vector2 from, Vector2 to)>();
+        for (int i = 1; i < path.Count; i++)
+            if (Mathf.Abs(world.GetHeight(path[i].x, 0f) - world.GetHeight(path[i - 1].x, 0f)) / 8f > 0.5f) steps.Add((path[i - 1], path[i]));
+        List<RoadStairSpan>? spans = RoadStairRuns.Lay(path, steps, new List<RoadCrossing>(), world);
+        Assert.NotNull(spans);
+
+        var owner = new RoadIslandActivity(1, 1);
+        RoadNetworkGenerator.IslandActivity = owner.Claim(1, 1);
+        try { Accept(path, spans!); }
+        finally { RoadNetworkGenerator.IslandActivity = null; }
+
+        Assert.Equal(StairStructures.Runs.Count(), owner.Snapshot()[0].Staircases);
+        Assert.True(owner.Snapshot()[0].Staircases > 0);
+    }
 }
