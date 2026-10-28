@@ -24,8 +24,8 @@ namespace ProceduralRoads;
 /// end for end (yaw 0 / 180);</item>
 /// <item>stringers: the same beam laid ALONG the deck under the planks, two of them 4 m apart, centres 6 m apart along
 /// the pier;</item>
-/// <item>no lights of its own: the harbour's <c>dvergrprops_lantern</c>s hang from its buildings, not the dock, so a
-/// bridge has none; its <c>dverger_demister</c> mist lights wait for the flair work.</item>
+/// <item>no lights of its own: the harbour's <c>dvergrprops_lantern</c>s hang from its buildings, not the dock, so a bridge has
+/// none; its <c>dverger_demister</c> mist lights wait for the flair work.</item>
 /// </list>
 /// <para>The pieces' sizes and origins are MEASURED in game (cli_piece_geometry; see each constant).
 /// The walking surface is the planks' top, the wooden kit's deck height; the stringers lie under the planks; the piles'
@@ -36,7 +36,9 @@ namespace ProceduralRoads;
 /// its stringers carried bank to bank. <b>The ruin</b> is the vanilla harbour's (<see cref="BridgeLayout.DvergrWoodRuin"/>,
 /// in the one ruin owner): every piece worn 10 to 60 %, a plank missing now and then, every pile standing; fixed per
 /// crossing and world seed.</para>
-
+///
+/// <para><b>Mistlands ford spans</b> are laid the same way on the plain footbridge's deck
+/// height (<see cref="BridgeLayout.SpanDeckHeight"/>), length and stairs, so the road meets them where it met the plain one.</para>
 ///
 /// <para><b>Every piece is grounded or rests on one that is, by construction</b>: a bent's piles go down until the lowest
 /// one's foot is in the ground, a stringer lies under planks that rest on a bent's piles (as on the vanilla pier, where the
@@ -86,6 +88,13 @@ public static class DvergrWoodBridge
     /// <summary>Ruin roles of this kit's own decisions, past <see cref="BridgeLayout.Ruin"/>'s.</summary>
     public const int RolePlank = 11;
 
+    /// <summary>Whether the crossing is laid in this kit's shape at all: a bridge, or a ford's spanned footbridge.</summary>
+    private static bool IsSpanFord(RoadCrossing crossing) => crossing.Kind == CrossingKind.Ford && crossing.Style == FordStyle.Span;
+
+    /// <summary>The planks' walking surface: the plain kit's deck for the same crossing (a bridge's
+    /// <see cref="BridgeLayout.DeckHeight"/>, a ford span's <see cref="BridgeLayout.SpanDeckHeight"/>), so the ends do not move.</summary>
+    public static float DeckHeight(RoadCrossing crossing, WorldGenerator world) =>
+        IsSpanFord(crossing) ? BridgeLayout.SpanDeckHeight(crossing, world) : BridgeLayout.DeckHeight(crossing, world);
 
     /// <summary>The bents along the deck, from the near deck end (0) to the far one (<see cref="BridgeLayout.BuiltLength"/>):
     /// as many equal bays as keep each at most <see cref="BentSpacing"/>.</summary>
@@ -106,16 +115,17 @@ public static class DvergrWoodBridge
     private static List<StructurePiece> Solve(RoadCrossing crossing, WorldGenerator world, int worldSeed, bool ruin)
     {
         var pieces = new List<StructurePiece>();
-        if (crossing == null || world == null || crossing.Kind != CrossingKind.Bridge || crossing.Width < BridgeLayout.DeckSpan)
+        if (crossing == null || world == null || (crossing.Kind != CrossingKind.Bridge && !IsSpanFord(crossing))
+            || crossing.Width < BridgeLayout.DeckSpan)
             return pieces;
 
         var r = new BridgeLayout.Ruin(worldSeed, crossing);
         Vector2 from = crossing.FromBank, dir = crossing.Direction, side = new(-dir.y, dir.x);
         float yaw = BridgeLayout.YawDegrees(dir);              // a beam's length (local x) across the deck
         float alongYaw = yaw + 90f;                            // ... and along it
-        float deckH = BridgeLayout.DeckHeight(crossing, world); // the wooden kit's, so the ends are its own
+        float deckH = DeckHeight(crossing, world);            // the wooden kit's, so the ends are its own
         float length = BridgeLayout.BuiltLength(crossing.Width);
-        bool freeSpan = BridgeLayout.IsFreeSpan(crossing, world);
+        bool freeSpan = crossing.Kind == CrossingKind.Bridge && BridgeLayout.IsFreeSpan(crossing, world);
         BridgeLayout.RuinProfile profile = Profile;
 
         float[] bents = BentAlongs(length);
@@ -262,5 +272,5 @@ public static class DvergrWoodBridge
     /// <summary>One line for road_bridge_repairs and road_crossings.</summary>
     public static string Describe(RoadCrossing crossing, WorldGenerator world) =>
         System.FormattableString.Invariant(
-            $"deck {BridgeLayout.DeckHeight(crossing, world):F1} m, {BentAlongs(BridgeLayout.BuiltLength(crossing.Width)).Length} bents over {BridgeLayout.BuiltLength(crossing.Width):F0} m{(BridgeLayout.IsFreeSpan(crossing, world) ? ", free span" : "")}");
+            $"{(IsSpanFord(crossing) ? "ford span, " : "")}deck {DeckHeight(crossing, world):F1} m, {BentAlongs(BridgeLayout.BuiltLength(crossing.Width)).Length} bents over {BridgeLayout.BuiltLength(crossing.Width):F0} m{(BridgeLayout.IsFreeSpan(crossing, world) ? ", free span" : "")}");
 }

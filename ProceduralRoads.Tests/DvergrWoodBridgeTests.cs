@@ -56,11 +56,18 @@ public sealed class DvergrWoodBridgeTests : IDisposable
         Assert.Equal(BridgeStructures.Kit.Wood, BridgeStructures.KitFor(c, meadows));
         Assert.All(BridgeStructures.Solve(c, meadows, 1), p => Assert.StartsWith("wood_", p.Prefab));
 
-        // A ford in the Mistlands, even a spanned one: road or the plain footbridge.
+        // A Mistlands ford's spanned footbridge is Dvergr wood too; a wading ford has no kit's pieces, and a
+        // span out of the Mistlands keeps the plain footbridge.
         _scope.WithWorld(low);
-        var ford = RoadCrossing.Between(new Vector2(-31f, 0f), new Vector2(31f, 0f), 26f, new Vector2(-6f, 0f), 20f, CrossingKind.Ford, FordStyle.Span);
-        Assert.Equal(BridgeStructures.Kit.Wood, BridgeStructures.KitFor(ford, low));
+        Assert.Equal(BridgeStructures.Kit.DvergrWood, BridgeStructures.KitFor(SpanFord(), low));
+        Assert.Equal(BridgeStructures.Kit.Wood, BridgeStructures.KitFor(SpanFord(FordStyle.Wade), low));
+        _scope.WithWorld(meadows);
+        Assert.Equal(BridgeStructures.Kit.Wood, BridgeStructures.KitFor(SpanFord(), meadows));
+        Assert.All(BridgeStructures.Solve(SpanFord(), meadows, 1), p => Assert.StartsWith("wood_", p.Prefab));
     }
+
+    private static RoadCrossing SpanFord(FordStyle style = FordStyle.Span) =>
+        RoadCrossing.Between(new Vector2(-31f, 0f), new Vector2(31f, 0f), 26f, new Vector2(-6f, 0f), 20f, CrossingKind.Ford, style);
 
     [Theory]
     [InlineData(5f)]
@@ -107,6 +114,28 @@ public sealed class DvergrWoodBridgeTests : IDisposable
         // The planks' walking surface is the deck's.
         foreach (StructurePiece p in DvergrWoodBridge.Solve(c, low, 1).Where(p => p.Kind == StructurePieceKind.Deck))
             Assert.Equal(BridgeLayout.DeckHeight(c, low), p.Position.y + DvergrWoodBridge.BeamDepth * 0.5f, 3);
+    }
+
+    [Fact]
+    public void AMistlandsFordSpanIsLaidOnThePlainFootbridgesDeckAndStairs()
+    {
+        var (_, low) = Low();
+        RoadCrossing ford = SpanFord();
+        float deck = BridgeLayout.SpanDeckHeight(ford, low);
+        Assert.Equal(deck, DvergrWoodBridge.DeckHeight(ford, low));
+        var dvergr = BridgeStructures.Solve(ford, low, 1);
+        Assert.Contains(dvergr, p => p.Prefab == DvergrWoodBridge.Plank && p.Kind == StructurePieceKind.Deck);
+        Assert.All(dvergr, p => Assert.StartsWith("dvergrprops_", p.Prefab));
+        foreach (StructurePiece p in dvergr.Where(p => p.Kind == StructurePieceKind.Deck))
+            Assert.Equal(deck, p.Position.y + DvergrWoodBridge.BeamDepth * 0.5f, 3);
+        // Its stairs where the plain footbridge lays them, so the road meets it where it did.
+        string Key(StructurePiece p) => FormattableString.Invariant($"{p.Position.x:F3} {p.Position.y:F3} {p.Position.z:F3} {p.YawDegrees:F2}");
+        var wood = BridgeLayout.Solve(ford, low, 1).Where(p => p.Kind == StructurePieceKind.Stair).Select(Key).OrderBy(k => k).ToList();
+        Assert.NotEmpty(wood);
+        Assert.Equal(wood, dvergr.Where(p => p.Kind == StructurePieceKind.Stair).Select(Key).OrderBy(k => k).ToList());
+        // Its deck runs where the footbridge's did: from the near bank over the built length.
+        float length = BridgeLayout.BuiltLength(ford.Width);
+        Assert.All(dvergr.Where(p => p.Kind == StructurePieceKind.Deck), p => Assert.InRange(Along(ford, p), 0f, length));
     }
 
     // ------------------------------------------- the measured pieces' heights

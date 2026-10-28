@@ -36,11 +36,11 @@ public sealed class BridgeStructures : IStructureSource
     /// <summary>The kits a crossing is built in (<see cref="KitFor"/>).</summary>
     public enum Kit
     {
-        /// <summary>The plain wooden kit (<see cref="BridgeLayout"/>): every biome but the Mistlands, every ford, and a
-        /// Mistlands bridge refused as a viaduct for any reason but being under its floor.</summary>
+        /// <summary>The plain wooden kit (<see cref="BridgeLayout"/>): every biome but the Mistlands, and a Mistlands bridge
+        /// refused as a viaduct for any reason but being under its floor.</summary>
         Wood,
         /// <summary>The Dvergr harbour pier's wooden pieces (<see cref="DvergrWoodBridge"/>): a Mistlands bridge under the
-        /// viaduct floor, 0 to 12 m.</summary>
+        /// viaduct floor, 0 to 12 m, and a Mistlands ford's spanned footbridge.</summary>
         DvergrWood,
         /// <summary>The Dvergr viaduct (<see cref="DvergrViaduct"/>).</summary>
         DvergrViaduct,
@@ -53,17 +53,19 @@ public sealed class BridgeStructures : IStructureSource
     /// <see cref="DvergrViaduct.MinViaductPier"/>) is built from the Dvergr pier's wooden pieces, 0 to
     /// 12 m: the 6 m line is the viaduct's own old floor, not a line in how a low bridge should look, and a Mistlands
     /// bridge 2 m over a stream is the low crossing the harbour pier is. A Mistlands bridge refused for its piers over the
-    /// ceiling or its end stairs keeps the plain wooden kit, as does every other biome and every ford.
+    /// ceiling or its end stairs keeps the plain wooden kit, as does every other biome. A Mistlands ford laid as a span
+    /// (<see cref="FordStyle.Span"/>, the short low footbridge) is Dvergr wood too; a wading or raised ford is road and has no kit's pieces.
     /// <para>Only <see cref="Solve"/> reads the Dvergr wood choice: that kit's deck height and ends are the plain wooden
-    /// kit's, so <see cref="DeckHeight"/>, <see cref="Ends"/> and the generator ask only whether it is a viaduct.</para>
+    /// kit's (a ford span's its footbridge's), so <see cref="DeckHeight"/>, <see cref="Ends"/> and the generator ask only
+    /// whether it is a viaduct.</para>
     /// </summary>
     public static Kit KitFor(RoadCrossing crossing, WorldGenerator world)
     {
         if (DvergrViaduct.Applies(crossing, world)) return Kit.DvergrViaduct;
-        if (crossing != null && world != null && crossing.Kind == CrossingKind.Bridge
-            && world.GetBiome(crossing.Center.x, crossing.Center.y) == Heightmap.Biome.Mistlands
-            && DvergrViaduct.UnderTheFloor(crossing, world))
-            return Kit.DvergrWood;
+        if (crossing == null || world == null || world.GetBiome(crossing.Center.x, crossing.Center.y) != Heightmap.Biome.Mistlands)
+            return Kit.Wood;
+        if (crossing.Kind == CrossingKind.Bridge && DvergrViaduct.UnderTheFloor(crossing, world)) return Kit.DvergrWood;
+        if (crossing.Kind == CrossingKind.Ford && crossing.Style == FordStyle.Span) return Kit.DvergrWood;
         return Kit.Wood;
     }
 
