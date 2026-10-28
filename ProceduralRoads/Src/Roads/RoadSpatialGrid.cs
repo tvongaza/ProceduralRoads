@@ -658,6 +658,47 @@ public static partial class RoadSpatialGrid
             }
         }
 
+        // A structure's end holds (StructureEnds): the grade limiter and the hold to the roads it meets can move the
+        // levelled stretch, which left viaduct ends a step or more off the road. It
+        // is put back; where the road cannot then reach it within the grade cap, the piece is refused (a valley viaduct is
+        // then not built with this road).
+        if (!followTerrain && LevelledEnds is { } heldEnds && densePoints.Count > 1)
+        {
+            var moved = new bool[densePoints.Count];
+            bool any = false;
+            foreach (var (at, height) in heldEnds)
+            {
+                bool atStart = (densePoints[0] - at).sqrMagnitude < 0.25f, atEnd = (densePoints[densePoints.Count - 1] - at).sqrMagnitude < 0.25f;
+                if (!atStart && !atEnd) continue;
+                float target = Mathf.Max(height, minHeight);
+                for (int i = 0; i < densePoints.Count; i++)
+                {
+                    float from = atStart ? distanceFromStart[i] : pathTotal - distanceFromStart[i];
+                    if (from > StructureEnds.ApronLength + StructureEnds.JoinOverlap + 1e-3f || Mathf.Abs(finalHeights[i] - target) <= 0.01f) continue;
+                    finalHeights[i] = target;
+                    moved[i] = any = true;
+                }
+            }
+            // Judged only where it was put back: the steps into and along the levelled stretch.
+            if (any && RoadGrade.Capped(RoadGrade.Configured))
+            {
+                float cap = RoadPitches.LimitCap(RoadGrade.Configured, edgeGrades);
+                for (int i = 1; i < densePoints.Count; i++)
+                {
+                    if (!moved[i - 1] && !moved[i]) continue;
+                    float run = Vector2.Distance(densePoints[i - 1], densePoints[i]);
+                    if (run < 0.5f) continue;
+                    float allowed = edgeGrades != null && i < edgeGrades.Length ? Mathf.Max(edgeGrades[i], RoadGrade.Configured) : cap;
+                    if (Mathf.Abs(finalHeights[i] - finalHeights[i - 1]) / run > allowed + HeldCapMargin)
+                    {
+                        LastRefusal = "a structure's end cannot be met within the grade cap";
+                        Log.LogDebug("Road refused: a structure's levelled end cannot be met within the grade cap");
+                        return null;
+                    }
+                }
+            }
+        }
+
         if (!followTerrain && turns != null && landings != null && landings.Contains(true) && !RoadSwitchbacks.Separated(densePoints, finalHeights, width,
                 RoadSwitchbacks.StairTurns || tightTurns ? landings : null, surfaceOnly: RoadSwitchbacks.StairTurns || tightTurns, widths: shapeWidths))
         { LastRefusal = "switchback: legs too close at different heights"; Log.LogDebug("Road refused: switchback legs blend at different heights"); return null; }
