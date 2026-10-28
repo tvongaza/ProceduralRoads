@@ -193,4 +193,74 @@ public sealed class IslandActivityTests
         RoadConnectionPlanner.Connect(places,(_,__)=>null,(a,b)=>a.Name!="Start",_=>false,_=>1,(_,__)=>{},i=>settled[i]++);
         Assert.Equal(new[]{0,1,1},settled);
     }
+
+    [Fact]
+    public void ClaimThroughSettleReachCommitAndBridgeCountsReachTheSnapshot()
+    {
+        var owner=new RoadIslandActivity(1,1); var token=owner.Claim(5,4);
+        token.Connecting("Crypt4",340); token.Committed(1500); token.Committed(500); token.BuiltStaircases(3); token.BuiltStaircases(0); token.BuiltBridges(2); token.BuiltBridges(0);
+        token.Settled(0); token.Settled(1,false); token.Settled(1,false); token.Settled(2,true); token.Reached(2);
+        var row=owner.Snapshot()[0];
+        Assert.Equal(3,row.Processed); Assert.Equal(1,row.Unreached); Assert.Equal(2,row.Reached);
+        Assert.Equal(2.0,row.Kilometres,6); Assert.Equal(3,row.Staircases); Assert.Equal(2,row.Bridges);
+        Assert.Equal("Crypt4",row.Destination); Assert.Equal(340,row.DestinationMetres);
+        Assert.True(row.IslandSeconds>=0);
+    }
+
+    [Fact]
+    public void IslandSecondsSpanStageChangesAndStopAtFinish()
+    {
+        var owner=new RoadIslandActivity(1,1); var token=owner.Claim(1,2);
+        Thread.Sleep(30); token.Stage("Connecting");
+        double atStage=owner.Snapshot()[0].IslandSeconds;
+        Assert.True(atStage>=.02,"the clock must not restart at a stage change");
+        token.Finish();
+        double done=owner.Snapshot()[0].IslandSeconds; Thread.Sleep(30);
+        Assert.Equal(done,owner.Snapshot()[0].IslandSeconds);
+    }
+
+    [Fact]
+    public void ANewClaimStartsWithoutTheOldIslandsCounts()
+    {
+        var owner=new RoadIslandActivity(1,2); var first=owner.Claim(1,2);
+        first.BuiltBridges(3); first.Committed(10); first.BuiltStaircases(4); first.Settled(0,false); first.Connecting("A",1); first.Finish();
+        owner.Claim(2,1); var row=owner.Snapshot()[0];
+        Assert.Equal(0,row.Bridges); Assert.Equal(0,row.Staircases); Assert.Equal(0,row.Unreached); Assert.Null(row.Destination);
+        first.BuiltBridges(9); Assert.Equal(0,owner.Snapshot()[0].Bridges);
+    }
+
+    [Fact]
+    public void APlaceALaterRoadServesLeavesUnreached()
+    {
+        var owner=new RoadIslandActivity(1,1); var token=owner.Claim(3,1);
+        token.Settled(0,false); token.Settled(1,true);
+        Assert.Equal(1,owner.Snapshot()[0].Unreached);
+        token.Measured(new[]{true,true,false});
+        var row=owner.Snapshot()[0];
+        Assert.Equal(0,row.Unreached); Assert.Equal(2,row.Reached);
+        token.Measured(new[]{false,true,true});
+        row=owner.Snapshot()[0];
+        Assert.Equal(1,row.Unreached); Assert.Equal(2,row.Reached);
+    }
+
+    [Fact]
+    public void AStageOtherThanConnectingForgetsThePlace()
+    {
+        var owner=new RoadIslandActivity(1,1); var token=owner.Claim(1,1);
+        token.Stage("Connecting"); token.Connecting("Crypt4",340);
+        Assert.Equal("Crypt4",owner.Snapshot()[0].Destination);
+        token.Stage("Fitting");
+        Assert.Null(owner.Snapshot()[0].Destination);
+    }
+
+    [Fact]
+    public void SettlingSecondsStartWhenConnectingStartsNotAtTheClaim()
+    {
+        var owner=new RoadIslandActivity(1,1); var token=owner.Claim(1,2);
+        token.Pricing(4); Thread.Sleep(40);
+        Assert.Equal(0,owner.Snapshot()[0].SettlingSeconds);
+        token.Connecting("A",10);
+        var row=owner.Snapshot()[0];
+        Assert.True(row.SettlingSeconds<row.IslandSeconds-.03,"pricing time must not count toward the estimate");
+    }
 }

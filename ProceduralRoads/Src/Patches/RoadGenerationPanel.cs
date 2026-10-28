@@ -13,6 +13,7 @@ internal static partial class RoadGenerationPanel
     private static GameObject? panel;
     private static Hud? hud;
     private static readonly List<TMP_Text> rows = new();
+    private static readonly List<RectTransform> barFills = new();
     private static RoadGenerationProgress? shown;
     private static Button? cancel;
     private static TMP_Text? cancelText, summary, status;
@@ -36,7 +37,7 @@ internal static partial class RoadGenerationPanel
     internal static void Clear()
     {
         if(panel!=null) UnityEngine.Object.Destroy(panel);
-        panel=null; hud=null; shown=null; cancel=null; cancelText=null; summary=null; status=null; tooltip=null; hovering=false; visibleCount=laidOutCount=-1; interaction=null; viewport=null; content=null; layoutSize=new Vector2(-1,-1); rows.Clear();
+        panel=null; hud=null; shown=null; cancel=null; cancelText=null; summary=null; status=null; tooltip=null; hovering=false; visibleCount=laidOutCount=-1; interaction=null; viewport=null; content=null; layoutSize=new Vector2(-1,-1); rows.Clear(); barFills.Clear();
     }
     internal static void Show(Hud owner, RoadGenerationProgress progress)
     {
@@ -119,6 +120,16 @@ internal static partial class RoadGenerationPanel
                 var text=item.GetComponent<TextMeshProUGUI>(); text.font=template.font; text.fontSharedMaterial=template.fontSharedMaterial;
                 text.textWrappingMode=TextWrappingModes.NoWrap; text.raycastTarget=false; text.alignment=TextAlignmentOptions.TopLeft;
                 rows.Add(text);
+                // A thin bar along the bottom of the row: a dark track and a fill whose width is the settled fraction.
+                var track=new GameObject("Progress track",typeof(RectTransform),typeof(Image)); track.transform.SetParent(item.transform,false);
+                var trackRect=(RectTransform)track.transform; trackRect.anchorMin=Vector2.zero; trackRect.anchorMax=new Vector2(1,0);
+                trackRect.pivot=new Vector2(.5f,0); trackRect.offsetMin=new Vector2(0,2); trackRect.offsetMax=new Vector2(0,6);
+                var trackImage=track.GetComponent<Image>(); trackImage.color=new Color(1,1,1,.18f); trackImage.raycastTarget=false;
+                var fillObject=new GameObject("Progress fill",typeof(RectTransform),typeof(Image)); fillObject.transform.SetParent(track.transform,false);
+                var fill=(RectTransform)fillObject.transform; fill.anchorMin=Vector2.zero; fill.anchorMax=new Vector2(0,1);
+                fill.offsetMin=fill.offsetMax=Vector2.zero;
+                var fillImage=fillObject.GetComponent<Image>(); fillImage.color=new Color(.85f,.72f,.30f,.95f); fillImage.raycastTarget=false;
+                barFills.Add(fill);
             }
         }
         // The owner coalesces activity snapshots; avoid text/mesh allocation on every HUD frame.
@@ -136,8 +147,8 @@ internal static partial class RoadGenerationPanel
             rows[i].gameObject.SetActive(i<visibleCount);
             if(i>=visibleCount) continue;
             var row=progress.ActiveIslands[i];
-            string stage=row.Stage=="Pricing" ? $"Pricing {row.PricesCompleted}/{row.PricesTotal}" : row.Stage;
-            rows[i].text=$"Island {row.Island} · {row.Processed}/{row.Destinations} processed · {row.Reached} reached · {row.Kilometres:F1} km\n<size=85%>{stage} · {row.SearchSteps:N0} steps · {row.ActiveSearches} searching · {row.StageSeconds:F0}s</size>";
+            rows[i].text=RowText(row);
+            barFills[i].anchorMax=new Vector2(Fraction(row),1);
         }
         if(tooltip!=null) tooltip.transform.SetAsLastSibling();
         Synchronize();

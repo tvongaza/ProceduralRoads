@@ -37,8 +37,11 @@ public static partial class RoadNetworkGenerator
             var path=pricer.FindPath(from,to,System.Math.Max(1000,RoadPathfinder.MaxIterations/2));
             return path != null && path.Count>=2 ? pricer.LastPathCost : null;
         }
-        bool Build(RoadConnectionPlanner.Place a,RoadConnectionPlanner.Place b) =>
-            GenerateRoad(a.Position,a.Radius,b.Position,b.Radius,RoadWidth,$"{a.Name} -> {b.Name}",hints);
+        bool Build(RoadConnectionPlanner.Place a,RoadConnectionPlanner.Place b)
+        {
+            activity?.Connecting(b.Name,Vector3.Distance(a.Position,b.Position));
+            return GenerateRoad(a.Position,a.Radius,b.Position,b.Radius,RoadWidth,$"{a.Name} -> {b.Name}",hints);
+        }
         bool Join(RoadConnectionPlanner.Place place)
         {
             if (hints.Count==0) return false;
@@ -54,12 +57,13 @@ public static partial class RoadNetworkGenerator
             if (finder.AlreadyOnNetwork) return true;
             if (path==null || path.Count<2) return false;
             Vector2 end=path[path.Count-1];
+            activity?.Connecting(place.Name,Vector2.Distance(new Vector2(place.Position.x,place.Position.z),end));
             return GenerateRoad(place.Position,place.Radius,new Vector3(end.x,0,end.y),0,
                 RoadWidth,$"{place.Name} -> road",hints);
         }
         RoadConnectionPlanner.Connect(places,Price,Build,Join,GetLocationPriority,
             (place,result)=>Log.LogDebug($"Road destination {place.Name} at {place.Position}: {result}"),
-            index => { activity?.Settled(index-1); RefreshDestinationsReached(locations); },
+            index => { SettleDestination(locations,index-1); RefreshDestinationsReached(locations); },
             total => activity?.Pricing(total), () => activity?.Priced(), () => activity?.Stage("Connecting"));
         // These are thrown away at the end of this island, so their memo
         // counters have to be collected before they go.

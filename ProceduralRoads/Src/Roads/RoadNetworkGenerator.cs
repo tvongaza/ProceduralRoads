@@ -210,23 +210,33 @@ public static partial class RoadNetworkGenerator
     private static void CountDestinationsReached(
         List<(string name, Vector3 position, float radius)> selected)
     {
-        int reached = MeasureDestinationsReached(selected);
-        IslandActivity?.Reached(reached);
+        bool[] served = ServedDestinations(selected);
+        int reached = 0; foreach (bool s in served) if (s) reached++;
+        IslandActivity?.Measured(served);
         System.Threading.Interlocked.Add(ref m_destinationsSelected, selected.Count);
         System.Threading.Interlocked.Add(ref m_destinationsConnected, reached);
+    }
+
+    /// <summary>Marks a place done, noting whether the network serves it. Called by the island's serial planner.</summary>
+    internal static void SettleDestination(List<(string name, Vector3 position, float radius)> locations, int index)
+    {
+        var activity=IslandActivity;
+        if(activity==null || index<0 || index>=locations.Count) return;
+        var d=locations[index];
+        activity.Settled(index, AlreadyServedByNetwork(d.position,d.radius));
     }
 
     private static void RefreshDestinationsReached(List<(string name, Vector3 position, float radius)> selected)
     {
         var activity=IslandActivity;
-        if(activity!=null && activity.ReachSampleDue()) activity.Reached(MeasureDestinationsReached(selected));
+        if(activity!=null && activity.ReachSampleDue()) activity.Measured(ServedDestinations(selected));
     }
 
-    private static int MeasureDestinationsReached(List<(string name, Vector3 position, float radius)> selected)
+    private static bool[] ServedDestinations(List<(string name, Vector3 position, float radius)> selected)
     {
-        int reached=0;
-        foreach(var d in selected) if(AlreadyServedByNetwork(d.position,d.radius)) reached++;
-        return reached;
+        var served=new bool[selected.Count];
+        for(int i=0;i<selected.Count;i++) served[i]=AlreadyServedByNetwork(selected[i].position,selected[i].radius);
+        return served;
     }
 
     /// <summary>Whether the network reaches this place: is there a road point
@@ -961,6 +971,13 @@ public static partial class RoadNetworkGenerator
 
         foreach (RoadSpatialGrid.PlannedPath plan in plans)
             RoadSpatialGrid.Commit(plan);
+        if (IslandActivity != null)
+        {
+            // A crossing snapped to a site an earlier road built is that bridge, not a new one.
+            int bridges = 0;
+            foreach (var c in crossings) if (c.Kind == CrossingKind.Bridge && !c.Shared && !c.Invalid) bridges++;
+            IslandActivity.BuiltBridges(bridges);
+        }
         if (RoadCrossingDetector.ToWater)
         {
             GroundUnderDeck(crossings, width);
@@ -1682,10 +1699,11 @@ public static partial class RoadNetworkGenerator
             var nearest = locations[selectedIndex];
             unvisited.RemoveAt(nearestIdx);
             
+            IslandActivity?.Connecting(nearest.name, Vector3.Distance(current, nearest.position));
             GenerateRoad(current, currentRadius, nearest.position, nearest.radius, RoadWidth,
                 $"{currentName} -> {nearest.name}");
             
-            IslandActivity?.Settled(selectedIndex);
+            SettleDestination(locations, selectedIndex);
             RefreshDestinationsReached(locations);
             current = nearest.position;
             currentRadius = nearest.radius;
@@ -1747,10 +1765,11 @@ public static partial class RoadNetworkGenerator
             {
                 var from = nodes[parent[i]];
                 var to = nodes[i];
+                IslandActivity?.Connecting(to.name, Vector3.Distance(from.position, to.position));
                 GenerateRoad(from.position, from.radius, to.position, to.radius, RoadWidth,
                     $"{from.name} -> {to.name}");
             }
-            IslandActivity?.Settled(i-1);
+            SettleDestination(locations, i-1);
             RefreshDestinationsReached(locations);
         }
     }

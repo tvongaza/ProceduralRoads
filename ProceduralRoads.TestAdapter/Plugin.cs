@@ -55,7 +55,9 @@ public sealed class Plugin : BaseUnityPlugin
                 ["active"] = row.Active, ["stage"] = row.Stage,
                 ["processed"] = row.Processed, ["destinations"] = row.Destinations, ["reached"] = row.Reached,
                 ["kilometres"] = row.Kilometres, ["pricesCompleted"] = row.PricesCompleted, ["pricesTotal"] = row.PricesTotal,
-                ["searchSteps"] = row.SearchSteps, ["activeSearches"] = row.ActiveSearches, ["stageSeconds"] = row.StageSeconds
+                ["searchSteps"] = row.SearchSteps, ["activeSearches"] = row.ActiveSearches, ["islandSeconds"] = row.IslandSeconds, ["settlingSeconds"] = row.SettlingSeconds,
+                ["unreached"] = row.Unreached, ["bridges"] = row.Bridges, ["staircases"] = row.Staircases,
+                ["destination"] = row.Destination, ["destinationMetres"] = row.DestinationMetres
             }).ToArray()
         });
         yield break;
