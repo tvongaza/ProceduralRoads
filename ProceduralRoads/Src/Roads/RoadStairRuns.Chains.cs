@@ -33,13 +33,17 @@ public static partial class RoadStairRuns
     /// smoother, with no 180 degree turn). Of the heights that fit, the one turning least, then the lowest. Returns whether
     /// it did; <paramref name="from"/> the span's start on the first.
     /// </summary>
+    /// <para>A shallow valley (<paramref name="level"/>: <see cref="StairChain.CrossesLevel"/>) is crossed level: the span at
+    /// the highest height that fits, up to the lower flight's top edge, so no stair is left down into it where the two tops
+    /// stand level (the chain's one rule, as an approach crosses a shallow dip).</para>
     internal static bool SpanTheValley(StairPlan below, StairPlan up, StairKit kit, Func<float, float, float> ground, float bottom, float width,
-        Func<StairPlan, Vector2, bool> usable, out Vector2 from)
+        Func<StairPlan, Vector2, bool> usable, out Vector2 from, bool level = false)
     {
         from = default;
         if (!ValleySpans) return false;
-        // Each flight's stair rows by base height: centre (across its lanes) and the way down it.
-        static Dictionary<int, (Vector2 at, float down)> Rows(StairPlan plan, float bottom)
+        // Each flight's stair rows by base height: centre (across its lanes) and the way down it; crossed level, its top
+        // stair's upper edge too, a rise over its base, where a floor at the top meets it.
+        Dictionary<int, (Vector2 at, float down)> Rows(StairPlan plan, float bottom)
         {
             var rows = new Dictionary<int, (Vector2 at, float down)>();
             foreach (var g in plan.Pieces.Where(p => p.Kind == StairPieceKind.Stair && p.Position.y > bottom - 0.01f)
@@ -50,6 +54,12 @@ public static partial class RoadStairRuns
                 foreach (StairPiece p in ps) sum += new Vector2(p.Position.x, p.Position.z);
                 if (ps.Any(p => Mathf.Abs(p.Position.y - (bottom + g.Key * StairLayout.PieceRise)) > 0.05f)) continue;
                 rows[g.Key] = (sum * (1f / ps.Count), ps[0].YawDegrees);
+            }
+            if (level && rows.Count > 0)
+            {
+                int top = rows.Keys.Max();
+                var (at, down) = rows[top];
+                rows[top + 1] = (at - StairLayout.Forward(down) * StairLayout.PieceRun, down);
             }
             return rows;
         }
@@ -83,7 +93,8 @@ public static partial class RoadStairRuns
                     if (ground(q.x, q.y) > h + StairLayout.MaxBuriedDepth) { buried = true; why?.Add(FormattableString.Invariant($"{k}: buried {ground(q.x, q.y) - h:F2} m at ({q.x:F1}, {q.y:F1})")); break; }
                 }
             if (buried) continue;
-            if (best == null || off1 + off2 < best.Value.turn - 0.01f) best = (k, l1, l2, off1 + off2);
+            // Crossed level, the highest that fits (k climbs); else the one turning least, then the lowest.
+            if (best == null || (level ? k > best.Value.k : off1 + off2 < best.Value.turn - 0.01f)) best = (k, l1, l2, off1 + off2);
         }
         if (best is not { } span)
         {

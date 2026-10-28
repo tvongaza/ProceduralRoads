@@ -501,7 +501,8 @@ public static partial class RoadStairRuns
                         a = foot;
                         // Higher up, a straight span of floors from one flight to the other in line with both, the bottom
                         // and its turn cut off (a valley should avoid a switchback: smoother, with no 180 degree turn).
-                        if (!before.Existing && SpanTheValley(below, up, kit, Ground, valleyHeight, Width, (p, at) => SpanUsable(p, path, before, to, world, spans, at), out Vector2 spanFrom))
+                        bool shallow = StairChain.CrossesLevel(valleyHeight, before.FromHeight, up.End.y);
+                        if (!before.Existing && SpanTheValley(below, up, kit, Ground, valleyHeight, Width, (p, at) => SpanUsable(p, path, before, to, world, spans, at), out Vector2 spanFrom, level: shallow))
                         {
                             a = spanFrom;
                             meet = spanFrom;

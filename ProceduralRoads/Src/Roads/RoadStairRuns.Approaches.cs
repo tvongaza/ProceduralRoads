@@ -123,10 +123,8 @@ public static partial class RoadStairRuns
         : apron < RoadConstants.ShallowWaterHeight ? "flat under water"
         : "";
 
-    /// <summary>A crest between a road's end and its landing at least this high over both
-    /// ends, or a valley this deep under both, is climbed and come down again (or the other
-    /// way): two staircases that meet on top, or at the bottom.</summary>
-    public const float CrestRise = 1f;
+    /// <summary>The chain's (<see cref="StairChain.CrestRise"/>).</summary>
+    public const float CrestRise = StairChain.CrestRise;
 
     /// <summary>Nor nearer either end than this: a hump or dip at an end is the end's own step.</summary>
     public const float CrestFromEnd = 4f;
@@ -149,10 +147,8 @@ public static partial class RoadStairRuns
         }
         float high = along.Max(s => s.h), low = along.Min(s => s.h);
         bool crest = high >= Mathf.Max(ha, hb) + CrestRise;
-        // A valley no deeper than ShallowDip is crossed level, not down stairs to its floor and up again (at the
-        // Queen's approach a 1.5 m dip was laid as stairs down, a floor and stairs up with turns and fillers; a straight
-        // run of floors over it is better).
-        if (!crest && low > Mathf.Min(ha, hb) - (ShallowDipsLevel ? Mathf.Max(CrestRise, ShallowDip) : CrestRise)) return null;
+        // A shallow valley is crossed level, not down stairs to its floor and up again: the chain's one rule (StairChain).
+        if (!crest && StairChain.CrossesLevel(low, ha, hb)) return null;
         // The middle of a flat top or floor, not its edge.
         float extreme = crest ? high : low;
         var at = along.FindAll(s => Mathf.Abs(s.h - extreme) <= 0.1f);
@@ -276,9 +272,6 @@ public static partial class RoadStairRuns
         return false;
     }
 
-    /// <summary>Settable for tests: false turns an approach down into a valley however shallow (stairs down, then up).</summary>
-    internal static bool ShallowDipsLevel = true;
-
-    /// <summary>A valley no deeper than this under both ends of an approach is crossed level (Turn).</summary>
-    public const float ShallowDip = 2f;
+    /// <summary>The chain's (<see cref="StairChain.ShallowDip"/>).</summary>
+    public const float ShallowDip = StairChain.ShallowDip;
 }

@@ -823,8 +823,8 @@ public class RoadStairTests : IDisposable
         Assert.Null(RoadStairRuns.Turn(new Vector2(0f, 0f), new Vector2(20f, 0f), Ground));
         float Deep(float x, float z) => x < 4f ? 41.5f - x * 1.2f : x < 8f ? 36.5f : Mathf.Min(46f, 36.5f + (x - 8f) * 1.2f);
         Assert.NotNull(RoadStairRuns.Turn(new Vector2(0f, 0f), new Vector2(20f, 0f), Deep));
-        RoadStairRuns.ShallowDipsLevel = false;
+        StairChain.ShallowDipsLevel = false;
         try { Assert.NotNull(RoadStairRuns.Turn(new Vector2(0f, 0f), new Vector2(20f, 0f), Ground)); }
-        finally { RoadStairRuns.ShallowDipsLevel = true; }
+        finally { StairChain.ShallowDipsLevel = true; }
     }
 }
