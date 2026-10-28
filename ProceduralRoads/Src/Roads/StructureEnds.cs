@@ -181,4 +181,26 @@ public static class StructureEnds
             }
         }
     }
+    /// <summary>
+    /// Whether road at <paramref name="p"/>, its surface at <paramref name="h"/> and <paramref name="w"/> wide, lies under
+    /// a deck at <paramref name="deck"/> between the ends <paramref name="near"/> and <paramref name="far"/>, out to
+    /// <paramref name="halfWidth"/> either side of its line: lower than the deck, and not the road run on under a joining
+    /// piece at its meeting height. Seen at viaducts at (5492, 4876) and (5288, 4640): paved road under the
+    /// deck's end, the deck overhead.
+    /// </summary>
+    public static bool UnderTheDeck(Vector2 p, float h, float w, End near, End far, float deck, float halfWidth)
+    {
+        if (!near.IsSet || !far.IsSet) return false;
+        Vector2 line = far.Edge - near.Edge;
+        float length = line.magnitude;
+        if (length < 1e-3f) return false;
+        Vector2 dir = line * (1f / length), side = new(-dir.y, dir.x);
+        float along = Vector2.Dot(p - near.Edge, dir);
+        if (along <= 0.25f || along >= length - 0.25f) return false;
+        if (Mathf.Abs(Vector2.Dot(p - near.Edge, side)) > halfWidth + w * 0.5f) return false;
+        if (h >= deck - 0.1f) return false;
+        foreach (End end in new[] { near, far })
+            if (end.UnderTheJoint(p, halfWidth + w * 0.5f) && Mathf.Abs(h - end.MeetHeight) <= 0.1f) return false;
+        return true;
+    }
 }

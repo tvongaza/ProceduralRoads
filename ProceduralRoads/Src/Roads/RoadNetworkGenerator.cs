@@ -1461,9 +1461,8 @@ public static partial class RoadNetworkGenerator
         if (stretchRetry < StairStretchRetries + ViaductRetries)
         {
             Vector2 at = default;
-            RoadCrossing? unmet = plans != null ? UnreachableEnd(plans, crossings, out at) : null;
-            // The floor on the finished ground (DvergrViaduct.TallestPierOnFinishedGround): a road's fill under a pier.
-            if (unmet == null && plans != null && UnderTheFloor(plans, crossings) is RoadCrossing low) { unmet = low; at = low.Center; }
+            string builtWhy = "";
+            RoadCrossing? unmet = plans != null ? BuiltRefusal(plans, crossings, out at, out builtWhy) : null;
             var jumps = unmet != null ? (unmet.ValleyJump ? new List<RoadCrossing> { unmet } : new List<RoadCrossing>())
                 : plans == null ? (LastStubBetween is RoadCrossing stubbed && crossings.Contains(stubbed) ? new List<RoadCrossing> { stubbed } : crossings.FindAll(c => c.ValleyJump && !c.Shared))
                 : new List<RoadCrossing>();
@@ -1472,7 +1471,7 @@ public static partial class RoadNetworkGenerator
                 foreach (RoadCrossing c in jumps) finder.BanViaduct(c.FromBank, c.ToBank);
                 System.Threading.Interlocked.Increment(ref m_viaductsRefusedAtEnds);
                 if (label != null && RoadsLog)
-                    Log.LogInfo(FormattableString.Invariant($"[VIADUCT] road {label}: {(unmet != null ? "an end the road does not meet" : "refused with")} viaduct {jumps[0].FromBank} -> {jumps[0].ToBank}; searched again without it"));
+                    Log.LogInfo(FormattableString.Invariant($"[VIADUCT] road {label}: {(unmet != null ? builtWhy : "refused with")} viaduct {jumps[0].FromBank} -> {jumps[0].ToBank}; searched again without it"));
                 return GenerateRoadCore(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints, stretchRetry + 1);
             }
             if (unmet != null)
@@ -1532,6 +1531,13 @@ public static partial class RoadNetworkGenerator
                 RoadSpatialGrid.LastRefusal = "no way onto a placed place's landing";
                 break;
             }
+        // No road under a viaduct's deck laid before it (the built-result check, StructureEnds.UnderTheDeck).
+        if (plans != null && UnderALaidDeck(plans, out Vector2 underAt) is string underDeck)
+        {
+            plans = null;
+            RoadSpatialGrid.LastRefusal = underDeck;
+            if (RoadsLog) Log.LogDebug(FormattableString.Invariant($"Road {label ?? "(unlabelled)"}: {underDeck} at ({underAt.x:F1}, {underAt.y:F1}); refused"));
+        }
         // No road crosses another, nor runs beside one at its height (MeetingRefusal).
         if (plans != null && MeetingRefusal(plans, out Vector2 meetsAt) is string meetingRefused)
         {
@@ -1657,7 +1663,12 @@ public static partial class RoadNetworkGenerator
             roadNumber = ++m_roadsGeneratedCount;
         }
         foreach (var c in crossings)
-            if (!c.Shared && c.Kind == CrossingKind.Bridge && DvergrViaduct.Applies(c, GenerationWorld)) DvergrViaduct.MarkLaid(c);
+            if (!c.Shared && c.Kind == CrossingKind.Bridge && DvergrViaduct.Applies(c, GenerationWorld))
+            {
+                DvergrViaduct.MarkLaid(c);
+                var (near, far) = DvergrViaduct.Ends(c, GenerationWorld);
+                lock (m_laidDecks) m_laidDecks.Add((near, far, DvergrViaduct.DeckHeight(c, GenerationWorld), c.Center, c.Width * 0.5f + DvergrViaduct.HalfWidth + 4f));
+            }
         foreach (var c in crossings)
         {
             if (!c.ValleyJump || c.Shared) continue;
@@ -2462,14 +2473,70 @@ public static partial class RoadNetworkGenerator
             foreach (StructureEnds.End end in new[] { near, far })
             {
                 bool met = false;
-                foreach (RoadSpatialGrid.PlannedPath plan in plans)
-                    for (int i = 0; i < plan.Points.Count; i++)
-                        if (Vector2.Distance(plan.Points[i], end.Meet) <= 0.75f && StructureEnds.Reachable(plan.Heights[i], end)) met = true;
+                foreach (var (_, h, _) in StructureEnds.BuiltRoadNear(end.Meet, 0.75f, plans))
+                    if (StructureEnds.Reachable(h, end)) { met = true; break; }
                 if (!met) { where = end.Meet; return c; }
             }
         }
         return null;
     }
+
+    /// <summary>
+    /// The one owner's final check, on the road as BUILT (StructureEnds): the road this road plans together
+    /// with the network laid before it. Judging only the ends of this road's own planned pieces passed viaducts with road
+    /// under their deck ends (another road, and the 3 m every bridge's road was painted in under its deck at the
+    /// ground's height after the check), and a floor raised by a road's fill. The first
+    /// crossing on the road that fails, with where and why, or null:
+    /// <list type="bullet">
+    /// <item>an end a player cannot walk onto from the road (UnreachableEnd);</item>
+    /// <item>road under its deck (StructureEnds.UnderTheDeck), this road's or the network's;</item>
+    /// <item>a valley viaduct under the floor over the finished ground (UnderTheFloor).</item>
+    /// </list>
+    /// </summary>
+    internal static RoadCrossing? BuiltRefusal(List<RoadSpatialGrid.PlannedPath> plans, List<RoadCrossing> crossings, out Vector2 where, out string why)
+    {
+        why = "";
+        if (UnreachableEnd(plans, crossings, out where) is RoadCrossing unmet) { why = "an end the road does not meet"; return unmet; }
+        foreach (RoadCrossing c in crossings)
+        {
+            if (!MeetsTheRoad(c) || c.Shared) continue;
+            var (near, far) = BridgeStructures.Ends(c, GenerationWorld);
+            float deck = DvergrViaduct.DeckHeight(c, GenerationWorld);
+            foreach (var (p, h, w) in StructureEnds.BuiltRoadNear(c.Center, c.Width * 0.5f + DvergrViaduct.HalfWidth + 4f, plans))
+                if (StructureEnds.UnderTheDeck(p, h, w, near, far, deck, DvergrViaduct.HalfWidth))
+                { where = p; why = FormattableString.Invariant($"road under the deck at ({p.x:F1}, {p.y:F1}), {deck - h:F1} m below it"); return c; }
+        }
+        if (UnderTheFloor(plans, crossings) is RoadCrossing low) { where = low.Center; why = "a pier under the floor over the finished ground"; return low; }
+        return null;
+    }
+
+    /// <summary>
+    /// Whether a road, as planned, runs under the deck of a viaduct laid before it (StructureEnds.UnderTheDeck): the other
+    /// half of the built-result check. The search keeps out from under a deck (DvergrViaduct.Standing) but for its two bank
+    /// cells, where a deck's end overhangs; a road through there is refused.
+    /// </summary>
+    internal static string? UnderALaidDeck(List<RoadSpatialGrid.PlannedPath> plans, out Vector2 at)
+    {
+        at = default;
+        List<(StructureEnds.End near, StructureEnds.End far, float deck, Vector2 centre, float reach)> decks;
+        lock (m_laidDecks) { if (m_laidDecks.Count == 0) return null; decks = new(m_laidDecks); }
+        foreach (var d in decks)
+            foreach (var (p, h, w) in PlanPointsNear(plans, d.centre, d.reach))
+                if (StructureEnds.UnderTheDeck(p, h, w, d.near, d.far, d.deck, DvergrViaduct.HalfWidth))
+                { at = p; return "passes under a viaduct's deck"; }
+        return null;
+    }
+
+    private static IEnumerable<(Vector2 p, float h, float w)> PlanPointsNear(List<RoadSpatialGrid.PlannedPath> plans, Vector2 at, float reach)
+    {
+        float r2 = reach * reach;
+        foreach (var plan in plans)
+            for (int i = 0; i < plan.Points.Count; i++)
+                if ((plan.Points[i] - at).sqrMagnitude <= r2) yield return (plan.Points[i], plan.Heights[i], plan.Width);
+    }
+
+    /// <summary>The viaducts laid this generation, their ends and deck, for <see cref="UnderALaidDeck"/>.</summary>
+    private static readonly List<(StructureEnds.End near, StructureEnds.End far, float deck, Vector2 centre, float reach)> m_laidDecks = new();
 
     /// <summary>A valley viaduct on the road whose tallest pier over the finished ground (the road built under it, this
     /// road's plans and the network so far) is under the floor (DvergrViaduct.MinViaductPier), or null.</summary>
@@ -3657,6 +3724,7 @@ public static partial class RoadNetworkGenerator
         m_roadCrossings.Clear();
         StairStructures.Reset();
         DvergrViaduct.ResetStanding();
+        lock (m_laidDecks) m_laidDecks.Clear();
         m_viaductsLaid = m_viaductFeetPut = m_viaductFeetUnmet = m_viaductsRefusedAtEnds = m_bridgeEndsUnmet = 0;
         RoadStairRuns.ResetCache();
         m_underRoads.Clear();

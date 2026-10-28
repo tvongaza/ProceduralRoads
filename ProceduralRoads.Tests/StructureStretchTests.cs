@@ -273,6 +273,58 @@ public sealed class StructureStretchTests : IDisposable
         Assert.True(Near(path[2]), "no road from the staircase's end to the junction");
     }
 
+    // ---------------------------------------------------------------- on the road as built
+
+    /// <summary>
+    /// Two viaducts on a test world: 34 m, centre 5492, 4876 (the paved road climbs steeply
+    /// and passes UNDER the deck's end, which hangs overhead) and 16 m, 5288, 4640 (roads part way under the viaduct).
+    /// An earlier check passed them: it asked only whether the viaduct's own road, as planned, ended at
+    /// each meeting point at its height (UnreachableEnd), and that holds here; road under the deck from elsewhere (a road
+    /// laid before, here climbing the west face 3 m inside the rim under the deck's west end; and the 3 m every bridge's
+    /// road was painted in under its deck after the check) was never looked at. The final check on the road as built
+    /// (BuiltRefusal) refuses the viaduct, and the generator searches the road again without it.
+    /// </summary>
+    [Fact]
+    public void TheFinalCheckSeesRoadUnderTheDeck()
+    {
+        var world = new RimValley();
+        _scope.WithWorld(world);
+        float bank = world.Rim + 1f;
+        RoadCrossing c = DvergrViaduct.ValleyCrossing(new Vector2(-bank, 0f), new Vector2(bank, 0f), world, out string why)!;
+        Assert.True(c != null, why);
+        var (near, far) = DvergrViaduct.Ends(c!, world);
+        RoadSpatialGrid.PlannedPath Piece(Vector2 a, Vector2 b, float h) =>
+            new(new List<Vector2> { a, b }, new List<float> { h, h }, new List<RoadPointDebugInfo>(), 4f, Vector2.Distance(a, b), false);
+        var own = new List<RoadSpatialGrid.PlannedPath> { Piece(near.Apron, near.Joint, near.MeetHeight), Piece(far.Joint, far.Apron, far.MeetHeight) };
+        var crossings = new List<RoadCrossing> { c! };
+        Assert.Null(RoadNetworkGenerator.BuiltRefusal(own, crossings, out _, out _));
+        float x = near.Edge.x + 4f;
+        LayRoad(new Vector2(x, -8f), new Vector2(x, 8f), p => world.GetHeight(p.x, p.y));
+        Assert.Null(RoadNetworkGenerator.UnreachableEnd(own, crossings, out _));   // the earlier check: passed
+        Assert.Same(c, RoadNetworkGenerator.BuiltRefusal(own, crossings, out Vector2 at, out string refused));
+        Assert.Contains("road under the deck", refused);
+        Assert.True(Mathf.Abs(at.x - x) <= 1.5f, $"found at {at}");
+    }
+
+    /// <summary>The other half of the road-under-a-deck case: a road planned after a viaduct is laid does not run under its deck. The
+    /// search keeps out from under a deck but for its two bank cells, where the deck's end overhangs.</summary>
+    [Fact]
+    public void NoLaterRoadRunsUnderADeck()
+    {
+        var world = new RimValley();
+        var roads = new List<RoadSpatialGrid.PlannedPath>();
+        Use(world, roads);
+        Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector3(-110f, 0f, 0f), 0f, new Vector3(110f, 0f, 0f), 0f, 4f, "across"), "no road");
+        RoadCrossing c = Assert.Single(RoadNetworkGenerator.GetRoadCrossings(), x => x.ValleyJump);
+        var (near, _) = DvergrViaduct.Ends(c, world);
+        // A road planned under the deck's west end, along z, 1 m inside its edge.
+        Vector2 under = near.Edge + near.Up * 1f;
+        var plan = new RoadSpatialGrid.PlannedPath(new List<Vector2> { under + new Vector2(0f, -20f), under, under + new Vector2(0f, 20f) },
+            new List<float> { world.Top - 3f, world.Top - 3f, world.Top - 3f }, new List<RoadPointDebugInfo>(), 4f, 40f, false);
+        Assert.NotNull(RoadNetworkGenerator.UnderALaidDeck(new List<RoadSpatialGrid.PlannedPath> { plan }, out _));
+        AssertNoRoadUnderTheDeck(c, world);
+    }
+
     /// <summary>No stored road point under the deck (between its two edges, within its half width) lower than the deck, but
     /// under the joining pieces at their meeting height.</summary>
     internal static void AssertNoRoadUnderTheDeck(RoadCrossing c, WorldGenerator world)
