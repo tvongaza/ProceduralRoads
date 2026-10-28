@@ -164,7 +164,7 @@ public static class DvergrViaduct
 
     // Ruin roles, apart from the wooden kit's own (1-10) so a key never means two things.
     private const int RoleFloor = 21, RoleCourse = 22, RoleArch = 23, RoleOrnament = 24, RoleScreen = 25, RoleHead = 26, RoleHole = 27;
-    private const int RoleFloorHealth = 31, RoleCourseHealth = 32, RoleArchHealth = 33, RoleOrnamentHealth = 34;
+    private const int RoleHealth = 35;
 
     /// <summary>One piece of the pier pattern: offsets from the pier's centre on the deck line
     /// (du along, v across), its centre's height under D, its turn from the deck's heading, and
@@ -816,7 +816,7 @@ public static class DvergrViaduct
                 int key = PartKey(part);
                 if (ruin && !part.Core && r.Roll(k, key, RoleOrnament) >= pierSurvival) continue;
                 Add(StructurePieceKind.ViaductPier, part.Prefab, a + part.Du, part.V, deck + part.Dy, part.Turn,
-                    part.Core || !ruin ? 1f : Worn(r, k, key, RoleOrnamentHealth, pierSurvival));
+                    1f);
             }
             foreach (var (du, v, footingTurn) in Shafts)
             {
@@ -947,7 +947,7 @@ public static class DvergrViaduct
                     int sideKey = lane == 0 ? -1 : 1;
                     if (ruin && r.Roll(m, sideKey, RoleCourse) >= Survives(c, CourseRuinShare)) continue;
                     course[m, lane == 0 ? 0 : 2] = true;
-                    Add(StructurePieceKind.ViaductDeck, Block, c, sideKey * 1f, deck - CourseDrop, 90f, ruin ? Worn(r, m, sideKey, RoleCourseHealth, Survives(c, CourseRuinShare)) : 1f);
+                    Add(StructurePieceKind.ViaductDeck, Block, c, sideKey * 1f, deck - CourseDrop, 90f, 1f);
                     if (!ruin || r.Roll(m, sideKey, RoleHead) < BridgeLayout.PierSurvival(Survives(c, ArchRuinShare)))
                         Add(StructurePieceKind.ViaductParapet, sideKey > 0 ? HeadLeft : HeadRight, c, sideKey * 3f, deck - CourseDrop,
                             sideKey > 0 ? 270f : 90f, 1f);
@@ -961,7 +961,7 @@ public static class DvergrViaduct
                 if (!under) continue;
                 if (ruin && r.Roll(m, v, RoleCourse) >= Survives(c, CourseRuinShare)) continue;
                 course[m, slot] = true;
-                Add(StructurePieceKind.ViaductDeck, Block, c, v, deck - CourseDrop, 90f, ruin ? Worn(r, m, v, RoleCourseHealth, Survives(c, CourseRuinShare)) : 1f);
+                Add(StructurePieceKind.ViaductDeck, Block, c, v, deck - CourseDrop, 90f, 1f);
             }
         }
         // Arches along both edges every 2 m, between module centres, each on the course of at
@@ -978,7 +978,7 @@ public static class DvergrViaduct
                 if (!course[m, slot] && !course[m + 1, slot]) continue;
                 if (ruin && r.Roll(m, sideKey, RoleArch) >= Survives(a, ArchRuinShare)) continue;
                 Add(StructurePieceKind.ViaductParapet, Arch, a, sideKey * 2.5f, deck + ArchRise, phase == 1 ? 270f : 90f,
-                    ruin ? Worn(r, m, sideKey, RoleArchHealth, Survives(a, ArchRuinShare)) : 1f);
+                    1f);
             }
         }
 
@@ -992,20 +992,46 @@ public static class DvergrViaduct
             BridgeLayout.EmitSteps(steps, world, end.Edge, end.Up, side, deck, r, key, StepPrefab, Block, end.Steps);
             foreach (StructurePiece s in steps)
             {
-                if (!ruin) s.HealthFraction = 1f;
+                s.HealthFraction = 1f;
                 pieces.Add(s);
             }
         }
+        if (ruin) ApplyRandomDamage(pieces, r);
         return pieces;
     }
 
+    /// <summary>The health a ruined viaduct's piece is placed with, as a fraction of its prefab's: vanilla's
+    /// Location.m_applyRandomDamage range. ZoneSystem.SpawnLocation sets WearNTear.m_randomInitialDamage for a location that
+    /// applies it (the Mistlands viaducts do), and WearNTear.Awake then puts every piece at Random.Range(0.1, 0.6) of its
+    /// health (decompiled game, WearNTear.cs 322-325). A ruin follows what the game does to the Mistlands prefabs it places, not 100 % health.</summary>
+    public const float RandomDamageMin = 0.1f, RandomDamageMax = 0.6f;
+
     /// <summary>
-    /// A surviving piece's health: worn (the wooden kit's <see cref="BridgeLayout.Ruin.Health"/>,
-    /// 5-70 %) about twice as often as one like it is missing, else whole. Wood wears every
-    /// piece; vanilla's viaduct stands mostly whole.
+    /// Every piece of a ruined viaduct damaged as vanilla damages a location's pieces (<see cref="RandomDamageMin"/> to
+    /// <see cref="RandomDamageMax"/> of its health), fixed per crossing and world seed: the roll is keyed by the piece's
+    /// place and prefab, not drawn from Unity's random state, so the server and every reload agree.
     /// </summary>
-    private static float Worn(BridgeLayout.Ruin r, int key, int side, int role, float survival) =>
-        r.Roll(key, side, role) < 2f * (1f - survival) ? r.Health(key, side, role, 1) : 1f;
+    internal static void ApplyRandomDamage(List<StructurePiece> pieces, BridgeLayout.Ruin r)
+    {
+        foreach (StructurePiece p in pieces)
+        {
+            int key = unchecked(Mathf.RoundToInt(p.Position.x * 2f) * 73856093 ^ Mathf.RoundToInt(p.Position.z * 2f) * 19349663);
+            int side = Mathf.RoundToInt(p.Position.y * 2f);
+            int extra = StableHash(p.Prefab) ^ Mathf.RoundToInt(p.YawDegrees);
+            p.HealthFraction = RandomDamageMin + r.Roll(key, side, RoleHealth, extra) * (RandomDamageMax - RandomDamageMin);
+        }
+    }
+
+    /// <summary>A hash of a prefab name that is the same in every process (string.GetHashCode is not on .NET Core).</summary>
+    private static int StableHash(string? s)
+    {
+        unchecked
+        {
+            int h = 17;
+            if (s != null) foreach (char ch in s) h = h * 31 + ch;
+            return h;
+        }
+    }
 
     /// <summary>A stable small number per pier part, for its ruin key.</summary>
     private static int PartKey(Part part) =>

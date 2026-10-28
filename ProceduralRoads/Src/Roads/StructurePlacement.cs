@@ -232,7 +232,10 @@ public static class StructurePlacement
                     if (appendKey != null) zdo.Set(AppendPieceHash, appendKey);
                     WearNTear wearNTear = go.GetComponent<WearNTear>();
                     if (wearNTear != null)
+                    {
                         zdo.Set("health", wearNTear.m_health * piece.HealthFraction);
+                        ShowHealth(wearNTear, piece.HealthFraction);
+                    }
                 }
 
                 if (appendKey != null && zdo == null)
@@ -307,5 +310,24 @@ public static class StructurePlacement
         foreach (var (centre, radius) in StructurePlans.ClearAreas(zoneID))
             areas.Add(new ZoneSystem.ClearArea(centre, radius));
         return areas;
+    }
+    private static readonly System.Reflection.FieldInfo? s_healthPercentage =
+        typeof(WearNTear).GetField("m_healthPercentage", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+    private static readonly System.Reflection.MethodInfo? s_updateVisual =
+        typeof(WearNTear).GetMethod("UpdateVisual", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic, null, new[] { typeof(bool) }, null);
+
+    /// <summary>
+    /// The health a piece was just given, shown at once. WearNTear.Awake reads the ZDO's health as the piece is
+    /// instantiated, before it is set here, so the hammer showed 100 % and the piece looked new until its zone loaded again
+    /// (the blocks of a ruined bridge all showed 100 % health). Vanilla sets its damage before
+    /// Instantiate (WearNTear.m_randomInitialDamage), but draws it from Unity's random state; the fraction here is the
+    /// structure's own, fixed per crossing and world seed, so the piece's percentage and look are brought up to it after.
+    /// Without effects, as Awake does.
+    /// </summary>
+    private static void ShowHealth(WearNTear wearNTear, float fraction)
+    {
+        if (fraction >= 1f || s_healthPercentage == null) return;
+        s_healthPercentage.SetValue(wearNTear, Mathf.Clamp01(fraction));
+        s_updateVisual?.Invoke(wearNTear, new object[] { false });
     }
 }

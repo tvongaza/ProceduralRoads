@@ -79,6 +79,32 @@ public sealed class DvergrViaductRuinTests : IDisposable
         Assert.True(ironShowing > 20, $"the iron floor shows through the course on {ironShowing} module(s) over 40 seeds");
     }
 
+    /// <summary>Block health like vanilla (the blocks of a ruined bridge are not at 100 % health: the game damages Mistlands
+    /// prefabs). Vanilla's
+    /// Location.m_applyRandomDamage puts every piece of the location at 10-60 % of its health (WearNTear.Awake). Every piece
+    /// of a ruined viaduct is placed within that range, spread over it, the same for the same crossing and world seed and
+    /// different for another seed; the complete (unruined) viaduct stays whole.</summary>
+    [Fact]
+    public void EveryPieceIsDamagedLikeVanillasLocationsFixedPerCrossingAndSeed()
+    {
+        var world = new MistValley { Depth = 12f, FloorHalf = 36f, Face = 1f };
+        _scope.WithWorld(world);
+        RoadCrossing c = DvergrViaduct.ValleyCrossing(new Vector2(-48f, 0f), new Vector2(48f, 0f), world, out string why)!;
+        Assert.True(c != null, why);
+        List<StructurePiece> built = DvergrViaduct.Solve(c!, world, 1234);
+        Assert.NotEmpty(built);
+        Assert.All(built, p => Assert.InRange(p.HealthFraction, 0.1f, 0.6f));
+        var healths = built.Select(p => p.HealthFraction).ToList();
+        Assert.True(healths.Min() < 0.2f && healths.Max() > 0.5f, $"health {healths.Min():F2}-{healths.Max():F2}: not spread over vanilla's range");
+        Assert.True(Math.Abs(healths.Average() - 0.35f) < 0.05f, $"mean health {healths.Average():F2}, vanilla's 0.35");
+        string Key(StructurePiece p) => FormattableString.Invariant($"{p.Prefab} {p.Position.x:F2} {p.Position.y:F2} {p.Position.z:F2} {p.HealthFraction:F4}");
+        Assert.Equal(built.Select(Key), DvergrViaduct.Solve(c!, world, 1234).Select(Key));
+        var again = DvergrViaduct.Solve(c!, world, 98765).ToDictionary(p => FormattableString.Invariant($"{p.Prefab} {p.Position.x:F2} {p.Position.y:F2} {p.Position.z:F2}"), p => p.HealthFraction);
+        int differ = built.Count(p => again.TryGetValue(FormattableString.Invariant($"{p.Prefab} {p.Position.x:F2} {p.Position.y:F2} {p.Position.z:F2}"), out float h) && Math.Abs(h - p.HealthFraction) > 1e-4f);
+        Assert.True(differ > built.Count / 2, $"another world seed changed the health of only {differ} of {built.Count} pieces");
+        Assert.All(DvergrViaduct.SolveComplete(c!, world, 1234), p => Assert.Equal(1f, p.HealthFraction));
+    }
+
     // ------------------------------------------------- between structures
 
     /// <summary>Two Mistlands valleys 18 m deep side by side along z, their rims at x -50/-4 and 4/50: an 8 m ridge
