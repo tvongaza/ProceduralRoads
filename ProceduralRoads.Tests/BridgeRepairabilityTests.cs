@@ -588,10 +588,11 @@ public class BridgeRepairabilityTests
         // to record a number. Layout 4: the navigation gap went 20 m -> 16 m
         // (moves every bridge over a sailable channel) and free spans changed
         // narrow ones again. Layout 5: a Mistlands crossing 6 m or more over the
-        // ground or water is a Dvergr viaduct (DvergrViaduct), not wood.
+        // ground or water is a Dvergr viaduct (DvergrViaduct), not wood. Layout 6: a viaduct's deck and end
+        // stairs come from the road's arrival (StructureEnds), its navigation bay is two bays wide, its ruin is vanilla's.
         // If you are here because this failed, the question
         // is "did the emitted shape move?", and if it did the answer is a bump.
-        Assert.Equal(5, BridgeLayout.LayoutVersion);
+        Assert.Equal(6, BridgeLayout.LayoutVersion);
         // What a bump does to a saved world: BridgeLayoutTests.AStaleLayoutLeavesSpawnedZonesAlone.
     }
 

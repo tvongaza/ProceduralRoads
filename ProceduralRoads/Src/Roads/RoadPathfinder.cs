@@ -147,7 +147,19 @@ public class RoadPathfinder
     /// (RoadNetworkGenerator.GenerateRoad). Cleared, with <see cref="m_stairOpen"/>, when that road is done.</summary>
     private readonly HashSet<Vector2i> m_noStairs = new(RoadGridComparer.Instance);
     public int NoStairCells => m_noStairs.Count;
-    public void ClearNoStairs() { m_noStairs.Clear(); m_stairOpen.Clear(); }
+    public void ClearNoStairs() { m_noStairs.Clear(); m_stairOpen.Clear(); m_noViaducts.Clear(); }
+
+    /// <summary>Viaduct jumps (from cell, to cell, either way) the road being built may not buy: one whose end the road as
+    /// planned did not meet (StructureEnds; RoadNetworkGenerator), searched again without it. Cleared with the stair closings
+    /// when that road is done.</summary>
+    private readonly HashSet<(Vector2i, Vector2i)> m_noViaducts = new();
+    public int NoViaducts => m_noViaducts.Count / 2;
+    public void BanViaduct(Vector2 from, Vector2 to)
+    {
+        Vector2i a = WorldToGrid(from), b = WorldToGrid(to);
+        m_noViaducts.Add((a, b));
+        m_noViaducts.Add((b, a));
+    }
 
     /// <summary>Cells opened to stairs for the road being built: its switchback turns there were
     /// too close to fit their curves, so the road is searched again climbing that stretch on stairs
@@ -1108,6 +1120,7 @@ public class RoadPathfinder
         }
         if (!found.HasValue) return false;
         (Vector2i to, float price) = found.Value;
+        if (m_noViaducts.Count > 0 && m_noViaducts.Contains((from, to))) return false;
         Vector2 a = GridToWorld(from), b = GridToWorld(to);
         if (RoadSiteProtection.BlocksSegment(a, b, SiteClearance, m_searchStart, m_searchEnd)) return false;
         // Nothing of the network under the deck: another road, a staircase or another viaduct.

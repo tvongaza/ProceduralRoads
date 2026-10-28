@@ -375,6 +375,10 @@ public static partial class RoadSpatialGrid
     /// viaduct's end stairs (RoadNetworkGenerator.PlanPieces, DvergrViaduct.MeetTheRoad), which the pull would
     /// otherwise skip and the sway's resampling cut past, leaving the foot off the road.</summary>
     [System.ThreadStatic] internal static List<Vector2>? HeldPoints;
+    /// <summary>A road end at a structure's end, on this thread (StructureEnds, the one owner of how a structure meets the
+    /// road): a piece of road ending within half a metre of one is held at its height over its last
+    /// <see cref="StructureEnds.ApronLength"/>, the earthwork levelling the road into the structure.</summary>
+    [System.ThreadStatic] internal static List<(Vector2 at, float height)>? LevelledEnds;
     /// <summary>Sway outcomes per planned road piece this generation (candidates included):
     /// kept, dropped because the swayed plan was refused, dropped for moving more earth.</summary>
     internal static int SwayKept, SwayRefused, SwayMoreEarth;
@@ -566,6 +570,19 @@ public static partial class RoadSpatialGrid
                 ? denseHeights[i]
                 : Mathf.Max(Mathf.Lerp(rampBase, smoothedHeights[i], RoadEndpointRamp.Blend(distFromNearestEnd)), minHeight));
         }
+
+        // A structure's end (StructureEnds): the road's last ApronLength to it is level at its height.
+        if (!followTerrain && LevelledEnds is { } levelledEnds && densePoints.Count > 1)
+            foreach (var (at, height) in levelledEnds)
+            {
+                bool atStart = (densePoints[0] - at).sqrMagnitude < 0.25f, atEnd = (densePoints[densePoints.Count - 1] - at).sqrMagnitude < 0.25f;
+                if (!atStart && !atEnd) continue;
+                for (int i = 0; i < densePoints.Count; i++)
+                {
+                    float from = atStart ? distanceFromStart[i] : pathTotal - distanceFromStart[i];
+                    if (from <= StructureEnds.ApronLength + 1e-3f) finalHeights[i] = Mathf.Max(height, minHeight);
+                }
+            }
 
         // Smoothing and the ramp both move heights after the search priced the
         // ground, so a route the search accepted can still be built too steep.

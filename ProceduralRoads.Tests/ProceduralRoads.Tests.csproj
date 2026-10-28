@@ -36,6 +36,7 @@
         <Compile Include="../ProceduralRoads/Src/Roads/StairLayout.Cuts.cs" Link="ModSrc/StairLayout.Cuts.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StairLayout.Columns.cs" Link="ModSrc/StairLayout.Columns.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StairChain.cs" Link="ModSrc/StairChain.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/StructureEnds.cs" Link="ModSrc/StructureEnds.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StairLayout.Cantilevers.cs" Link="ModSrc/StairLayout.Cantilevers.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StairLayout.Feet.cs" Link="ModSrc/StairLayout.Feet.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StairLayout.Tops.cs" Link="ModSrc/StairLayout.Tops.cs"/>

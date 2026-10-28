@@ -38,11 +38,13 @@ namespace ProceduralRoads;
 /// abreast (4 m), a course of blackmarble_2x2x2 on them (three across, 6 m;
 /// over a pier two, with a head either side), and blackmarble_arch along both
 /// edges every 2 m. It runs bank to bank: the remainder past the outer piers
-/// goes onto the banks. A bank lower than the deck is walked off on
-/// blackmarble_stair steps, the wooden kit's own stair run
-/// (<see cref="BridgeLayout.EmitSteps"/>), at most <see cref="MaxEndStairRise"/>
-/// of them (<see cref="EndStairs"/>), their foot on the road
-/// (<see cref="MeetTheRoad"/>); a bank at the deck's height has none.</para>
+/// goes onto the banks. Its height and each end are the one owner's of how a
+/// structure meets the road (<see cref="StructureEnds"/>): the deck at the
+/// height the road arrives at, an end lower than it walked off on
+/// blackmarble_stair steps (the wooden kit's run, <see cref="BridgeLayout.EmitSteps"/>),
+/// at most <see cref="MaxEndStairRise"/> of them (<see cref="Ends"/>), their foot on
+/// the road, which comes in along the deck's line over its levelled apron
+/// (<see cref="MeetTheRoad"/>); an end the road arrives level with has none.</para>
 ///
 /// <para><b>Price</b> (<see cref="Price"/>): dearer the
 /// lower its piers, steeply cheaper over 10 m (<see cref="HeightFactor"/>),
@@ -253,9 +255,24 @@ public static class DvergrViaduct
         return null;
     }
 
-    /// <summary>The deck's walking surface: the wooden kit's deck height (the higher bank, lifted
-    /// clear of any water), so a road meets either kit at the same height.</summary>
-    public static float DeckHeight(RoadCrossing crossing, WorldGenerator world) => BridgeLayout.DeckHeight(crossing, world);
+    /// <summary>The deck's walking surface: the higher of the two heights the road arrives at its ends
+    /// (<see cref="StructureEnds.Arrival"/> over the apron outward of each deck end), lifted clear of any water, not the
+    /// bank points' own ground (a bank point can be 2-6 m off the road that comes to it).</summary>
+    public static float DeckHeight(RoadCrossing crossing, WorldGenerator world)
+    {
+        var (near, far) = EdgesOf(crossing);
+        Vector2 dir = crossing.Direction;
+        float G(Vector2 p) => Ground(p, world);
+        float deck = Mathf.Max(StructureEnds.Arrival(near, -dir, G), StructureEnds.Arrival(far, dir, G));
+        return Mathf.Max(deck, crossing.WaterLevel + BridgeLayout.DeckFreeboard);
+    }
+
+    /// <summary>The middles of the deck's two end edges, near then far: where its walking surface stops.</summary>
+    internal static (Vector2 near, Vector2 far) EdgesOf(RoadCrossing crossing)
+    {
+        var (_, _, first, last) = DeckGrid(crossing);
+        return (crossing.FromBank + crossing.Direction * (first - Module * 0.5f), crossing.FromBank + crossing.Direction * (last + Module * 0.5f));
+    }
 
     /// <summary>How far the deck stands over the lowest ground between the banks, or over the
     /// water where there is any (the rule's "above the ground or water").</summary>
@@ -355,8 +372,9 @@ public static class DvergrViaduct
         if (!BridgeLayout.HeadingIsPlaceable(BridgeLayout.YawDegrees(dir), 0.5f)) { reason = "heading"; return null; }
         float hFrom = Ground(from, world), hTo = Ground(to, world);
         if (Mathf.Abs(hFrom - hTo) > RoadConstants.MaxBridgeBankDelta) { reason = "banks apart"; return null; }
-        float deck = Mathf.Max(hFrom, hTo);
         float lowest = float.MaxValue;
+        var probe = RoadCrossing.Between(from, to, Mathf.Min(hFrom, hTo), (from + to) * 0.5f, 0f, CrossingKind.Bridge);
+        float deck = DeckHeight(probe, world);
         int samples = Mathf.CeilToInt(length);
         for (int i = 0; i <= samples; i++)
         {
@@ -512,21 +530,25 @@ public static class DvergrViaduct
     /// </summary>
     public static (EndStair near, EndStair far) EndStairs(RoadCrossing crossing, WorldGenerator world)
     {
+        var (near, far) = Ends(crossing, world);
+        if (!near.IsSet) return default;
+        return (new EndStair(near.Steps, true, near.Edge, near.Up), new EndStair(far.Steps, true, far.Edge, far.Up));
+    }
+
+    /// <summary>
+    /// Each end as it meets the road, near (from-bank) end first, decided by the one owner (<see cref="StructureEnds.Decide"/>):
+    /// the deck's edge, its height, and the stairs whose foot sits on the ground the road arrives on. A run always lands:
+    /// the road's apron is levelled to its foot (RoadSpatialGrid.LevelledEnds), and the generator refuses the viaduct where
+    /// the road as planned does not meet it.
+    /// </summary>
+    public static (StructureEnds.End near, StructureEnds.End far) Ends(RoadCrossing crossing, WorldGenerator world)
+    {
         if (crossing == null || world == null || crossing.Width < Module) return default;
-        Vector2 dir = crossing.Direction, side = new(-dir.y, dir.x);
+        Vector2 dir = crossing.Direction;
         float deck = DeckHeight(crossing, world);
-        var (_, _, first, last) = DeckGrid(crossing);
-        EndStair End(float edge, Vector2 inward)
-        {
-            Vector2 top = crossing.FromBank + dir * edge;
-            Vector2 beyond = top - inward * BridgeLayout.StairHalfRun;
-            if (deck - Ground(beyond, world) <= BridgeLayout.StairRise * 0.5f) return new EndStair(0, true, top, inward);
-            var scratch = new List<StructurePiece>();
-            bool landed = BridgeLayout.EmitSteps(scratch, world, top, inward, side, deck, new BridgeLayout.Ruin(0, crossing), 0, StepPrefab, Block);
-            int steps = scratch.FindAll(p => p.Kind == StructurePieceKind.Stair).Count / 2;
-            return new EndStair(steps, landed, top, inward);
-        }
-        return (End(first - Module * 0.5f, dir), End(last + Module * 0.5f, -dir));
+        var (nearEdge, farEdge) = EdgesOf(crossing);
+        float G(Vector2 p) => Ground(p, world);
+        return (StructureEnds.Decide(nearEdge, dir, deck, G), StructureEnds.Decide(farEdge, -dir, deck, G));
     }
 
     // ----------------------------------------------------------------- price
@@ -606,13 +628,13 @@ public static class DvergrViaduct
         // Last first, far end before near, so a change does not move an index still to do.
         foreach (RoadCrossing crossing in viaducts.OrderByDescending(c => c.FromIndex))
         {
-            var (near, far) = EndStairs(crossing, world);
+            var (near, far) = BridgeStructures.Ends(crossing, world);
+            if (!near.IsSet) continue;
             foreach (var (end, bank, start, step) in new[] { (far, crossing.ToBank, crossing.ToIndex, +1), (near, crossing.FromBank, crossing.FromIndex, -1) })
             {
-                if (end.Steps == 0) continue;
                 int before = path.Count;
                 bool? met = Meet(path, end, bank, start, step, isStep);
-                if (met == null) { unmet++; unmetFeet?.Add(end.Foot); }
+                if (met == null) { unmet++; unmetFeet?.Add(end.Meet); }
                 else if (met == false) changed++;
                 else if (path.Count != before) pinned++;
             }
@@ -622,8 +644,11 @@ public static class DvergrViaduct
 
     /// <summary>One end of <see cref="MeetTheRoad"/>: true where the road already ran up the flight's line (the foot
     /// pinned on it), false where the path was turned onto it, null where it cannot be (the path left as it was).</summary>
-    private static bool? Meet(List<Vector2> path, EndStair end, Vector2 bank, int start, int step, Func<Vector2, Vector2, bool>? isStep)
+    private static bool? Meet(List<Vector2> path, StructureEnds.End structureEnd, Vector2 bank, int start, int step, Func<Vector2, Vector2, bool>? isStep)
     {
+        // The road comes in along the structure's line over its levelled apron (StructureEnds.ApronLength): its far end is
+        // the point the path is put through, and what lies between it and the bank stays only on the line.
+        var end = (Up: structureEnd.Up, Foot: structureEnd.Apron);
         Vector2 back = -end.Up, across = new(-back.y, back.x);
         var beside = new List<int>();
         int previous = -1;
@@ -877,12 +902,12 @@ public static class DvergrViaduct
 
         // ----- ends: a bank lower than the deck is walked off on marble steps, the wooden kit's run (EndStairs: none
         // where the bank is at the deck's height, and the road runs onto the deck).
-        var (nearEnd, farEnd) = EndStairs(crossing, world);
+        var (nearEnd, farEnd) = Ends(crossing, world);
         foreach (var (end, key) in new[] { (nearEnd, 0), (farEnd, modules) })
         {
             if (end.Steps == 0) continue;
             var steps = new List<StructurePiece>();
-            BridgeLayout.EmitSteps(steps, world, end.Top, end.Up, side, deck, r, key, StepPrefab, Block);
+            BridgeLayout.EmitSteps(steps, world, end.Edge, end.Up, side, deck, r, key, StepPrefab, Block, end.Steps);
             foreach (StructurePiece s in steps)
             {
                 if (!ruin) s.HealthFraction = 1f;

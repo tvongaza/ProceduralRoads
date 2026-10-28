@@ -61,8 +61,12 @@ public static class BridgeLayout
     /// ground or water is a Dvergr viaduct (<see cref="DvergrViaduct"/>), not
     /// a wooden bridge. A world explored partly under layout 4 keeps the wooden
     /// pieces it has; only zones without pieces get the viaduct's.</para>
+    ///
+    /// <para>6: a viaduct's deck height and end stairs come from the road's arrival (<see cref="StructureEnds"/>),
+    /// its navigation bay is two vanilla bays wide, and its ruin is calibrated on the vanilla viaduct. A world explored
+    /// partly under layout 5 keeps the pieces it has.</para>
     /// </summary>
-    public const int LayoutVersion = 5;
+    public const int LayoutVersion = 6;
     public const float DeckFreeboard = 0.5f;  // deck at least this far above the water
     public const float PostTopBelowDeck = 0.2f;
     public const float BeamBelowDeck = 0.13f;
@@ -655,13 +659,14 @@ public static class BridgeLayout
     /// </summary>
     internal static bool EmitSteps(List<StructurePiece> pieces, WorldGenerator world,
         Vector2 anchor, Vector2 inward, Vector2 side, float deckH, Ruin r, int bayKey,
-        string stairPrefab = StairPrefab, string postPrefab = PostPrefab)
+        string stairPrefab = StairPrefab, string postPrefab = PostPrefab, int? count = null)
     {
         float stepYaw = YawDegrees(inward) + 180f; // the stair prefab rises toward local -z
         float yaw = YawDegrees(inward);
         Vector2 outward = -inward;
         bool landed = false;
-        for (int k = 0; k < MaxStairSteps && !landed; k++)
+        // A run of a given count (StructureEnds decided it; the road's apron is levelled to its foot) is laid whole.
+        for (int k = 0; count.HasValue ? k < count.Value : k < MaxStairSteps && !landed; k++)
         {
             Vector2 c = anchor - inward * (StairHalfRun + k * StairRun);
             float foot = deckH - StairRise - k * StairRise;
@@ -692,7 +697,7 @@ public static class BridgeLayout
             }
             landed = bothLanded;
         }
-        return landed;
+        return count.HasValue || landed;
     }
 
     /// <summary>Both corners of one step's foot edge, in the dirt.</summary>
@@ -705,6 +710,28 @@ public static class BridgeLayout
                 return false;
         }
         return true;
+    }
+
+    /// <summary>
+    /// A wooden bridge's two ends as they meet the road (<see cref="StructureEnds"/>), near end first: each stair run from
+    /// its deck end as it marches until it lands (<see cref="EmitSteps"/>), its foot where the road is brought to. Not
+    /// decided from the road's arrival: the wooden kit's deck and runs are laid on the ground as they were.
+    /// </summary>
+    public static (StructureEnds.End near, StructureEnds.End far) Ends(RoadCrossing crossing, WorldGenerator world)
+    {
+        if (crossing == null || world == null || crossing.Kind != CrossingKind.Bridge || crossing.Width < DeckSpan) return default;
+        Vector2 dir = crossing.Direction, side = new(-dir.y, dir.x);
+        float deckH = DeckHeight(crossing, world);
+        Vector2 deckEnd = crossing.FromBank + dir * BuiltLength(crossing.Width);
+        Ruin r = new(0, crossing);
+        StructureEnds.End End(Vector2 anchor, Vector2 inward)
+        {
+            var scratch = new List<StructurePiece>();
+            EmitSteps(scratch, world, anchor, inward, side, deckH, r, 0);
+            int steps = scratch.FindAll(p => p.Kind == StructurePieceKind.Stair).Count / 2;
+            return new StructureEnds.End(anchor, inward, deckH, steps, decided: false);
+        }
+        return (End(crossing.FromBank, dir), End(deckEnd, -dir));
     }
 
     /// <summary>

@@ -182,10 +182,15 @@ public sealed class DvergrViaductEndStairTests : IDisposable
             DvergrViaduct.MaxEndStairRise = most;
             RoadCrossing? v = Across(two, 0f);
             Assert.True((v != null) == built, $"at {most} m: {(v == null ? "refused" : "built")}");
-            // And the search: no viaduct where the cap refuses it (the road takes stairs instead).
+            // And the search: no viaduct it buys has more end stairs than the cap. (An end's height comes from the
+            // road's arrival, so the search may find a deck a rise lower, its near end levelled into the rim, within it.)
             RoadPathfinder finder = Finder(two);
             Assert.NotNull(finder.FindPath(new Vector2(-100f, 0f), new Vector2(100f, 0f)));
-            Assert.Equal(built, finder.LastViaductJumps.Count > 0);
+            foreach (var (from, to) in finder.LastViaductJumps)
+            {
+                var (n, f) = DvergrViaduct.Ends(DvergrViaduct.ValleyCrossing(from, to, two, out _)!, two);
+                Assert.True(n.Rise <= most + 1e-3f && f.Rise <= most + 1e-3f, $"at {most} m: end stairs {n.Rise} and {f.Rise}");
+            }
         }
     }
 
@@ -213,27 +218,30 @@ public sealed class DvergrViaductEndStairTests : IDisposable
         RoadNetworkGenerator.PieceCommitted = (plan, _) => roads.Add(plan);
         Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector3(-110f, 0f, -50f), 0f, new Vector3(110f, 0f, 50f), 0f, 4f, "side on"));
         RoadCrossing viaduct = Assert.Single(RoadNetworkGenerator.GetRoadCrossings(), c => c.ValleyJump);
-        var (near, far) = DvergrViaduct.EndStairs(viaduct, world);
-        DvergrViaduct.EndStair stairs = near.Steps > 0 ? near : far;
+        var (near, far) = DvergrViaduct.Ends(viaduct, world);
+        StructureEnds.End stairs = near.Steps > 0 ? near : far;
         Assert.Equal(2, stairs.Steps);
         Assert.Equal(0, (near.Steps > 0 ? far : near).Steps);
-        // The road arrives head on: its centreline on the flight's line at the foot and a metre out from it, and under
-        // the flight up to the deck; further out it turns toward where it came from. Within a metre (a quarter of the
-        // road's width): the mod's bend shaping rounds the turn just past the foot, 0.6 m off the line at the foot here.
+        // (StructureEnds) the road ends at the stairs' foot at its height, having come in along the flight's line
+        // over its last ApronLength, levelled to the foot; it does not run on under the flight. Within a metre of the line
+        // (a quarter of the road's width): the mod's bend shaping rounds the turn just past the apron.
         Vector2 back = -stairs.Up;
         float ToRoad(Vector2 at) => roads.Min(r => Enumerable.Range(1, r.Points.Count - 1).Select(i => ToSegment(at, r.Points[i - 1], r.Points[i])).DefaultIfEmpty(float.MaxValue).Min());
-        Assert.True(ToRoad(stairs.Foot) <= 1f, $"the road is {ToRoad(stairs.Foot):F1} m from the stairs' foot {stairs.Foot}");
-        for (float s = -2f * stairs.Steps; s <= 1f; s += 0.5f)
+        Assert.True(ToRoad(stairs.Meet) <= 0.75f, $"the road is {ToRoad(stairs.Meet):F1} m from the stairs' foot {stairs.Meet}");
+        for (float s = 0f; s <= StructureEnds.ApronLength; s += 0.5f)
         {
-            Vector2 at = stairs.Foot + back * s;
+            Vector2 at = stairs.Meet + back * s;
             Assert.True(ToRoad(at) <= 1f, $"{s:F1} m out from the foot the road is {ToRoad(at):F1} m off the flight's line");
         }
-        // Every step stands on the road's width (two abreast, 1 m either side of the line).
-        foreach (StructurePiece step in BridgeStructures.Solve(viaduct, world, world.GetSeed()).Where(p => p.Kind == StructurePieceKind.Stair))
-        {
-            var at = new Vector2(step.Position.x, step.Position.z);
-            Assert.True(ToRoad(at) <= RoadNetworkGenerator.RoadWidth / 2f, $"step at {at} is {ToRoad(at):F1} m from the road's centreline");
-        }
+        var (plan, k) = roads.SelectMany(r => new[] { (r, 0), (r, r.Points.Count - 1) }).OrderBy(x => Vector2.Distance(x.r.Points[x.Item2], stairs.Meet)).First();
+        Assert.True(StructureEnds.Reachable(plan.Heights[k], stairs), $"the road at the foot stands {plan.Heights[k]:F2}, the foot {stairs.MeetHeight:F2}");
+        for (int i = 0; i < plan.Points.Count; i++)
+            if (Vector2.Distance(plan.Points[i], stairs.Meet) <= StructureEnds.ApronLength)
+                Assert.True(Mathf.Abs(plan.Heights[i] - stairs.MeetHeight) <= 0.05f, $"apron at {plan.Points[i]} stands {plan.Heights[i]:F2}, not level at {stairs.MeetHeight:F2}");
+        // No road under the flight.
+        Vector2 midFlight = stairs.Edge - stairs.Up * (stairs.Steps * BridgeLayout.StairRun * 0.5f);
+        Assert.True(roads.All(r => r.Points.All(p => Vector2.Dot(p - stairs.Meet, stairs.Up) <= 0.3f || Vector2.Distance(p, midFlight) > 2f)), "road under the flight");
+        Assert.Null(RoadNetworkGenerator.UnreachableEnd(roads, new List<RoadCrossing> { viaduct }, out _));
     }
 
     private static float ToSegment(Vector2 p, Vector2 a, Vector2 b)
@@ -253,28 +261,30 @@ public sealed class DvergrViaductEndStairTests : IDisposable
         _scope.WithWorld(world);
         RoadCrossing c = Across(world, 0f)!;
         c.FromIndex = 1; c.ToIndex = 2;
-        DvergrViaduct.EndStair far = DvergrViaduct.EndStairs(c, world).far;
+        var (near, far) = DvergrViaduct.Ends(c, world);
         Assert.Equal(2, far.Steps);
+        Assert.Equal(0, near.Steps);
+        // Every end, flush or stepped, is met through its apron, ApronLength out along its line from where the road
+        // ends (the stairs' foot, or the deck's edge).
+        Vector2 an = near.Apron, af = far.Apron;
+        Assert.Equal(StructureEnds.ApronLength + 2f * BridgeLayout.StairRun, Vector2.Distance(af, far.Edge), 3);
 
         // From the side: square to the deck, 10 m off the far bank. The point beside the flight
-        // goes, the foot comes in.
+        // goes, the apron comes in; the near end, in line, is pinned.
         var side = new List<Vector2> { new(-60f, 0f), c.FromBank, c.ToBank, c.ToBank + new Vector2(0f, 10f), new(80f, 30f) };
-        Assert.Equal(1, DvergrViaduct.MeetTheRoad(side, new[] { c }, world, out int unmet, out _));
-        Assert.Equal(0, unmet);
-        Assert.Equal(new[] { new Vector2(-60f, 0f), c.FromBank, c.ToBank, far.Foot, new Vector2(80f, 30f) }, side);
-        // From behind the foot at an angle: the foot comes in, nothing goes.
+        Assert.Equal(1, DvergrViaduct.MeetTheRoad(side, new[] { c }, world, out int unmet, out int pinned));
+        Assert.Equal((0, 1), (unmet, pinned));
+        Assert.Equal(new[] { new Vector2(-60f, 0f), an, c.FromBank, c.ToBank, af, new Vector2(80f, 30f) }, side);
+        // From behind the apron at an angle: it comes in, nothing goes.
         var angled = new List<Vector2> { new(-60f, 0f), c.FromBank, c.ToBank, new(40f, 14f), new(80f, 30f) };
         Assert.Equal(1, DvergrViaduct.MeetTheRoad(angled, new[] { c }, world, out unmet, out _));
-        Assert.Equal(new[] { new Vector2(-60f, 0f), c.FromBank, c.ToBank, far.Foot, new Vector2(40f, 14f), new Vector2(80f, 30f) }, angled);
+        Assert.Equal(new[] { new Vector2(-60f, 0f), an, c.FromBank, c.ToBank, af, new Vector2(40f, 14f), new Vector2(80f, 30f) }, angled);
 
-        // In line: nothing turned; the foot pinned on the line, so a corner further on cannot bow the road off it.
+        // In line: nothing turned; both aprons pinned on the line, so a corner further on cannot bow the road off it.
         var inLine = new List<Vector2> { new(-60f, 0f), c.FromBank, c.ToBank, c.ToBank + new Vector2(16f, 0f), new(80f, 30f) };
-        Assert.Equal(0, DvergrViaduct.MeetTheRoad(inLine, new[] { c }, world, out unmet, out int pinned));
-        Assert.Equal((0, 1), (unmet, pinned));
-        Assert.Equal(new[] { new Vector2(-60f, 0f), c.FromBank, c.ToBank, far.Foot, c.ToBank + new Vector2(16f, 0f), new Vector2(80f, 30f) }, inLine);
-        // Already through the foot: nothing at all.
         Assert.Equal(0, DvergrViaduct.MeetTheRoad(inLine, new[] { c }, world, out unmet, out pinned));
-        Assert.Equal((0, 0, 6), (unmet, pinned, inLine.Count));
+        Assert.Equal((0, 2), (unmet, pinned));
+        Assert.Equal(new[] { new Vector2(-60f, 0f), an, c.FromBank, c.ToBank, af, c.ToBank + new Vector2(16f, 0f), new Vector2(80f, 30f) }, inLine);
 
         // Ending under the flight: the foot is past the road's end.
         var shortEnd = new List<Vector2> { new(-60f, 0f), c.FromBank, c.ToBank, c.ToBank + new Vector2(1f, 0f) };

@@ -42,6 +42,21 @@ public sealed class BridgeStructures : IStructureSource
     public static List<StructurePiece> Solve(RoadCrossing crossing, WorldGenerator world, int seed) =>
         DvergrViaduct.Applies(crossing, world) ? DvergrViaduct.Solve(crossing, world, seed) : BridgeLayout.Solve(crossing, world, seed);
 
+    /// <summary>The deck's walking surface in the crossing's kit (<see cref="Solve"/>'s choice).</summary>
+    public static float DeckHeight(RoadCrossing crossing, WorldGenerator world) =>
+        DvergrViaduct.Applies(crossing, world) ? DvergrViaduct.DeckHeight(crossing, world) : BridgeLayout.DeckHeight(crossing, world);
+
+    /// <summary>
+    /// Both ends of a bridge as they meet the road (<see cref="StructureEnds"/>, the one owner), near (from-bank) end first,
+    /// in the crossing's kit: a viaduct's decided from the road's arrival, a wooden bridge's from its stair run as it lands.
+    /// Unset (default) for a ford: a waded or raised ford is road, and a spanned one's steps are its own.
+    /// </summary>
+    public static (StructureEnds.End near, StructureEnds.End far) Ends(RoadCrossing crossing, WorldGenerator world)
+    {
+        if (crossing == null || world == null || crossing.Kind != CrossingKind.Bridge) return default;
+        return DvergrViaduct.Applies(crossing, world) ? DvergrViaduct.Ends(crossing, world) : BridgeLayout.Ends(crossing, world);
+    }
+
     /// <summary>Pieces the plan puts at a crossing (0 for a ford that is not spanned).</summary>
     public static int PiecesAt(RoadCrossing crossing) =>
         WorldGenerator.instance == null ? 0 : Solve(crossing, WorldGenerator.instance, WorldGenerator.instance.GetSeed()).Count;
@@ -87,13 +102,11 @@ public sealed class BridgeStructures : IStructureSource
             // Nearest point of the span to the probe centre.
             float t0 = Mathf.Clamp01(Vector2.Dot(c - a, b - a) / (length * length));
             if (Vector2.Distance(a + (b - a) * t0, c) > radius) continue;
-            float ha, hb;
-            if (span && WorldGenerator.instance != null) ha = hb = BridgeLayout.SpanDeckHeight(crossing, WorldGenerator.instance);
-            else
-            {
-                if (!RoadSpatialGrid.TryGetRoadHeightWithin(a, 4f, out ha)) ha = RoadConstants.SeaLevel + BridgeLayout.DeckFreeboard;
-                if (!RoadSpatialGrid.TryGetRoadHeightWithin(b, 4f, out hb)) hb = ha;
-            }
+            // The deck's own height in its kit: the road ends at a stair's foot, below it.
+            float ha = WorldGenerator.instance != null
+                ? (span ? BridgeLayout.SpanDeckHeight(crossing, WorldGenerator.instance) : DeckHeight(crossing, WorldGenerator.instance))
+                : RoadSpatialGrid.TryGetRoadHeightWithin(a, 4f, out float road) ? road : RoadConstants.SeaLevel + BridgeLayout.DeckFreeboard;
+            float hb = ha;
             int n = Mathf.CeilToInt(length);
             for (int i = 0; i <= n; i++)
             {
