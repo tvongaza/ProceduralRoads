@@ -109,6 +109,118 @@ public sealed class DvergrWoodBridgeTests : IDisposable
             Assert.Equal(BridgeLayout.DeckHeight(c, low), p.Position.y + DvergrWoodBridge.BeamDepth * 0.5f, 3);
     }
 
+    // ------------------------------------------- the measured pieces' heights
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(42)]
+    public void ThePlanksStringersAndPileTopsStandWhereTheMeasuredPiecesPutThem(int seed)
+    {
+        var (c, low) = Low();
+        float deck = BridgeLayout.DeckHeight(c, low);
+        var pieces = DvergrWoodBridge.Solve(c, low, seed);
+        // dvergrprops_wood_beam is 0.8 m deep with its origin at its centre: the planks' top is the walking surface ...
+        Assert.Equal(0.8f, DvergrWoodBridge.BeamDepth);
+        Assert.All(pieces.Where(p => p.Kind == StructurePieceKind.Deck), p => Assert.Equal(deck, p.Position.y + 0.4f, 3));
+        // ... the stringers' top is the planks' underside ...
+        Assert.All(pieces.Where(p => p.Kind == StructurePieceKind.Beam), p => Assert.Equal(deck - 0.8f, p.Position.y + 0.4f, 3));
+        // ... dvergrprops_wood_pole is 4 m with its origin at its centre: each standing bent's top pile ends 0.75 m over the
+        // walking surface, as the pier's ...
+        var tops = pieces.Where(p => p.Prefab == DvergrWoodBridge.Pile && p.Kind == StructurePieceKind.Post && Along(c, p) >= -0.01f
+                && Along(c, p) <= BridgeLayout.BuiltLength(c.Width) + 0.01f)
+            .GroupBy(p => (Mathf.Round(p.Position.x * 100f), Mathf.Round(p.Position.z * 100f))).Select(g => g.Max(p => p.Position.y) + 2f).ToList();
+        Assert.NotEmpty(tops);
+        Assert.All(tops, t => Assert.Equal(deck + 0.75f, t, 3));
+    }
+
+    /// <summary>A Mistlands river whose near bank (x &lt; 0) is 4 m lower than the far one: the near stair walks down off
+    /// the deck over falling ground, so its first steps stand on posts.</summary>
+    private sealed class LowNearBank : WorldGenerator
+    {
+        public override float GetHeight(float wx, float wy) => Mathf.Abs(wx) <= 30f ? 26f : wx < 0f ? 30f : 34f;
+        public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) => Heightmap.Biome.Mistlands;
+        public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
+        {
+            weight = Mathf.Abs(wx) < 30f ? 1f : 0f;
+            width = 60f;
+        }
+        public override int GetSeed() => 76;
+    }
+
+    [Fact]
+    public void AStairStepOverTheGroundStandsOnADvergrPileCarriedToTheGround()
+    {
+        var w = new LowNearBank();
+        _scope.WithWorld(w);
+        RoadCrossing c = River();
+        var pieces = DvergrWoodBridge.Solve(c, w, 1);
+        Assert.DoesNotContain(pieces, p => p.Prefab == BridgeLayout.PostPrefab);
+        var posts = pieces.Where(p => p.Kind == StructurePieceKind.Post && Along(c, p) < -0.5f).ToList();
+        Assert.NotEmpty(posts);
+        Assert.All(posts, p => Assert.Equal(DvergrWoodBridge.Pile, p.Prefab));
+        foreach (StructurePiece step in pieces.Where(p => p.Kind == StructurePieceKind.Stair && Along(c, p) < 0f))
+        {
+            float ground = Ground(step, w);
+            var under = posts.Where(p => Mathf.Abs(p.Position.x - step.Position.x) < 1e-3f && Mathf.Abs(p.Position.z - step.Position.z) < 1e-3f)
+                .OrderByDescending(p => p.Position.y).ToList();
+            if (step.Position.y <= ground + BridgeLayout.StairFootTolerance) { Assert.Empty(under); continue; }
+            Assert.NotEmpty(under);
+            // The column's top is the step's foot, each pile 4 m under the one above, the lowest one's foot in the ground.
+            Assert.Equal(step.Position.y, under[0].Position.y + DvergrWoodBridge.PileLength * 0.5f, 3);
+            for (int i = 1; i < under.Count; i++) Assert.Equal(under[i - 1].Position.y - DvergrWoodBridge.PileLength, under[i].Position.y, 3);
+            Assert.True(under[under.Count - 1].Position.y - DvergrWoodBridge.PileLength * 0.5f <= ground);
+        }
+    }
+
+    // ----------------------------------------------- damaged like vanilla
+
+    [Fact]
+    public void EveryPieceIsWornAsTheVanillaHarboursAndTheSameEveryTime()
+    {
+        var (c, low) = Low();
+        for (int s = 1; s <= 12; s++)
+        {
+            var pieces = DvergrWoodBridge.Solve(c, low, s);
+            Assert.All(pieces, p => Assert.InRange(p.HealthFraction, BridgeLayout.LocationDamageMin, BridgeLayout.LocationDamageMax));
+            Assert.Equal(pieces.Select(p => p.HealthFraction), DvergrWoodBridge.Solve(c, low, s).Select(p => p.HealthFraction));
+        }
+        // Spread over the range, not one value.
+        var healths = DvergrWoodBridge.Solve(c, low, 1).Select(p => p.HealthFraction).ToList();
+        Assert.True(healths.Min() < 0.2f && healths.Max() > 0.5f, $"health {healths.Min():F2}..{healths.Max():F2}");
+    }
+
+    [Fact]
+    public void EveryPileStandsAndAPlankIsMissingAsRarelyAsTheHarboursAre()
+    {
+        var (c, low) = Low();
+        float length = BridgeLayout.BuiltLength(c.Width);
+        float[] bents = DvergrWoodBridge.BentAlongs(length);
+        int n = bents.Length, planks = Mathf.RoundToInt(length / DvergrWoodBridge.PlankPitch);
+        int laid = 0, could = 0;
+        for (int s = 1; s <= 100; s++)
+        {
+            var pieces = DvergrWoodBridge.Solve(c, low, s);
+            var complete = DvergrWoodBridge.SolveComplete(c, low, s);
+            // Every bent but the navigation gap's stands: no pile falls, none leaves a stub, nothing lies on the bed.
+            Assert.Equal(complete.Count(p => p.Prefab == DvergrWoodBridge.Pile && !BridgeLayout.InNavigationGap(c, Along(c, p))),
+                pieces.Count(p => p.Prefab == DvergrWoodBridge.Pile));
+            Assert.DoesNotContain(pieces, p => p.Kind == StructurePieceKind.Debris);
+            // Planks over the standing middle bays (the end bays keep every plank, the way on from the stairs).
+            for (int j = 0; j < planks; j++)
+            {
+                float a = (j + 0.5f) * DvergrWoodBridge.PlankPitch;
+                int bay = Array.FindIndex(bents, b => b >= a) - 1;
+                if (bay <= 0 || bay >= n - 2 || BridgeLayout.InNavigationGap(c, bents[bay]) || BridgeLayout.InNavigationGap(c, bents[bay + 1])) continue;
+                could++;
+                if (pieces.Any(p => p.Kind == StructurePieceKind.Deck && Mathf.Abs(Along(c, p) - a) < 0.01f)) laid++;
+            }
+        }
+        float survival = (float)laid / could;
+        Assert.True(could > 500, $"only {could} planks sampled");
+        // 31 of 36 (1 - BridgeLayout.DvergrWoodPlankLoss), within the sampling's spread.
+        Assert.InRange(survival, 1f - BridgeLayout.DvergrWoodPlankLoss - 0.04f, 1f - BridgeLayout.DvergrWoodPlankLoss + 0.04f);
+    }
+
     // ------------------------------------------------------ by construction
 
     [Theory]
@@ -119,20 +231,23 @@ public sealed class DvergrWoodBridgeTests : IDisposable
     {
         var (c, low) = Low();
         float deck = BridgeLayout.DeckHeight(c, low);
-        var piles = DvergrWoodBridge.Solve(c, low, seed).Where(p => p.Prefab == DvergrWoodBridge.Pile).ToList();
+        var pieces = DvergrWoodBridge.Solve(c, low, seed);
+        var piles = pieces.Where(p => p.Prefab == DvergrWoodBridge.Pile).ToList();
         Assert.NotEmpty(piles);
         foreach (var column in piles.GroupBy(p => (Mathf.Round(p.Position.x * 100f), Mathf.Round(p.Position.z * 100f))))
         {
             var stack = column.OrderByDescending(p => p.Position.y).ToList();
             float ground = Ground(stack[0], low);
-            // Each pile hangs from the one above (origin at its top, PileLength long), none wholly under the ground,
+            // Each pile stands on the one below (origin at its centre, PileLength long), none wholly under the ground,
             // and the lowest one's foot is in it.
+            float half = DvergrWoodBridge.PileLength * 0.5f;
             for (int i = 1; i < stack.Count; i++) Assert.Equal(stack[i - 1].Position.y - DvergrWoodBridge.PileLength, stack[i].Position.y, 3);
-            Assert.All(stack, p => Assert.True(p.Position.y > ground, $"pile at {p.Position} is wholly under the ground {ground}"));
-            Assert.True(stack[stack.Count - 1].Position.y - DvergrWoodBridge.PileLength <= ground, $"pile column at {stack[0].Position} stops above the ground {ground}");
-            // A standing bent's piles rise past the deck as the pier's do; a stub stops at the waterline.
-            float top = stack[0].Position.y;
-            Assert.True(Mathf.Abs(top - (deck + DvergrWoodBridge.PileAboveDeck)) < 1e-3f || top <= c.WaterLevel + 0.3f + 1e-3f, $"pile top {top}");
+            Assert.All(stack, p => Assert.True(p.Position.y + half > ground, $"pile at {p.Position} is wholly under the ground {ground}"));
+            Assert.True(stack[stack.Count - 1].Position.y - half <= ground, $"pile column at {stack[0].Position} stops above the ground {ground}");
+            // A bent's piles rise past the walking surface as the pier's do; a stair's post stops at its step's foot.
+            float top = stack[0].Position.y + half;
+            Assert.True(Mathf.Abs(top - (deck + DvergrWoodBridge.PileAboveDeck)) < 1e-3f
+                || pieces.Any(s => s.Kind == StructurePieceKind.Stair && Mathf.Abs(s.Position.y - top) < 1e-3f), $"pile top {top}");
         }
     }
 
@@ -149,7 +264,7 @@ public sealed class DvergrWoodBridgeTests : IDisposable
         var standing = new HashSet<int>();
         for (int i = 0; i < bents.Length; i++)
             if (pieces.Any(p => p.Prefab == DvergrWoodBridge.Pile && p.Kind == StructurePieceKind.Post && Mathf.Abs(Along(c, p) - bents[i]) < 1e-2f
-                && p.Position.y > BridgeLayout.DeckHeight(c, low)))
+                && p.Position.y + DvergrWoodBridge.PileLength * 0.5f > BridgeLayout.DeckHeight(c, low)))
                 standing.Add(i);
         Assert.Contains(0, standing);
         Assert.Contains(bents.Length - 1, standing);
@@ -183,32 +298,20 @@ public sealed class DvergrWoodBridgeTests : IDisposable
         {
             var ruined = DvergrWoodBridge.Solve(c, low, s);
             Assert.True(ruined.Count(p => p.Kind == StructurePieceKind.Deck) <= complete.Count(p => p.Kind == StructurePieceKind.Deck));
-            // Every standing piece but the riverbed's debris and stubs is one of the complete bridge's.
-            Assert.All(ruined.Where(p => p.Kind != StructurePieceKind.Debris && !(p.Prefab == DvergrWoodBridge.Pile && p.Position.y < BridgeLayout.DeckHeight(c, low))
-                && p.Prefab != DvergrWoodBridge.Lantern), p => Assert.Contains(P(p), completeSet));
-            Assert.True(ruined.Count(p => p.Prefab == DvergrWoodBridge.Lantern) <= DvergrWoodBridge.MaxLanterns);
+            // Every standing piece is one of the complete bridge's (the kit leaves no stubs or debris: its piles all stand).
+            Assert.All(ruined, p => Assert.Contains(P(p), completeSet));
         }
-        // Somewhere over twelve seeds a plank is missing mid-span, and somewhere a lantern stands.
+        // Somewhere over twelve seeds a plank is missing mid-span.
         Assert.Contains(Enumerable.Range(1, 12), s => DvergrWoodBridge.Solve(c, low, s).Count(p => p.Kind == StructurePieceKind.Deck) < complete.Count(p => p.Kind == StructurePieceKind.Deck));
-        Assert.Contains(Enumerable.Range(1, 40), s => DvergrWoodBridge.Solve(c, low, s).Any(p => p.Prefab == DvergrWoodBridge.Lantern));
     }
 
     [Fact]
-    public void LanternsStandOnPlanksOutsideTheRoadsLane()
+    public void ABridgeCarriesNoLights()
     {
+        // The harbour's lanterns hang from its buildings, not the dock; mist lights wait for the flair work.
         var (c, low) = Low();
         for (int s = 1; s <= 40; s++)
-        {
-            var pieces = DvergrWoodBridge.Solve(c, low, s);
-            foreach (StructurePiece l in pieces.Where(p => p.Prefab == DvergrWoodBridge.Lantern))
-            {
-                Vector2 side = new(-c.Direction.y, c.Direction.x);
-                float across = Mathf.Abs(Vector2.Dot(new Vector2(l.Position.x, l.Position.z) - c.FromBank, side));
-                Assert.InRange(across, BridgeLayout.DeckHalfWidth, DvergrWoodBridge.BeamLength * 0.5f);
-                Assert.Contains(pieces, p => p.Kind == StructurePieceKind.Deck && Mathf.Abs(Along(c, p) - Along(c, l)) < 0.01f);
-                Assert.Equal(BridgeLayout.DeckHeight(c, low), l.Position.y, 3);
-            }
-        }
+            Assert.DoesNotContain(DvergrWoodBridge.Solve(c, low, s), p => p.Prefab.Contains("lantern") || p.Prefab.Contains("demister"));
     }
 
     [Fact]
@@ -234,7 +337,9 @@ public sealed class DvergrWoodBridgeTests : IDisposable
         Assert.Equal(BridgeStructures.Kit.DvergrWood, BridgeStructures.KitFor(c, w));
         float length = BridgeLayout.BuiltLength(c.Width);
         var pieces = DvergrWoodBridge.Solve(c, w, 3);
-        Assert.All(pieces.Where(p => p.Prefab == DvergrWoodBridge.Pile), p => Assert.True(Along(c, p) < 0.01f || Mathf.Abs(Along(c, p) - length) < 0.01f, $"pile at {Along(c, p):F1}"));
+        // (The stairs' posts, outside the deck's ends, stand on the banks.)
+        Assert.All(pieces.Where(p => p.Prefab == DvergrWoodBridge.Pile && Along(c, p) > -0.5f && Along(c, p) < length + 0.5f),
+            p => Assert.True(Along(c, p) < 0.01f || Mathf.Abs(Along(c, p) - length) < 0.01f, $"pile at {Along(c, p):F1}"));
         Assert.DoesNotContain(pieces, p => p.Kind == StructurePieceKind.Debris);
         var stringers = pieces.Where(p => p.Kind == StructurePieceKind.Beam).Select(p => Along(c, p)).Distinct().OrderBy(a => a).ToList();
         Assert.True(stringers.First() - DvergrWoodBridge.BeamLength * 0.5f <= 0.01f && stringers.Last() + DvergrWoodBridge.BeamLength * 0.5f >= length - 0.01f);

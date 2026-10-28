@@ -73,8 +73,13 @@ public static class BridgeLayout
     /// <para>8: a Mistlands bridge under the viaduct floor is built from the Dvergr harbour pier's wooden
     /// pieces (<see cref="DvergrWoodBridge"/>), not the plain wooden kit. A world explored partly under layout 7 keeps the
     /// pieces it has.</para>
+    ///
+    /// <para>9: the Dvergr wood kit on the pieces' measured sizes (planks and stringers 0.8 m
+    /// deep, piles centred), damaged like the vanilla harbour (<see cref="DvergrWoodRuin"/>), on the Mistlands' ford spans
+    /// too, its stair posts in the Dvergr pile, and no lanterns (the harbour's hang from its buildings). A world
+    /// explored partly under layout 8 keeps the pieces it has.</para>
     /// </summary>
-    public const int LayoutVersion = 8;
+    public const int LayoutVersion = 9;
     public const float DeckFreeboard = 0.5f;  // deck at least this far above the water
     public const float PostTopBelowDeck = 0.2f;
     public const float BeamBelowDeck = 0.13f;
