@@ -442,6 +442,84 @@ public static class DvergrViaduct
     {
         s_standing.Clear();
         s_anyStanding = false;
+        lock (s_laid) s_laid.Clear();
+    }
+
+    // ------------------------------------------- between structures
+
+    /// <summary>No viaduct's end within this of another viaduct's end: one vanilla bay (at
+    /// 6895,-880 two viaducts' ends stood 8 m apart at different deck heights, a tiny land link and a 90 degree turn, the
+    /// second's end out of reach). The road crosses that valley another way; a corner landing at deck height is a later
+    /// idea.</summary>
+    public const float EndSpacing = PierSpacing;
+
+    /// <summary>How far past each bank a viaduct's end-approach volume reaches: its most end stairs, then the road's
+    /// levelled apron (StructureEnds).</summary>
+    public static float ApproachReach => BridgeLayout.StairRun * Mathf.CeilToInt(MaxEndStairRise / BridgeLayout.StairRise - 1e-3f) + StructureEnds.ApronLength;
+
+    /// <summary>Half a viaduct's width, its arches and heads included (the course and arches stand 3 m out).</summary>
+    public const float HalfWidth = 3f;
+
+    /// <summary>Viaducts laid this generation, banks only (valley and river alike).</summary>
+    private static readonly List<(Vector2 from, Vector2 to)> s_laid = new();
+
+    /// <summary>Record a viaduct laid this generation, for <see cref="TooClose"/>.</summary>
+    public static void MarkLaid(RoadCrossing crossing)
+    {
+        lock (s_laid) s_laid.Add((crossing.FromBank, crossing.ToBank));
+    }
+
+    private static bool Same((Vector2 from, Vector2 to) x, Vector2 a, Vector2 b) =>
+        (Vector2.Distance(x.from, a) <= 1f && Vector2.Distance(x.to, b) <= 1f) || (Vector2.Distance(x.from, b) <= 1f && Vector2.Distance(x.to, a) <= 1f);
+
+    /// <summary>
+    /// Whether a viaduct from <paramref name="a"/> to <paramref name="b"/> would stand too close to another: one owner of
+    /// the clearance between structures, like stairs against roads. Back to back: an end within <see cref="EndSpacing"/> of
+    /// the other's end. Or in it: its deck and end-approach volume (<see cref="Footprint"/>) overlapping the other's, as an
+    /// 80 m span's arches ran on past its end into a 64 m span's deck at (6895,-880). The same viaduct (a shared crossing) is
+    /// not another. <paramref name="others"/>: the viaducts to keep clear of, else those laid this generation.
+    /// </summary>
+    public static string? TooClose(Vector2 a, Vector2 b, IReadOnlyList<(Vector2 from, Vector2 to)>? others = null)
+    {
+        List<(Vector2 from, Vector2 to)> list;
+        if (others != null) list = new List<(Vector2, Vector2)>(others);
+        else lock (s_laid) { if (s_laid.Count == 0) return null; list = new List<(Vector2, Vector2)>(s_laid); }
+        Vector2[] mine = Footprint(a, b);
+        foreach (var other in list)
+        {
+            if (Same(other, a, b)) continue;
+            foreach (Vector2 end in new[] { a, b })
+                foreach (Vector2 theirs in new[] { other.from, other.to })
+                    if (Vector2.Distance(end, theirs) < EndSpacing - 1e-3f)
+                        return FormattableString.Invariant($"back to back: an end {Vector2.Distance(end, theirs):F0} m from another viaduct's at ({theirs.x:F0}, {theirs.y:F0})");
+            if (Overlap(mine, Footprint(other.from, other.to)))
+                return FormattableString.Invariant($"in another viaduct's deck or approach, ({other.from.x:F0}, {other.from.y:F0}) to ({other.to.x:F0}, {other.to.y:F0})");
+        }
+        return null;
+    }
+
+    /// <summary>A viaduct's deck and end-approach volume on the ground: its line from bank to bank lengthened by
+    /// <see cref="ApproachReach"/> at each end, <see cref="HalfWidth"/> either side. Four corners.</summary>
+    public static Vector2[] Footprint(Vector2 a, Vector2 b)
+    {
+        Vector2 dir = (b - a).normalized, side = new(-dir.y, dir.x);
+        Vector2 s0 = a - dir * ApproachReach, s1 = b + dir * ApproachReach;
+        return new[] { s0 - side * HalfWidth, s1 - side * HalfWidth, s1 + side * HalfWidth, s0 + side * HalfWidth };
+    }
+
+    /// <summary>Two convex quadrilaterals overlap (separating axes on their edges).</summary>
+    private static bool Overlap(Vector2[] p, Vector2[] q)
+    {
+        foreach (Vector2[] poly in new[] { p, q })
+            for (int i = 0; i < poly.Length; i++)
+            {
+                Vector2 e = poly[(i + 1) % poly.Length] - poly[i], axis = new(-e.y, e.x);
+                float pMin = float.MaxValue, pMax = float.MinValue, qMin = float.MaxValue, qMax = float.MinValue;
+                foreach (Vector2 v in p) { float d = Vector2.Dot(v, axis); pMin = Mathf.Min(pMin, d); pMax = Mathf.Max(pMax, d); }
+                foreach (Vector2 v in q) { float d = Vector2.Dot(v, axis); qMin = Mathf.Min(qMin, d); qMax = Mathf.Max(qMax, d); }
+                if (pMax <= qMin + 1e-4f || qMax <= pMin + 1e-4f) return false;
+            }
+        return true;
     }
 
     /// <summary>Mark the cells under a viaduct closed to road, but for its two bank cells.</summary>

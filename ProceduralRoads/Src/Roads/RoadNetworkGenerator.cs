@@ -1654,6 +1654,8 @@ public static partial class RoadNetworkGenerator
             roadNumber = ++m_roadsGeneratedCount;
         }
         foreach (var c in crossings)
+            if (!c.Shared && c.Kind == CrossingKind.Bridge && DvergrViaduct.Applies(c, GenerationWorld)) DvergrViaduct.MarkLaid(c);
+        foreach (var c in crossings)
         {
             if (!c.ValleyJump || c.Shared) continue;
             DvergrViaduct.MarkStanding(c);

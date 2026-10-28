@@ -395,7 +395,8 @@ public class RoadPathfinder
             // the exact start, not that cell's centre, so the jump could not be found on it again.
             for (int d = 0; Viaducts && Bridges && currentPos != startGrid && d < ViaductDirections; d++)
             {
-                if (!TryGetViaduct(currentPos, d, out Vector2i landing, out float jumpCost) || closedSet.Contains(landing))
+                if (!TryGetViaduct(currentPos, d, out Vector2i landing, out float jumpCost) || closedSet.Contains(landing)
+                    || !ClearOfJumpsBefore(currentPos, landing, cameFrom, byViaduct))
                     continue;
                 float tentativeG = gCosts[currentPos] + jumpCost;
                 if (!gCosts.TryGetValue(landing, out float existingG) || tentativeG < existingG)
@@ -643,7 +644,8 @@ public class RoadPathfinder
 
             for (int d = 0; Viaducts && Bridges && currentPos != startGrid && d < ViaductDirections; d++)
             {
-                if (!TryGetViaduct(currentPos, d, out Vector2i landing, out float jumpCost) || closedSet.Contains(landing))
+                if (!TryGetViaduct(currentPos, d, out Vector2i landing, out float jumpCost) || closedSet.Contains(landing)
+                    || !ClearOfJumpsBefore(currentPos, landing, cameFrom, byViaduct))
                     continue;
                 float tentativeG = gCosts[currentPos] + jumpCost;
                 if (!gCosts.TryGetValue(landing, out float existingG) || tentativeG < existingG)
@@ -1122,6 +1124,9 @@ public class RoadPathfinder
         (Vector2i to, float price) = found.Value;
         if (m_noViaducts.Count > 0 && m_noViaducts.Contains((from, to))) return false;
         Vector2 a = GridToWorld(from), b = GridToWorld(to);
+        // Clear of the viaducts other roads laid (DvergrViaduct.TooClose, the one owner): never back to back, nor in one's
+        // deck or approach. A shared viaduct (both banks the same) is the same structure.
+        if (DvergrViaduct.TooClose(a, b) != null) return false;
         if (RoadSiteProtection.BlocksSegment(a, b, SiteClearance, m_searchStart, m_searchEnd)) return false;
         // Nothing of the network under the deck: another road, a staircase or another viaduct.
         float length = Vector2.Distance(a, b);
@@ -1137,6 +1142,30 @@ public class RoadPathfinder
         cost = price;
         if (OnExistingRoad(a) && OnExistingRoad(b)) cost *= RoadConstants.SharedCrossingCostFraction;
         return true;
+    }
+
+    /// <summary>How far back along the search's own path a viaduct jump is checked against the ones before it.</summary>
+    private const float JumpLookBack = 64f;
+
+    /// <summary>
+    /// A jump from <paramref name="from"/> to <paramref name="landing"/> clear of the viaducts earlier on the same path
+    /// (DvergrViaduct.TooClose, the one owner of the clearance between structures): walked back along it up to
+    /// <see cref="JumpLookBack"/>, every cell reached by a jump is an earlier viaduct's far end (two viaducts were
+    /// seen on one road, Start to MountainCave02).
+    /// </summary>
+    private bool ClearOfJumpsBefore(Vector2i from, Vector2i landing, Dictionary<Vector2i, Vector2i> cameFrom, HashSet<Vector2i> byViaduct)
+    {
+        if (byViaduct.Count == 0) return true;
+        List<(Vector2, Vector2)>? before = null;
+        Vector2 start = GridToWorld(from);
+        Vector2i at = from;
+        for (int guard = 0; guard < 64 && Vector2.Distance(GridToWorld(at), start) <= JumpLookBack; guard++)
+        {
+            if (!cameFrom.TryGetValue(at, out Vector2i prev)) break;
+            if (byViaduct.Contains(at)) (before ??= new List<(Vector2, Vector2)>()).Add((GridToWorld(prev), GridToWorld(at)));
+            at = prev;
+        }
+        return before == null || DvergrViaduct.TooClose(start, GridToWorld(landing), before) == null;
     }
 
     private (Vector2i landing, float cost)? ViaductOverTerrain(Vector2i from, Vector2Int step)
