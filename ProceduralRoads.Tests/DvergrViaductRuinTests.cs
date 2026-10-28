@@ -31,7 +31,8 @@ public sealed class DvergrViaductRuinTests : IDisposable
     // ---------------------------------------------------------------- ruin
 
     /// <summary>The vanilla Mistlands_Viaduct1 (24 modules) is missing 6 % of its iron floors, 30 % of its deck
-    /// course and 46 % of its arches, with one module wholly open. Ours, over 40 seeds of a 96 m valley viaduct: each within a
+    /// course and 46 % of its arches, with one module wholly open; ours takes the course and arches halfway back toward
+    /// a light ruin (the vanilla rate looked like too much missing). Ours, over 40 seeds of a 96 m valley viaduct: each within a
     /// vanilla-like range, the iron showing through the course, and now and then a whole module open, never two running.</summary>
     [Fact]
     public void RuinIsInAVanillaLikeRangeWithTheIronShowingAndOnlyJumpableGaps()
@@ -70,10 +71,12 @@ public sealed class DvergrViaductRuinTests : IDisposable
         }
         float Missing(int have, int all) => 1f - have / (float)all;
         Assert.InRange(Missing(floors, allFloors), 0.03f, 0.12f);
-        Assert.InRange(Missing(course, allCourse), 0.2f, 0.4f);
-        Assert.InRange(Missing(arches, allArches), 0.3f, 0.6f);
-        Assert.InRange(holes, 1, 40 * 3);
-        Assert.True(ironShowing > 40, $"the iron floor shows through the course on {ironShowing} module(s) over 40 seeds");
+        // Halfway between a light and a heavy ruin: the course about 17 % gone
+        // (light about 4 %, heavy 30 %), the arches about 32 % (19 %, 45 %).
+        Assert.InRange(Missing(course, allCourse), 0.12f, 0.23f);
+        Assert.InRange(Missing(arches, allArches), 0.24f, 0.40f);
+        Assert.InRange(holes, 1, 40 * 2);
+        Assert.True(ironShowing > 20, $"the iron floor shows through the course on {ironShowing} module(s) over 40 seeds");
     }
 
     // ------------------------------------------------- between structures

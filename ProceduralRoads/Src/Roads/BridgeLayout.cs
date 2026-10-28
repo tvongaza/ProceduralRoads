@@ -65,8 +65,12 @@ public static class BridgeLayout
     /// <para>6: a viaduct's deck height and end stairs come from the road's arrival (<see cref="StructureEnds"/>),
     /// its navigation bay is two vanilla bays wide, and its ruin is calibrated on the vanilla viaduct. A world explored
     /// partly under layout 5 keeps the pieces it has.</para>
+    ///
+    /// <para>7: a viaduct's ruin halfway back toward layout 5's, every piece damaged like vanilla's locations, and
+    /// its ends met by the road as a stretch of road the structure replaces (StructureEnds). A world explored partly under
+    /// layout 6 keeps the pieces it has.</para>
     /// </summary>
-    public const int LayoutVersion = 6;
+    public const int LayoutVersion = 7;
     public const float DeckFreeboard = 0.5f;  // deck at least this far above the water
     public const float PostTopBelowDeck = 0.2f;
     public const float BeamBelowDeck = 0.13f;

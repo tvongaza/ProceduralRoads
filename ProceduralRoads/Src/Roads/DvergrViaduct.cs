@@ -145,13 +145,17 @@ public static class DvergrViaduct
     // (30 %), 21 of 46 arches (46 %), and one whole module open (floors and course), a 2 m gap a player jumps.
     /// <summary>Iron floors: about 6 % gone on average (vanilla 6 %).</summary>
     public const float DeckRuinShare = 0.15f;
-    /// <summary>The marble course on the floors: about 30 % gone (vanilla 30 %), the iron showing through.</summary>
-    public const float CourseRuinShare = 0.8f;
-    /// <summary>Arches: about 45 % gone (vanilla 46 %).</summary>
-    public const float ArchRuinShare = 1.2f;
-    /// <summary>A whole module open, both floors and the course over them: about 4 % of modules (vanilla 1 of 24). Never two
+    // Too many missing blocks looked wrong on the 80 m viaduct, so each rate is halfway between a light ruin (course share
+    // 0.15 with the middle slot never taken, about 4 % gone; arches 0.5, about 19 %; no whole module open) and a heavy one
+    // (course 0.8, 30 %; arches 1.2, 45 %; holes 0.1). Floors were the same in both. The middle slot still goes,
+    // so the iron shows through in places.
+    /// <summary>The marble course on the floors: about 17 % gone (halfway between 4 % and 30 %).</summary>
+    public const float CourseRuinShare = 0.45f;
+    /// <summary>Arches: about 32 % gone (halfway between 19 % and 45 %).</summary>
+    public const float ArchRuinShare = 0.85f;
+    /// <summary>A whole module open, both floors and the course over them: about 2 % of modules (half of the heavy ruin's 0.1). Never two
     /// running, so every gap is one module, 2 m, which a player jumps.</summary>
-    public const float HoleRuinShare = 0.1f;
+    public const float HoleRuinShare = 0.05f;
 
     /// <summary>Heights relative to the deck surface D (the course's top).</summary>
     public const float FloorDrop = 2f, CourseDrop = 1f, ArchRise = 1f;
