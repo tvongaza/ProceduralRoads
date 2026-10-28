@@ -208,6 +208,48 @@ public sealed class StructureStretchTests : IDisposable
         }
     }
 
+    /// <summary>A road straight across a valley on a viaduct, then a staircase beginning 5 m past the far end's meeting
+    /// point at <paramref name="stairHeight"/>: planned as the generator plans it.</summary>
+    private (RoadCrossing viaduct, List<RoadSpatialGrid.PlannedPath>? plans) ViaductThenStairs(RimValley world, float stairHeight)
+    {
+        _scope.WithWorld(world);
+        float bank = world.Rim + 1f;
+        RoadCrossing c = DvergrViaduct.ValleyCrossing(new Vector2(-bank, 0f), new Vector2(bank, 0f), world, out string why)!;
+        Assert.True(c != null, why);
+        var (_, far) = DvergrViaduct.Ends(c!, world);
+        Vector2 foot = far.Meet - far.Up * 5f, top = foot - far.Up * 10f;
+        var path = new List<Vector2> { new(-100f, 0f), new(-60f, 0f), new(-bank, 0f), new(bank, 0f), foot, top, new(100f, 0f) };
+        c!.FromIndex = 2; c.ToIndex = 3;
+        var stairs = new List<RoadStairSpan> { new() { FromIndex = 4, ToIndex = 5, FromPoint = foot, ToPoint = top, FromHeight = stairHeight, ToHeight = stairHeight } };
+        return (c, RoadNetworkGenerator.PlanRoadPathWithCrossings(path, new List<RoadCrossing> { c }, 4f, null, null, stairs));
+    }
+
+    /// <summary>
+    /// A viaduct's south end on a test world (-3969, 63.0, -5470): the stairs ran up to the bridge with a tiny bit of
+    /// road between them, a road stub, also not level. The viaduct's deck
+    /// ended, then a few metres of tilted paved road, then a 146-piece staircase. A stretch of road shorter than
+    /// StructureEnds.StubLength between a viaduct's end and a staircase is one level landing at the joining height; a
+    /// staircase 2 m under the deck 5 m on is not, and the road is not planned with that viaduct (it is searched again
+    /// without it). Within a step it is planned, the landing level.
+    /// </summary>
+    [Fact]
+    public void NoStubOfRoadBetweenAViaductAndAStaircase()
+    {
+        var world = new RimValley();
+        var (_, stubbed) = ViaductThenStairs(world, world.Top - 2f);
+        Assert.True(stubbed == null, "a tilted stub of road was planned between the viaduct's end and the staircase 2 m under it");
+        Assert.Equal("a stub of road between two structures", RoadSpatialGrid.LastRefusal);
+
+        RoadSpatialGrid.LastRefusal = null;
+        var (c, landing) = ViaductThenStairs(world, world.Top - 0.3f);
+        Assert.True(landing != null, RoadSpatialGrid.LastRefusal);
+        var (_, far) = DvergrViaduct.Ends(c, world);
+        foreach (var r in landing!)
+            for (int i = 0; i < r.Points.Count; i++)
+                if (Vector2.Distance(r.Points[i], far.Meet) <= 5f)
+                    Assert.InRange(r.Heights[i], world.Top - 0.31f, world.Top + 0.01f);
+    }
+
     /// <summary>No stored road point under the deck (between its two edges, within its half width) lower than the deck, but
     /// under the joining pieces at their meeting height.</summary>
     internal static void AssertNoRoadUnderTheDeck(RoadCrossing c, WorldGenerator world)

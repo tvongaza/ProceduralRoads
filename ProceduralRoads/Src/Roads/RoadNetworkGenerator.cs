@@ -1465,7 +1465,8 @@ public static partial class RoadNetworkGenerator
             // The floor on the finished ground (DvergrViaduct.TallestPierOnFinishedGround): a road's fill under a pier.
             if (unmet == null && plans != null && UnderTheFloor(plans, crossings) is RoadCrossing low) { unmet = low; at = low.Center; }
             var jumps = unmet != null ? (unmet.ValleyJump ? new List<RoadCrossing> { unmet } : new List<RoadCrossing>())
-                : plans == null ? crossings.FindAll(c => c.ValleyJump && !c.Shared) : new List<RoadCrossing>();
+                : plans == null ? (LastStubBetween is RoadCrossing stubbed && crossings.Contains(stubbed) ? new List<RoadCrossing> { stubbed } : crossings.FindAll(c => c.ValleyJump && !c.Shared))
+                : new List<RoadCrossing>();
             if (jumps.Count > 0)
             {
                 foreach (RoadCrossing c in jumps) finder.BanViaduct(c.FromBank, c.ToBank);
@@ -2502,6 +2503,10 @@ public static partial class RoadNetworkGenerator
     public static int ViaductsLaid => m_viaductsLaid;
 
 
+    /// <summary>The viaduct the last plan on this thread was refused with for a stub of road between it and another
+    /// structure (StructureEnds.IsStub), or null.</summary>
+    [System.ThreadStatic] internal static RoadCrossing? LastStubBetween;
+
     private static List<RoadSpatialGrid.PlannedPath>? PlanPieces(
         List<Vector2> path, List<RoadCrossing> crossings, float width, float? startGround, float? endGround,
         List<RoadStairSpan>? stairs = null)
@@ -2512,6 +2517,8 @@ public static partial class RoadNetworkGenerator
         // A piece's ends may be held at a height: the road's own ends where they
         // meet a place, and the ends of a staircase, which the road meets level.
         var pieces = new List<(List<Vector2> points, bool followTerrain, float minHeight, float? startHeight, float? endHeight)>();
+        var between = new List<(int piece, RoadCrossing? from, RoadCrossing? to)>();
+        LastStubBetween = null;
 
         // What the road is cut at, in path order: river crossings and staircases.
         var gaps = new List<(int from, int to, Vector2 fromPoint, Vector2 toPoint, Vector2? fromLand, Vector2? toLand, float? fromHeight, float? toHeight, RoadCrossing? crossing)>();
@@ -2590,6 +2597,8 @@ public static partial class RoadNetworkGenerator
         {
             int cursor = 0;
             Vector2? resumeAt = null, resumeLand = null, resumeUp = null, resumeBank = null, resumeJoint = null;
+            // What a piece runs from and to, where both are structures (a staircase, or a bridge end the owner meets).
+            RoadCrossing? resumeCrossing = null;
             StructureEnds.End? resumeEnd = null;
             float? resumeHeight = null;
             // A staircase ends where its layout ended, up to a few metres from the
@@ -2639,7 +2648,11 @@ public static partial class RoadNetworkGenerator
                 if (endHeight.HasValue && gap.crossing != null && ups.TryGetValue(gap.crossing, out var joinEnds) && land.Count > 0)
                     land.Add(joinEnds.near.Joint);
                 if (land.Count >= 2)
+                {
                     pieces.Add((land, false, landFloor, resumeHeight, endHeight));
+                    if (resumeHeight.HasValue && endHeight.HasValue)
+                        between.Add((pieces.Count - 1, resumeCrossing, gap.crossing != null && ups.ContainsKey(gap.crossing) ? gap.crossing : null));
+                }
 
                 // A bridge or a spanned ford is left to its pieces: nothing is
                 // leveled or painted over the water. Nor on a staircase.
@@ -2662,6 +2675,7 @@ public static partial class RoadNetworkGenerator
                 resumeAt = gap.toPoint;
                 resumeLand = gap.toLand;
                 resumeHeight = gap.toHeight;
+                resumeCrossing = gap.crossing != null && ups.ContainsKey(gap.crossing) ? gap.crossing : null;
                 resumeOnStair = gap.crossing == null;
                 resumeUp = gap.crossing != null && ups.TryGetValue(gap.crossing, out var resumeEnds) ? resumeEnds.far.Up : null;
                 resumeBank = gap.crossing?.ToBank;
@@ -2693,6 +2707,25 @@ public static partial class RoadNetworkGenerator
 
         if (pieces.Count == 0)
             return null;
+
+        // Between two structures (a viaduct's end and a staircase, or two staircases), no stub of road (at -3969, -5470 the stairs
+        // ran up to the bridge with a tiny bit of road between them, also not level). A stretch shorter than StructureEnds.StubLength is one level landing at the joining height: within a
+        // step (StepTolerance) of both it is that; further apart, the viaduct is not built with this road, which is searched
+        // again without it (GenerateRoadCore). Two staircases of one road keep their own meeting (StairChain).
+        foreach (var (index, from, to) in between)
+        {
+            RoadCrossing? viaduct = from != null && from.ValleyJump && !from.Shared ? from : to != null && to.ValleyJump && !to.Shared ? to : null;
+            // A river viaduct's kit is its crossing's (it stands whatever the road does), and a shared one is its first road's.
+            if (viaduct == null) continue;
+            var piece = pieces[index];
+            if (StructureEnds.IsStub(piece.points, piece.startHeight!.Value, piece.endHeight!.Value) is string stub)
+            {
+                RoadSpatialGrid.LastRefusal = "a stub of road between two structures";
+                LastStubBetween = viaduct;
+                if (RoadsLog) Log.LogDebug(FormattableString.Invariant($"[VIADUCT] {stub} at ({piece.points[0].x:F1}, {piece.points[0].y:F1}); the viaduct {viaduct.FromBank} -> {viaduct.ToBank} is not built with this road"));
+                return null;
+            }
+        }
 
         // Only the road's own two ends meet a location. Every join in between
         // is a river bank, which meets the natural ground as it always did, or
