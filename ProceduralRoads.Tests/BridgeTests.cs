@@ -919,6 +919,68 @@ public class BridgeTests
         finally { TearDownGeneration(); }
     }
 
+    /// <summary>The rock pass's zone gate asks the structure plans, not the zone's road points or its neighbours: a
+    /// zone holding only a bridge's middle (no road, far from both banks' zones' centres) is looked at; a zone
+    /// NetworkCutoff leaves alone is not (cliff_mistlands2 rocks were left through a 103 m bridge).</summary>
+    [Fact]
+    public void TheRockPassLooksAtEveryZoneAStructureIsIn_ExceptCutoffZones()
+    {
+        var world = new SyntheticWorld { HasRiver = true, HasMountain = false };
+        using var worldScope = new ValheimWorldScope().WithWorld(world).WithZoneSystem();
+        RoadNetworkGenerator.Reset();
+        SetPathfinder(Pathfinder(world, true));
+        try
+        {
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-300f, 0f), 0f, new Vector2(400f, 0f), 0f, 4f, "Cross river"));
+            var crossing = Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
+            Assert.Equal(CrossingKind.Bridge, crossing.Kind);
+            Vector2 mid = (crossing.FromBank + crossing.ToBank) * 0.5f;
+            var midZone = ZoneSystem.GetZone(new Vector3(mid.x, 0f, mid.y));
+            Vector3 midCentre = ZoneSystem.GetZonePos(midZone);
+
+            // Only a structure makes this zone worth a look when it carries no road of its own: a zone with the
+            // bridge in reach is looked at, a distant one is not.
+            Assert.True(StructurePlans.AnyStructureNear(new Vector3(mid.x, 0f, mid.y), RoadRockPolicy.ZoneReach));
+            Assert.True(RoadRockPolicy.ZoneNeedsLook(midZone, midCentre));
+            var far = new Vector2s(midZone.x + 40, midZone.y + 40);
+            Assert.False(RoadRockPolicy.ZoneNeedsLook(far, ZoneSystem.GetZonePos(far)));
+
+            // A bridge's deck points are published through the plans for the zone's own reach, with no road point.
+            var deck = StructurePlans.ClearancesNear(midCentre, RoadRockPolicy.ZoneReach);
+            Assert.NotEmpty(deck);
+
+            // The same zone, left as the players found it: its rocks stay.
+            NetworkCutoff.SnapshotWorld(new[] { midZone });
+            NetworkCutoff.UseNewNetwork();
+            try { Assert.False(RoadRockPolicy.ZoneNeedsLook(midZone, midCentre)); }
+            finally { NetworkCutoff.Forget(); }
+            Assert.True(RoadRockPolicy.ZoneNeedsLook(midZone, midCentre));
+        }
+        finally { TearDownGeneration(); }
+    }
+
+    /// <summary>A ford built as a footbridge has a deck too: its clearances come through the plans like a bridge's.</summary>
+    [Fact]
+    public void ASpannedFordPublishesItsDeckClearance()
+    {
+        var world = new GullyWorld();
+        using var scope = new ValheimWorldScope().WithWorld(world);
+        RoadNetworkGenerator.Reset();
+        SetPathfinder(Pathfinder(world, true));
+        RoadCrossingDetector.SetFordStyleWeights(0f, 0f, 1f);
+        try
+        {
+            Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(80f, 0f), 0f, 4f, "ford"));
+            var crossing = Assert.Single(RoadNetworkGenerator.GetRoadCrossings());
+            Assert.Equal(FordStyle.Span, crossing.Style);
+            Vector2 mid = (crossing.FromBank + crossing.ToBank) * 0.5f;
+            var deck = StructurePlans.ClearancesNear(new Vector3(mid.x, 0f, mid.y), 10f);
+            Assert.NotEmpty(deck);
+            Assert.All(deck, c => Assert.True(c.WholeOnly));
+        }
+        finally { TearDownGeneration(); }
+    }
+
     [Fact]
     public void ARespawnRebuildsEveryGeneratedZone_NotOnlyTheOnesWithATerrainMesh()
     {

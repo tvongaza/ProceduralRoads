@@ -50,6 +50,19 @@ public static class RoadRockPolicy
     /// </summary>
     public static bool MayTouch(UnityEngine.Vector3 position) => !NetworkCutoff.Excludes(ZoneSystem.GetZone(position));
 
+    /// <summary>A zone is 64 m across: 46 m from its centre reaches its corners.</summary>
+    public const float ZoneReach = 46f;
+
+    /// <summary>
+    /// Whether the pass looks at a zone at all: it has road, or ANY structure (a bridge or viaduct deck, wooden or Dvergr,
+    /// a staircase, a spanned ford) within the reach of its probe -- the same question the probe then asks
+    /// (<see cref="StructurePlans.ClearancesNear"/>), so no structure is left to be "reached from its banks" -- and the
+    /// zone is not one NetworkCutoff leaves as the players found it.
+    /// </summary>
+    public static bool ZoneNeedsLook(Vector2s zone, UnityEngine.Vector3 zoneCentre) =>
+        MayTouch(zoneCentre) &&
+        (RoadSpatialGrid.GetRoadPointsInZone(zone).Count > 0 || StructurePlans.AnyStructureNear(zoneCentre, ZoneReach));
+
     /// <summary>Whether this setting carves rocks rather than removing them whole.</summary>
     public static bool Carves(RockClearingMode mode) => mode == RockClearingMode.Carve;
 

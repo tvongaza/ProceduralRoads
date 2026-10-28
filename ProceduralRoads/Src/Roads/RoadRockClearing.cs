@@ -34,9 +34,6 @@ public static class RoadRockClearing
 
     public static void Reset() { s_next = 0f; s_cursor = 0; s_done.Clear(); s_retryAt.Clear(); }
 
-    private static bool HasStairs(Vector2s zone) =>
-        StructurePlans.PlanFor(zone)?.Exists(p => p.Kind >= StructurePieceKind.StairStep) == true;
-
     public static void Tick()
     {
         RoadRockStats.MaybeLog();
@@ -60,11 +57,9 @@ public static class RoadRockClearing
             // A distant low-detail heightmap has no collider and no objects: nothing to probe.
             if (candidate.IsDistantLod) continue;
             zone = ZoneSystem.GetZone(candidate.transform.position);
-            // A zone with a staircase is looked at even with no road in it; bridge
-            // decks are reached from their banks' zones, as they always were.
-            // A zone explored before the road network keeps its rocks (NetworkCutoff).
-            if ((RoadSpatialGrid.GetRoadPointsInZone(zone).Count == 0 && !HasStairs(zone)) ||
-                !RoadRockPolicy.MayTouch(candidate.transform.position)) { MarkDone(candidate, version); continue; }
+            // A zone with road or any structure in reach is looked at; a zone explored before
+            // the road network keeps its rocks (NetworkCutoff).
+            if (!RoadRockPolicy.ZoneNeedsLook(zone, candidate.transform.position)) { MarkDone(candidate, version); continue; }
             // Not yet: every saved object round the zone must have its instance
             // (the game creates them over several frames) and the terrain its
             // collider. Looked at again when it is ready; probing it before only
@@ -85,8 +80,7 @@ public static class RoadRockClearing
         long sync = RoadRockStats.Now;
         Physics.SyncTransforms();
         RoadRockStats.SyncTicks += RoadRockStats.Now - sync;
-        // A zone is 64 m across: 46 m from its centre reaches its corners.
-        var lines = RoadRockProbe.Run(map.transform.position, 46f, apply: true, sites: false, mist: true, cliffs: true,
+        var lines = RoadRockProbe.Run(map.transform.position, RoadRockPolicy.ZoneReach, apply: true, sites: false, mist: true, cliffs: true,
             partial: true, carve: RoadRockPolicy.Carves(Mode), out int cleared);
         // Done only when the ground answered at every road point and nothing was
         // left for another peer that owns it.

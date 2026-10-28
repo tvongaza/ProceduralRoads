@@ -68,15 +68,22 @@ public sealed class BridgeStructures : IStructureSource
         var c = new Vector2(centre.x, centre.z);
         foreach (var crossing in RoadNetworkGenerator.GetRoadCrossings())
         {
-            if (crossing.Kind != CrossingKind.Bridge) continue;
+            // Every bridge, and a ford built as a footbridge.
+            bool span = crossing.Kind == CrossingKind.Ford && crossing.Style == FordStyle.Span;
+            if (crossing.Kind != CrossingKind.Bridge && !span) continue;
             Vector2 a = crossing.FromBank, b = crossing.ToBank;
             float length = Vector2.Distance(a, b);
             if (length < 1f) continue;
             // Nearest point of the span to the probe centre.
             float t0 = Mathf.Clamp01(Vector2.Dot(c - a, b - a) / (length * length));
             if (Vector2.Distance(a + (b - a) * t0, c) > radius) continue;
-            if (!RoadSpatialGrid.TryGetRoadHeightWithin(a, 4f, out float ha)) ha = RoadConstants.SeaLevel + BridgeLayout.DeckFreeboard;
-            if (!RoadSpatialGrid.TryGetRoadHeightWithin(b, 4f, out float hb)) hb = ha;
+            float ha, hb;
+            if (span && WorldGenerator.instance != null) ha = hb = BridgeLayout.SpanDeckHeight(crossing, WorldGenerator.instance);
+            else
+            {
+                if (!RoadSpatialGrid.TryGetRoadHeightWithin(a, 4f, out ha)) ha = RoadConstants.SeaLevel + BridgeLayout.DeckFreeboard;
+                if (!RoadSpatialGrid.TryGetRoadHeightWithin(b, 4f, out hb)) hb = ha;
+            }
             int n = Mathf.CeilToInt(length);
             for (int i = 0; i <= n; i++)
             {

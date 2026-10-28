@@ -230,6 +230,9 @@ public static class StructurePlans
         return clearances;
     }
 
+    /// <summary>Whether any structure of any source needs rock cleared within reach of a point.</summary>
+    public static bool AnyStructureNear(Vector3 centre, float radius) => ClearancesNear(centre, radius).Count > 0;
+
     private static void EnsurePlans()
     {
         if (RoadLifecycleManager.WorkersOwnWorld) throw new InvalidOperationException("Road generation is in progress.");
