@@ -273,6 +273,28 @@ public sealed class StructureStretchTests : IDisposable
         Assert.True(Near(path[2]), "no road from the staircase's end to the junction");
     }
 
+    /// <summary>
+    /// A good case that must not change: the biggest Mistlands staircase on a test world (163 + 130 pieces, (6704,
+    /// 2488) -> (6680, 2440) -> (6648, 2416)), whose stair-to-stair join is StairChain's. Two staircases of
+    /// one road with a short stretch between them at different heights are no stub for the structure-end owner: the road is
+    /// planned between them as before, with no refusal.
+    /// </summary>
+    [Fact]
+    public void TwoStaircasesOfOneRoadKeepTheirOwnJoin()
+    {
+        var world = new RimValley();
+        _scope.WithWorld(world);
+        var path = new List<Vector2> { new(-150f, 0f), new(-140f, 0f), new(-125f, 0f), new(-120f, 0f), new(-105f, 0f), new(-90f, 0f) };
+        var stairs = new List<RoadStairSpan>
+        {
+            new() { FromIndex = 1, ToIndex = 2, FromPoint = path[1], ToPoint = path[2], FromHeight = world.Top, ToHeight = world.Top },
+            new() { FromIndex = 3, ToIndex = 4, FromPoint = path[3], ToPoint = path[4], FromHeight = world.Top + 1f, ToHeight = world.Top },
+        };
+        var plans = RoadNetworkGenerator.PlanRoadPathWithCrossings(path, new List<RoadCrossing>(), 4f, null, null, stairs);
+        Assert.True(plans != null, RoadSpatialGrid.LastRefusal);
+        Assert.Contains(plans!, r => r.Points.Any(p => Vector2.Distance(p, path[2]) <= 0.75f) && r.Points.Any(p => Vector2.Distance(p, path[3]) <= 0.75f));
+    }
+
     // ---------------------------------------------------------------- on the road as built
 
     /// <summary>
