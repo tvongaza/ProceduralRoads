@@ -14,9 +14,10 @@ namespace ProceduralRoads;
 /// (97, 41 and 17 m waves, weighted 0.5/0.33/0.17), phased by where the road
 /// starts, so no two roads sway alike and nothing repeats: a repeating
 /// period is noticed. It is at most <see cref="Amplitude"/> metres,
-/// scaled by the biome (the meander's table: none in mountains or Mistlands)
-/// and faded out on climbs (by 0.12 grade), in the first and last 24 m, and
-/// wherever the swayed point would be wet or inside a site. The shaped road
+/// scaled by the biome (the meander's table: none in mountains or Mistlands),
+/// eased on climbs (full up to 0.12 grade, then down to <see cref="SlopeFloor"/>
+/// of it at the road's grade cap, never to nothing), faded in over the first
+/// and last 24 m, and wherever the swayed point would be wet or inside a site. The shaped road
 /// then passes every check any road does; if it is refused, the road is
 /// planned again without the sway. Settable for tests; 0 is no sway.
 /// </summary>
@@ -31,9 +32,32 @@ public static class RoadWiggle
     public const float EndFade = 24f;
     /// <summary>Distance over which the sway fades back in after a stretch shared with another road, metres.</summary>
     public const float ShareFade = 16f;
-    /// <summary>Ground grade along the road at which the sway has faded out. Validation switch
+    /// <summary>Ground grade along the road up to which the sway is at full strength; above it
+    /// the sway eases down to <see cref="SlopeFloor"/> at the grade cap. Validation switch
     /// WIGGLE_FLAT.</summary>
     public static readonly float Flat = DebugSwitches.Number("WIGGLE_FLAT", 0.12f, 0.02f, 1f);
+
+    /// <summary>The share of the sway kept at the road's grade cap, and beyond it: a reduced
+    /// sway on slopes instead of switching it off.
+    /// The sway used to fade out completely by <see cref="Flat"/>, which left roads dead
+    /// straight on every steep slope (ground falling 56.0, 52.6, 50.5, 47.9 every 10 m, about
+    /// 0.27 grade).</summary>
+    public const float SlopeFloor = 0.4f;
+
+    /// <summary>
+    /// The share of the sway kept on ground of this grade: 1 up to <see cref="Flat"/>, then
+    /// falling in a straight line to <see cref="SlopeFloor"/> at <paramref name="cap"/>, and
+    /// <see cref="SlopeFloor"/> beyond it. Never zero. A cap of 0 means no cap and takes the
+    /// default one.
+    /// </summary>
+    public static float GradeFactor(float grade, float cap)
+    {
+        if (cap <= 0f) cap = RoadConstants.DefaultMaxRoadGrade;
+        grade = Mathf.Abs(grade);
+        if (grade <= Flat) return 1f;
+        if (cap <= Flat || grade >= cap) return SlopeFloor;
+        return Mathf.Lerp(1f, SlopeFloor, (grade - Flat) / (cap - Flat));
+    }
 
     private static readonly (float wave, float weight)[] Octaves = { (97f, 0.5f), (41f, 0.33f), (17f, 0.17f) };
 
@@ -94,7 +118,7 @@ public static class RoadWiggle
             float along = i * Spacing;
             float fade = Mathf.Clamp01(Mathf.Min(along, total - along) / EndFade);
             float grade = Mathf.Abs(ground(even[i + 1]) - ground(even[i - 1])) / (2f * Spacing);
-            fade *= Mathf.Clamp01(1f - grade / Flat);
+            fade *= GradeFactor(grade, RoadGrade.Configured);
             fade *= RoadPathfinder.MeanderBiome(biome(p));
             fade *= shareFade[i];
             Vector2 q = p + across * (Amplitude * fade * Sway(along, phase));

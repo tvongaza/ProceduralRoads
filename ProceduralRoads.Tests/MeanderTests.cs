@@ -65,4 +65,31 @@ public class MeanderTests
         var slight = new System.Collections.Generic.List<UnityEngine.Vector2> { new(0, 0), new(10, 0.4f), new(20, 0) };
         Assert.True(RoadWiggle.NoMoreEarth(slight, level, plain, level, ground));
     }
+
+    [Fact]
+    public void TheSwayEasesOnSlopesButNeverSwitchesOff()
+    {
+        float cap = 0.35f, flat = RoadWiggle.Flat, floor = RoadWiggle.SlopeFloor;
+        Assert.Equal(1f, RoadWiggle.GradeFactor(0f, cap));
+        Assert.Equal(1f, RoadWiggle.GradeFactor(flat, cap));
+        float mid = RoadWiggle.GradeFactor((flat + cap) / 2f, cap);
+        Assert.InRange(mid, floor + 0.01f, 0.99f);
+        Assert.Equal((1f + floor) / 2f, mid, 3);
+        Assert.Equal(floor, RoadWiggle.GradeFactor(cap, cap), 4);
+        Assert.Equal(floor, RoadWiggle.GradeFactor(cap + 0.5f, cap), 4);
+        // Falling ground counts like rising ground; no cap takes the default.
+        Assert.Equal(mid, RoadWiggle.GradeFactor(-(flat + cap) / 2f, cap), 4);
+        Assert.Equal(RoadWiggle.GradeFactor(0.27f, RoadConstants.DefaultMaxRoadGrade), RoadWiggle.GradeFactor(0.27f, 0f));
+        // A steep slope, about 0.27 grade, keeps a real share of the sway.
+        Assert.True(RoadWiggle.GradeFactor(0.27f, cap) > 0.5f);
+        // Monotone non-increasing, never below the floor, deterministic.
+        float prev = 2f;
+        for (int i = 0; i <= 100; i++)
+        {
+            float g = i * 0.01f, f = RoadWiggle.GradeFactor(g, cap);
+            Assert.True(f <= prev + 1e-6f && f >= floor - 1e-6f, $"grade {g}: {f}");
+            Assert.Equal(f, RoadWiggle.GradeFactor(g, cap));
+            prev = f;
+        }
+    }
 }

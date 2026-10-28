@@ -276,7 +276,12 @@ public static partial class RoadSpatialGrid
             if (plan == null) { System.Threading.Interlocked.Increment(ref SwayRefused); plan = plain; }
             else if (plain != null && !RoadWiggle.NoMoreEarth(plan.Points, plan.Heights, plain.Points, plain.Heights, Ground))
             { System.Threading.Interlocked.Increment(ref SwayMoreEarth); plan = plain; }
-            else { System.Threading.Interlocked.Increment(ref SwayKept); LastRefusal = why; }
+            else
+            {
+                System.Threading.Interlocked.Increment(ref SwayKept);
+                LastRefusal = why;
+                if (plain != null) CountSlopeSway(plan.Points, plain.Points, Ground);
+            }
         }
         return plan;
     }
@@ -312,6 +317,39 @@ public static partial class RoadSpatialGrid
     }
 
     [System.ThreadStatic] internal static bool SuppressWiggle;
+
+    /// <summary>Slope-sway metric per generation: kept swayed plans with some steep stretch
+    /// where the road still leaves its plain line, and the metres of those stretches (ground
+    /// grade over <see cref="RoadWiggle.Flat"/>, more than 1 m from the plain line), by grade
+    /// band: 0.12-0.20, 0.20-0.28, over 0.28.</summary>
+    internal static int SlopeSwayPlans;
+    internal static readonly long[] SlopeSwayMillimetres = new long[3];
+
+    private static void CountSlopeSway(IList<Vector2> swayed, IList<Vector2> plain, System.Func<Vector2, float> ground)
+    {
+        if (plain.Count < 2 || swayed.Count < 3) return;
+        var metres = new float[3];
+        for (int i = 1; i < swayed.Count - 1; i++)
+        {
+            float run = Vector2.Distance(swayed[i - 1], swayed[i + 1]);
+            if (run < 1f) continue;
+            float grade = Mathf.Abs(ground(swayed[i + 1]) - ground(swayed[i - 1])) / run;
+            if (grade <= RoadWiggle.Flat) continue;
+            float best = float.MaxValue;
+            for (int j = 1; j < plain.Count; j++)
+            {
+                Vector2 a = plain[j - 1], ab = plain[j] - a;
+                float l2 = ab.sqrMagnitude;
+                float t = l2 > 0f ? Mathf.Clamp01(Vector2.Dot(swayed[i] - a, ab) / l2) : 0f;
+                best = Mathf.Min(best, Vector2.Distance(swayed[i], a + ab * t));
+            }
+            if (best <= 1f) continue;
+            metres[grade < 0.20f ? 0 : grade < 0.28f ? 1 : 2] += run * 0.5f;
+        }
+        if (metres[0] + metres[1] + metres[2] <= 0f) return;
+        System.Threading.Interlocked.Increment(ref SlopeSwayPlans);
+        for (int b = 0; b < 3; b++) System.Threading.Interlocked.Add(ref SlopeSwayMillimetres[b], (long)(metres[b] * 1000f));
+    }
     /// <summary>Sway outcomes per planned road piece this generation (candidates included):
     /// kept, dropped because the swayed plan was refused, dropped for moving more earth.</summary>
     internal static int SwayKept, SwayRefused, SwayMoreEarth;
