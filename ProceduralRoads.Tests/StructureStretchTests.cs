@@ -250,6 +250,29 @@ public sealed class StructureStretchTests : IDisposable
                     Assert.InRange(r.Heights[i], world.Top - 0.31f, world.Top + 0.01f);
     }
 
+    /// <summary>
+    /// A 52-piece staircase on a test world (-4943.6, -5589.9) -> (-4925.1, -5580.1) whose stairs did not come up to the road
+    /// landing at (-4923.0, 61.2, -5575.8), and a route's staircase ending near another route's: a road that ends on another road (a
+    /// junction) on a staircase whose layout ended 4 m short of it. The road had been dropped from a staircase's end
+    /// to its path's last point; at a junction that left the staircase's top short of the road it joins, nothing between.
+    /// The road is laid from the staircase's end to the junction, at the staircase's height.
+    /// </summary>
+    [Fact]
+    public void AStaircaseEndingShortOfTheRoadItJoinsIsMetByRoad()
+    {
+        var world = new RimValley();
+        _scope.WithWorld(world);
+        LayRoad(new Vector2(-100f, -40f), new Vector2(-100f, 40f), _ => world.Top);
+        Vector2 stairTop = new(-104f, 0f);
+        var path = new List<Vector2> { new(-150f, 0f), new(-120f, 0f), new(-100f, 0f) };
+        var stairs = new List<RoadStairSpan> { new() { FromIndex = 1, ToIndex = 2, FromPoint = path[1], ToPoint = stairTop, FromHeight = world.Top, ToHeight = world.Top } };
+        var plans = RoadNetworkGenerator.PlanRoadPathWithCrossings(path, new List<RoadCrossing>(), 4f, null, null, stairs);
+        Assert.True(plans != null, RoadSpatialGrid.LastRefusal);
+        bool Near(Vector2 at) => plans!.Any(r => r.Points.Select((p, i) => (p, i)).Any(x => Vector2.Distance(x.p, at) <= 0.75f && Mathf.Abs(r.Heights[x.i] - world.Top) <= StructureEnds.StepTolerance));
+        Assert.True(Near(stairTop), $"no road at the staircase's end {stairTop}: its top stops short of the road it joins");
+        Assert.True(Near(path[2]), "no road from the staircase's end to the junction");
+    }
+
     /// <summary>No stored road point under the deck (between its two edges, within its half width) lower than the deck, but
     /// under the joining pieces at their meeting height.</summary>
     internal static void AssertNoRoadUnderTheDeck(RoadCrossing c, WorldGenerator world)

@@ -2507,6 +2507,9 @@ public static partial class RoadNetworkGenerator
     /// structure (StructureEnds.IsStub), or null.</summary>
     [System.ThreadStatic] internal static RoadCrossing? LastStubBetween;
 
+    /// <summary>A staircase's end this far or further from the junction its road ends at is met by road laid to it.</summary>
+    internal const float StairEndReach = 0.75f;
+
     private static List<RoadSpatialGrid.PlannedPath>? PlanPieces(
         List<Vector2> path, List<RoadCrossing> crossings, float width, float? startGround, float? endGround,
         List<RoadStairSpan>? stairs = null)
@@ -2690,6 +2693,13 @@ public static partial class RoadNetworkGenerator
             // (short, possibly steep or doubled back, it could cost the road its stairs). Kept only where it
             // is all the road there is.
             bool endsOnStair = resumeOnStair && tail.Count == 1 && pieces.Count > 0;
+            // But where the road ends on another road (a junction) and the staircase's layout ended short of it, the road is
+            // laid from the staircase's end to the junction: the staircase meets the road it joins (a 52-piece staircase
+            // (-4943.6, -5589.9) -> (-4925.1, -5580.1) had its top about 5 m short of the road landing, nothing between; a
+            // route's staircase ending near another route's). Laid like any road, it is held to the junction's height (HoldToNetwork).
+            if (endsOnStair && resumeAt is Vector2 stairEnd && Vector2.Distance(stairEnd, tail[0]) > StairEndReach
+                && RoadSpatialGrid.TryGetRoadHeightWithin(tail[0], RoadSnap, out _))
+                endsOnStair = false;
             if (resumeOnStair && tail.Count > 1) tail.RemoveAt(0);
             if (resumeUp is Vector2 tUp && resumeAt is Vector2 tAt)
             {
