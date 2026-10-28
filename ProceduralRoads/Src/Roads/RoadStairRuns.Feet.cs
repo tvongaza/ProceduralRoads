@@ -131,11 +131,14 @@ public static partial class RoadStairRuns
         return plan;
     }
 
-    /// <summary>How far back along its road a staircase's foot judges the road's direction from. The
-    /// last search step alone (8 m, one of 16 headings) can point well off the road as laid: a staircase
-    /// 39 degrees off the road a player saw was set beside it, into the cliff (MountainCave02
-    /// -2560,1536: the bottom of the stairs was not aligned with the road).</summary>
-    internal const float TravelReach = 16f;
+    /// <summary>How far back along its road a staircase's foot (or top) judges the road's direction of travel from: one owner
+    /// for road staircases and approaches. The last search
+    /// step alone (one of 16 headings) could point well off the road as laid: a staircase 39 degrees off the road a player
+    /// saw was set beside it, into the cliff (MountainCave02 -2560,1536: the bottom of the stairs was not aligned); a reach of 16 m
+    /// read round a bend the road had already made. 8 m is the default.</summary>
+    public const float DefaultTravelReach = 8f;
+    /// <summary>As set: PROCEDURALROADS_FOOT_TRAVEL (metres, 2-32). Settable for tests.</summary>
+    internal static float TravelReach = DebugSwitches.Number("FOOT_TRAVEL", DefaultTravelReach, 2f, 32f);
 
     /// <summary>The flight's heading this many stair pieces up from its foot: past any swing its first
     /// pieces make onto the road's heading (Ruin1 -> Hildir_cave: 247.5, 270, then 315).</summary>
@@ -260,6 +263,20 @@ public static partial class RoadStairRuns
     {
         Vector2 back = Back(path, end, beyond - end, TravelReach);
         return into ? StairLayout.Bearing(back, path[end]) : StairLayout.Bearing(path[end], back);
+    }
+
+    /// <summary>
+    /// The road's travel into <paramref name="end"/>, the point an approach staircase sets off from at the road's start
+    /// (<paramref name="atStart"/>) or its end: measured <see cref="TravelReach"/> back along the road, as a road
+    /// staircase's foot (<see cref="RoadTravel"/>). It was the road's last segment alone.
+    /// </summary>
+    internal static float ArrivingTravel(List<Vector2> path, Vector2 end, bool atStart)
+    {
+        int at = atStart ? 0 : path.Count - 1;
+        var line = new List<Vector2>(path);
+        line[at] = end;
+        Vector2 back = Back(line, at, atStart ? 1 : -1, TravelReach);
+        return StairLayout.Bearing(back, end);
     }
 
     /// <summary>Staircase feet given a level apron cut into the bank behind them this generation (StairLayout.CutFootApron).</summary>

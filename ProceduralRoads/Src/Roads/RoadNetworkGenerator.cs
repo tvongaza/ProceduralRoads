@@ -2715,7 +2715,7 @@ public static partial class RoadNetworkGenerator
         tail[tail.Count - 1] = end;
         var request = new SiteApproachRequest
         {
-            RoadEnd = end, RoadHeight = height, Arriving = StairLayout.Bearing(path[atStart ? 1 : path.Count - 2], end), Centre = site.Centre, RoadTail = tail,
+            RoadEnd = end, RoadHeight = height, Arriving = RoadStairRuns.ArrivingTravel(path, end, atStart), Centre = site.Centre, RoadTail = tail,
             Reach = PlacedSiteReach, TotalExpansions = EntryTotalExpansions, Stall = EntryStall,
             Leg = RoadStairRuns.GenerationExpansions, Allowance = int.MaxValue,
         };
@@ -2821,10 +2821,9 @@ public static partial class RoadNetworkGenerator
                 if (last == null) return;
                 (end, height) = atStart ? (last.FromPoint, last.FromHeight) : (last.ToPoint, last.ToHeight);
             }
-            Vector2 inner = path[atStart ? 1 : path.Count - 2];
             var both = new List<RoadStairSpan>(stairs);
             both.AddRange(laid);
-            RoadStairSpan? span = RoadStairRuns.LaySiteApproach(end, height, StairLayout.Bearing(inner, end), centre,
+            RoadStairSpan? span = RoadStairRuns.LaySiteApproach(end, height, RoadStairRuns.ArrivingTravel(path, end, atStart), centre,
                 LocationLevelling.CentreHeight(centre, world), LocationLevelling.OpsAt(centre), LocationLevelling.FacesDownhill(centre),
                 path, index, both, world, out string why);
             if (span != null) laid.Add(span);
@@ -2833,7 +2832,7 @@ public static partial class RoadNetworkGenerator
             // keeps this end.
             else if (why == RoadStairRuns.WaitsForItsZone)
             {
-                if (PlacedSites.IsPlayerDecided(centre)) pending.Add((index, end, height, StairLayout.Bearing(inner, end), centre));
+                if (PlacedSites.IsPlayerDecided(centre)) pending.Add((index, end, height, RoadStairRuns.ArrivingTravel(path, end, atStart), centre));
                 else why = "waits for its zone, not placed before its road";
             }
             if (RoadsLog) m_siteApproaches.AddOrUpdate(span != null ? "laid" : why, 1, (_, n) => n + 1);
