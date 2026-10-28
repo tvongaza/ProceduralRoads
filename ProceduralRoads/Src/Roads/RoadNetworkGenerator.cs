@@ -1481,6 +1481,14 @@ public static partial class RoadNetworkGenerator
                 if (RoadsLog) Log.LogInfo(FormattableString.Invariant($"[BRIDGES] road {label}: an end of the bridge {unmet.FromBank} -> {unmet.ToBank} not met at {at}"));
             }
         }
+        // Past the searches again, a valley viaduct the built road does not allow is not built: the road is refused with it
+        // (three were built where the retries had run out and the check was skipped).
+        if (plans != null && stretchRetry >= StairStretchRetries + ViaductRetries
+            && BuiltRefusal(plans, crossings, out _, out string lastWhy) is RoadCrossing lastUnmet && lastUnmet.ValleyJump && !lastUnmet.Shared)
+        {
+            plans = null;
+            RoadSpatialGrid.LastRefusal = "a viaduct the built road does not allow (" + lastWhy + ")";
+        }
         // A road whose end at its place stands further under (or over) the place's own ground than
         // an approach can climb does not reach it: counted connected, the planner stopped looking,
         // and a 100 m staircase ended 45 m under Hildir's cave with a stub of road on top
