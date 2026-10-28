@@ -814,10 +814,14 @@ public static class DvergrViaduct
         float Survives(float along, float share) => 1f - (1f - BridgeLayout.SpanSurvival(Mid(along))) * share;
 
         Vector2 At(float along, float v) => crossing.FromBank + dir * along + side * v;
+        // The ground as finished at the ends: cut to the meeting height where the road runs on under the end module
+        // (StructureEnds.JoinOverlap), so that module is not dropped as buried under a bank the road cuts away.
+        var (nearEnd, farEnd) = Ends(crossing, world);
+        float G(Vector2 p) => StructureEnds.FinishedGround(p, Ground(p, world), nearEnd, farEnd, HalfWidth + BuriedPieces.Growth);
         void Add(StructurePieceKind kind, string prefab, float along, float v, float y, float turn, float health)
         {
             Vector2 p = At(along, v);
-            if (WhollyBuried(prefab, p, dir, side, y, world)) return;
+            if (WhollyBuried(prefab, p, dir, side, y, G)) return;
             pieces.Add(new StructurePiece
             {
                 Kind = kind, Prefab = prefab, Position = new Vector3(p.x, y, p.y),
@@ -903,9 +907,9 @@ public static class DvergrViaduct
         {
             float c = first + m * Module;
             bool onPier = pierTops.Exists(p => Mathf.Abs(c - p) <= 4f + 1e-3f);
-            bool grounded = deck - FloorDrop - 0.1f <= Ground(At(c, 0f), world) + 0.05f;
+            bool grounded = deck - FloorDrop - 0.1f <= G(At(c, 0f)) + 0.05f;
             for (int lane = 0; lane < 2; lane++)
-                anchored[m, lane] = onPier || grounded || deck - FloorDrop - 0.1f <= Ground(At(c, lane == 0 ? -1f : 1f), world) + 0.05f;
+                anchored[m, lane] = onPier || grounded || deck - FloorDrop - 0.1f <= G(At(c, lane == 0 ? -1f : 1f)) + 0.05f;
         }
         bool[,] Carry()
         {
@@ -953,6 +957,10 @@ public static class DvergrViaduct
         for (int m = 0; m < modules; m++)
         {
             float c = first + m * Module;
+            // An end module is the joining piece the road runs on under (StructureEnds.JoinOverlap): its course is never
+            // ruined, or the deck's walking surface stops a module short of the road (at the 80 m viaduct at (-3968, -5384) a
+            // black marble floor laid by hand there left the road and deck nearly even).
+            bool joining = m == 0 || m == modules - 1;
             bool overPier = pierTops.Exists(p => Mathf.Abs(c - p) < 0.01f);
             for (int lane = 0; lane < 2; lane++)
             {
@@ -967,7 +975,7 @@ public static class DvergrViaduct
                 {
                     if (!carried[m, lane]) continue;
                     int sideKey = lane == 0 ? -1 : 1;
-                    if (ruin && r.Roll(m, sideKey, RoleCourse) >= Survives(c, CourseRuinShare)) continue;
+                    if (ruin && !joining && r.Roll(m, sideKey, RoleCourse) >= Survives(c, CourseRuinShare)) continue;
                     course[m, lane == 0 ? 0 : 2] = true;
                     Add(StructurePieceKind.ViaductDeck, Block, c, sideKey * 1f, deck - CourseDrop, 90f, 1f);
                     if (!ruin || r.Roll(m, sideKey, RoleHead) < BridgeLayout.PierSurvival(Survives(c, ArchRuinShare)))
@@ -981,7 +989,7 @@ public static class DvergrViaduct
                 int v = (slot - 1) * 2;
                 bool under = v < 0 ? carried[m, 0] : v > 0 ? carried[m, 1] : carried[m, 0] || carried[m, 1];
                 if (!under) continue;
-                if (ruin && r.Roll(m, v, RoleCourse) >= Survives(c, CourseRuinShare)) continue;
+                if (ruin && !joining && r.Roll(m, v, RoleCourse) >= Survives(c, CourseRuinShare)) continue;
                 course[m, slot] = true;
                 Add(StructurePieceKind.ViaductDeck, Block, c, v, deck - CourseDrop, 90f, 1f);
             }
@@ -1006,7 +1014,6 @@ public static class DvergrViaduct
 
         // ----- ends: a bank lower than the deck is walked off on marble steps, the wooden kit's run (EndStairs: none
         // where the bank is at the deck's height, and the road runs onto the deck).
-        var (nearEnd, farEnd) = Ends(crossing, world);
         foreach (var (end, key) in new[] { (nearEnd, 0), (farEnd, modules) })
         {
             if (end.Steps == 0) continue;
@@ -1071,14 +1078,18 @@ public static class DvergrViaduct
     /// <summary>Whether a piece would be wholly under the ground: its top at or under the ground
     /// over its whole footprint grown by <see cref="BuriedPieces.Growth"/> (the game breaks such a
     /// piece: it touches no terrain triangle, so it is not grounded).</summary>
-    internal static bool WhollyBuried(string prefab, Vector2 centre, Vector2 dir, Vector2 side, float y, WorldGenerator world)
+    internal static bool WhollyBuried(string prefab, Vector2 centre, Vector2 dir, Vector2 side, float y, WorldGenerator world) =>
+        WhollyBuried(prefab, centre, dir, side, y, p => Ground(p, world));
+
+    /// <summary>As above, on <paramref name="ground"/> (the finished ground at the ends, StructureEnds.FinishedGround).</summary>
+    internal static bool WhollyBuried(string prefab, Vector2 centre, Vector2 dir, Vector2 side, float y, Func<Vector2, float> ground)
     {
         var (hu, hv, hy) = Extents(prefab);
         float top = y + hy + BuriedPieces.Growth;
         hu += BuriedPieces.Growth; hv += BuriedPieces.Growth;
         foreach (float su in new[] { -1f, 0f, 1f })
             foreach (float sv in new[] { -1f, 0f, 1f })
-                if (Ground(centre + dir * (su * hu) + side * (sv * hv), world) < top)
+                if (ground(centre + dir * (su * hu) + side * (sv * hv)) < top)
                     return false;
         return true;
     }

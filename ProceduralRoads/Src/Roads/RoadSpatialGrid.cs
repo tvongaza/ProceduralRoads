@@ -580,7 +580,7 @@ public static partial class RoadSpatialGrid
                 for (int i = 0; i < densePoints.Count; i++)
                 {
                     float from = atStart ? distanceFromStart[i] : pathTotal - distanceFromStart[i];
-                    if (from <= StructureEnds.ApronLength + 1e-3f) finalHeights[i] = Mathf.Max(height, minHeight);
+                    if (from <= StructureEnds.ApronLength + StructureEnds.JoinOverlap + 1e-3f) finalHeights[i] = Mathf.Max(height, minHeight);
                 }
             }
 

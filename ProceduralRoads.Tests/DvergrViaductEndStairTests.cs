@@ -238,9 +238,13 @@ public sealed class DvergrViaductEndStairTests : IDisposable
         for (int i = 0; i < plan.Points.Count; i++)
             if (Vector2.Distance(plan.Points[i], stairs.Meet) <= StructureEnds.ApronLength)
                 Assert.True(Mathf.Abs(plan.Heights[i] - stairs.MeetHeight) <= 0.05f, $"apron at {plan.Points[i]} stands {plan.Heights[i]:F2}, not level at {stairs.MeetHeight:F2}");
-        // No road under the flight.
-        Vector2 midFlight = stairs.Edge - stairs.Up * (stairs.Steps * BridgeLayout.StairRun * 0.5f);
-        Assert.True(roads.All(r => r.Points.All(p => Vector2.Dot(p - stairs.Meet, stairs.Up) <= 0.3f || Vector2.Distance(p, midFlight) > 2f)), "road under the flight");
+        // No road under the flight past its bottom step (the road runs on under the bottom step, the joining piece,
+        // StructureEnds.JoinOverlap, levelled at the foot's height, and stops there).
+        Vector2 across = new(-stairs.Up.y, stairs.Up.x);
+        float flight = stairs.Steps * BridgeLayout.StairRun;
+        Assert.True(roads.All(r => r.Points.All(p => Vector2.Dot(p - stairs.Meet, stairs.Up) <= StructureEnds.JoinOverlap + 0.3f
+            || Vector2.Dot(p - stairs.Meet, stairs.Up) > flight + 0.5f || Mathf.Abs(Vector2.Dot(p - stairs.Meet, across)) > 3f)), "road under the flight");
+        Assert.True(roads.All(r => r.Points.Select((p, i) => (p, h: r.Heights[i])).All(x => !stairs.UnderTheJoint(x.p, 1.5f) || Mathf.Abs(x.h - stairs.MeetHeight) <= 0.05f)), "road under the bottom step not at the foot's height");
         Assert.Null(RoadNetworkGenerator.UnreachableEnd(roads, new List<RoadCrossing> { viaduct }, out _));
     }
 

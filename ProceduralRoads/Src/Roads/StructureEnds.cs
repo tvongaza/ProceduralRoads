@@ -28,6 +28,14 @@ public static class StructureEnds
     /// line (extending the earthwork slightly, the last ~6-8 m).</summary>
     public const float ApronLength = 7f;
 
+    /// <summary>
+    /// How far the road runs on past its meeting point, under the structure's joining piece: the deck's end module where
+    /// the end is flush, the bottom step where it has stairs. The stairs' rule, generalised: a staircase's joining pieces sit ON the road, so the road is
+    /// levelled right up under them, and a deck end does the same. The terrain is cut or filled to the meeting height there
+    /// and the joining piece stands on it, so no gap is left where the road's earthwork stops.
+    /// </summary>
+    public const float JoinOverlap = 2f;
+
     /// <summary>How far the road where it meets an end may stand off the end's height for a player to walk on: about a
     /// step a player takes without a jump.</summary>
     public const float StepTolerance = 0.5f;
@@ -58,6 +66,16 @@ public static class StructureEnds
         public float MeetHeight => Height - Rise;
         /// <summary>The far end of the road's levelled apron, on the structure's line.</summary>
         public Vector2 Apron => Meet - Up * ApronLength;
+        /// <summary>Where the road ends: <see cref="JoinOverlap"/> past the meeting point, under the joining piece.</summary>
+        public Vector2 Joint => Meet + Up * JoinOverlap;
+        /// <summary>Whether <paramref name="p"/> lies on the stretch the road runs on under the joining piece (from the
+        /// meeting point to <see cref="Joint"/>, <paramref name="halfWidth"/> either side of the line).</summary>
+        public bool UnderTheJoint(Vector2 p, float halfWidth)
+        {
+            float along = Vector2.Dot(p - Meet, Up);
+            Vector2 across = new(-Up.y, Up.x);
+            return along >= -0.25f && along <= JoinOverlap + 0.25f && Mathf.Abs(Vector2.Dot(p - Meet, across)) <= halfWidth;
+        }
         public bool IsSet => Up != default;
     }
 
@@ -94,6 +112,19 @@ public static class StructureEnds
             if (s == 0 && off <= BridgeLayout.StairRise * 0.5f) break;
         }
         return new End(edge, up, height, best);
+    }
+
+    /// <summary>
+    /// The finished ground at <paramref name="p"/> near a structure's ends: the generator's, cut to the meeting height where
+    /// the road runs on under a joining piece (<see cref="End.UnderTheJoint"/>). A structure judges which of its pieces lie
+    /// wholly under the ground on this, so the deck's end module is not dropped as buried under a bank the road then cuts
+    /// away (the deck was one module short of the levelled road).
+    /// </summary>
+    public static float FinishedGround(Vector2 p, float generator, End near, End far, float halfWidth)
+    {
+        foreach (End end in new[] { near, far })
+            if (end.IsSet && end.UnderTheJoint(p, halfWidth)) generator = Mathf.Min(generator, end.MeetHeight);
+        return generator;
     }
 
     /// <summary>Whether a player walks from road at <paramref name="roadHeight"/> where the road meets
