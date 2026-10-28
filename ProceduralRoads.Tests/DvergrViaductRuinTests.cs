@@ -178,4 +178,44 @@ public sealed class DvergrViaductRuinTests : IDisposable
         Assert.Equal(DvergrViaduct.HalfWidth, box.Max(v => v.y), 3);
         Assert.Equal(6f + StructureEnds.ApronLength, DvergrViaduct.ApproachReach, 3);
     }
+
+    /// <summary>The search asks <see cref="DvergrViaduct.IsTooClose"/> on every valley jump it looks at, from every island
+    /// worker at once: it gives TooClose's answer, reads the viaducts laid this generation as
+    /// MarkLaid publishes them (no lock, no copy), and allocates nothing.</summary>
+    [Fact]
+    public void TheSearchsClearanceTestAgreesWithTooCloseAndAllocatesNothing()
+    {
+        var ew = (new Vector2(0f, 0f), new Vector2(80f, 0f));
+        var probes = new[]
+        {
+            (new Vector2(86f, -30f), new Vector2(86f, 30f)), (new Vector2(40f, 30f), new Vector2(40f, -30f)),
+            (new Vector2(110f, -40f), new Vector2(110f, -18f)), (new Vector2(40f, 40f), new Vector2(40f, 20f)),
+            (new Vector2(88f, 0f), new Vector2(130f, 0f)), (new Vector2(80f, 0f), new Vector2(0f, 0f)),
+        };
+        DvergrViaduct.ResetStanding();
+        try
+        {
+            foreach (var (a, b) in probes) Assert.False(DvergrViaduct.IsTooClose(a, b));
+            DvergrViaduct.MarkLaid(RoadCrossing.Between(ew.Item1, ew.Item2, 80f, (ew.Item1 + ew.Item2) * 0.5f, 0f, CrossingKind.Bridge));
+            foreach (var (a, b) in probes)
+            {
+                string? why = DvergrViaduct.TooClose(a, b, new[] { ew });
+                Assert.Equal(why, DvergrViaduct.TooClose(a, b));
+                Assert.Equal(why != null, DvergrViaduct.IsTooClose(a, b));
+                Assert.Equal(why != null, DvergrViaduct.IsTooClose(a, b, new[] { ew }));
+            }
+            Assert.Contains("back to back", DvergrViaduct.TooClose(new Vector2(88f, 0f), new Vector2(130f, 0f)));
+            Assert.Contains("in another viaduct", DvergrViaduct.TooClose(new Vector2(86f, -30f), new Vector2(86f, 30f)));
+#if NET
+            DvergrViaduct.IsTooClose(probes[0].Item1, probes[0].Item2);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 100; i++)
+                foreach (var (a, b) in probes) DvergrViaduct.IsTooClose(a, b);
+            Assert.Equal(0L, GC.GetAllocatedBytesForCurrentThread() - before);
+#endif
+            DvergrViaduct.ResetStanding();
+            foreach (var (a, b) in probes) Assert.False(DvergrViaduct.IsTooClose(a, b));
+        }
+        finally { DvergrViaduct.ResetStanding(); }
+    }
 }

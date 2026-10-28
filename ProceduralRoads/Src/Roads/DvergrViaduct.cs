@@ -476,7 +476,7 @@ public static class DvergrViaduct
     {
         s_standing.Clear();
         s_anyStanding = false;
-        lock (s_laid) s_laid.Clear();
+        lock (s_laidGate) s_laid = System.Array.Empty<(Vector2 from, Vector2 to)>();
     }
 
     // ------------------------------------------- between structures
@@ -494,13 +494,24 @@ public static class DvergrViaduct
     /// <summary>Half a viaduct's width, its arches and heads included (the course and arches stand 3 m out).</summary>
     public const float HalfWidth = 3f;
 
-    /// <summary>Viaducts laid this generation, banks only (valley and river alike).</summary>
-    private static readonly List<(Vector2 from, Vector2 to)> s_laid = new();
+    /// <summary>Viaducts laid this generation, banks only (valley and river alike). Copied on write under
+    /// <see cref="s_laidGate"/> and published whole, so the search (<see cref="TooClose"/>, from every island worker's
+    /// valley jumps) reads it without a lock or a copy: before, each jump the search looked at took one lock shared by
+    /// every worker and copied the list.</summary>
+    private static volatile (Vector2 from, Vector2 to)[] s_laid = System.Array.Empty<(Vector2 from, Vector2 to)>();
+    private static readonly object s_laidGate = new();
 
     /// <summary>Record a viaduct laid this generation, for <see cref="TooClose"/>.</summary>
     public static void MarkLaid(RoadCrossing crossing)
     {
-        lock (s_laid) s_laid.Add((crossing.FromBank, crossing.ToBank));
+        lock (s_laidGate)
+        {
+            var laid = s_laid;
+            var grown = new (Vector2 from, Vector2 to)[laid.Length + 1];
+            System.Array.Copy(laid, grown, laid.Length);
+            grown[laid.Length] = (crossing.FromBank, crossing.ToBank);
+            s_laid = grown;
+        }
     }
 
     private static bool Same((Vector2 from, Vector2 to) x, Vector2 a, Vector2 b) =>
@@ -515,44 +526,84 @@ public static class DvergrViaduct
     /// </summary>
     public static string? TooClose(Vector2 a, Vector2 b, IReadOnlyList<(Vector2 from, Vector2 to)>? others = null)
     {
-        List<(Vector2 from, Vector2 to)> list;
-        if (others != null) list = new List<(Vector2, Vector2)>(others);
-        else lock (s_laid) { if (s_laid.Count == 0) return null; list = new List<(Vector2, Vector2)>(s_laid); }
-        Vector2[] mine = Footprint(a, b);
-        foreach (var other in list)
+        IReadOnlyList<(Vector2 from, Vector2 to)> list = others ?? s_laid;
+        int hit = Clash(a, b, list, out Vector2 end, out Vector2 theirs);
+        if (hit < 0) return null;
+        var other = list[hit];
+        return !float.IsNaN(end.x)
+            ?FormattableString.Invariant($"back to back: an end {Vector2.Distance(end, theirs):F0} m from another viaduct's at ({theirs.x:F0}, {theirs.y:F0})")
+            : FormattableString.Invariant($"in another viaduct's deck or approach, ({other.from.x:F0}, {other.from.y:F0}) to ({other.to.x:F0}, {other.to.y:F0})");
+    }
+
+    /// <summary><see cref="TooClose"/> as the search asks it, for each valley jump it looks at: whether, without a reason
+    /// (formatting one per refused jump was most of a refusal's cost) and without allocating.</summary>
+    internal static bool IsTooClose(Vector2 a, Vector2 b, IReadOnlyList<(Vector2 from, Vector2 to)>? others = null) =>
+        Clash(a, b, others ?? s_laid, out _, out _) >= 0;
+
+    /// <summary>The first viaduct in <paramref name="list"/> a viaduct from <paramref name="a"/> to <paramref name="b"/> stands
+    /// too close to (<see cref="TooClose"/>), or -1: back to back (<paramref name="end"/> and <paramref name="theirs"/>, the two
+    /// ends; else both NaN), or in its deck or approach. Allocation-free: it runs on every valley jump the search looks at.</summary>
+    private static int Clash(Vector2 a, Vector2 b, IReadOnlyList<(Vector2 from, Vector2 to)> list, out Vector2 end, out Vector2 theirs)
+    {
+        end = theirs = new Vector2(float.NaN, float.NaN);
+        int n = list.Count;
+        if (n == 0) return -1;
+        Quad mine = Quad.Of(a, b);
+        for (int k = 0; k < n; k++)
         {
+            var other = list[k];
             if (Same(other, a, b)) continue;
-            foreach (Vector2 end in new[] { a, b })
-                foreach (Vector2 theirs in new[] { other.from, other.to })
-                    if (Vector2.Distance(end, theirs) < EndSpacing - 1e-3f)
-                        return FormattableString.Invariant($"back to back: an end {Vector2.Distance(end, theirs):F0} m from another viaduct's at ({theirs.x:F0}, {theirs.y:F0})");
-            if (Overlap(mine, Footprint(other.from, other.to)))
-                return FormattableString.Invariant($"in another viaduct's deck or approach, ({other.from.x:F0}, {other.from.y:F0}) to ({other.to.x:F0}, {other.to.y:F0})");
+            for (int e = 0; e < 2; e++)
+            {
+                Vector2 mineEnd = e == 0 ? a : b;
+                for (int t = 0; t < 2; t++)
+                {
+                    Vector2 otherEnd = t == 0 ? other.from : other.to;
+                    if (Vector2.Distance(mineEnd, otherEnd) < EndSpacing - 1e-3f) { end = mineEnd; theirs = otherEnd; return k; }
+                }
+            }
+            if (Overlap(mine, Quad.Of(other.from, other.to))) return k;
         }
-        return null;
+        return -1;
     }
 
     /// <summary>A viaduct's deck and end-approach volume on the ground: its line from bank to bank lengthened by
     /// <see cref="ApproachReach"/> at each end, <see cref="HalfWidth"/> either side. Four corners.</summary>
     public static Vector2[] Footprint(Vector2 a, Vector2 b)
     {
-        Vector2 dir = (b - a).normalized, side = new(-dir.y, dir.x);
-        Vector2 s0 = a - dir * ApproachReach, s1 = b + dir * ApproachReach;
-        return new[] { s0 - side * HalfWidth, s1 - side * HalfWidth, s1 + side * HalfWidth, s0 + side * HalfWidth };
+        Quad q = Quad.Of(a, b);
+        return new[] { q.C0, q.C1, q.C2, q.C3 };
+    }
+
+    /// <summary><see cref="Footprint"/>'s four corners, held without an array.</summary>
+    private readonly struct Quad
+    {
+        public readonly Vector2 C0, C1, C2, C3;
+        private Quad(Vector2 c0, Vector2 c1, Vector2 c2, Vector2 c3) { C0 = c0; C1 = c1; C2 = c2; C3 = c3; }
+        public static Quad Of(Vector2 a, Vector2 b)
+        {
+            Vector2 dir = (b - a).normalized, side = new(-dir.y, dir.x);
+            Vector2 s0 = a - dir * ApproachReach, s1 = b + dir * ApproachReach;
+            return new Quad(s0 - side * HalfWidth, s1 - side * HalfWidth, s1 + side * HalfWidth, s0 + side * HalfWidth);
+        }
+        public Vector2 this[int i] => i switch { 0 => C0, 1 => C1, 2 => C2, _ => C3 };
     }
 
     /// <summary>Two convex quadrilaterals overlap (separating axes on their edges).</summary>
-    private static bool Overlap(Vector2[] p, Vector2[] q)
+    private static bool Overlap(in Quad p, in Quad q)
     {
-        foreach (Vector2[] poly in new[] { p, q })
-            for (int i = 0; i < poly.Length; i++)
+        for (int which = 0; which < 2; which++)
+        {
+            Quad poly = which == 0 ? p : q;
+            for (int i = 0; i < 4; i++)
             {
-                Vector2 e = poly[(i + 1) % poly.Length] - poly[i], axis = new(-e.y, e.x);
+                Vector2 e = poly[(i + 1) % 4] - poly[i], axis = new(-e.y, e.x);
                 float pMin = float.MaxValue, pMax = float.MinValue, qMin = float.MaxValue, qMax = float.MinValue;
-                foreach (Vector2 v in p) { float d = Vector2.Dot(v, axis); pMin = Mathf.Min(pMin, d); pMax = Mathf.Max(pMax, d); }
-                foreach (Vector2 v in q) { float d = Vector2.Dot(v, axis); qMin = Mathf.Min(qMin, d); qMax = Mathf.Max(qMax, d); }
+                for (int j = 0; j < 4; j++) { float d = Vector2.Dot(p[j], axis); pMin = Mathf.Min(pMin, d); pMax = Mathf.Max(pMax, d); }
+                for (int j = 0; j < 4; j++) { float d = Vector2.Dot(q[j], axis); qMin = Mathf.Min(qMin, d); qMax = Mathf.Max(qMax, d); }
                 if (pMax <= qMin + 1e-4f || qMax <= pMin + 1e-4f) return false;
             }
+        }
         return true;
     }
 

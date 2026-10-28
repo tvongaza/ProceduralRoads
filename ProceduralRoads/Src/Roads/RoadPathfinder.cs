@@ -1126,7 +1126,7 @@ public class RoadPathfinder
         Vector2 a = GridToWorld(from), b = GridToWorld(to);
         // Clear of the viaducts other roads laid (DvergrViaduct.TooClose, the one owner): never back to back, nor in one's
         // deck or approach. A shared viaduct (both banks the same) is the same structure.
-        if (DvergrViaduct.TooClose(a, b) != null) return false;
+        if (DvergrViaduct.IsTooClose(a, b)) return false;
         if (RoadSiteProtection.BlocksSegment(a, b, SiteClearance, m_searchStart, m_searchEnd)) return false;
         // Nothing of the network under the deck: another road, a staircase or another viaduct.
         float length = Vector2.Distance(a, b);
@@ -1165,7 +1165,7 @@ public class RoadPathfinder
             if (byViaduct.Contains(at)) (before ??= new List<(Vector2, Vector2)>()).Add((GridToWorld(prev), GridToWorld(at)));
             at = prev;
         }
-        return before == null || DvergrViaduct.TooClose(start, GridToWorld(landing), before) == null;
+        return before == null || !DvergrViaduct.IsTooClose(start, GridToWorld(landing), before);
     }
 
     private (Vector2i landing, float cost)? ViaductOverTerrain(Vector2i from, Vector2Int step)
