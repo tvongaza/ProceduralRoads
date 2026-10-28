@@ -66,9 +66,7 @@ public static class ManualRoads
 
     /// <summary>What the operator is told when a manual road is built through zones explored before the network.</summary>
     public static string ExploredZonesWarning(IReadOnlyList<Vector2s> zones) =>
-        $"Warning: this road crosses {zones.Count} zone(s) explored before the road network. They are now treated " +
-        "like land explored after it: every road there is built in full, over whatever stands on its line. Zones: " +
-        string.Join(", ", zones.Select(z => $"({z.x}, {z.y})")) + ".";
+        NetworkCutoff.AdmissionWarning("this road crosses", zones);
 
     public static Plan Prepare(IReadOnlyList<Vector2> points, bool connect,
         IReadOnlyList<Island>? knownIslands = null)

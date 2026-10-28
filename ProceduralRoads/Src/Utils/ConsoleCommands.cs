@@ -586,9 +586,16 @@ public static class ConsoleCommands
 
         // Apply roads to currently loaded zones
         args.Context.AddString("Queuing terrain for loaded zones...");
-        int zonesWithRoads = RoadTerrainModifier.ApplyToLoadedZones(operatorRequest: true);
+        int zonesWithRoads = RoadTerrainModifier.ApplyToLoadedZones(operatorRequest: true, out var admitted);
+        ReportAdmitted(args, admitted);
         args.Context.AddString($"Queued road terrain for {zonesWithRoads} visible zones.");
         ReportBridgeRespawn(args, BridgePlacement.RespawnFromPlans());
+    }
+
+    private static void ReportAdmitted(Terminal.ConsoleEventArgs args, List<Vector2s> admitted)
+    {
+        if (admitted.Count > 0)
+            args.Context.AddString(NetworkCutoff.AdmissionWarning("this command builds roads in", admitted));
     }
 
     /// <summary>Bridge pieces of the old network sit at the old crossings:
@@ -774,7 +781,8 @@ public static class ConsoleCommands
             return;
         }
 
-        int zones = RoadTerrainModifier.ApplyToLoadedZones(operatorRequest: true);
+        int zones = RoadTerrainModifier.ApplyToLoadedZones(operatorRequest: true, out var admitted);
+        ReportAdmitted(args, admitted);
         args.Context.AddString(summary);
         args.Context.AddString($"Queued terrain for {zones} loaded zone(s).");
         ReportBridgeRespawn(args, BridgePlacement.RespawnFromPlans());
