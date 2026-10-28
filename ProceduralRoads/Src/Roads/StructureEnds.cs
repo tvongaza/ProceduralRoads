@@ -200,7 +200,7 @@ public static class StructureEnds
         if (Mathf.Abs(Vector2.Dot(p - near.Edge, side)) > halfWidth + w * 0.5f) return false;
         if (h >= deck - 0.1f) return false;
         foreach (End end in new[] { near, far })
-            if (end.UnderTheJoint(p, halfWidth + w * 0.5f) && Mathf.Abs(h - end.MeetHeight) <= 0.1f) return false;
+            if (end.UnderTheJoint(p, halfWidth + w * 0.5f) && Mathf.Abs(h - end.MeetHeight) <= StepTolerance) return false;
         return true;
     }
 }

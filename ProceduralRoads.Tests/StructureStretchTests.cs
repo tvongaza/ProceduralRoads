@@ -89,6 +89,25 @@ public sealed class StructureStretchTests : IDisposable
                 $"a viaduct {c.FromBank} -> {c.ToBank} stands {tallest:F1} m over the finished floor, under the {DvergrViaduct.MinViaductPier:F0} m floor");
         }
     }
+    /// <summary>The floor over the finished ground counts road under the deck only, never the viaduct's own road at its
+    /// ends: a pier 4.7 m in from a bank whose end has stairs read the road at the stairs' foot as its floor (most valley viaducts
+    /// were refused as "under the floor").</summary>
+    [Fact]
+    public void AViaductsOwnRoadAtItsEndsIsNotItsFloor()
+    {
+        var world = new RimValley { Depth = 14f, Far = d => d < 3f ? 0f : -2f };
+        _scope.WithWorld(world);
+        float bank = world.Rim + 1f;
+        RoadCrossing c = DvergrViaduct.ValleyCrossing(new Vector2(-bank, 0f), new Vector2(bank, 0f), world, out string why)!;
+        Assert.True(c != null, why);
+        var (near, far) = DvergrViaduct.Ends(c!, world);
+        Assert.True(far.Steps > 0, "the far end has stairs");
+        RoadSpatialGrid.PlannedPath Piece(Vector2 a, Vector2 b, float h) =>
+            new(new List<Vector2> { a, b }, new List<float> { h, h }, new List<RoadPointDebugInfo>(), 4f, Vector2.Distance(a, b), false);
+        var own = new List<RoadSpatialGrid.PlannedPath> { Piece(near.Apron, near.Joint, near.MeetHeight), Piece(far.Joint, far.Apron, far.MeetHeight) };
+        Assert.Equal(DvergrViaduct.TallestPier(c!, world), DvergrViaduct.TallestPierOnFinishedGround(c!, world, own), 3);
+    }
+
     // ---------------------------------------------------------------- the stand point
 
     /// <summary>A stand point reads the road's surface (RoadHeightAt, through

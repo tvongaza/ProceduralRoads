@@ -359,13 +359,21 @@ public static class DvergrViaduct
     public static float TallestPierOnFinishedGround(RoadCrossing crossing, WorldGenerator world, IReadOnlyList<RoadSpatialGrid.PlannedPath>? plans)
     {
         float deck = DeckHeight(crossing, world), tallest = 0f;
-        Vector2 dir = crossing.Direction;
+        Vector2 dir = crossing.Direction, side = new(-dir.y, dir.x);
+        var (nearEdge, farEdge) = EdgesOf(crossing);
+        float first = Vector2.Dot(nearEdge - crossing.FromBank, dir) + StructureEnds.JoinOverlap, last = Vector2.Dot(farEdge - crossing.FromBank, dir) - StructureEnds.JoinOverlap;
         foreach (float a in PierAlongs(crossing))
         {
             float ground = PierGround(crossing, a, world);
             Vector2 at = crossing.FromBank + dir * a;
-            foreach (var (_, h, w) in StructureEnds.BuiltRoadNear(at, HalfWidth + RoadConstants.DefaultRoadWidth * 0.5f + 1f, plans))
+            // Only road under the deck, beside the pier: never the viaduct's own road at its ends, on the bank or under a
+            // joining piece (a pier 3 m in from a bank with end stairs read the apron at the stairs' foot as its floor).
+            foreach (var (p, h, w) in StructureEnds.BuiltRoadNear(at, HalfWidth + RoadConstants.DefaultRoadWidth * 0.5f + 1f, plans))
+            {
+                float along = Vector2.Dot(p - crossing.FromBank, dir);
+                if (along <= first || along >= last || Mathf.Abs(Vector2.Dot(p - crossing.FromBank, side)) > HalfWidth + w * 0.5f) continue;
                 if (h < deck) ground = Mathf.Max(ground, h);
+            }
             tallest = Mathf.Max(tallest, deck - ground);
         }
         return tallest;
