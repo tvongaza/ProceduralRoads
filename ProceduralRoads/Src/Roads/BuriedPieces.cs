@@ -166,8 +166,11 @@ public static class BuriedPieces
     public static bool ColumnGoesOn(float bottom, float lowestCorner, string prefab, float height, Vector2 at, float yaw, Func<int, int, float> vertex) =>
         bottom > lowestCorner - StairLayout.SupportBury && !Buried(prefab, new Vector3(at.x, bottom - height / 2f, at.y), yaw, vertex);
 
-    /// <summary>Most pillars <see cref="CarryColumns"/> adds under one column (the most the terrain writer lowers ground, 8 m, in stone pillars).</summary>
-    public const int MostCarried = 4;
+    /// <summary>The deepest <see cref="CarryColumns"/> carries one column on down: the most the terrain writer lowers ground
+    /// (<see cref="RoadConstants.TerrainDeltaMin"/>, 8 m), in whatever pillars the kit stacks. It was 4 pillars: 8 m of stone
+    /// but 4 m of black marble's 1 m columns, so a Mistlands column over a deeper road cut was left hanging and broke (the
+    /// whole column collapsed, on a staircase at -3850,-5020).</summary>
+    public const float MostCarriedDepth = -RoadConstants.TerrainDeltaMin;
 
     /// <summary>
     /// Each of the run's columns (its kit's support pieces stacked at one spot, not a cantilever's clipped into a face)
@@ -201,7 +204,7 @@ public static class BuriedPieces
                 }
             if (float.IsNaN(lowest)) continue;
             float base_ = bottom.Position.y - height / 2f;
-            for (int n = 0; n < MostCarried && ColumnGoesOn(base_, lowest, bottom.Prefab, height, at, bottom.YawDegrees, vertex); n++, base_ -= height)
+            for (int n = 0, most = Mathf.CeilToInt(MostCarriedDepth / height - 1e-3f); n < most && ColumnGoesOn(base_, lowest, bottom.Prefab, height, at, bottom.YawDegrees, vertex); n++, base_ -= height)
             {
                 run.Pieces.Add(new StructurePiece
                 {

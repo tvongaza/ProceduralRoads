@@ -1089,7 +1089,6 @@ public static partial class StairLayout
         plan.Rise = last.Height - first.Height;
         plan.End = new Vector3(last.Edge.x, last.Height, last.Edge.y);
         GuardEnds(plan, kit, first.Edge, last.Edge, ground, sunkPieces);
-        SinkColumnsBelowCuts(plan, kit, ground);
     }
 
     /// <summary>Highest a walking surface may stand over the ground a player walks onto it from:

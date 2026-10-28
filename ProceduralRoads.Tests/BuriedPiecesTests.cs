@@ -240,6 +240,30 @@ public class BuriedPiecesTests : IDisposable
     }
 
     /// <summary>
+    /// A 186-piece black marble staircase on a test world, from (-3848,-5016) to
+    /// (-3864,-5024): at -3850,-5020 a stair support was not all the way supported (the road earthwork lowered the earth and
+    /// the whole column collapsed). Black marble stacks 1 m columns; the finished-ground pass carried
+    /// a column at most 4 pillars, 4 m, so a road cut 6 m under it left it hanging. Carried to the finished ground, as deep
+    /// as the terrain writer lowers ground (8 m), whatever the kit's pillar.
+    /// </summary>
+    [Fact]
+    public void AMarbleColumnIsCarriedToTheFinishedGroundUnderADeepRoadCut()
+    {
+        var run = new StairRun { From = new Vector2(-3848f, -5016f), To = new Vector2(-3864f, -5024f), Width = 2f };
+        // Its bottom column piece's base on the ground the layout read, 57 m; the road's cut leaves it at 51 m.
+        run.Pieces.Add(new StructurePiece { Kind = StructurePieceKind.StairSupport, Prefab = StairKit.BlackMarble.Support, Position = new Vector3(-3850f, 57.5f, -5020f) });
+        int added = BuriedPieces.CarryColumns(run, (x, z) => 51f);
+        float bottom = run.Pieces.Min(p => p.Position.y) - StairKit.BlackMarble.SupportHeight / 2f;
+        Assert.True(bottom <= 51f - StairLayout.SupportBury + 1e-3f, $"the column ends at {bottom:F2} over the 51 m finished ground ({added} carried)");
+        Assert.Equal(7, added);
+        // Stone stacks 2 m pillars: the same 8 m most.
+        Assert.Equal(4, BuriedPieces.CarryColumns(Pillar(10f), (x, z) => -20f));
+        var marble = new StairRun { From = new Vector2(0f, 0f), To = new Vector2(0f, 4f), Width = 2f };
+        marble.Pieces.Add(new StructurePiece { Kind = StructurePieceKind.StairSupport, Prefab = StairKit.BlackMarble.Support, Position = new Vector3(0f, 10f, 0f) });
+        Assert.Equal(8, BuriedPieces.CarryColumns(marble, (x, z) => -20f));
+    }
+
+    /// <summary>
     /// The one column rule on the finished ground: a column whose base the network's earthwork left in the air is carried
     /// on down until its base is SupportBury under the lowest ground at its corners (a road's cut 1.5 m under it: one
     /// pillar more), but never by a pillar that would lie wholly under the ground; a cantilever's clipped pillars are left.
