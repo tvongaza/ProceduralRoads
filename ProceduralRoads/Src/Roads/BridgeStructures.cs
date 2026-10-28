@@ -33,16 +33,53 @@ public sealed class BridgeStructures : IStructureSource
         }
     }
 
-    /// <summary>
-    /// The pieces of one crossing, in its kit: a Dvergr viaduct where
-    /// <see cref="DvergrViaduct.Applies"/> (the Mistlands, a deck 6 m or more up, piers under the
-    /// ceiling), else the wooden bridge. The one place the kit is chosen: the plan, the append
-    /// queue and the counts all come through here.
-    /// </summary>
-    public static List<StructurePiece> Solve(RoadCrossing crossing, WorldGenerator world, int seed) =>
-        DvergrViaduct.Applies(crossing, world) ? DvergrViaduct.Solve(crossing, world, seed) : BridgeLayout.Solve(crossing, world, seed);
+    /// <summary>The kits a crossing is built in (<see cref="KitFor"/>).</summary>
+    public enum Kit
+    {
+        /// <summary>The plain wooden kit (<see cref="BridgeLayout"/>): every biome but the Mistlands, every ford, and a
+        /// Mistlands bridge refused as a viaduct for any reason but being under its floor.</summary>
+        Wood,
+        /// <summary>The Dvergr harbour pier's wooden pieces (<see cref="DvergrWoodBridge"/>): a Mistlands bridge under the
+        /// viaduct floor, 0 to 12 m.</summary>
+        DvergrWood,
+        /// <summary>The Dvergr viaduct (<see cref="DvergrViaduct"/>).</summary>
+        DvergrViaduct,
+    }
 
-    /// <summary>The deck's walking surface in the crossing's kit (<see cref="Solve"/>'s choice).</summary>
+    /// <summary>
+    /// The one owner of a crossing's kit. A Dvergr viaduct where <see cref="DvergrViaduct.Applies"/> (the Mistlands, piers
+    /// from the 12 m floor to the ceiling, end stairs within their most). Else, a Mistlands bridge under that floor
+    /// (<see cref="DvergrViaduct.UnderTheFloor"/>: a deck under 6 m over the ground or water, or its tallest pier under
+    /// <see cref="DvergrViaduct.MinViaductPier"/>) is built from the Dvergr pier's wooden pieces, 0 to
+    /// 12 m: the 6 m line is the viaduct's own old floor, not a line in how a low bridge should look, and a Mistlands
+    /// bridge 2 m over a stream is the low crossing the harbour pier is. A Mistlands bridge refused for its piers over the
+    /// ceiling or its end stairs keeps the plain wooden kit, as does every other biome and every ford.
+    /// <para>Only <see cref="Solve"/> reads the Dvergr wood choice: that kit's deck height and ends are the plain wooden
+    /// kit's, so <see cref="DeckHeight"/>, <see cref="Ends"/> and the generator ask only whether it is a viaduct.</para>
+    /// </summary>
+    public static Kit KitFor(RoadCrossing crossing, WorldGenerator world)
+    {
+        if (DvergrViaduct.Applies(crossing, world)) return Kit.DvergrViaduct;
+        if (crossing != null && world != null && crossing.Kind == CrossingKind.Bridge
+            && world.GetBiome(crossing.Center.x, crossing.Center.y) == Heightmap.Biome.Mistlands
+            && DvergrViaduct.UnderTheFloor(crossing, world))
+            return Kit.DvergrWood;
+        return Kit.Wood;
+    }
+
+    /// <summary>
+    /// The pieces of one crossing, in its kit (<see cref="KitFor"/>). The one place the pieces are chosen: the plan, the
+    /// append queue and the counts all come through here.
+    /// </summary>
+    public static List<StructurePiece> Solve(RoadCrossing crossing, WorldGenerator world, int seed) => KitFor(crossing, world) switch
+    {
+        Kit.DvergrViaduct => DvergrViaduct.Solve(crossing, world, seed),
+        Kit.DvergrWood => DvergrWoodBridge.Solve(crossing, world, seed),
+        _ => BridgeLayout.Solve(crossing, world, seed),
+    };
+
+    /// <summary>The deck's walking surface in the crossing's kit (<see cref="Solve"/>'s choice; the Dvergr wood kit's is the
+    /// plain wooden kit's).</summary>
     public static float DeckHeight(RoadCrossing crossing, WorldGenerator world) =>
         DvergrViaduct.Applies(crossing, world) ? DvergrViaduct.DeckHeight(crossing, world) : BridgeLayout.DeckHeight(crossing, world);
 
@@ -93,7 +130,7 @@ public sealed class BridgeStructures : IStructureSource
         var c = new Vector2(centre.x, centre.z);
         foreach (var crossing in RoadNetworkGenerator.GetRoadCrossings())
         {
-            // Every bridge, and a ford built as a footbridge.
+            // Bridges of every kit (wood, Dvergr wood, viaduct) and a ford built as a footbridge.
             bool span = crossing.Kind == CrossingKind.Ford && crossing.Style == FordStyle.Span;
             if (crossing.Kind != CrossingKind.Bridge && !span) continue;
             Vector2 a = crossing.FromBank, b = crossing.ToBank;

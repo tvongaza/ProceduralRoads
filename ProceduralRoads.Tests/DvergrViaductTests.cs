@@ -159,17 +159,20 @@ public sealed class DvergrViaductTests : IDisposable
     // ----------------------------------------------------------- fallbacks
 
     [Fact]
-    public void UnderSixMetresTheWoodenKitStays()
+    public void UnderSixMetresAWoodenKitStays()
     {
-        // A Mistlands river whose deck stands 4 m over the water: the wooden bridge.
+        // A Mistlands river whose deck stands 4 m over the water: a wooden bridge, of the Dvergr pier's wood since layout 8
+        // (DvergrWoodBridgeTests); only its bank stairs are the plain kit's.
         var low = new MistRiver { Bank = 34f };
         _scope.WithWorld(low);
         RoadCrossing c = River();
         Assert.False(DvergrViaduct.Applies(c, low));
         Assert.Contains("under 6", DvergrViaduct.Refusal(c, low));
+        Assert.Equal(BridgeStructures.Kit.DvergrWood, BridgeStructures.KitFor(c, low));
         List<StructurePiece> pieces = BridgeStructures.Solve(c, low, 1);
         Assert.NotEmpty(pieces);
-        Assert.All(pieces, p => Assert.StartsWith("wood_", p.Prefab));
+        Assert.All(pieces, p => Assert.False(IsDvergr(p), p.Prefab));
+        Assert.All(pieces.Where(p => p.Kind != StructurePieceKind.Stair && p.Prefab != BridgeLayout.PostPrefab), p => Assert.StartsWith("dvergrprops_", p.Prefab));
 
         // The same 15 m high crossing out of the Mistlands: wood as well.
         var meadows = new MistRiver { Biome = Heightmap.Biome.Meadows };

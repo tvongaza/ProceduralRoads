@@ -29,6 +29,9 @@ public class BridgeTests
     internal sealed class WideRiverWorld : WorldGenerator
     {
         public float EastRise;
+        /// <summary>The land's biome; Meadows has the deep channel read as ocean (DvergrWoodBridgeTests puts the river in the
+        /// Mistlands).</summary>
+        public Heightmap.Biome Biome = Heightmap.Biome.Meadows;
         public override float GetHeight(float wx, float wy)
         {
             if (Mathf.Abs(wx) > 220f || Mathf.Abs(wy) > 120f) return 20f;
@@ -39,7 +42,8 @@ public class BridgeTests
             return ax < 41f ? Mathf.Lerp(26f, 30.4f, (ax - 35f) / 6f) : 32f + EastRise;
         }
         public override Heightmap.Biome GetBiome(float wx, float wy, float oceanLevel = 0.02f, bool waterAlwaysOcean = false) =>
-            GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
+            Biome != Heightmap.Biome.Meadows ? Biome   // the channel too: the game's biome reads the base height, not the river's
+            : GetHeight(wx, wy) < RoadConstants.SeaLevel - 2f ? Heightmap.Biome.Ocean : Heightmap.Biome.Meadows;
         public override void GetRiverWeight(float wx, float wy, out float weight, out float width)
         {
             weight = Mathf.Clamp01(1f - Mathf.Abs(wx) / 80f);

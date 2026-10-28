@@ -744,7 +744,8 @@ public static class ConsoleCommands
                 // support can reach the deck. The two differ a lot: a 2.3 m deep
                 // channel between high banks carries a 12 m structure.
                 $"{(site.Kind == CrossingKind.Bridge && WorldGenerator.instance != null ? $"pier {BridgeLayout.PierHeight(site, WorldGenerator.instance):F1} m, " : "")}" +
-                $"{BridgeStructures.PiecesAt(site)} pieces");
+                $"{BridgeStructures.PiecesAt(site)} pieces" +
+                $"{(WorldGenerator.instance != null ? ", kit " + BridgeStructures.KitFor(site, WorldGenerator.instance) : "")}");
         }
     }
 
@@ -824,6 +825,13 @@ public static class ConsoleCommands
             // The wooden kit's repair diagnostic does not describe a viaduct.
             args.Context.AddString("The nearest crossing is a Dvergr viaduct: " + DvergrViaduct.Describe(site, WorldGenerator.instance) +
                 $"; {DvergrViaduct.Solve(site, WorldGenerator.instance, seed).Count} of {DvergrViaduct.SolveComplete(site, WorldGenerator.instance, seed).Count} pieces stand.");
+            return;
+        }
+        if (BridgeStructures.KitFor(site, WorldGenerator.instance) == BridgeStructures.Kit.DvergrWood)
+        {
+            // The wooden kit's repair diagnostic describes its own plates and poles, not the Dvergr pier's planks and piles.
+            args.Context.AddString("The nearest crossing is a Dvergr wood bridge: " + DvergrWoodBridge.Describe(site, WorldGenerator.instance) +
+                $"; {DvergrWoodBridge.Solve(site, WorldGenerator.instance, seed).Count} of {DvergrWoodBridge.SolveComplete(site, WorldGenerator.instance, seed).Count} pieces stand.");
             return;
         }
         List<StructurePiece> complete = BridgeLayout.SolveComplete(site, WorldGenerator.instance, seed);

@@ -69,8 +69,12 @@ public static class BridgeLayout
     /// <para>7: a viaduct's ruin halfway back toward layout 5's, every piece damaged like vanilla's locations, and
     /// its ends met by the road as a stretch of road the structure replaces (StructureEnds). A world explored partly under
     /// layout 6 keeps the pieces it has.</para>
+    ///
+    /// <para>8: a Mistlands bridge under the viaduct floor is built from the Dvergr harbour pier's wooden
+    /// pieces (<see cref="DvergrWoodBridge"/>), not the plain wooden kit. A world explored partly under layout 7 keeps the
+    /// pieces it has.</para>
     /// </summary>
-    public const int LayoutVersion = 7;
+    public const int LayoutVersion = 8;
     public const float DeckFreeboard = 0.5f;  // deck at least this far above the water
     public const float PostTopBelowDeck = 0.2f;
     public const float BeamBelowDeck = 0.13f;
@@ -333,7 +337,7 @@ public static class BridgeLayout
         {
             DeckPrefab => FloorSnaps,
             BeamPrefab => BeamSnaps,
-            StairPrefab => StairSnaps,
+            StairPrefab or DvergrWoodBridge.StairPrefab => StairSnaps,
             PostPrefab => PoleSnaps,
             _ => System.Array.Empty<Vector3>(),
         };

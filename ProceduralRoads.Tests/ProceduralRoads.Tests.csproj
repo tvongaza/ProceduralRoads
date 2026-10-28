@@ -95,6 +95,7 @@
         <Compile Include="../ProceduralRoads/Src/Roads/RoadCrossing.cs" Link="ModSrc/RoadCrossing.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/BridgeLayout.cs" Link="ModSrc/BridgeLayout.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/DvergrViaduct.cs" Link="ModSrc/DvergrViaduct.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/DvergrWoodBridge.cs" Link="ModSrc/DvergrWoodBridge.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StructurePiece.cs" Link="ModSrc/StructurePiece.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/StructureSource.cs" Link="ModSrc/StructureSource.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/BridgeStructures.cs" Link="ModSrc/BridgeStructures.cs"/>

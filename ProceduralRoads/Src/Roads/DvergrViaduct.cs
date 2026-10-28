@@ -241,6 +241,12 @@ public static class DvergrViaduct
     /// </summary>
     public static bool Applies(RoadCrossing crossing, WorldGenerator world) => Refusal(crossing, world) == null;
 
+    /// <summary>Whether a crossing stands under the viaduct's floor: its deck under <see cref="MinClearance"/> over the
+    /// ground or water, or its tallest pier under <see cref="MinViaductPier"/>, the same two tests <see cref="Refusal"/>
+    /// makes, in its order. Where a low Mistlands bridge gets the Dvergr pier's wood (BridgeStructures.KitFor).</summary>
+    public static bool UnderTheFloor(RoadCrossing crossing, WorldGenerator world) =>
+        Clearance(crossing, world) < MinClearance || TallestPier(crossing, world) < MinViaductPier - 1e-3f;
+
     /// <summary>Why <see cref="Applies"/> says no, or null.</summary>
     public static string? Refusal(RoadCrossing crossing, WorldGenerator world)
     {
