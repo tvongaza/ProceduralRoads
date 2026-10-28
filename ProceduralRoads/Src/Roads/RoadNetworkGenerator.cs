@@ -864,7 +864,7 @@ public static partial class RoadNetworkGenerator
         if (CorridorSnap > RoadSnap)
             Log.LogInfo($"  Corridor snap (a road alongside another merges onto it, within {CorridorSnap:F0} m): {m_corridorSnapped} waypoint(s) moved, {m_chainsShared} chain(s) of crossings shared, candidates included");
         if (RoadsLog)
-            Log.LogInfo($"  Viaducts: {m_viaductsLaid} Mistlands viaduct(s) laid over dry valleys (DvergrViaduct); road attempts turned onto a bridge end's apron after the search {m_viaductFeetPut}, ends the road could not be brought to {m_viaductFeetUnmet}; searched again without a viaduct whose end the road did not meet {m_viaductsRefusedAtEnds}; river bridge ends not met {m_bridgeEndsUnmet}");
+            Log.LogInfo($"  Viaducts: {m_viaductsLaid} Mistlands viaduct(s) laid over dry valleys (DvergrViaduct); road attempts turned onto a bridge end's apron after the search {m_viaductFeetPut}, ends the road could not be brought to {m_viaductFeetUnmet}; searched again without a viaduct whose end the road did not meet {m_viaductsRefusedAtEnds}; river bridge ends not met {m_bridgeEndsUnmet}; roads planned again with wooden ends as before {m_woodEndsAdapted}");
         if (RoadWiggle.Enabled)
             Log.LogInfo($"  Sway (planned pieces, candidates included): kept {RoadSpatialGrid.SwayKept}, dropped as refused {RoadSpatialGrid.SwayRefused}, dropped for more earth {RoadSpatialGrid.SwayMoreEarth}; full sway to {RoadWiggle.Flat:P0} ground grade, {RoadWiggle.SlopeFloor:P0} of it at the {RoadGrade.Configured:P0} cap, meander fades out at {RoadPathfinder.MeanderFlat:P0}");
             Log.LogInfo($"  Sway on slopes (kept plans, over {RoadWiggle.Flat:P0} grade and more than 1 m off the plain line): {RoadSpatialGrid.SlopeSwayPlans} plan(s), metres by grade band 12-20%: {RoadSpatialGrid.SlopeSwayMillimetres[0] / 1000}, 20-28%: {RoadSpatialGrid.SlopeSwayMillimetres[1] / 1000}, over 28%: {RoadSpatialGrid.SlopeSwayMillimetres[2] / 1000}");
@@ -1548,6 +1548,15 @@ public static partial class RoadNetworkGenerator
         // Refused with stairs on it, it is refused: stairs are always on, and a road is never searched again without them
         // (there is no flag for them, nor code to work
         // around them). The planner tries its other candidates.
+        // A wooden bridge's end adapts, it never refuses the road (MeetsTheRoad): refused with any brought through the owner,
+        // the road is planned again with its wooden ends not brought through the owner.
+        if (plans == null && t_woodOwner && crossings.Exists(c => c.Kind == CrossingKind.Bridge && !DvergrViaduct.Applies(c, GenerationWorld) && MeetsTheRoad(c)))
+        {
+            System.Threading.Interlocked.Increment(ref m_woodEndsAdapted);
+            t_woodOwnerOff = true;
+            try { return GenerateRoadCore(startCenter, askedStartRadius, endCenter, askedEndRadius, width, label, networkHints, stretchRetry); }
+            finally { t_woodOwnerOff = false; }
+        }
         if (plans == null)
         {
             string why = RoadSpatialGrid.LastRefusal ?? "other (crossing or footprint)";
@@ -2391,6 +2400,15 @@ public static partial class RoadNetworkGenerator
     {
         using var fitting = new RoadFittingActivity(IslandActivity);
         var plans = PlanPieces(path, crossings, width, startGround, endGround, stairs);
+        // A wooden bridge's end adapts, it never refuses the road (MeetsTheRoad): planned again with its wooden ends
+        // not brought through the owner.
+        if (plans == null && t_woodOwner && crossings.Exists(c => c.Kind == CrossingKind.Bridge && !DvergrViaduct.Applies(c, GenerationWorld) && MeetsTheRoad(c)))
+        {
+            System.Threading.Interlocked.Increment(ref m_woodEndsAdapted);
+            t_woodOwnerOff = true;
+            try { plans = PlanPieces(path, crossings, width, startGround, endGround, stairs); }
+            finally { t_woodOwnerOff = false; }
+        }
         // A shallow ford is a style, never a reason a road cannot be built: its banks hold their
         // natural heights and split the road, and a short piece between two held ends can be too
         // steep for the cap (measured: a road refused at a 17 m piece 7 m high between a pool's
@@ -2450,13 +2468,29 @@ public static partial class RoadNetworkGenerator
         return turned + pinned > 0 ? Find() : crossings;
     }
 
-    /// <summary>A crossing whose two ends the one owner brings the road to (StructureEnds): a Dvergr viaduct, neither deck end
-    /// walked in off land. A wooden bridge's ends keep the road they had: brought through the owner too, the road to every
-    /// wooden river bridge was turned onto its stair runs' line and levelled to their feet, and on six test worlds that
-    /// cost 11 destinations and 20 network components (about 150 more roads refused as crossing a protected site), where
-    /// the viaducts alone cost none.</summary>
-    internal static bool MeetsTheRoad(RoadCrossing c) =>
-        c.Kind == CrossingKind.Bridge && c.FromLand == null && c.ToLand == null && DvergrViaduct.Applies(c, GenerationWorld) && BridgeStructures.Ends(c, GenerationWorld).near.IsSet;
+    /// <summary>A crossing whose two ends the one owner brings the road to (StructureEnds): a bridge of either kit, neither
+    /// deck end walked in off land. A wooden bridge's end adapts rather than refuses: it is brought through the
+    /// owner only where its approach (1.5 aprons out along its line) is clear of protected sites, and where a road planned
+    /// that way is refused, the road is planned again with its wooden bridges' ends not brought through the owner
+    /// (<see cref="t_woodOwner"/>). Bringing every wooden end through the owner lost 11 destinations on six test
+    /// worlds, about 150 more roads refused as "final road crosses a protected site".</summary>
+    internal static bool MeetsTheRoad(RoadCrossing c)
+    {
+        if (c.Kind != CrossingKind.Bridge || c.FromLand != null || c.ToLand != null) return false;
+        var (near, far) = BridgeStructures.Ends(c, GenerationWorld);
+        if (!near.IsSet) return false;
+        if (DvergrViaduct.Applies(c, GenerationWorld)) return true;
+        if (!t_woodOwner) return false;
+        float reach = StructureEnds.ApronLength * 1.5f, clearance = RoadConstants.DefaultRoadWidth * 0.5f + 2f;
+        foreach (StructureEnds.End end in new[] { near, far })
+            if (RoadSiteProtection.BlocksSegment(end.Joint, end.Meet - end.Up * reach, clearance, null, null)) return false;
+        return true;
+    }
+
+    /// <summary>Whether a wooden bridge's ends are brought through the owner on this thread's road (MeetsTheRoad); false
+    /// while a road refused that way is planned again without them.</summary>
+    [System.ThreadStatic] private static bool t_woodOwnerOff;
+    private static bool t_woodOwner => !t_woodOwnerOff;
 
     /// <summary>
     /// The final check of the one owner (StructureEnds.Reachable): every end of every bridge on the road, as planned, met by
@@ -2550,7 +2584,9 @@ public static partial class RoadNetworkGenerator
         return null;
     }
 
-    private static int m_viaductFeetPut, m_viaductFeetUnmet, m_viaductsRefusedAtEnds, m_bridgeEndsUnmet;
+    private static int m_viaductFeetPut, m_viaductFeetUnmet, m_viaductsRefusedAtEnds, m_bridgeEndsUnmet, m_woodEndsAdapted;
+    /// <summary>Roads planned again with their wooden bridges' ends not brought through the owner, refused through the owner.</summary>
+    public static int WoodEndsAdapted => m_woodEndsAdapted;
     /// <summary>Road searches made again without a valley viaduct whose end the road did not meet (or refused with it).</summary>
     public static int ViaductsRefusedAtEnds => m_viaductsRefusedAtEnds;
     /// <summary>River bridge ends the road as built does not meet (their kit stands).</summary>
@@ -3725,7 +3761,7 @@ public static partial class RoadNetworkGenerator
         StairStructures.Reset();
         DvergrViaduct.ResetStanding();
         lock (m_laidDecks) m_laidDecks.Clear();
-        m_viaductsLaid = m_viaductFeetPut = m_viaductFeetUnmet = m_viaductsRefusedAtEnds = m_bridgeEndsUnmet = 0;
+        m_viaductsLaid = m_viaductFeetPut = m_viaductFeetUnmet = m_viaductsRefusedAtEnds = m_bridgeEndsUnmet = m_woodEndsAdapted = 0;
         RoadStairRuns.ResetCache();
         m_underRoads.Clear();
         m_lastResortServed.Clear();

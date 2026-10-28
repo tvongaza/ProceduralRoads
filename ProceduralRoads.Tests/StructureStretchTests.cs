@@ -295,6 +295,32 @@ public sealed class StructureStretchTests : IDisposable
         Assert.Contains(plans!, r => r.Points.Any(p => Vector2.Distance(p, path[2]) <= 0.75f) && r.Points.Any(p => Vector2.Distance(p, path[3]) <= 0.75f));
     }
 
+    /// <summary>
+    /// Wooden bridge ends through the same owner (refusing such a bridge lost 11 destinations; the end is adapted instead). A road across a wide river on a slant: each end of its wooden bridge is met by road at its foot, within
+    /// a step of its height, and RoadCrossingDetector's banks are no longer where the road stops short of the run.
+    /// </summary>
+    [Fact]
+    public void AWoodenBridgesEndsAreMetByTheRoadAtTheirFoot()
+    {
+        var world = new BridgeTests.WideRiverWorld();
+        _scope.WithWorld(world);
+        RoadCrossingDetector.SetFordStyleWeights(1f, 1f, 1f);
+        SetPathfinder(new RoadPathfinder(world) { Fords = true, Bridges = true, MaxGrade = 0f });
+        var roads = new List<RoadSpatialGrid.PlannedPath>();
+        RoadNetworkGenerator.PieceCommitted = (plan, _) => roads.Add(plan);
+        Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-200f, -40f), 0f, new Vector2(200f, 40f), 0f, 4f, "across the river"));
+        RoadCrossing c = Assert.Single(RoadNetworkGenerator.GetRoadCrossings(), x => x.Kind == CrossingKind.Bridge);
+        Assert.False(DvergrViaduct.Applies(c, world));
+        var (near, far) = BridgeStructures.Ends(c, world);
+        foreach (var (end, which) in new[] { (near, "near"), (far, "far") })
+        {
+            var at = roads.SelectMany(r => r.Points.Select((p, i) => (p, h: r.Heights[i]))).OrderBy(x => Vector2.Distance(x.p, end.Meet)).First();
+            Assert.True(Vector2.Distance(at.p, end.Meet) <= 0.75f, $"{which} end: no road at its foot {end.Meet} (nearest {at.p})");
+            Assert.True(StructureEnds.Reachable(at.h, end), $"{which} end: the road at its foot stands {at.h:F2}, the foot {end.MeetHeight:F2}");
+        }
+        Assert.Equal(0, RoadNetworkGenerator.BridgeEndsUnmet);
+    }
+
     // ---------------------------------------------------------------- on the road as built
 
     /// <summary>
