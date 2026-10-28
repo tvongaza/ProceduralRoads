@@ -20,6 +20,7 @@ public enum StructurePieceKind
     ViaductPier,     // a Dvergr viaduct's pier: footing, shafts, bands, corbels, iron screens (DvergrViaduct)
     ViaductDeck,     // a Dvergr viaduct's iron floor or the black marble course on it
     ViaductParapet,  // an arch along a Dvergr viaduct's edge, or a head beside it over a pier
+    Flair,           // a decoration on a structure, as vanilla's locations dress theirs: a mist light, a vine (no support, no clearance)
 }
 
 /// <summary>One placed piece of a structure the network builds (a bridge today), a

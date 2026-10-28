@@ -109,6 +109,8 @@ public sealed class BridgeStructures : IStructureSource
         Vector3? last = null;
         foreach (StructurePiece piece in zonePieces)
         {
+            // Flair hangs on the structure's own pieces, whose areas already clear it: none of its own.
+            if (piece.Kind == StructurePieceKind.Flair) continue;
             if (last.HasValue && Vector3.Distance(last.Value, piece.Position) < 2f)
                 continue;
             // Wide enough for a two-lane deck: pieces sit up to DeckHalfWidth

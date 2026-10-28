@@ -331,19 +331,20 @@ public sealed class DvergrWoodBridgeTests : IDisposable
             var ruined = DvergrWoodBridge.Solve(c, low, s);
             Assert.True(ruined.Count(p => p.Kind == StructurePieceKind.Deck) <= complete.Count(p => p.Kind == StructurePieceKind.Deck));
             // Every standing piece is one of the complete bridge's (the kit leaves no stubs or debris: its piles all stand).
-            Assert.All(ruined, p => Assert.Contains(P(p), completeSet));
+            // Mist lights are the seed's own, not ruin (DvergrWoodLightTests).
+            Assert.All(ruined.Where(p => p.Kind != StructurePieceKind.Flair), p => Assert.Contains(P(p), completeSet));
         }
         // Somewhere over twelve seeds a plank is missing mid-span.
         Assert.Contains(Enumerable.Range(1, 12), s => DvergrWoodBridge.Solve(c, low, s).Count(p => p.Kind == StructurePieceKind.Deck) < complete.Count(p => p.Kind == StructurePieceKind.Deck));
     }
 
     [Fact]
-    public void ABridgeCarriesNoLights()
+    public void ABridgeCarriesNoLanterns()
     {
-        // The harbour's lanterns hang from its buildings, not the dock; mist lights wait for the flair work.
+        // The harbour's lanterns hang from its buildings, not the dock; its mist lights are DvergrVanillaTests'.
         var (c, low) = Low();
         for (int s = 1; s <= 40; s++)
-            Assert.DoesNotContain(DvergrWoodBridge.Solve(c, low, s), p => p.Prefab.Contains("lantern") || p.Prefab.Contains("demister"));
+            Assert.DoesNotContain(DvergrWoodBridge.Solve(c, low, s), p => p.Prefab.Contains("lantern"));
     }
 
     [Fact]

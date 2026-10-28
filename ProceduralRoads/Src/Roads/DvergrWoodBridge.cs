@@ -23,10 +23,10 @@ namespace ProceduralRoads;
 /// <item>planks: <see cref="Plank"/> laid ACROSS the deck every metre (<see cref="PlankPitch"/>) at y 31.5, alternating
 /// end for end (yaw 0 / 180);</item>
 /// <item>stringers: the same beam laid ALONG the deck under the planks, two of them 4 m apart, centres 6 m apart along
-/// the pier, each <see cref="StringerDrop"/> under the planks' centres so it reaches 0.3 m up into them (Mistlands_Harbour1 fort (1)/pier:
-/// planks y 1.5, stringers y 1.0);</item>
-/// <item>no lights of its own: the harbour's <c>dvergrprops_lantern</c>s hang from its buildings, not the dock, so a bridge has
-/// none; its <c>dverger_demister</c> mist lights wait for the flair work.</item>
+/// the pier, each <see cref="StringerDrop"/> under the planks' centres so it reaches 0.3 m up into them (Mistlands_Harbour1
+/// fort (1)/pier: planks y 1.5, stringers y 1.0);</item>
+/// <item>no lanterns: the harbour's <c>dvergrprops_lantern</c>s hang from its buildings, not the dock; but mist lights (<see cref="Light"/>) on some piles of some bridges, as the harbour's
+/// (<see cref="LitBridgeChance"/>, <see cref="LightChance"/>).</item>
 /// </list>
 /// <para>The pieces' sizes and origins are MEASURED in game (cli_piece_geometry; see each constant).
 /// The walking surface is the planks' top, the wooden kit's deck height; the stringers lie under the planks; the piles'
@@ -94,6 +94,23 @@ public static class DvergrWoodBridge
     /// top 1.9). Open choice; the mist lights stand on whichever.</summary>
     public const float PileAboveDeck = 0.75f;
 
+    // --------------------------------------------------------- mist lights
+    /// <summary>The mist light: vanilla's wisp light, which also clears the mist around it (its Demister force field's sphere
+    /// reaches 15 m, its light 10 m). Networked, WearNTear 200 / Wood, needs no support. Its box hangs
+    /// under its origin (y -0.65..0.09).</summary>
+    public const string Light = "dverger_demister";
+    /// <summary>A mist light's origin over the top of the pile it stands on: the harbour's 0.5 m (Mistlands_Harbour1 fort (1)/pier/dverger_demister (3) at y 5 over dvergrprops_wood_pole (3) centred y 2.5, top 4.5;
+    /// the same x, z and yaw). Its box then sits 0.15 m into the pile's top.</summary>
+    public const float LightOverPile = 0.5f;
+    /// <summary>The share of Dvergr wood bridges that have mist lights at all (only some do, as in the harbour): one in three, a judgement call.</summary>
+    public const float LitBridgeChance = 1f / 3f;
+    /// <summary>On a bridge that has them, the chance each top pile carries one: the harbour's demisters' RandomSpawn 33 %
+    /// (Mistlands_Harbour1 fort (1)/pier/dverger_demister (4), (5)). As the harbour's
+    /// dverger_demister (3), which has no RandomSpawn, one pile always carries one.</summary>
+    public const float LightChance = 0.33f;
+    /// <summary>Ruin roles of the mist lights (this kit's 11-14).</summary>
+    public const int RoleLitBridge = 12, RoleLight = 13;
+
     // ------------------------------------------------------------ the ruin
     /// <summary>The kit's ruin, in the one ruin owner: the vanilla harbour's (<see cref="BridgeLayout.DvergrWoodRuin"/>).</summary>
     public static BridgeLayout.RuinProfile Profile => BridgeLayout.DvergrWoodRuin;
@@ -144,6 +161,9 @@ public static class DvergrWoodBridge
         int n = bents.Length;
         float mid = (n - 1) * 0.5f;
         var alive = new bool[n];
+        // Each standing bent's top piles outside the navigation gap, where a mist light may stand: the same in the complete
+        // and the ruined bridge (every Dvergr wood bent outside the gap stands).
+        var tops = new List<(int bent, int side, Vector3 top)>();
         for (int i = 0; i < n; i++)
         {
             Vector2 at = from + dir * bents[i];
@@ -155,10 +175,12 @@ public static class DvergrWoodBridge
             float ground = BiomeBlendedHeight.GetBlendedHeight(at.x, at.y, world);
             if (alive[i])
             {
+                bool gapBent = !freeSpan && BridgeLayout.InNavigationGap(crossing, bents[i]);
                 foreach (int s in new[] { BridgeLayout.Ruin.Left, BridgeLayout.Ruin.Right })
                 {
                     Vector2 p = at + side * (s * PileSideOffset);
                     EmitPiles(pieces, p, BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world), deckH + PileAboveDeck, yaw);
+                    if (!gapBent) tops.Add((i, s, new Vector3(p.x, deckH + PileAboveDeck, p.y)));
                 }
             }
             else if (freeSpan || inGap || !ruin)
@@ -244,9 +266,34 @@ public static class DvergrWoodBridge
         BridgeLayout.EmitSteps(pieces, world, deckEnd, -dir, side, deckH, r, BridgeLayout.Bays(crossing.Width) + 1, StairPrefab, Pile,
             postSegment: PileLength);
 
+        EmitLights(pieces, r, tops, yaw);
+
         // Every piece worn as the vanilla harbour's (Location.m_applyRandomDamage), in the one ruin owner.
         if (ruin) r.ApplyLocationDamage(pieces);
         return pieces;
+    }
+
+    /// <summary>
+    /// Mist lights on a bridge's top piles, as the harbour has them (only some bridges have them, and on those only some posts): a bridge has them at <see cref="LitBridgeChance"/>;
+    /// on one that does, one top pile always carries one and each other at <see cref="LightChance"/>, the light
+    /// <see cref="LightOverPile"/> over the pile's top, turned as the pile. Fixed per crossing and world seed.
+    /// </summary>
+    private static void EmitLights(List<StructurePiece> pieces, BridgeLayout.Ruin r, List<(int bent, int side, Vector3 top)> tops, float yaw)
+    {
+        if (tops.Count == 0 || r.Roll(0, BridgeLayout.Ruin.Centre, RoleLitBridge) >= LitBridgeChance) return;
+        int always = Mathf.Min(tops.Count - 1, Mathf.FloorToInt(r.Roll(0, BridgeLayout.Ruin.Centre, RoleLight) * tops.Count));
+        for (int k = 0; k < tops.Count; k++)
+        {
+            var (bent, s, top) = tops[k];
+            if (k != always && r.Roll(bent, s, RoleLight, 1) >= LightChance) continue;
+            pieces.Add(new StructurePiece
+            {
+                Kind = StructurePieceKind.Flair,
+                Prefab = Light,
+                Position = new Vector3(top.x, top.y + LightOverPile, top.z),
+                YawDegrees = yaw,
+            });
+        }
     }
 
     /// <summary>A pile column from <paramref name="top"/> down until the lowest pile's foot is in the ground. Each pile is

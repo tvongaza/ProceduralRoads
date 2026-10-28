@@ -105,3 +105,92 @@ public sealed class StructureRollTests : IDisposable
         }
     }
 }
+
+/// <summary>Mist lights on Dvergr wood bridges (only some bridges have them, and on those only some posts), mounted as Mistlands_Harbour1's: 0.5 m over a pile's top.</summary>
+public sealed class DvergrWoodLightTests : IDisposable
+{
+    private readonly ValheimWorldScope _scope = new();
+    private readonly DvergrViaductTests.MistRiver _world = new() { Bank = 34f };
+    private readonly RoadCrossing _crossing = DvergrViaductTests.River();
+
+    public DvergrWoodLightTests() { RoadNetworkGenerator.Reset(); RoadSpatialGrid.Clear(); _scope.WithWorld(_world); }
+    public void Dispose() { RoadNetworkGenerator.Reset(); RoadSpatialGrid.Clear(); _scope.Dispose(); }
+
+    private static List<StructurePiece> Lights(List<StructurePiece> ps) => ps.Where(p => p.Prefab == DvergrWoodBridge.Light).ToList();
+
+    [Fact]
+    public void OnlySomeBridgesAndOnThemOnlySomePilesHaveMistLights()
+    {
+        int lit = 0, tops = 0, lights = 0;
+        const int seeds = 600;
+        for (int s = 1; s <= seeds; s++)
+        {
+            var pieces = DvergrWoodBridge.Solve(_crossing, _world, s);
+            var l = Lights(pieces);
+            if (l.Count == 0) continue;
+            lit++;
+            // Every top pile of the bridge, where a light may stand.
+            var topPiles = pieces.Where(p => p.Prefab == DvergrWoodBridge.Pile && p.Kind == StructurePieceKind.Post)
+                .GroupBy(p => (Mathf.Round(p.Position.x * 100f), Mathf.Round(p.Position.z * 100f))).Select(g => g.OrderByDescending(p => p.Position.y).First())
+                .Where(p => !BridgeLayout.InNavigationGap(_crossing, DvergrViaductTests.Along(_crossing, p))
+                    && DvergrViaductTests.Along(_crossing, p) > -0.01f && DvergrViaductTests.Along(_crossing, p) < BridgeLayout.BuiltLength(_crossing.Width) + 0.01f).ToList();
+            Assert.True(l.Count < topPiles.Count, "every pile lit");
+            tops += topPiles.Count - 1;      // one always carries a light
+            lights += l.Count - 1;
+        }
+        // About one bridge in three (DvergrWoodBridge.LitBridgeChance) ...
+        Assert.InRange(lit / (float)seeds, 1f / 3f - 0.06f, 1f / 3f + 0.06f);
+        // ... and on those a third of the other piles: the harbour's RandomSpawn 33 %.
+        Assert.InRange(lights / (float)tops, 0.33f - 0.04f, 0.33f + 0.04f);
+    }
+
+    [Fact]
+    public void AMistLightStandsHalfAMetreOverAPilesTopTurnedAsThePile()
+    {
+        int checkedLights = 0;
+        for (int s = 1; s <= 60; s++)
+        {
+            var pieces = DvergrWoodBridge.Solve(_crossing, _world, s);
+            foreach (StructurePiece light in Lights(pieces))
+            {
+                Assert.Equal(StructurePieceKind.Flair, light.Kind);
+                StructurePiece top = pieces.Where(p => p.Prefab == DvergrWoodBridge.Pile && Mathf.Abs(p.Position.x - light.Position.x) < 1e-3f
+                    && Mathf.Abs(p.Position.z - light.Position.z) < 1e-3f).OrderByDescending(p => p.Position.y).First();
+                // Mistlands_Harbour1 fort (1)/pier: dverger_demister (3) at y 5, its pile centred y 2.5 (4 m long, top 4.5).
+                Assert.Equal(top.Position.y + DvergrWoodBridge.PileLength * 0.5f + 0.5f, light.Position.y, 3);
+                Assert.Equal(top.YawDegrees, light.YawDegrees);
+                Assert.Equal(0f, light.PitchDegrees);
+                Assert.Equal(0f, light.RollDegrees);
+                checkedLights++;
+            }
+        }
+        Assert.True(checkedLights > 10);
+    }
+
+    [Fact]
+    public void TheLightsAreFixedPerCrossingAndSeed()
+    {
+        string Sig(List<StructurePiece> ps) => string.Join("|", Lights(ps).Select(p => FormattableString.Invariant($"{p.Position.x:F2},{p.Position.y:F2},{p.Position.z:F2}/{p.HealthFraction:F3}")));
+        for (int s = 1; s <= 30; s++)
+        {
+            Assert.Equal(Sig(DvergrWoodBridge.Solve(_crossing, _world, s)), Sig(DvergrWoodBridge.Solve(_crossing, _world, s)));
+            // The complete bridge has the same lights (ruin takes none away, but the navigation gap's piles carry none).
+            Assert.Equal(Lights(DvergrWoodBridge.Solve(_crossing, _world, s)).Select(p => p.Position),
+                Lights(DvergrWoodBridge.SolveComplete(_crossing, _world, s)).Select(p => p.Position));
+        }
+        // Worn as every harbour piece (vanilla's location damage, 10-60 %).
+        Assert.All(Enumerable.Range(1, 30).SelectMany(s => Lights(DvergrWoodBridge.Solve(_crossing, _world, s))),
+            p => Assert.InRange(p.HealthFraction, BridgeLayout.LocationDamageMin, BridgeLayout.LocationDamageMax));
+    }
+
+    [Fact]
+    public void AMistlandsFordSpanMayHaveThemTooAndThePlainKitNever()
+    {
+        RoadCrossing ford = RoadCrossing.Between(new Vector2(-31f, 0f), new Vector2(31f, 0f), 26f, new Vector2(-6f, 0f), 20f, CrossingKind.Ford, FordStyle.Span);
+        Assert.Equal(BridgeStructures.Kit.DvergrWood, BridgeStructures.KitFor(ford, _world));
+        Assert.Contains(Enumerable.Range(1, 40), s => Lights(DvergrWoodBridge.Solve(ford, _world, s)).Count > 0);
+        var meadows = new DvergrViaductTests.MistRiver { Bank = 34f, Biome = Heightmap.Biome.Meadows };
+        _scope.WithWorld(meadows);
+        Assert.All(Enumerable.Range(1, 40), s => Assert.Empty(Lights(BridgeStructures.Solve(_crossing, meadows, s))));
+    }
+}
