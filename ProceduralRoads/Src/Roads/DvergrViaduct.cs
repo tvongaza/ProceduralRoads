@@ -52,11 +52,12 @@ namespace ProceduralRoads;
 /// <para><b>Ruin</b> is the wooden kit's rule (<see cref="BridgeLayout.Ruin"/>,
 /// <see cref="BridgeLayout.SpanSurvival"/>, <see cref="BridgeLayout.PierSurvival"/>):
 /// fixed per crossing and world seed, survival falling toward mid-span, piers
-/// outliving the deck. Marble and iron take only a share of wood's decay
-/// (<see cref="DeckRuinShare"/>, <see cref="ArchRuinShare"/>), which is about
-/// what the vanilla viaduct shows: 3 of 48 floors and 7 of 32 arches missing.
+/// outliving the deck. Each part takes a share of wood's decay calibrated on the
+/// vanilla viaduct (<see cref="DeckRuinShare"/>, <see cref="CourseRuinShare"/>,
+/// <see cref="ArchRuinShare"/>, <see cref="HoleRuinShare"/>): few floors, a third
+/// of the course and nearly half the arches gone, now and then a whole module open.
 /// A pier's core (footing, shafts, bands, the corbel's 2x2x2s) never goes.
-/// The deck keeps a way across: no two modules running are both open.</para>
+/// The deck keeps a way across a player jumps: no two modules running are both open.</para>
 ///
 /// <para><b>Every piece is grounded or rests on one that is, by
 /// construction</b>, and no piece is wholly under the ground (the game breaks
@@ -136,10 +137,19 @@ public static class DvergrViaduct
     /// <summary>A pier shorter than this under the deck is the bank itself: its band is left out.</summary>
     public const float MinPier = 2f;
 
-    /// <summary>Marble and iron keep this share of the wooden kit's losses: deck floors and course.</summary>
+    // Ruin, like vanilla's damage to its viaducts: more deck and railing pieces missing and the iron showing through in
+    // some spots are fine, even if the player has to jump over a gap. Each is the share of the wooden kit's losses (BridgeLayout.SpanSurvival: 15 % at a bank, 60 % at
+    // mid-span, 37.5 % on average) a part takes, read off the vanilla Mistlands_Viaduct1 (24 modules): 3 of 48 iron floors missing (6 %), 21 of 69 deck course blocks
+    // (30 %), 21 of 46 arches (46 %), and one whole module open (floors and course), a 2 m gap a player jumps.
+    /// <summary>Iron floors: about 6 % gone on average (vanilla 6 %).</summary>
     public const float DeckRuinShare = 0.15f;
-    /// <summary>... and arches, which vanilla is missing more of.</summary>
-    public const float ArchRuinShare = 0.5f;
+    /// <summary>The marble course on the floors: about 30 % gone (vanilla 30 %), the iron showing through.</summary>
+    public const float CourseRuinShare = 0.8f;
+    /// <summary>Arches: about 45 % gone (vanilla 46 %).</summary>
+    public const float ArchRuinShare = 1.2f;
+    /// <summary>A whole module open, both floors and the course over them: about 4 % of modules (vanilla 1 of 24). Never two
+    /// running, so every gap is one module, 2 m, which a player jumps.</summary>
+    public const float HoleRuinShare = 0.1f;
 
     /// <summary>Heights relative to the deck surface D (the course's top).</summary>
     public const float FloorDrop = 2f, CourseDrop = 1f, ArchRise = 1f;
@@ -147,7 +157,7 @@ public static class DvergrViaduct
     private const float ShaftTop = -8f;
 
     // Ruin roles, apart from the wooden kit's own (1-10) so a key never means two things.
-    private const int RoleFloor = 21, RoleCourse = 22, RoleArch = 23, RoleOrnament = 24, RoleScreen = 25, RoleHead = 26;
+    private const int RoleFloor = 21, RoleCourse = 22, RoleArch = 23, RoleOrnament = 24, RoleScreen = 25, RoleHead = 26, RoleHole = 27;
     private const int RoleFloorHealth = 31, RoleCourseHealth = 32, RoleArchHealth = 33, RoleOrnamentHealth = 34;
 
     /// <summary>One piece of the pier pattern: offsets from the pier's centre on the deck line
@@ -744,33 +754,69 @@ public static class DvergrViaduct
             for (int lane = 0; lane < 2; lane++)
                 floor[m, lane] = !gap[m] && (!ruin || end || r.Roll(m, lane == 0 ? -1 : 1, RoleFloor) < Survives(c, DeckRuinShare));
         }
-        // A way across: never two modules running open from side to side (but where the river's gap is).
+        // Now and then a whole module open, a gap a player jumps (never at an end, never two within three modules).
+        var holes = new List<int>();
+        if (ruin)
+            for (int m = 1; m + 1 < modules; m++)
+                if (!gap[m] && (holes.Count == 0 || m - holes[holes.Count - 1] >= 3)
+                    && r.Roll(m, 0, RoleHole) >= Survives(first + m * Module, HoleRuinShare))
+                {
+                    holes.Add(m);
+                    floor[m, 0] = floor[m, 1] = false;
+                }
+        // A way across a player jumps: never two modules running open from side to side (but where the river's gap is).
         for (int m = 1; m < modules; m++)
             if (!gap[m] && !gap[m - 1] && !floor[m, 0] && !floor[m, 1] && !floor[m - 1, 0] && !floor[m - 1, 1])
                 floor[m, r.Roll(m, 0, RoleFloor, 1) < 0.5f ? 0 : 1] = true;
         // Every floor joined, floor to floor, to one a pier's corbel or the ground carries.
-        var carried = new bool[modules, 2];
-        var queue = new Queue<(int m, int lane)>();
+        var anchored = new bool[modules, 2];
         for (int m = 0; m < modules; m++)
         {
             float c = first + m * Module;
             bool onPier = pierTops.Exists(p => Mathf.Abs(c - p) <= 4f + 1e-3f);
             bool grounded = deck - FloorDrop - 0.1f <= Ground(At(c, 0f), world) + 0.05f;
             for (int lane = 0; lane < 2; lane++)
-            {
-                bool laneGrounded = grounded || deck - FloorDrop - 0.1f <= Ground(At(c, lane == 0 ? -1f : 1f), world) + 0.05f;
-                if (floor[m, lane] && (onPier || laneGrounded)) { carried[m, lane] = true; queue.Enqueue((m, lane)); }
-            }
+                anchored[m, lane] = onPier || grounded || deck - FloorDrop - 0.1f <= Ground(At(c, lane == 0 ? -1f : 1f), world) + 0.05f;
         }
-        while (queue.Count > 0)
+        bool[,] Carry()
         {
-            var (m, lane) = queue.Dequeue();
-            foreach (var (nm, nl) in new[] { (m - 1, lane), (m + 1, lane), (m, 1 - lane) })
+            var carried = new bool[modules, 2];
+            var queue = new Queue<(int m, int lane)>();
+            for (int m = 0; m < modules; m++)
+                for (int lane = 0; lane < 2; lane++)
+                    if (floor[m, lane] && anchored[m, lane]) { carried[m, lane] = true; queue.Enqueue((m, lane)); }
+            while (queue.Count > 0)
             {
-                if (nm < 0 || nm >= modules || !floor[nm, nl] || carried[nm, nl]) continue;
-                carried[nm, nl] = true;
-                queue.Enqueue((nm, nl));
+                var (m, lane) = queue.Dequeue();
+                foreach (var (nm, nl) in new[] { (m - 1, lane), (m + 1, lane), (m, 1 - lane) })
+                {
+                    if (nm < 0 || nm >= modules || !floor[nm, nl] || carried[nm, nl]) continue;
+                    carried[nm, nl] = true;
+                    queue.Enqueue((nm, nl));
+                }
             }
+            return carried;
+        }
+        bool[,] carried = Carry();
+        // A hole that cut floors off from every pier left a longer gap than a jump: closed again, nearest the cut first.
+        for (int guard = 0; guard < modules; guard++)
+        {
+            int open = -1;
+            for (int m = 1; m < modules && open < 0; m++)
+                if (!gap[m] && !gap[m - 1] && !carried[m, 0] && !carried[m, 1] && !carried[m - 1, 0] && !carried[m - 1, 1]) open = m;
+            if (open < 0) break;
+            int hole = holes.Count == 0 ? -1 : holes.OrderBy(h => Mathf.Abs(h - open)).First();
+            if (hole < 0 || Mathf.Abs(hole - open) > 8)
+            {
+                // Not a hole's doing: both floors of the two modules put back.
+                floor[open, 0] = floor[open, 1] = floor[open - 1, 0] = floor[open - 1, 1] = true;
+            }
+            else
+            {
+                holes.Remove(hole);
+                floor[hole, 0] = floor[hole, 1] = true;
+            }
+            carried = Carry();
         }
 
         // ----- deck pieces
@@ -792,9 +838,9 @@ public static class DvergrViaduct
                 {
                     if (!carried[m, lane]) continue;
                     int sideKey = lane == 0 ? -1 : 1;
-                    if (ruin && r.Roll(m, sideKey, RoleCourse) >= Survives(c, DeckRuinShare)) continue;
+                    if (ruin && r.Roll(m, sideKey, RoleCourse) >= Survives(c, CourseRuinShare)) continue;
                     course[m, lane == 0 ? 0 : 2] = true;
-                    Add(StructurePieceKind.ViaductDeck, Block, c, sideKey * 1f, deck - CourseDrop, 90f, ruin ? Worn(r, m, sideKey, RoleCourseHealth, Survives(c, DeckRuinShare)) : 1f);
+                    Add(StructurePieceKind.ViaductDeck, Block, c, sideKey * 1f, deck - CourseDrop, 90f, ruin ? Worn(r, m, sideKey, RoleCourseHealth, Survives(c, CourseRuinShare)) : 1f);
                     if (!ruin || r.Roll(m, sideKey, RoleHead) < BridgeLayout.PierSurvival(Survives(c, ArchRuinShare)))
                         Add(StructurePieceKind.ViaductParapet, sideKey > 0 ? HeadLeft : HeadRight, c, sideKey * 3f, deck - CourseDrop,
                             sideKey > 0 ? 270f : 90f, 1f);
@@ -806,9 +852,9 @@ public static class DvergrViaduct
                 int v = (slot - 1) * 2;
                 bool under = v < 0 ? carried[m, 0] : v > 0 ? carried[m, 1] : carried[m, 0] || carried[m, 1];
                 if (!under) continue;
-                if (ruin && v != 0 && r.Roll(m, v, RoleCourse) >= Survives(c, DeckRuinShare)) continue;
+                if (ruin && r.Roll(m, v, RoleCourse) >= Survives(c, CourseRuinShare)) continue;
                 course[m, slot] = true;
-                Add(StructurePieceKind.ViaductDeck, Block, c, v, deck - CourseDrop, 90f, ruin ? Worn(r, m, v, RoleCourseHealth, Survives(c, DeckRuinShare)) : 1f);
+                Add(StructurePieceKind.ViaductDeck, Block, c, v, deck - CourseDrop, 90f, ruin ? Worn(r, m, v, RoleCourseHealth, Survives(c, CourseRuinShare)) : 1f);
             }
         }
         // Arches along both edges every 2 m, between module centres, each on the course of at
