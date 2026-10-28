@@ -89,4 +89,19 @@ public sealed class StructureStretchTests : IDisposable
                 $"a viaduct {c.FromBank} -> {c.ToBank} stands {tallest:F1} m over the finished floor, under the {DvergrViaduct.MinViaductPier:F0} m floor");
         }
     }
+    // ---------------------------------------------------------------- the stand point
+
+    /// <summary>A stand point reads the road's surface (RoadHeightAt, through
+    /// cli_call): the finished ground on a road, not the generator's ground over a cut, which put the player 8-13 m up beside cut
+    /// banks. NaN off the road.</summary>
+    [Fact]
+    public void AStandPointReadsTheRoadsSurfaceNotTheGroundOverACut()
+    {
+        var world = new RimValley();
+        _scope.WithWorld(world);
+        RoadSpatialGrid.Clear();
+        LayRoad(new Vector2(-100f, 30f), new Vector2(-60f, 30f), _ => world.Top - 9f);
+        Assert.Equal(world.Top - 9f, RoadSpatialGrid.RoadHeightAt(-80f, 31f, 3f), 3);
+        Assert.True(float.IsNaN(RoadSpatialGrid.RoadHeightAt(-80f, 40f, 3f)));
+    }
 }

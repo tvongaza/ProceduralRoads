@@ -1468,6 +1468,15 @@ public static partial class RoadSpatialGrid
     /// <summary>Nearest actual road point within reach, without allocating a census.</summary>
     /// <summary>The stored height of the nearest existing road point within
     /// <paramref name="reach"/>; false when there is none.</summary>
+    /// <summary>
+    /// The surface of the road nearest (<paramref name="x"/>, <paramref name="z"/>) within <paramref name="reach"/>, or NaN
+    /// where there is none: the finished ground a player stands on there, known before its zone loads. For aiming a teleport
+    /// (through cli_call with plain numbers): at the generator's ground, which a road's cut lies far under, it left the
+    /// player 8-13 m over the ground beside cut banks.
+    /// </summary>
+    public static float RoadHeightAt(float x, float z, float reach) =>
+        TryGetRoadHeightWithin(new Vector2(x, z), reach, out float height) ? height : float.NaN;
+
     public static bool TryGetRoadHeightWithin(Vector2 position, float reach, out float height) =>
         TryGetRoadHeightWithin(position, reach, out height, out _, out _);
 
