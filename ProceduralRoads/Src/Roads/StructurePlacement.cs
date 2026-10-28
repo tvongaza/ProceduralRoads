@@ -202,6 +202,11 @@ public static class StructurePlacement
         finally { RoadNetworkGenerator.SaveBridgeZones(); }
     }
 
+    /// <summary>A piece's turn as spawned: pitch, yaw and roll in Unity's own Euler order, as the vanilla locations'
+    /// children read: a vine hangs by its 180 degree roll. The roll was dropped here before
+    /// (the plain kit's toppled debris laid one too).</summary>
+    internal static Quaternion Rotation(StructurePiece piece) => Quaternion.Euler(piece.PitchDegrees, piece.YawDegrees, piece.RollDegrees);
+
     private static int SpawnPieces(List<StructurePiece> pieces, bool ghost, string? appendKey = null)
     {
         int spawned = 0;
@@ -221,7 +226,7 @@ public static class StructurePlacement
             GameObject? go = null;
             try
             {
-                Quaternion rotation = Quaternion.Euler(piece.PitchDegrees, piece.YawDegrees, 0f);
+                Quaternion rotation = Rotation(piece);
                 go = Object.Instantiate(prefab, piece.Position, rotation);
 
                 ZNetView nview = go.GetComponent<ZNetView>();

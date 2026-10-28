@@ -71,9 +71,14 @@ namespace ProceduralRoads;
 public static class DvergrViaduct
 {
     // ---------------------------------------------------------------- pieces
-    // Sizes from cli_piece_geometry where it was read:
-    // column_3 2 x 8 x 2, out_1 and arch 2 x 2 x 1, origin at the centre of their bounds.
-    // The others are read off the vanilla layout (their neighbours' spacing), not measured.
+    // Every size below is MEASURED on the vanilla prefabs (each prefab's non-trigger colliders
+    // in its own frame), origin at the centre of the bounds unless said:
+    // column_3 2 x 8 x 2; 2x2x2, 2x2_enforced, outcorner, head_big01/02 2 x 2 x 2; 2x2x1, out_1, arch 2 x 2 x 1 (1 m along
+    // local z); iron_floor_2x2 2 x 0.1 x 2; iron_wall_2x2 2 x 2 x 0.1 (0.1 m along local z); blackmarble_stair 2 x 1 x 2 with
+    // its origin at its FOOT (y 0..1), rising toward local -z, as wood_stair. The layout itself was read piece for piece
+    // against the vanilla Mistlands_Viaduct1 middle module and Mistlands_Viaduct2 (pier pattern, deck, arches, heads, screens:
+    // all match; the deck course's 90 degree roll in vanilla is not copied, as blackmarble_2x2x2's mesh is turned at random on
+    // every axis by its RandomPieceRotation).
     public const string Footing = "blackmarble_column_3";
     public const string Band = "blackmarble_2x2_enforced";
     public const string Block = "blackmarble_2x2x2";
@@ -220,10 +225,14 @@ public static class DvergrViaduct
         Footing => (1f, 1f, 4f),
         Band or Block => (1f, 1f, 1f),
         Filler or Corbel or Arch => (1f, 0.5f, 1f),
-        CorbelCorner => (0.5f, 0.5f, 1f),
-        Floor => (1f, 1f, 0.1f),
-        Screen => (0.1f, 1f, 1f),
-        HeadLeft or HeadRight => (0.5f, 1f, 1f),
+        // Rip: blackmarble_outcorner's collider is 2 x 2 x 2 (was taken as 1 x 1 x 2).
+        CorbelCorner => (1f, 1f, 1f),
+        // Rip: iron_floor_2x2 is 0.1 m thick and iron_wall_2x2 0.1 m (was taken as 0.2).
+        Floor => (1f, 1f, 0.05f),
+        Screen => (0.05f, 1f, 1f),
+        // Rip: blackmarble_head_big01 / big02 are 2 x 2 x 2 (were taken as 1 x 2 x 2).
+        HeadLeft or HeadRight => (1f, 1f, 1f),
+        // Origin at the foot (Rip: y 0..1): only the stairs' own run (BridgeLayout.EmitSteps) lays it, never Add.
         StepPrefab => (1f, 1f, 0.5f),
         _ => (0.5f, 0.5f, 0.5f),
     };

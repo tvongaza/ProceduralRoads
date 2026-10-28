@@ -593,9 +593,10 @@ public class BridgeRepairabilityTests
         // Layout 7: a viaduct's ruin halfway back to layout 5's and every piece damaged like vanilla's locations.
         // Layout 8: a Mistlands bridge under the viaduct floor is built from the Dvergr pier's wood (DvergrWoodBridge).
         // Layout 9: the Dvergr wood kit on its pieces' measured sizes, damaged like the vanilla harbour, on Mistlands ford spans.
+        // Layout 10: both Dvergr kits checked against the vanilla prefabs (stringers into the planks, measured sizes, roll), and flair.
         // If you are here because this failed, the question
         // is "did the emitted shape move?", and if it did the answer is a bump.
-        Assert.Equal(9, BridgeLayout.LayoutVersion);
+        Assert.Equal(10, BridgeLayout.LayoutVersion);
         // What a bump does to a saved world: BridgeLayoutTests.AStaleLayoutLeavesSpawnedZonesAlone.
     }
 

@@ -151,8 +151,11 @@ public sealed class DvergrWoodBridgeTests : IDisposable
         // dvergrprops_wood_beam is 0.8 m deep with its origin at its centre: the planks' top is the walking surface ...
         Assert.Equal(0.8f, DvergrWoodBridge.BeamDepth);
         Assert.All(pieces.Where(p => p.Kind == StructurePieceKind.Deck), p => Assert.Equal(deck, p.Position.y + 0.4f, 3));
-        // ... the stringers' top is the planks' underside ...
-        Assert.All(pieces.Where(p => p.Kind == StructurePieceKind.Beam), p => Assert.Equal(deck - 0.8f, p.Position.y + 0.4f, 3));
+        // ... the stringers' centres 0.5 m under the planks' (Mistlands_Harbour1 fort (1)/pier: planks y 1.5,
+        // stringers y 1.0), so they reach 0.3 m up into the planks as vanilla's do ...
+        Assert.Equal(0.5f, DvergrWoodBridge.StringerDrop);
+        Assert.All(pieces.Where(p => p.Kind == StructurePieceKind.Beam), p => Assert.Equal(deck - 0.4f - 0.5f, p.Position.y, 3));
+        Assert.All(pieces.Where(p => p.Kind == StructurePieceKind.Beam), p => Assert.Equal(0.3f, (p.Position.y + 0.4f) - (deck - 0.8f), 3));
         // ... dvergrprops_wood_pole is 4 m with its origin at its centre: each standing bent's top pile ends 0.75 m over the
         // walking surface, as the pier's ...
         var tops = pieces.Where(p => p.Prefab == DvergrWoodBridge.Pile && p.Kind == StructurePieceKind.Post && Along(c, p) >= -0.01f

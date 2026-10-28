@@ -78,8 +78,12 @@ public static class BridgeLayout
     /// deep, piles centred), damaged like the vanilla harbour (<see cref="DvergrWoodRuin"/>), on the Mistlands' ford spans
     /// too, its stair posts in the Dvergr pile, and no lanterns (the harbour's hang from its buildings). A world
     /// explored partly under layout 8 keeps the pieces it has.</para>
+    ///
+    /// <para>10: both Dvergr kits checked against the vanilla prefabs: the
+    /// Dvergr wood stringers 0.3 m up into the planks as the harbour's, the viaduct's piece sizes measured, a piece's roll
+    /// spawned; and the first flair. A world explored partly under layout 9 keeps the pieces it has.</para>
     /// </summary>
-    public const int LayoutVersion = 9;
+    public const int LayoutVersion = 10;
     public const float DeckFreeboard = 0.5f;  // deck at least this far above the water
     public const float PostTopBelowDeck = 0.2f;
     public const float BeamBelowDeck = 0.13f;
@@ -144,8 +148,11 @@ public static class BridgeLayout
     /// <summary>
     /// A plank missing from a Dvergr wood deck, anywhere on the span: 5 in 36. Vanilla's harbour planks go missing by
     /// RandomSpawn children (ZoneSystem.cs ~2810: each keeps its object at m_chanceToSpawn), not by damage; two
-    /// Mistlands_Harbour1 read in game had 36 and 31 dvergrprops_wood_beam (one at (4168.6, 6598.3)), about
-    /// one in seven gone; planks should only rarely be missing. The prefab's own RandomSpawn chances are unread.
+    /// Mistlands_Harbour1 read in game (one at (4168.6, 6598.3)) had 36 and 31 dvergrprops_wood_beam, about
+    /// one in seven gone; planks should only rarely be missing. In the vanilla prefab
+    /// (Mistlands_Harbour1 fort (1)/pier) no plank carries a RandomSpawn of its own; the pier's two extensions
+    /// (random (1), random (2)) are kept or dropped whole at 50 %, which is where the two harbours' counts differ. The rate
+    /// stays "rarely" (a judgement call).
     /// </summary>
     public const float DvergrWoodPlankLoss = 5f / 36f;
 

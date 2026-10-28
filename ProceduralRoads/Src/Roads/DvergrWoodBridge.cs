@@ -23,7 +23,8 @@ namespace ProceduralRoads;
 /// <item>planks: <see cref="Plank"/> laid ACROSS the deck every metre (<see cref="PlankPitch"/>) at y 31.5, alternating
 /// end for end (yaw 0 / 180);</item>
 /// <item>stringers: the same beam laid ALONG the deck under the planks, two of them 4 m apart, centres 6 m apart along
-/// the pier;</item>
+/// the pier, each <see cref="StringerDrop"/> under the planks' centres so it reaches 0.3 m up into them (Mistlands_Harbour1 fort (1)/pier:
+/// planks y 1.5, stringers y 1.0);</item>
 /// <item>no lights of its own: the harbour's <c>dvergrprops_lantern</c>s hang from its buildings, not the dock, so a bridge has
 /// none; its <c>dverger_demister</c> mist lights wait for the flair work.</item>
 /// </list>
@@ -58,7 +59,8 @@ public static class DvergrWoodBridge
     /// The bank stairs: the Dvergr wooden stair (not the corner
     /// stairs). Laid on the wooden kit's 2 m run and 1 m rise, so the run meets the road where the plain one did
     /// (<see cref="BridgeLayout.Ends"/>). Measured in game (cli_piece_geometry): the wood stair's
-    /// 2 x 1.12 x 2.03 m and four snaps, the same origin, so the swap is exact. A step over the ground is carried on a
+    /// 2 x 1.12 x 2.03 m and four snaps, the same origin, so the swap is exact (wood_stair's and
+    /// dvergrprops_wood_stair's colliders are the same, origin at the foot, rising toward local -z). A step over the ground is carried on a
     /// <see cref="Pile"/> column (<see cref="BridgeLayout.EmitSteps"/>), as the plain kit's on its pole.
     /// </summary>
     public const string StairPrefab = "dvergrprops_wood_stair";
@@ -69,17 +71,27 @@ public static class DvergrWoodBridge
     public const float BentSpacing = 5f;
     /// <summary>A pile's centre either side of the crossing line: the pier's two piles stand 5.75 m apart.</summary>
     public const float PileSideOffset = 2.875f;
-    /// <summary>A stringer's centre either side of the crossing line: the pier's stand 4 m apart.</summary>
+    /// <summary>A stringer's centre either side of the crossing line: the pier's stand 4 m apart (Mistlands_Harbour1 fort (1)/pier/dvergrprops_wood_beam (18) and (19): x 2.02 and -1.98).</summary>
     public const float StringerSideOffset = 2f;
+    /// <summary>A stringer's centre under the planks' centres: the pier's 0.5 m (Mistlands_Harbour1
+    /// fort (1)/pier: the planks dvergrprops_wood_beam (2), (8), ... at y 1.5, the stringers (18) to (23) at y 1.0), so the
+    /// 0.8 m beams overlap by 0.3 m; laid fully under the planks (layout 9) they stood 0.3 m lower than vanilla's.</summary>
+    public const float StringerDrop = 0.5f;
     /// <summary>Plank to plank along the deck.</summary>
     public const float PlankPitch = 1f;
-    /// <summary>The beam's length (along its local x), width and depth: measured, 6 x 0.8 x 0.8 m, origin at its centre (cli_piece_geometry).</summary>
+    /// <summary>The beam's length (along its local x), width and depth: measured, 6 x 0.8 x 0.8 m, origin at its centre
+    /// (cli_piece_geometry; dvergrprops_wood_beam's BoxCollider is -3..3 x
+    /// -0.4..0.4 x -0.4..0.4).</summary>
     public const float BeamLength = 6f, BeamWidth = 0.8f, BeamDepth = 0.8f;
-    /// <summary>One pile's length and its square side: measured, 0.8 x 4 x 0.8 m, origin at its centre (cli_piece_geometry).</summary>
+    /// <summary>One pile's length and its square side: measured, 0.8 x 4 x 0.8 m, origin at its centre (cli_piece_geometry;
+    /// dvergrprops_wood_pole's BoxCollider is -0.4..0.4 x -2..2 x -0.4..0.4).
+    /// Its deco_high / deco_low children (a metal collar 0.18-0.93 m over its centre, the LOD high and low meshes) carry
+    /// RandomSpawn 50 %, but RandomSpawn runs only while a location spawns (ZoneSystem.SpawnLocation) and is not saved: a pole
+    /// spawned on its own, or a harbour's pole loaded again, shows the prefab's default, both on. Nothing to copy.</summary>
     public const float PileLength = 4f, PileWidth = 0.8f;
-    /// <summary>How far a pile's top stands over the walking surface, as the plain kit's pier tops were planned.
-    /// The vanilla Mistlands_Harbour1 read in game stands its top piles higher: centred at y 32.5, top
-    /// 34.5, against plank tops at 31.9.</summary>
+    /// <summary>How far a pile's top stands over the walking surface, as the plain kit's pier tops were planned. The vanilla Mistlands_Harbour1 stands its top piles 2.6 m over the planks' top
+    /// (centred y 32.5, top 34.5, planks' top 31.9; fort (1)/pier top piles centred y 2.5, top 4.5, planks centred y 1.5,
+    /// top 1.9). Open choice; the mist lights stand on whichever.</summary>
     public const float PileAboveDeck = 0.75f;
 
     // ------------------------------------------------------------ the ruin
@@ -188,7 +200,7 @@ public static class DvergrWoodBridge
 
         // Stringers: two lines along the deck under the planks, one beam per bay centred on it (the pier's overlap the
         // bents too), or, over a free span, a chain of beams from bank to bank.
-        float stringerY = deckH - BeamDepth * 1.5f;           // its top against the planks' underside
+        float stringerY = deckH - BeamDepth * 0.5f - StringerDrop; // 0.3 m up into the planks, as the harbour's
         if (freeSpan)
         {
             int k = Mathf.Max(1, Mathf.CeilToInt(length / BeamLength - 1e-3f));
