@@ -7,6 +7,7 @@ A Valheim mod that generates procedural roads connecting locations across your w
 - Automatically generates roads from spawn to nearby points of interest
 - Terrain-aware pathfinding that follows natural contours
 - Configurable road width, length, and count
+- Server-side: players without the mod see and walk the same roads
 
 Road statistics count **stored point records**, including records copied into several spatial cells, repeated path commits and levelled bridge supports. **Committed planned-path length** sums successful planned paths, including overlap and manual appends; it excludes unplanned bridge-support collections and is not unique road distance. New saves preserve this length. Nonempty legacy road data cannot recover it reliably, so reports show **unknown (legacy save)** instead of zero. The Roads data envelope is now v4; it reads v1–v3, but older Roads readers cannot read newly written v4 data. Keep an older world backup if you intend to downgrade. This does not change road geometry or its network hash.
 
@@ -15,6 +16,11 @@ Road statistics count **stored point records**, including records copied into se
 1. Install [BepInEx](https://valheim.thunderstore.io/package/denikson/BepInExPack_Valheim/)
 2. Install [Jotunn](https://valheim.thunderstore.io/package/ValheimModding/Jotunn/)
 3. Drop `ProceduralRoads.dll` into `BepInEx/plugins/`
+
+On a dedicated server, install it on the server; players do not need it
+(see [Servers and players without the mod](#servers-and-players-without-the-mod)).
+Players who do install it are let in whatever version they run: only the server
+writes the roads.
 
 ## Configuration
 
