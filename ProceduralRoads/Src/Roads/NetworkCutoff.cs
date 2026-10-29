@@ -17,8 +17,8 @@ namespace ProceduralRoads;
 /// with its version. At load, a generated zone outside that record is excluded;
 /// no record, or one for another network, excludes every generated zone.
 ///
-/// Explicit operator commands (road_generate, road_regen_island) may still
-/// write the zones they are run in; nothing automatic may.
+/// An explicit operator command (road_generate, road_regen_island) may write
+/// them; the explored zones it writes become the network's (see Admit).
 /// </summary>
 public static class NetworkCutoff
 {
@@ -39,12 +39,6 @@ public static class NetworkCutoff
 
     /// <summary>Whether this world has had a network in place this session.</summary>
     private static bool s_hadNetwork;
-
-    /// <summary>
-    /// Excluded zones an operator's command (road_generate, road_regen_island) wrote in full this
-    /// session. The seam fade does not treat their edges as edges: their road is there.
-    /// </summary>
-    private static HashSet<Vector2s> s_writtenByOperator = new();
 
     /// <summary>
     /// How far, in metres, a road fades in from the edge of a zone left as it is. At that edge the
@@ -73,7 +67,6 @@ public static class NetworkCutoff
         s_generatedAtLoad = null;
         s_excluded = new HashSet<Vector2s>();
         s_hadNetwork = false;
-        s_writtenByOperator = new HashSet<Vector2s>();
     }
 
     /// <summary>
@@ -108,7 +101,6 @@ public static class NetworkCutoff
         Adopt();
         s_excluded = excluded;
         s_hadNetwork = true;
-        s_writtenByOperator = new HashSet<Vector2s>();
         Log($"loaded network {networkVersion}: {s_excluded.Count} zone(s) generated before it are left as they are");
     }
 
@@ -141,11 +133,30 @@ public static class NetworkCutoff
         if (Current && s_hadNetwork && ZoneSystem.instance != null)
             excluded.UnionWith(ZoneSystem.instance.m_generatedZones);
         Adopt();
-        s_excluded = excluded;
-        s_hadNetwork = true;
-        // Zones an operator wrote stay written (a write still pending for them comes from that command).
-        Log($"new network: {s_excluded.Count} zone(s) generated before it are left as they are");
+        return excluded;
     }
+
+    /// <summary>
+    /// An operator's manual road crosses these zones: it is built in full there, so every writer (terrain, rocks,
+    /// vegetation, bridge pieces) may write them from now on, and the record saves them as the network's. Returns the
+    /// zones that were excluded until now, in a stable order, so the operator can be told which explored zones the
+    /// road reshapes.
+    /// </summary>
+    public static List<Vector2s> Admit(IEnumerable<Vector2s> zones)
+    {
+        var admitted = new List<Vector2s>();
+        if (!Current) return admitted;
+        foreach (Vector2s zone in zones)
+            if (s_excluded.Remove(zone)) admitted.Add(zone);
+        admitted.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x) : a.y.CompareTo(b.y));
+        return admitted;
+    }
+
+    /// <summary>What the operator is told when a command builds roads in zones explored before the network.</summary>
+    public static string AdmissionWarning(string what, IReadOnlyList<Vector2s> zones) =>
+        $"Warning: {what} {zones.Count} zone(s) explored before the road network. They are now treated " +
+        "like land explored after it: every road there is built in full, over whatever stands on its line. Zones: " +
+        string.Join(", ", System.Linq.Enumerable.Select(zones, z => $"({z.x}, {z.y})")) + ".";
 
     /// <summary>
     /// The world is going away. With the world named, only its own state is
@@ -158,13 +169,6 @@ public static class NetworkCutoff
         s_hadNetwork = false;
         s_generatedAtLoad = null;
         s_excluded = new HashSet<Vector2s>();
-        s_writtenByOperator = new HashSet<Vector2s>();
-    }
-
-    /// <summary>An operator's command is writing this excluded zone in full (see s_writtenByOperator).</summary>
-    internal static void WrittenByOperator(Vector2s zone)
-    {
-        if (Current && s_excluded.Contains(zone)) s_writtenByOperator.Add(zone);
     }
 
     /// <summary>
@@ -178,10 +182,10 @@ public static class NetworkCutoff
     /// excluded (a fresh world) this is exactly 1 everywhere.
     /// </summary>
     public static float SeamWeight(Vector2 point) =>
-        Current && s_excluded.Count > 0 ? SeamWeight(point, s_excluded, s_writtenByOperator) : 1f;
+        Current && s_excluded.Count > 0 ? SeamWeight(point, s_excluded) : 1f;
 
     /// <summary>
-    /// Whether any point of this zone can be faded: an excluded zone (not written by an operator) is among its eight
+    /// Whether any point of this zone can be faded: an excluded zone is among its eight
     /// neighbours or is the zone itself. The fade is shorter than a zone, so nothing further away counts. Writers ask
     /// once per zone and skip <see cref="SeamWeight(Vector2)"/> where this is false.
     /// </summary>
@@ -192,13 +196,13 @@ public static class NetworkCutoff
             for (int dx = -1; dx <= 1; dx++)
             {
                 var near = new Vector2s((short)(zone.x + dx), (short)(zone.y + dy));
-                if (s_excluded.Contains(near) && !s_writtenByOperator.Contains(near)) return true;
+                if (s_excluded.Contains(near)) return true;
             }
         return false;
     }
 
     /// <summary><see cref="SeamWeight(Vector2)"/> against a given excluded set (tests).</summary>
-    internal static float SeamWeight(Vector2 point, ICollection<Vector2s> excluded, ICollection<Vector2s>? writtenByOperator = null)
+    internal static float SeamWeight(Vector2 point, ICollection<Vector2s> excluded)
     {
         if (excluded.Count == 0) return 1f;
         // The fade is shorter than a zone, so only the point's own zone and its eight neighbours can be near.
@@ -208,7 +212,7 @@ public static class NetworkCutoff
             for (int dx = -1; dx <= 1; dx++)
             {
                 var zone = new Vector2s((short)(home.x + dx), (short)(home.y + dy));
-                if (!excluded.Contains(zone) || (writtenByOperator != null && writtenByOperator.Contains(zone))) continue;
+                if (!excluded.Contains(zone)) continue;
                 Vector3 centre = ZoneSystem.GetZonePos(zone);
                 float outX = Mathf.Max(0f, Mathf.Abs(point.x - centre.x) - RoadConstants.HalfZoneSize);
                 float outZ = Mathf.Max(0f, Mathf.Abs(point.y - centre.z) - RoadConstants.HalfZoneSize);

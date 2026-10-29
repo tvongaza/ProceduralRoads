@@ -80,12 +80,12 @@ public static partial class RoadSpatialGrid
     private static ConcurrentDictionary<Vector2i, RoadPoint[]> m_roadPoints = NewCells();
     private static ConcurrentDictionary<Vector2i, RoadPoint[]> NewCells(IEnumerable<KeyValuePair<Vector2i, RoadPoint[]>>? from = null) =>
         from == null ? new(RoadGridComparer.Instance) : new(from, RoadGridComparer.Instance);
-    private static RoadPoint[]? m_cachedRoadPoints;
-    private static Vector2i m_cachedRoadGrid = new Vector2i(-999999, -999999);
     private static ReaderWriterLockSlim m_roadCacheLock = new ReaderWriterLockSlim();
     private static bool m_initialized = false;
     
     private static Dictionary<Vector2, RoadPointDebugInfo> m_debugInfo = new Dictionary<Vector2, RoadPointDebugInfo>();
+    private static readonly object m_recordGate = new object();
+    internal static object RecordGate => m_recordGate;
 
     /// <summary>
     /// Keep each road point's smoothing record for road_debug_markers and
@@ -151,6 +151,7 @@ public static partial class RoadSpatialGrid
     /// <summary>Compatibility alias. NaN means legacy committed length is unknown.
     /// New consumers should use the nullable Statistics projection.</summary>
     public static float TotalRoadLength=>CommittedPathLengthMeters ?? float.NaN;
+    internal static double? SnapshotTotalKilometres()=>Statistics.CommittedKilometres;
     
     /// <summary>
     /// Version hash for the current road network. Changes when roads are regenerated.
@@ -177,10 +178,9 @@ public static partial class RoadSpatialGrid
         {
             LoadedFromReleasedFormat = false;
             m_roadPoints.Clear();
-            m_cachedRoadPoints = null;
-            m_cachedRoadGrid = new Vector2i(-999999, -999999);
             m_initialized = false;
             m_storedPointRecords = 0;
+            lock (m_recordGate) Junctions.Clear();
             GridCellsWithRoads = 0;
             s_narrowestFiled = float.PositiveInfinity;
             m_committedPathLength = 0f;
@@ -638,8 +638,7 @@ public static partial class RoadSpatialGrid
                 return null;
             }
             float steepestAfter = RoadGrade.SteepestStep(densePoints, finalHeights);
-            if (steepestAfter > RoadGrade.SteepestPlanned)
-                RoadGrade.SteepestPlanned = steepestAfter;
+            RoadGrade.RecordSteepest(steepestAfter);
             if (steepestAfter < steepestBefore - 0.001f)
                 Log.LogDebug($"  Grade limited: steepest step {steepestBefore:P0} -> {steepestAfter:P0}");
 
@@ -746,10 +745,12 @@ public static partial class RoadSpatialGrid
             if (!RecordPointDebugInfo) continue;
             RoadPointDebugInfo debugInfo = plan.DebugInfos[i];
             debugInfo.SmoothedHeight = plan.Heights[i];
-            m_debugInfo[plan.Points[i]] = debugInfo;
+            lock (m_recordGate) m_debugInfo[plan.Points[i]] = debugInfo;
         }
 
         MergePoints(tempPoints,plan.TotalLength,true);
+        if (plan.Junctions != null && SearchStats.Enabled) lock (m_recordGate) Junctions.AddRange(plan.Junctions);
+        RoadNetworkGenerator.IslandActivity?.Committed(plan.TotalLength);
     }
 
     /// <summary>Road points levelled to the given heights and painted, stored
@@ -1034,6 +1035,10 @@ public static partial class RoadSpatialGrid
         public Junction(Vector2 at, float pull, float earth, string where = "middle") { At = at; Pull = pull; Earth = earth; Where = where; }
     }
 
+    /// <summary>Every junction of the roads committed this generation (under m_recordGate), for the
+    /// generation summary: recorded only with PROCEDURALROADS_TIMINGS (<see cref="SearchStats.Enabled"/>).</summary>
+    public static readonly List<Junction> Junctions = new();
+
     /// <summary>How many held stretches a road may let go before it is refused.</summary>
     internal const int HeldLetGoRounds = 4;
 
@@ -1290,9 +1295,7 @@ public static partial class RoadSpatialGrid
             m_storedPointRecords=total;
             m_committedPathLength=length;
             if(initialize) m_initialized=true;
-            GridCellsWithRoads = m_roadPoints.Count;
-            m_cachedRoadGrid = new Vector2i(-999999, -999999);
-            m_cachedRoadPoints = null;
+            GridCellsWithRoads = cells;
         }
         finally
         {
@@ -1321,61 +1324,22 @@ public static partial class RoadSpatialGrid
         return new Vector2i(x, y);
     }
 
+    /// <summary>The road weight at a point: how much of a road covers it and how wide that road is.
+    /// Lock-free: a commit replaces a cell's array, never edits it.</summary>
     public static void GetRoadWeight(float wx, float wy, out float weight, out float width)
     {
         Vector2i grid = GetRoadGrid(wx, wy);
 
-        m_roadCacheLock.EnterReadLock();
-        try
-        {
-            if (grid == m_cachedRoadGrid)
-            {
-                if (m_cachedRoadPoints != null)
-                {
-                    GetWeight(m_cachedRoadPoints, wx, wy, out weight, out width);
-                    return;
-                }
-                weight = 0f;
-                width = 0f;
-                return;
-            }
-        }
-        finally
-        {
-            m_roadCacheLock.ExitReadLock();
-        }
+        RoadPoint[]? points;
+        m_roadPoints.TryGetValue(grid, out points);
 
-        if (m_roadPoints.TryGetValue(grid, out var points))
+        if (points == null)
         {
-            GetWeight(points, wx, wy, out weight, out width);
-            
-            m_roadCacheLock.EnterWriteLock();
-            try
-            {
-                m_cachedRoadGrid = grid;
-                m_cachedRoadPoints = points;
-            }
-            finally
-            {
-                m_roadCacheLock.ExitWriteLock();
-            }
-        }
-        else
-        {
-            m_roadCacheLock.EnterWriteLock();
-            try
-            {
-                m_cachedRoadGrid = grid;
-                m_cachedRoadPoints = null;
-            }
-            finally
-            {
-                m_roadCacheLock.ExitWriteLock();
-            }
-            
             weight = 0f;
             width = 0f;
+            return;
         }
+        GetWeight(points, wx, wy, out weight, out width);
     }
 
     /// <summary>Whether <see cref="GetRoadWeight"/> gives this point a weight above zero: the first point of the cell that
@@ -1801,8 +1765,6 @@ public static partial class RoadSpatialGrid
             if(added>0) m_committedPathLength=null;
             m_initialized = true;
             
-            m_cachedRoadGrid = new Vector2i(-999999, -999999);
-            m_cachedRoadPoints = null;
         }
         finally
         {
@@ -2030,14 +1992,14 @@ public static partial class RoadSpatialGrid
             }
             if (ms.Position != ms.Length) return Refuse($"{ms.Length - ms.Position} byte(s) left over after the network");
             int worldSeed=WorldGenerator.instance?.GetSeed() ?? 0;
+            var cells = NewCells(loadedPoints);
             m_roadCacheLock.EnterWriteLock();
             try
             {
-                int networkVersion=ComputeRoadNetworkVersion(loadedPoints,worldSeed);
+                int networkVersion=ComputeRoadNetworkVersion(cells,worldSeed);
                 s_appendParents=parents;
-                m_roadPoints = loadedPoints;
-                m_cachedRoadGrid = new Vector2i(-999999, -999999);
-                m_cachedRoadPoints = null;
+                s_narrowestFiled = 0f;
+                m_roadPoints = cells;
                 m_initialized = true;
                 GridCellsWithRoads = loadedPoints.Count;
                 m_storedPointRecords=totalPoints;

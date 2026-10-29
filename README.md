@@ -10,6 +10,8 @@ A Valheim mod that generates procedural roads connecting locations across your w
 - Supports destinations from other mods through configuration or the registration API
 - Server-side: players without the mod see and walk the same roads
 
+When a world needs its first road network, the local host stays on the loading screen while islands are built. The indicator shows completed islands; its animation continues while a large island is still working. Dedicated servers report the same completion counts in their logs. Rows show only active islands: selected destinations processed, destinations reached, committed kilometres and pricing/search activity. The summary retains the run’s total committed kilometres as islands finish and worker slots are reused; elapsed time is not an ETA. Hover over Cancel for its discard and save behavior. Processed includes destinations whose routes were exhausted; search steps describe activity rather than percentage complete. Preparation runs in batches on the main thread and reports its current stage and meaningful work counts. Individual asset loads, allocations, sorting and final application can still pause a frame; preparation counters are not an overall percentage. Use **Cancel and return to menu** to stop initial generation without quitting Valheim. The loading screen waits while workers stop safely, then discards unpublished Roads data and requests normal logout. Vanilla may save the world and character; the next load generates its missing road network again. An indivisible preparation operation can delay handling the request. Esc retains its normal menu behavior. Saved networks load without running generation again. `road_progress` reports the current phase and island count.
+
 Road statistics count **stored point records**, including records copied into several spatial cells, repeated path commits and levelled bridge supports. **Committed planned-path length** sums successful planned paths, including overlap and manual appends; it excludes unplanned bridge-support collections and is not unique road distance. New saves preserve this length. Nonempty legacy road data cannot recover it reliably, so reports show **unknown (legacy save)** instead of zero. The Roads data envelope is now v4; it reads v1–v3, but older Roads readers cannot read newly written v4 data. Keep an older world backup if you intend to downgrade. This does not change road geometry or its network hash.
 
 ## Installation
@@ -383,6 +385,13 @@ private static void RegisterRoadLocation(string locationName)
 ## License
 
 MIT License - see LICENSE.md
+
+
+The network-selection and routed-connection update builds on the parallel
+island engine and its walkable-and-crossable detector. All pipeline settings
+use that same performance machinery; selecting the older chain/MST strategy
+does not turn off the terrain cache or worker safety. The separate performance
+release is 1.7.0; the full pipeline update is 1.8.0.
 
 
 ## Development tests
