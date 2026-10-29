@@ -46,8 +46,12 @@ public static class RoadNetworkPersistence
     /// </summary>
     private static readonly int ClearedZonesHash = "ProceduralRoads_ClearedZones".GetStableHashCode();
 
+    /// <summary>Hash key for the bridge pieces owed by manual roads (StructureAppendQueue).</summary>
+    private static readonly int AppendBridgesHash = "ProceduralRoads_AppendBridges".GetStableHashCode();
+
     /// <summary>Map icons of places placed before their roads, kept off the map until a player comes near (<see cref="HiddenSiteIcons"/>).</summary>
     private static readonly int HiddenSiteIconsHash = "ProceduralRoads_HiddenSiteIcons".GetStableHashCode();
+
     /// <summary>The network's staircases: their pieces and clearances (StairStructures).</summary>
     private static readonly int StairRunsHash = "ProceduralRoads_StairRuns".GetStableHashCode();
 
@@ -215,6 +219,7 @@ public static class RoadNetworkPersistence
     private static void WriteStructureRecords(ZDO metadataZdo, IReadOnlyCollection<Vector2s> bridgeZones)
     {
         WriteRecord(metadataZdo, BridgeZonesHash, () => SerializeBridgeZones(bridgeZones));
+        WriteRecord(metadataZdo, AppendBridgesHash, StructureAppendQueue.Serialize);
         WriteRecord(metadataZdo, StairRunsHash, StairStructures.Serialize);
         WriteRecord(metadataZdo, HiddenSiteIconsHash, HiddenSiteIcons.Serialize);
     }
@@ -351,6 +356,7 @@ public static class RoadNetworkPersistence
                 ReadOrKeep(metadataZdo, RoadStartPointsHash, "road start points", b => ReadStartPoints(b, roadStartPoints), roadStartPoints.Clear);
                 ReadOrKeep(metadataZdo, RoadCrossingsHash, "river crossings", b => ReadCrossings(b, roadCrossings), roadCrossings.Clear);
                 ReadOrKeep(metadataZdo, BridgeZonesHash, "bridge zones", b => ReadBridgeZonesOrStartAfresh(b, bridgeZones), bridgeZones.Clear);
+                ReadOrKeep(metadataZdo, AppendBridgesHash, "bridge pieces owed by manual roads", StructureAppendQueue.Load, StructureAppendQueue.Reset);
                 // Unread, the places' icons show: the map as the game would have it once they are placed.
                 ReadOrKeep(metadataZdo, HiddenSiteIconsHash, "hidden site icons", HiddenSiteIcons.Load, HiddenSiteIcons.Reset);
                 ReadOrKeep(metadataZdo, StairRunsHash, "staircases", StairStructures.Load, StairStructures.Reset);
@@ -466,7 +472,7 @@ public static class RoadNetworkPersistence
     /// Serialize road start points to binary format.
     /// Format: [count][x1][y1][labelLen1][labelBytes1]...
     /// </summary>
-    private static byte[] SerializeRoadStartPoints(IReadOnlyList<(Vector2 position, string label)> roadStartPoints)
+    internal static byte[] SerializeRoadStartPoints(IReadOnlyList<(Vector2 position, string label)> roadStartPoints)
     {
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms);
@@ -489,7 +495,7 @@ public static class RoadNetworkPersistence
     /// <summary>
     /// Deserialize road start points from binary format.
     /// </summary>
-    private static bool DeserializeRoadStartPoints(byte[] data, List<(Vector2 position, string label)> roadStartPoints)
+    internal static bool DeserializeRoadStartPoints(byte[] data, List<(Vector2 position, string label)> roadStartPoints)
     {
         try
         {
@@ -547,7 +553,7 @@ public static class RoadNetworkPersistence
     /// not a river's bridge. Versions 1 (no flags) and 2 (no kit, decided again from the crossing) are read too. The rest
     /// of a crossing is derived from its banks on load.
     /// </summary>
-    private static byte[] SerializeRoadCrossings(IReadOnlyList<RoadCrossing> roadCrossings)
+    internal static byte[] SerializeRoadCrossings(IReadOnlyList<RoadCrossing> roadCrossings)
     {
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms);
@@ -655,7 +661,7 @@ public static class RoadNetworkPersistence
     /// <see cref="RoadCrossing.ValleyJump"/>, which the load puts its keep-out back from). 1 is read too.</summary>
     internal const int CrossingsFormat = 3;
 
-    private static bool DeserializeRoadCrossings(byte[] data, List<RoadCrossing> roadCrossings)
+    internal static bool DeserializeRoadCrossings(byte[] data, List<RoadCrossing> roadCrossings)
     {
         try
         {

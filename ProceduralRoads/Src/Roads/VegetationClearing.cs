@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -135,7 +136,19 @@ public static class VegetationClearing
             return;
         CarryOver(version);
         s_cleared.Add(zone);
+        s_clearedThrough.Remove(zone);
     }
+
+    /// <summary>Zones cleared for an earlier network that appends then changed, by how many appends the network had when
+    /// they were cleared: such a zone owes only the clearing of the roads appended since (<see cref="OwedSince"/>), so the
+    /// older roads' edges, which players may have planted since, are not cleared again.</summary>
+    private static readonly Dictionary<Vector2s, int> s_clearedThrough = new();
+    /// <summary>How many appends the network had when <see cref="Version"/> was taken.</summary>
+    private static int s_versionAppends;
+
+    /// <summary>The appends whose roads a zone still owes clearing for: all of them (-1), or those after the number it was
+    /// cleared through.</summary>
+    public static int OwedSince(Vector2s zone) => s_clearedThrough.TryGetValue(zone, out int through) ? through : -1;
 
     /// <summary>
     /// Move the record to <paramref name="version"/>. A zone a manual road left unchanged
@@ -144,8 +157,17 @@ public static class VegetationClearing
     public static void CarryOver(int version)
     {
         if (version == Version) return;
-        if (Version != 0) s_cleared.RemoveWhere(zone => !StillCurrent(zone, version));
+        if (Version != 0)
+            s_cleared.RemoveWhere(zone =>
+            {
+                if (StillCurrent(zone, version)) return false;
+                // Changed by an append: it was cleared for every road up to then.
+                if (version == RoadSpatialGrid.RoadNetworkVersion && RoadSpatialGrid.AppendCount > s_versionAppends)
+                    s_clearedThrough[zone] = s_clearedThrough.TryGetValue(zone, out int was) ? Math.Min(was, s_versionAppends) : s_versionAppends;
+                return true;
+            });
         Version = version;
+        s_versionAppends = RoadSpatialGrid.AppendCount;
     }
 
     /// <summary>Take the saved record, unless it belongs to another network.</summary>
@@ -155,6 +177,7 @@ public static class VegetationClearing
         if (savedVersion == 0 || savedVersion != currentVersion)
             return;
         Version = savedVersion;
+        s_versionAppends = RoadSpatialGrid.AppendCount;
         foreach (Vector2s zone in zones)
             s_cleared.Add(zone);
     }
@@ -162,6 +185,8 @@ public static class VegetationClearing
     public static void Reset()
     {
         s_cleared.Clear();
+        s_clearedThrough.Clear();
         Version = 0;
+        s_versionAppends = 0;
     }
 }

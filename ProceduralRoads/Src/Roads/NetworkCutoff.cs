@@ -17,8 +17,9 @@ namespace ProceduralRoads;
 /// with its version. At load, a generated zone outside that record is excluded;
 /// no record, or one for another network, excludes every generated zone.
 ///
-/// An explicit operator command (road_generate, road_regen_island) may write
-/// them; the explored zones it writes become the network's (see Admit).
+/// An explicit operator command (road_mark, road_path, road_connect,
+/// road_generate, road_regen_island) may write them; the explored zones it
+/// writes become the network's (see Admit).
 /// </summary>
 public static class NetworkCutoff
 {
@@ -157,6 +158,13 @@ public static class NetworkCutoff
         $"Warning: {what} {zones.Count} zone(s) explored before the road network. They are now treated " +
         "like land explored after it: every road there is built in full, over whatever stands on its line. Zones: " +
         string.Join(", ", System.Linq.Enumerable.Select(zones, z => $"({z.x}, {z.y})")) + ".";
+
+    /// <summary>Undo <see cref="Admit"/> when the road it was for was not added after all.</summary>
+    internal static void Readmit(IEnumerable<Vector2s> zones)
+    {
+        if (!Current) return;
+        foreach (Vector2s zone in zones) s_excluded.Add(zone);
+    }
 
     /// <summary>
     /// The world is going away. With the world named, only its own state is

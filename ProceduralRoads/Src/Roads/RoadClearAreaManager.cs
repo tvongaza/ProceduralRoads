@@ -30,10 +30,15 @@ public static class RoadClearAreaManager
         return roadClearAreas;
     }
 
-    private static List<ZoneSystem.ClearArea> CreateRoadClearAreas(Vector2s zoneID)
+    /// <summary>The clear areas of the road points in a zone added by appends after the first <paramref name="sinceAppend"/>
+    /// (a zone cleared for the older roads owes only the newer ones'). Not cached.</summary>
+    public static List<ZoneSystem.ClearArea> ClearAreasSince(Vector2s zoneID, int sinceAppend) => CreateRoadClearAreas(zoneID, sinceAppend);
+
+    private static List<ZoneSystem.ClearArea> CreateRoadClearAreas(Vector2s zoneID, int sinceAppend = -1)
     {
         List<ZoneSystem.ClearArea> clearAreas = new List<ZoneSystem.ClearArea>();
         List<RoadSpatialGrid.RoadPoint> roadPoints = RoadSpatialGrid.GetRoadPointsInZone(zoneID);
+        if (sinceAppend >= 0) roadPoints = roadPoints.FindAll(p => p.addition > sinceAppend);
 
         if (roadPoints.Count == 0)
             return clearAreas;

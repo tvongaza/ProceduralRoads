@@ -48,8 +48,14 @@ public static class StructurePlans
         s_plansBySource = null;
     }
 
-    /// <summary>Forget which zones have pieces (they are being destroyed).</summary>
-    public static void ForgetSpawned() => s_spawnedZones.Clear();
+    /// <summary>All emitted pieces are being destroyed for a full respawn.
+    /// Append acknowledgements refer to those same pieces; keeping only the
+    /// outstanding remainder would suppress the complete plan on respawn.</summary>
+    public static void ForgetSpawned()
+    {
+        s_spawnedZones.Clear();
+        StructureAppendQueue.Reset();
+    }
 
     public static bool IsSpawned(Vector2s zone) => s_spawnedZones.Contains(zone);
 

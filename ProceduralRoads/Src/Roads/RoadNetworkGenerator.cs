@@ -3775,6 +3775,7 @@ public static partial class RoadNetworkGenerator
         ResetGenerationCounters();
         PlacedSites.ForgetLanded();
         OnReset?.Invoke();
+        ManualRoads.Reset();
         LocationLevelling.ResetPlacements?.Invoke();
         m_roadsGenerated = false;
         m_locationsReady = false;
@@ -3961,7 +3962,7 @@ public static partial class RoadNetworkGenerator
     /// </summary>
     public static void SaveNetworkCutoff()
     {
-        if (!RoadsAvailable || ZoneSystem.instance == null) return;
+        if (IsGenerating || !RoadsAvailable || ZoneSystem.instance == null) return;
         byte[]? record = NetworkCutoff.Record(RoadSpatialGrid.RoadNetworkVersion, ZoneSystem.instance.m_generatedZones);
         if (record != null) RoadNetworkPersistence.SaveZonesWithNetwork(record);
     }
