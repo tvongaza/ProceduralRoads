@@ -46,9 +46,10 @@ public static class RoadNetworkPersistence
     /// </summary>
     private static readonly int ClearedZonesHash = "ProceduralRoads_ClearedZones".GetStableHashCode();
 
-    /// <summary>
-    /// Hash key for storing global road network data on the ZDO.
-    /// </summary>
+    /// <summary>The network's staircases: their pieces and clearances (StairStructures).</summary>
+    private static readonly int StairRunsHash = "ProceduralRoads_StairRuns".GetStableHashCode();
+
+    /// <summary>Hash key for storing global road network data on the ZDO.</summary>
     private static readonly int GlobalRoadDataHash = "ProceduralRoads_GlobalData".GetStableHashCode();
 
     /// <summary>
@@ -205,10 +206,14 @@ public static class RoadNetworkPersistence
         WriteRecord(metadataZdo, RoadStartPointsHash, () => SerializeRoadStartPoints(roadStartPoints));
         // Always written, so a network regenerated without fords does not
         // keep the crossings of an earlier one.
-        byte[] crossingsData = SerializeRoadCrossings(roadCrossings);
-        metadataZdo.Set(RoadCrossingsHash, crossingsData);
-        Log.LogDebug($"[SAVE] Saved {roadCrossings.Count} river crossings ({crossingsData.Length} bytes)");
-        WriteBridgeZones(metadataZdo, bridgeZones);
+        WriteRecord(metadataZdo, RoadCrossingsHash, () => SerializeRoadCrossings(roadCrossings));
+        WriteStructureRecords(metadataZdo, bridgeZones);
+    }
+
+    private static void WriteStructureRecords(ZDO metadataZdo, IReadOnlyCollection<Vector2s> bridgeZones)
+    {
+        WriteRecord(metadataZdo, BridgeZonesHash, () => SerializeBridgeZones(bridgeZones));
+        WriteRecord(metadataZdo, StairRunsHash, StairStructures.Serialize);
     }
 
     /// <summary>
@@ -225,7 +230,7 @@ public static class RoadNetworkPersistence
         }
         if (!metadataZdo.IsOwner())
             metadataZdo.SetOwner(ZDOMan.instance.m_sessionID);
-        WriteBridgeZones(metadataZdo, bridgeZones);
+        WriteStructureRecords(metadataZdo, bridgeZones);
     }
 
     /// <summary>
@@ -357,12 +362,12 @@ public static class RoadNetworkPersistence
                 LastLoadUnreadable = true;
                 return false;
             }
-
             return true;
         }
 
         LastLoadUnreadable = true;
-        Log.LogError($"[LOAD] This world holds a saved road network ({data.Length} bytes) that this build cannot read. " +
+        Log.LogError($"[LOAD] This world holds a saved road network ({data.Length} bytes) that this build cannot read " +
+                     $"({RoadSpatialGrid.LastReadRefusal}). " +
                      "It is left as it is and no new network is generated over it; the world has no roads this session. " +
                      "Use a build that reads it, or road_generate to replace it on purpose.");
         return false;

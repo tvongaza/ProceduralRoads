@@ -3,8 +3,9 @@ using UnityEngine;
 
 namespace ProceduralRoads;
 
-/// <summary>What a structure piece is for. The values are not saved anywhere
-/// (the append queue stores prefab and placement only), so new kinds may be added.</summary>
+/// <summary>What a structure piece is for. Saved as its number with a staircase's
+/// pieces (StairStructures), and RoadRockClearing reads every value from StairStep
+/// on as a staircase: add new kinds at the END only, never reorder or insert.</summary>
 public enum StructurePieceKind
 {
     Post,    // vertical pole segment, stacked down into the riverbed
@@ -12,6 +13,10 @@ public enum StructurePieceKind
     Deck,    // walkable plank plate resting on a station pair
     Stair,   // a step piece from the road up onto the deck
     Debris,  // a collapsed pole settled on the riverbed, outside the fairway
+    StairStep,    // a stone stair of a staircase (StairLayout)
+    StairFloor,   // a landing of a staircase
+    StairFiller,  // a block in the wedge of a staircase's turn
+    StairSupport, // a pillar under a staircase piece, down into the ground
     ViaductPier,     // a Dvergr viaduct's pier: footing, shafts, bands, corbels, iron screens (DvergrViaduct)
     ViaductDeck,     // a Dvergr viaduct's iron floor or the black marble course on it
     ViaductParapet,  // an arch along a Dvergr viaduct's edge, or a head beside it over a pier
@@ -34,4 +39,7 @@ public sealed class StructurePiece
     /// debris on the riverbed does not count). Null: the piece never holds a structure back.
     /// See StructurePlans.BuildablePlanFor.</summary>
     public HashSet<Vector2s>? StructureZones;
+    /// <summary>A staircase's piece held out from a face, or what holds it (StairPiece.Cantilevered): its pillars are
+    /// clipped into the face, not a column carried down to the ground. Generation only: not saved.</summary>
+    public bool Cantilevered;
 }

@@ -109,6 +109,10 @@ public static class RoadSwitchbacks
     /// <summary>Why the last Shape on this thread refused, for the refusal
     /// counts in the generation summary.</summary>
     [ThreadStatic] public static string? LastRefusal;
+    /// <summary>Where the last "turns too close to fit their curves" on this
+    /// thread was: the middle of the leg the two turns could not share. The
+    /// generator searches that stretch again with stairs open.</summary>
+    [ThreadStatic] public static Vector2? LastRefusalAt;
 
     public static bool Shape(List<Vector2> input, float width,
         out List<Vector2>? shaped, out List<bool>? landing, Func<Vector2, float>? heightAt = null, bool? stair = null, float? bend = null, bool? tight = null)
@@ -116,7 +120,7 @@ public static class RoadSwitchbacks
         bool stairs = stair ?? StairTurns;
         float bendRadius = bend ?? (SuppressBends ? 0f : BendRadius);
         bool tightTurns = tight ?? TightSwitchbacks;
-        LastRefusal = null; LastCurve = null; LastWidths = null;
+        LastRefusal = null; LastRefusalAt = null; LastCurve = null; LastWidths = null;
         shaped = null; landing = null;
         var p = new List<Vector2>();
         foreach (var v in input)
@@ -243,7 +247,8 @@ public static class RoadSwitchbacks
         for(int i=0;i<n-1;i++)
             if(!(tightStart[i]>=0 && tightStart[i]==tightStart[i+1]) && trim[i]+trim[i+1]>Vector2.Distance(p[i],p[i+1])-0.25f)
             {
-                LastRefusal="switchback: turns too close to fit their curves";
+                LastRefusal=SwitchbackRefusal.TurnsTooClose;
+                LastRefusalAt=(p[i]+p[i+1])*0.5f;
                 return false;
             }
         var output=new List<Vector2>(); var flags=new List<bool>(); var curve=new List<bool>(); var widths=new List<float>();

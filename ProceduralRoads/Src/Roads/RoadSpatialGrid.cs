@@ -762,6 +762,16 @@ public static partial class RoadSpatialGrid
         MergePoints(temp);
     }
 
+    /// <summary>A staircase's earthwork, stored with the road it climbs: a
+    /// cut-only point per cut (x, z, the height to lower the ground to).</summary>
+    public static void CommitCuts(IReadOnlyList<Vector3> cuts, float width)
+    {
+        var temp = new Dictionary<Vector2i, List<RoadPoint>>();
+        foreach (Vector3 c in cuts)
+            AddRoadPoint(temp, new Vector2(c.x, c.z), width, c.y, paintOnly: false, cutOnly: true);
+        MergePoints(temp);
+    }
+
     /// <summary>Plan a road and store it, for the caller that lays one road in
     /// one piece. False means it was refused and nothing was stored.</summary>
     public static bool AddRoadPath(List<Vector2> path, float width, WorldGenerator worldGen,
@@ -1166,6 +1176,7 @@ public static partial class RoadSpatialGrid
                 {
                     foreach (var rp in existingPoints)
                     {
+                        if (rp.cutOnly) continue; // a staircase's cut is not a road to meet
                         if (Vector2.Distance(rp.p, point) < searchRadius)
                         {
                             overlapCount++;
@@ -1198,6 +1209,7 @@ public static partial class RoadSpatialGrid
                     
                     foreach (var rp in existingPoints)
                     {
+                        if (rp.cutOnly) continue; // nor a height to blend toward
                         float dist = Vector2.Distance(rp.p, points[i]);
                         if (dist < blendRadius)
                         {
@@ -1214,7 +1226,7 @@ public static partial class RoadSpatialGrid
         }
     }
 
-    private static void AddRoadPoint(Dictionary<Vector2i, List<RoadPoint>> roadPoints, Vector2 p, float width, float height, bool paintOnly, int addition = 0)
+    private static void AddRoadPoint(Dictionary<Vector2i, List<RoadPoint>> roadPoints, Vector2 p, float width, float height, bool paintOnly, int addition = 0, bool cutOnly = false)
     {
         Vector2i grid = GetRoadGrid(p.x, p.y);
         int radius = Mathf.CeilToInt(width / GridSize);
@@ -1231,7 +1243,7 @@ public static partial class RoadSpatialGrid
                         list = new List<RoadPoint>();
                         roadPoints.Add(cellGrid, list);
                     }
-                    list.Add(new RoadPoint(p, width, height, paintOnly, addition));
+                    list.Add(new RoadPoint(p, width, height, paintOnly, addition, cutOnly));
                 }
             }
         }
@@ -1397,6 +1409,7 @@ public static partial class RoadSpatialGrid
         for (int i = 0; i < points.Length; i++)
         {
             RoadPoint rp = points[i];
+            if (rp.cutOnly) continue; // a staircase's cut is not painted road
             float sqrDist = Vector2.SqrMagnitude(rp.p - pos);
             float halfWidth = rp.w * 0.5f;
             float halfWidthSqr = halfWidth * halfWidth;
@@ -1468,7 +1481,9 @@ public static partial class RoadSpatialGrid
                     {
                         foreach (var rp in points)
                         {
-                            float reach = RoadConstants.HalfZoneSize + ZoneReach(rp.w);
+                            // A staircase's cut reaches only w/2 (plus a vertex spacing): gathered
+                            // wider, a zone it never touches waits for it forever, unstamped.
+                            float reach = RoadConstants.HalfZoneSize + (rp.cutOnly ? rp.w * 0.5f + RoadTerrainModifier.CutBatterReach + 1f : ZoneReach(rp.w));
                             if (rp.p.x >= zonePos.x - reach &&
                                 rp.p.x <= zonePos.x + reach &&
                                 rp.p.y >= zonePos.z - reach &&
@@ -1578,7 +1593,7 @@ public static partial class RoadSpatialGrid
                         foreach (var point in points)
                         {
                             float d = (point.p-position).sqrMagnitude;
-                            if (d <= best && !point.paintOnly) { best=d; height=point.h; width=point.w; found=true; }
+                            if (d <= best && point.IsRoad) { best=d; height=point.h; width=point.w; found=true; }
                         }
         }
         if (found) distance = Mathf.Sqrt(best);
@@ -1638,7 +1653,7 @@ public static partial class RoadSpatialGrid
                         foreach (var point in points)
                         {
                             float distance = (point.p-position).sqrMagnitude;
-                            if (distance <= best && !point.paintOnly && Mathf.Abs(point.h - groundHere) <= maxStep
+                            if (distance <= best && point.IsRoad && Mathf.Abs(point.h - groundHere) <= maxStep
                                 && (allowed == null || allowed(point.p))) { best=distance; nearest=point.p; found=true; }
                         }
         }
