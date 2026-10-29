@@ -8,6 +8,8 @@ A Valheim mod that generates procedural roads connecting locations across your w
 - Terrain-aware pathfinding that follows natural contours
 - Configurable road width, length, and count
 
+Road statistics count **stored point records**, including records copied into several spatial cells, repeated path commits and levelled bridge supports. **Committed planned-path length** sums successful planned paths, including overlap and manual appends; it excludes unplanned bridge-support collections and is not unique road distance. New saves preserve this length. Nonempty legacy road data cannot recover it reliably, so reports show **unknown (legacy save)** instead of zero. The Roads data envelope is now v4; it reads v1–v3, but older Roads readers cannot read newly written v4 data. Keep an older world backup if you intend to downgrade. This does not change road geometry or its network hash.
+
 ## Installation
 
 1. Install [BepInEx](https://valheim.thunderstore.io/package/denikson/BepInExPack_Valheim/)
@@ -86,3 +88,8 @@ private static void RegisterRoadLocation(string locationName)
 ## License
 
 MIT License - see LICENSE.md
+
+
+## Development tests
+
+Start with the [test-framework setup and migration guide](ProceduralRoads.SystemTests/README.md#quick-start-and-migration). Existing Roads unit tests remain here; synthetic terrain and external system-test infrastructure use [ValheimTesting](https://github.com/tvongaza/ValheimTesting). The optional adapter, test packages and ValheimCLI are not required by a normal Roads installation. Native test scenarios use disposable fixtures, separately from the fast unit suite. Coding agents working on the test tooling should start with [AGENTS.md](AGENTS.md).
