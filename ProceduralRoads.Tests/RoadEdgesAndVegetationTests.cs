@@ -48,7 +48,84 @@ public class RoadEdgesAndVegetationTests
         return hm.m_terrainComp!;
     }
 
+    [Fact]
+    public void ANarrowRoadBesideABorderGivesBothZonesTheSameBorderHeights()
+    {
+        var world = new SlopeWorld();
+        using var scope = new ValheimWorldScope().WithWorld(world);
+        try
+        {
+            RoadSpatialGrid.Clear();
+            // A 2 m road 2.5 m east of x = 32, the border between zones (0,0)
+            // and (1,0). It levels terrain out to 1 + 2 = 3 m, so it reaches
+            // the border vertices, which both zones hold.
+            RoadNorthSouth(34.5f, 2f, world);
+            TerrainComp west = Write(new Vector2s(0, 0));
+            TerrainComp east = Write(new Vector2s(1, 0));
 
+            const int pitch = 65;
+            bool reached = false;
+            for (int vz = 0; vz < pitch; vz++)
+            {
+                float fromEast = east.m_levelDelta[vz * pitch + 0];  // x = 32 in zone (1,0)
+                float fromWest = west.m_levelDelta[vz * pitch + 64]; // x = 32 in zone (0,0)
+                Assert.Equal(fromEast, fromWest, 4);
+                if (Mathf.Abs(fromEast) > 0.01f)
+                    reached = true;
+            }
+            Assert.True(reached, "the road did not reach the border, so this shows nothing");
+        }
+        finally
+        {
+            RoadSpatialGrid.Clear();
+        }
+    }
+
+    [Theory]
+    [InlineData(2f, 3f)]
+    [InlineData(3f, 3.5f)]
+    [InlineData(4f, 4f)]
+    [InlineData(10f, 10f)]
+    public void AZoneSeesPointsAsFarAsTheyReachAndFromFourMetresUpAsBefore(float width, float reach)
+    {
+        // The plain cross-section's reach; the earthworks widen it (below).
+        using (PlainEarthworks.Apply().And(() => RoadTerrainModifier.BatterPerMetre, 0f))
+            Assert.Equal(reach, RoadSpatialGrid.ZoneReach(width), 5);
+        // With the earthworks a zone sees as far as they can reach.
+        Assert.Equal(Mathf.Max(width, RoadTerrainModifier.GatherRadius(width)), RoadSpatialGrid.ZoneReach(width), 5);
+        Assert.True(RoadSpatialGrid.ZoneReach(width) >= reach);
+    }
+
+    [Fact]
+    public void AZoneARoadOnlyBrushesHasNothingToWriteAndIsNotStamped()
+    {
+        // The plain cross-section (60 % flat core, no earthwork widening),
+        // whose reach the 3.9 m below is set against.
+        var world = new SlopeWorld();
+        using var scope = new ValheimWorldScope().WithWorld(world);
+        using var plain = PlainEarthworks.Apply()
+            .And(() => RoadTerrainModifier.BatterPerMetre, 0f)
+            .And(() => RoadProfile.FlatCoreRatio, RoadConstants.RoadFlatCoreRatio);
+        try
+        {
+            RoadSpatialGrid.Clear();
+            // A 4 m road 3.9 m east of the border: zone (0,0) sees its points
+            // (within 4 m), but at 3.9 m the level blend is all but gone and
+            // its paint does not reach.
+            RoadNorthSouth(35.9f, 4f, world);
+            Assert.NotEmpty(RoadSpatialGrid.GetRoadPointsInZone(new Vector2s(0, 0)));
+
+            TerrainComp west = Write(new Vector2s(0, 0));
+            Assert.Equal(RoadTerrainModifier.WriteOutcome.NothingToWrite, RoadTerrainModifier.LastWriteOutcome);
+            Assert.Equal(0, west.SaveCount);
+            Assert.False(RoadTerrainModifier.CarriesCurrentRoads(west));
+
+            TerrainComp east = Write(new Vector2s(1, 0));
+            Assert.Equal(RoadTerrainModifier.WriteOutcome.Written, RoadTerrainModifier.LastWriteOutcome);
+            Assert.Equal(1, east.SaveCount);
+        }
+        finally { RoadSpatialGrid.Clear(); }
+    }
 
     private static readonly int Tree = "Beech1".GetStableHashCode();
     private static readonly int Wall = "stone_wall_1x1".GetStableHashCode();
@@ -188,7 +265,7 @@ public class RoadEdgesAndVegetationTests
             RoadNorthSouth(10f, 4f, world);
             int version = RoadSpatialGrid.RoadNetworkVersion;
             RoadNetworkPersistence.EnsureMetadataInstance();
-            typeof(RoadNetworkGenerator).GetField("m_roadsGenerated", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, true);
+            typeof(RoadNetworkGenerator).GetField("m_roadsGenerated", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, true); typeof(RoadNetworkGenerator).GetField("m_networkDirty", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, true);
             RoadNetworkGenerator.SaveGlobalRoadData();
             var zone = new Vector2s(0, 0);
             VegetationClearing.MarkCleared(zone, version);

@@ -36,8 +36,9 @@ public static class RoadNetworkPersistence
     /// </summary>
     private static readonly int ClearedZonesHash = "ProceduralRoads_ClearedZones".GetStableHashCode();
 
-
-    /// <summary>Hash key for storing global road network data on the ZDO.</summary>
+    /// <summary>
+    /// Hash key for storing global road network data on the ZDO.
+    /// </summary>
     private static readonly int GlobalRoadDataHash = "ProceduralRoads_GlobalData".GetStableHashCode();
 
     /// <summary>
@@ -71,6 +72,8 @@ public static class RoadNetworkPersistence
     /// <summary>Saved records this build could not read at load, by key: not used this session and written back unchanged.</summary>
     private static readonly Dictionary<int, (string what, byte[] bytes)> s_kept = new();
 
+    /// <summary>Whether the saved staircases could not be read this session: none may be added (their record is kept as it was).</summary>
+    internal static bool StairRecordKept => s_kept.ContainsKey(StairRunsHash);
 
     /// <summary>What of the saved network could not be read this session (kept as saved); empty when everything was read.</summary>
     internal static IEnumerable<string> KeptRecords => System.Linq.Enumerable.Select(s_kept.Values, k => k.what);
@@ -173,14 +176,26 @@ public static class RoadNetworkPersistence
             metadataZdo.Set(GlobalRoadDataHash, data);
             Log.LogDebug($"[SAVE] Saved global road data: {data.Length} bytes, {RoadSpatialGrid.GridCellsWithRoads} cells, {RoadSpatialGrid.StoredPointRecords} stored records");
         }
+        else if (RoadSpatialGrid.GridCellsWithRoads == 0)
+        {
+            // A world with no roads is a legitimate state - IslandRoadPercentage
+            // is documented as disabling generation at zero - and it is saved on
+            // the same schedule as any other, so warning here fired on every
+            // autosave for the rest of the session.
+            Log.LogDebug("[SAVE] No roads to save; the network is empty.");
+        }
         else
         {
             Log.LogWarning("[SAVE] SerializeAllRoadPoints returned null or empty data!");
         }
 
-        WriteRecord(metadataZdo, RoadStartPointsHash, () => SerializeRoadStartPoints(roadStartPoints));
+        byte[] startPointsData = SerializeRoadStartPoints(roadStartPoints);
+        if (startPointsData != null && startPointsData.Length > 0)
+        {
+            metadataZdo.Set(RoadStartPointsHash, startPointsData);
+            Log.LogDebug($"[SAVE] Saved {roadStartPoints.Count} road start points ({startPointsData.Length} bytes)");
+        }
     }
-
 
     /// <summary>
     /// Save the zones whose vegetation matches the network (VegetationClearing),
@@ -250,6 +265,7 @@ public static class RoadNetworkPersistence
         }
     }
 
+
     /// <summary>
     /// Try to load the entire road network from persisted ZDO.
     /// </summary>
@@ -291,7 +307,7 @@ public static class RoadNetworkPersistence
 
             try
             {
-                ReadOrKeep(metadataZdo, RoadStartPointsHash, "road start points", b => ReadStartPoints(b, roadStartPoints), roadStartPoints.Clear);
+                TryLoadRoadMetadata(roadStartPoints);
             }
             catch (Exception ex)
             {
@@ -303,6 +319,7 @@ public static class RoadNetworkPersistence
                 LastLoadUnreadable = true;
                 return false;
             }
+
             return true;
         }
 
@@ -466,10 +483,4 @@ public static class RoadNetworkPersistence
             return false;
         }
     }
-
-
-
-
-
-
 }
