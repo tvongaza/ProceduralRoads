@@ -6,8 +6,10 @@
       Update VALHEIM_INSTALL if your Steam library is elsewhere.
     -->
     <PropertyGroup Condition="$(OS) == 'Unix' OR $(OS) == 'OSX'">
-        <VALHEIM_INSTALL>$(HOME)/Library/Application Support/Steam/steamapps/common/Valheim</VALHEIM_INSTALL>
-        <VALHEIM_MANAGED>$(VALHEIM_INSTALL)/Valheim.app/Contents/Resources/Data/Managed</VALHEIM_MANAGED>
+        <VALHEIM_INSTALL Condition="'$(VALHEIM_INSTALL)' == '' And $([MSBuild]::IsOSPlatform('OSX'))">$(HOME)/Library/Application Support/Steam/steamapps/common/Valheim</VALHEIM_INSTALL>
+        <VALHEIM_INSTALL Condition="'$(VALHEIM_INSTALL)' == ''">$(HOME)/.steam/steam/steamapps/common/Valheim</VALHEIM_INSTALL>
+        <VALHEIM_MANAGED Condition="'$(VALHEIM_MANAGED)' == '' And $([MSBuild]::IsOSPlatform('OSX'))">$(VALHEIM_INSTALL)/Valheim.app/Contents/Resources/Data/Managed</VALHEIM_MANAGED>
+        <VALHEIM_MANAGED Condition="'$(VALHEIM_MANAGED)' == ''">$(VALHEIM_INSTALL)/valheim_Data/Managed</VALHEIM_MANAGED>
         <BEPINEX_PATH>$(VALHEIM_INSTALL)/BepInEx</BEPINEX_PATH>
         <BEPINEX_CORE>$(BEPINEX_PATH)/core</BEPINEX_CORE>
         <BEPINEX_PLUGINS>$(BEPINEX_PATH)/plugins</BEPINEX_PLUGINS>
@@ -24,8 +26,8 @@
 
     <!-- Windows paths -->
     <PropertyGroup Condition="$(OS) == 'Windows_NT'">
-        <VALHEIM_INSTALL>C:\Program Files (x86)\Steam\steamapps\common\Valheim</VALHEIM_INSTALL>
-        <VALHEIM_MANAGED>$(VALHEIM_INSTALL)\valheim_Data\Managed</VALHEIM_MANAGED>
+        <VALHEIM_INSTALL Condition="'$(VALHEIM_INSTALL)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</VALHEIM_INSTALL>
+        <VALHEIM_MANAGED Condition="'$(VALHEIM_MANAGED)' == ''">$(VALHEIM_INSTALL)\valheim_Data\Managed</VALHEIM_MANAGED>
         <BEPINEX_PATH>$(VALHEIM_INSTALL)\BepInEx</BEPINEX_PATH>
         <BEPINEX_CORE>$(BEPINEX_PATH)\core</BEPINEX_CORE>
         <BEPINEX_PLUGINS>$(BEPINEX_PATH)\plugins</BEPINEX_PLUGINS>

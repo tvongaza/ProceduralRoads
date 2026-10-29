@@ -1,0 +1,9 @@
+<Solution>
+  <!-- Test projects only; open ProceduralRoads.sln for the mod itself. The game-side
+       ProceduralRoads.TestAdapter is built separately against an exact ValheimCLI (see its README). -->
+  <Project Path="ProceduralRoads.Tests/ProceduralRoads.Tests.csproj" />
+  <Project Path="ProceduralRoads.SystemTests/ProceduralRoads.SystemTests.csproj" />
+  <Project Path="ProceduralRoads.SystemTests.Tests/ProceduralRoads.SystemTests.Tests.csproj" />
+  <Project Path="ProceduralRoads.ReviewTests/ProceduralRoads.ReviewTests.csproj" />
+  <Project Path="ProceduralRoads.ReviewTests.Tests/ProceduralRoads.ReviewTests.Tests.csproj" />
+</Solution>

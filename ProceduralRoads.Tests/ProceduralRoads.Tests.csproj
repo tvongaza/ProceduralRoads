@@ -151,4 +151,5 @@
     <ItemGroup><PackageReference Include="Valheim.Testing" Version="[$(ToolkitPackageVersion)]" /></ItemGroup>
     <!-- The Unity/Valheim/BepInEx/Jotunn doubles the mod sources compile against; Roads-only additions live in Shims/. -->
     <ItemGroup><PackageReference Include="Valheim.Testing.Doubles" Version="[$(DoublesPackageVersion)]" PrivateAssets="all" /></ItemGroup>
+  <ItemGroup><Compile Include="../ProceduralRoads.TestFixtures/FlatRoadFixture.cs" Link="Fixtures/FlatRoadFixture.cs" /></ItemGroup>
 </Project>
