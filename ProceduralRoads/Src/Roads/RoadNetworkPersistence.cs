@@ -46,6 +46,8 @@ public static class RoadNetworkPersistence
     /// </summary>
     private static readonly int ClearedZonesHash = "ProceduralRoads_ClearedZones".GetStableHashCode();
 
+    /// <summary>Map icons of places placed before their roads, kept off the map until a player comes near (<see cref="HiddenSiteIcons"/>).</summary>
+    private static readonly int HiddenSiteIconsHash = "ProceduralRoads_HiddenSiteIcons".GetStableHashCode();
     /// <summary>The network's staircases: their pieces and clearances (StairStructures).</summary>
     private static readonly int StairRunsHash = "ProceduralRoads_StairRuns".GetStableHashCode();
 
@@ -214,6 +216,7 @@ public static class RoadNetworkPersistence
     {
         WriteRecord(metadataZdo, BridgeZonesHash, () => SerializeBridgeZones(bridgeZones));
         WriteRecord(metadataZdo, StairRunsHash, StairStructures.Serialize);
+        WriteRecord(metadataZdo, HiddenSiteIconsHash, HiddenSiteIcons.Serialize);
     }
 
     /// <summary>
@@ -348,6 +351,8 @@ public static class RoadNetworkPersistence
                 ReadOrKeep(metadataZdo, RoadStartPointsHash, "road start points", b => ReadStartPoints(b, roadStartPoints), roadStartPoints.Clear);
                 ReadOrKeep(metadataZdo, RoadCrossingsHash, "river crossings", b => ReadCrossings(b, roadCrossings), roadCrossings.Clear);
                 ReadOrKeep(metadataZdo, BridgeZonesHash, "bridge zones", b => ReadBridgeZonesOrStartAfresh(b, bridgeZones), bridgeZones.Clear);
+                // Unread, the places' icons show: the map as the game would have it once they are placed.
+                ReadOrKeep(metadataZdo, HiddenSiteIconsHash, "hidden site icons", HiddenSiteIcons.Load, HiddenSiteIcons.Reset);
                 ReadOrKeep(metadataZdo, StairRunsHash, "staircases", StairStructures.Load, StairStructures.Reset);
             }
             catch (Exception ex)

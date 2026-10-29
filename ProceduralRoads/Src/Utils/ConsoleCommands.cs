@@ -20,6 +20,10 @@ namespace ProceduralRoads;
 /// </summary>
 public static class ConsoleCommands
 {
+    /// <summary>PROCEDURALROADS_DEV_COMMANDS: register the developer commands (<see cref="StairCommands"/>,
+    /// <see cref="SiteCommands"/>). Off by default.</summary>
+    internal static readonly bool DevCommands = DebugSwitches.Flag("DEV_COMMANDS", false);
+
     private static bool s_commandsRegistered = false;
     private static ManualLogSource Log => ProceduralRoadsPlugin.ProceduralRoadsLogger;
     private static List<Minimap.PinData> s_modPins = new();

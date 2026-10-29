@@ -894,7 +894,7 @@ public static partial class RoadStairRuns
     public const float OnStairReach = 4f;
 
     /// <summary>The walking surface at a walked piece's centre.</summary>
-    private static float Surface(StructurePiece piece)
+    internal static float Surface(StructurePiece piece)
     {
         if (piece.Kind == StructurePieceKind.StairStep) return piece.Position.y + StairLayout.PieceRise / 2f;
         return piece.Position.y + StairKit.FloorTopOf(piece.Prefab);
@@ -1017,7 +1017,7 @@ public static partial class RoadStairRuns
         {
             if (piece.Kind != StairPieceKind.Stair && piece.Kind != StairPieceKind.Landing) continue;
             var p = new Vector2(piece.Position.x, piece.Position.z);
-            if ((ground != null ? ground(p.x, p.y) : world.GetHeight(p.x, p.y)) < RoadConstants.ShallowWaterHeight)
+            if (!RoadWater.BuiltDry(ground != null ? ground(p.x, p.y) : world.GetHeight(p.x, p.y)))
                 return FormattableString.Invariant($"water at ({p.x:F1}, {p.y:F1})");
             if (RoadSiteProtection.BlocksSegment(last ?? p, p, 1f, null, site))
                 return FormattableString.Invariant($"another place at ({p.x:F1}, {p.y:F1})");

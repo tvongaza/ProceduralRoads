@@ -685,6 +685,15 @@ public class RoadStairTests : IDisposable
         Assert.False(GoesOn(trunk: false), "the arriving road's own end was taken for another road");
     }
 
+    /// <summary>A boss's entrance is reached only by a road onto its own landing (at the Queen's entrance
+    /// 7552,3392: a passing road counted as reaching it); any other place still by a road passing within reach.</summary>
+    [Fact]
+    public void ABossEntranceIsReachedOnlyAtItsOwnLanding()
+    {
+        Assert.True(RoadNetworkGenerator.OwnLandingOnly("Mistlands_DvergrBossEntrance1"));
+        Assert.False(RoadNetworkGenerator.OwnLandingOnly("Crypt4"));
+    }
+
     /// <summary>A narrow valley along z: faces of 1.2 down to a bottom 5 m wide at x = 0, 24 m under the flats either side.</summary>
     private sealed class SharpValleyWorld : WorldGenerator
     {
@@ -744,7 +753,7 @@ public class RoadStairTests : IDisposable
     [Fact]
     public void ABossEntrancesLandingIsAtTheFootOfItsOwnStairs()
     {
-        var flat = new LevelOp(0f, 6.5f, 1f, 15f, false, 24f, 3f);
+        var flat = new LevelOp(0f, 6.5f, 1f, 15f, false, 24f, 3f, 1);
         var centre = new Vector2(7552f, 3392f);
         PlacedSiteShape queen = PlacedSiteShape.Of(centre, 315f, flat, 32f, null, (x, z) => 46f, prefab: "Mistlands_DvergrBossEntrance1");
         Assert.True(Vector2.Distance(queen.Landing, new Vector2(7538f, 3409f)) < 1f, $"landing at {queen.Landing}");

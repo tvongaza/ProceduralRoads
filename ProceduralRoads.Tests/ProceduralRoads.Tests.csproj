@@ -49,7 +49,12 @@
         <Compile Include="../ProceduralRoads/Src/Roads/RoadStairRuns.Approaches.cs" Link="ModSrc/RoadStairRuns.Approaches.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadStairRuns.PlacedSites.cs" Link="ModSrc/RoadStairRuns.PlacedSites.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/PlacedSiteShape.cs" Link="ModSrc/PlacedSiteShape.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/PlacedSiteGround.cs" Link="ModSrc/PlacedSiteGround.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/PlacedSites.cs" Link="ModSrc/PlacedSites.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/HiddenSiteIcons.cs" Link="ModSrc/HiddenSiteIcons.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadSiteEntry.cs" Link="ModSrc/RoadSiteEntry.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadBeside.cs" Link="ModSrc/RoadBeside.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadRide.cs" Link="ModSrc/RoadRide.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/ManualRoadDraft.cs" Link="ModSrc/ManualRoadDraft.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/ManualRoads.cs" Link="ModSrc/ManualRoads.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadSpatialGrid.Appends.cs" Link="ModSrc/RoadSpatialGrid.Appends.cs"/>
@@ -58,6 +63,8 @@
         <Compile Include="../ProceduralRoads/Src/Roads/ApproachTerrainSamples.cs" Link="ModSrc/ApproachTerrainSamples.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadSwitchbacks.cs" Link="ModSrc/RoadSwitchbacks.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadSiteProtection.cs" Link="ModSrc/RoadSiteProtection.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadShoreFill.cs" Link="ModSrc/RoadShoreFill.cs"/>
+        <Compile Include="../ProceduralRoads/Src/Roads/RoadWater.cs" Link="ModSrc/RoadWater.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadPathPull.cs" Link="ModSrc/RoadPathPull.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadWiggle.cs" Link="ModSrc/RoadWiggle.cs"/>
         <Compile Include="../ProceduralRoads/Src/Roads/RoadPitches.cs" Link="ModSrc/RoadPitches.cs"/>

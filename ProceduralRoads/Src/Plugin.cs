@@ -50,6 +50,7 @@ namespace ProceduralRoads
         public static ConfigEntry<bool> RoutedConnections = null!;
         public static ConfigEntry<bool> WalkableIslands = null!;
         public static ConfigEntry<bool> CoastalLandings = null!;
+        public static ConfigEntry<bool> AttemptRoadsToHildirQuestSites = null!;
         public static ConfigEntry<bool> SelectIslandsByContent = null!;
         public static ConfigEntry<bool> WeightedDestinations = null!;
         public static ConfigEntry<int> TargetSubAreas = null!;
@@ -61,7 +62,6 @@ namespace ProceduralRoads
         public static ConfigEntry<float> FordSpanWeight = null!;
         public static ConfigEntry<float> BridgeCostFixed = null!;
         public static ConfigEntry<float> BridgeCostPerMeter = null!;
-        public static ConfigEntry<bool> StairsEnabled = null!;
         public static ConfigEntry<float> MaxGrade = null!;
 
         public void Awake()
@@ -119,10 +119,6 @@ namespace ProceduralRoads
                     "Makes long bridges dearer than short ones.",
                     new AcceptableValueRange<float>(0f, 10000f)));
 
-            StairsEnabled = Config.Bind("Stairs", "Enabled", true,
-                "Whether a road may climb ground too steep for it on a staircase of vanilla pieces, " +
-                "built of the biome's material (stone, wood or black marble).");
-
             MaxGrade = Config.Bind("Roads", "MaxGrade", RoadConstants.DefaultMaxRoadGrade,
                 new ConfigDescription("Steepest a road may climb, as rise over run: 0.35 is one metre up " +
                     "for every three along, about 19 degrees. The road you walk never exceeds it: the " +
@@ -144,6 +140,8 @@ namespace ProceduralRoads
             // placed; roads are built before that happens, so the generator
             // needs a way to ask what that ground will be.
             LocationPrefabLevelling.Install();
+            PlacedSiteReader.Install();
+            SitesFirstLoad.Install();
             CustomLocationPriority = Config.Bind("Locations", "CustomLocationPriority", 80,
                 new ConfigDescription("Selection weight for custom locations discovered by prefix, config or API.",
                     new AcceptableValueRange<int>(1, 100)));
@@ -151,6 +149,20 @@ namespace ProceduralRoads
                 Heightmap.Biome.AshLands | Heightmap.Biome.DeepNorth,
                 "Biomes excluded from every destination source, including API registrations and required sites. " +
                 "This filters destinations; it does not forbid a route passing through a biome.");
+            AttemptRoadsToHildirQuestSites = Config.Bind("Locations", "AttemptRoadsToHildirQuestSites", RoadNetworkOptions.DefaultHildirQuestSites,
+                "Build roads to Hildir's three quest sites (her cave, crypt and tower; not her camp). On, they are always " +
+                "destinations, like the bosses, and the cave is placed when the world loads so its road can reach its " +
+                "entrance; each site still appears on the map only once a player comes near, as without this mod. " +
+                "Off, no road goes to them. Takes effect when the roads are next generated.");
+            // Read when the roads are generated: a change before then (the config manager, or a test run's
+            // ProceduralRoads.RunConfig plugin, tools/run-config) counts.
+            AttemptRoadsToHildirQuestSites.SettingChanged += (_, _) =>
+            {
+                // A generation reads the options it started with: a change during one waits for it to end.
+                if (RoadLifecycleManager.IsGenerating) m_configurationPending = true;
+                else RoadNetworkGenerator.NetworkOptions.HildirQuestSites = AttemptRoadsToHildirQuestSites.Value;
+                ProceduralRoadsLogger.LogInfo($"Locations.AttemptRoadsToHildirQuestSites = {AttemptRoadsToHildirQuestSites.Value}");
+            };
             RoutedConnections = Config.Bind("Roads", "RoutedConnections", true,
                 "Plan connections using sampled route costs, then join destinations to existing roads where possible. " +
                 "False keeps the previous chain/MST choice.");
@@ -249,13 +261,13 @@ namespace ProceduralRoads
                 CoastalLandings = CoastalLandings.Value,
                 ContentFirst = SelectIslandsByContent.Value,
                 WeightedDestinations = WeightedDestinations.Value,
-                TargetSubAreas = TargetSubAreas.Value
+                TargetSubAreas = TargetSubAreas.Value,
+                HildirQuestSites = AttemptRoadsToHildirQuestSites.Value,
             };
             RoadPathfinder.MaxIterations = PathfindingMaxIterations.Value;
             RoadCrossingDetector.SetFordStyleWeights(FordWadeWeight.Value, FordRaiseWeight.Value, FordSpanWeight.Value);
             RoadPathfinder.ConfiguredBridgeCostFixed = BridgeCostFixed.Value;
             RoadPathfinder.ConfiguredBridgeCostPerMeter = BridgeCostPerMeter.Value;
-            RoadPathfinder.ConfiguredStairs = StairsEnabled.Value;
             RoadGrade.Configured = MaxGrade.Value;
             // CustomLocations is parsed at generation time to preserve API registrations
         }

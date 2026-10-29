@@ -254,7 +254,7 @@ public class FordTests
             if (style == FordStyle.Wade)
                 Assert.All(middle, p => Assert.InRange(p.h, world.Bed - 0.01f, world.Bed + 0.01f));
             else
-                Assert.All(middle, p => Assert.True(p.h >= RoadPathfinder.LandingFloor - 0.01f, $"raised ford point at {p.h:F2}"));
+                Assert.All(middle, p => Assert.True(p.h >= RoadWater.LandingFloor - 0.01f, $"raised ford point at {p.h:F2}"));
 
             // Both banks are served by road on the land side too.
             foreach (Vector2 bank in new[] { crossing.FromBank, crossing.ToBank })
@@ -314,19 +314,17 @@ public class FordTests
             Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 0f), 0f, new Vector2(80f, 0f), 0f, 4f, "first"));
             Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, 40f), 0f, new Vector2(80f, 40f), 0f, 4f, "second"));
 
+            // The second road crosses on the first's ford: one crossing, the first road's (RoadRide: a road riding another
+            // builds no crossing of its own there), and none of its own anywhere else.
             var crossings = RoadNetworkGenerator.GetRoadCrossings();
-            Assert.Equal(2, crossings.Count);
+            Assert.Single(crossings);
             Assert.True(Mathf.Abs(aloneJump.a.y - crossings[0].FromBank.y) > RoadCrossing.SharedBankRadius,
                 $"the lone second road already crossed where the first does (y={aloneJump.a.y:F0})");
-            Assert.True(RoadCrossing.SameBanks(crossings[0], crossings[1]),
-                $"second road crossed at {crossings[1].FromBank}-{crossings[1].ToBank}, the first at {crossings[0].FromBank}-{crossings[0].ToBank}");
 
             // Sharing saves half the crossing price: a third road from twice as
             // far away still comes to the first crossing rather than pay for its own.
             Assert.True(RoadNetworkGenerator.GenerateRoad(new Vector2(-80f, -80f), 0f, new Vector2(80f, -80f), 0f, 4f, "third"));
-            Assert.Equal(3, crossings.Count);
-            Assert.True(RoadCrossing.SameBanks(crossings[0], crossings[2]),
-                $"third road crossed at {crossings[2].FromBank}-{crossings[2].ToBank} instead of the shared crossing");
+            Assert.Single(crossings);
         }
         finally { TearDownGeneration(); }
     }

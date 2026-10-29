@@ -252,9 +252,8 @@ public static partial class StairLayout
     public const float ReachRadius = 3.5f;
     public const float ReachHeight = 0.5f;
     /// <summary>A staircase that may finish anywhere near its goal finishes no lower than this
-    /// below the goal's ground: at 6 m from a cave's ledge, without it, one stopped on the
-    /// slope in front, 2.5 m under the ledge.</summary>
-    public const float ArriveBelow = 1f;
+    /// below the goal's ground: level with it (<see cref="RoadNetworkGenerator.ArrivalLevel"/>).</summary>
+    public const float ArriveBelow = RoadNetworkGenerator.ArrivalLevel;
     /// <summary>Headroom kept clear of rock above every walking surface: player height, as a road's (one owner,
     /// <see cref="RoadRockPolicy.ClearanceHeight"/>).</summary>
     public const float ClearanceHeight = RoadRockPolicy.ClearanceHeight;

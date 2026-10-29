@@ -48,8 +48,6 @@ public sealed class RoadCrossing
     public bool Invalid;
     /// <summary>Why this shallow ford got its style (length, depth, heading, eligible styles). Not persisted.</summary>
     public string? ShallowNote;
-    /// <summary>The road that built this crossing, for logs and road_crossings.</summary>
-    public string? Road;
     /// <summary>A Mistlands viaduct the search bought over a dry valley (DvergrViaduct.ValleyCrossing),
     /// not a river jump. Saved with the crossing (RoadNetworkPersistence.CrossingsFormat 2), so a loaded
     /// network knows its valley viaducts: their keep-out comes back with them. Its pieces are planned
@@ -577,7 +575,7 @@ public static class RoadCrossingDetector
     /// DeepWaterHeight, so everything shallower is road, not crossing.
     /// </summary>
     public static bool IsRoadGround(Vector2 p, WorldGenerator world) =>
-        BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world) >= RoadPathfinder.FloorFor(world.GetBiome(p.x, p.y));
+        RoadWater.OnLand(world, p, BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world));
 
     /// <summary>A segment with river water under it somewhere: the jump the
     /// pathfinder made. A splined road dipping into a puddle between two dry
@@ -592,7 +590,7 @@ public static class RoadCrossingDetector
             float x = a.x + (b.x - a.x) * t;
             float y = a.y + (b.y - a.y) * t;
             world.GetRiverWeight(x, y, out float weight, out _);
-            if (weight > RoadConstants.RiverImpassableThreshold
+            if (RoadWater.River(weight)
                 && BiomeBlendedHeight.GetBlendedHeight(x, y, world) < RoadConstants.SeaLevel)
                 return true;
         }
@@ -1152,7 +1150,7 @@ public static class RoadCrossingDetector
     public static (Vector2 from, Vector2 to) ExtendOverSwampShelf(Vector2 from, Vector2 to, WorldGenerator world)
     {
         Vector2 direction = (to - from).normalized;
-        float dryFloor = RoadPathfinder.LandingFloor;
+        float dryFloor = RoadWater.LandingFloor;
         if (BiomeBlendedHeight.GetBlendedHeight(from.x, from.y, world) < dryFloor)
             from = FirstDryAlongLine(from, -direction, RoadConstants.SwampBridgeDryReach, world, dryFloor);
         if (BiomeBlendedHeight.GetBlendedHeight(to.x, to.y, world) < dryFloor)

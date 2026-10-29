@@ -258,7 +258,7 @@ public sealed class StairStructures : IStructureSource
         foreach (StairRun run in Runs)
             foreach (StairClearance box in run.Clearances)
                 if (Vector2.Distance(new Vector2(box.Centre.x, box.Centre.z), c) <= reach)
-                    clearances.Add(new StructureClearance(box.Centre, box.Half, box.YawDegrees, box.Surface));
+                    clearances.Add(new StructureClearance(box.Centre, box.Half, box.YawDegrees, box.Surface, run.KeepsSiteRocks));
     }
 
     /// <summary>The format the staircase record is written in, 3: per run its ends, width, whether it keeps a place's rocks

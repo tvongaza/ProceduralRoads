@@ -551,7 +551,7 @@ public static class DvergrViaduct
             Vector2 p = Vector2.Lerp(from, to, i / (float)samples);
             float g = Ground(p, world);
             lowest = Mathf.Min(lowest, g);
-            if (g < RoadPathfinder.LandingFloor) { reason = "water"; return null; }
+            if (g < RoadWater.LandingFloor) { reason = "water"; return null; }
             if (i % 2 == 0)
             {
                 world.GetRiverWeight(p.x, p.y, out float river, out _);

@@ -85,10 +85,10 @@ public class RoadPathfinder
     /// little from site to site so a world gets long traverses, staircases and
     /// both. The steps bought are kept in
     /// <see cref="LastStairSteps"/>; the generator lays them with StairLayout.
-    /// The levers are "Stairs/Enabled", "Stairs/CostFixed" and "Stairs/CostPerMeterClimbed".
+    /// Both costs are fixed (no config for them). Stairs are always on for generated
+    /// roads (no setting for them); a search may be made without them (manual roads).
     /// </summary>
-    public bool Stairs = ConfiguredStairs;
-    public static bool ConfiguredStairs = true;
+    public bool Stairs = true;
     public float StairCostFixed = RoadConstants.DefaultStairCostFixed;
     public float StairCostPerMeterClimbed = RoadConstants.DefaultStairCostPerMeterClimbed;
     /// <summary>Largest step between a network road's surface and the ground a road joining it
@@ -184,13 +184,6 @@ public class RoadPathfinder
                     cells.Add(new Vector2i(c.x + dx, c.y + dz));
         }
     }
-
-    /// <summary>Ground a crossing may land on: the shallow-water line plus the bank clearance.</summary>
-    public const float LandingFloor = RoadConstants.ShallowWaterHeight + RoadConstants.BankClearance;
-
-    /// <summary>The floor for road ground in a biome: swamps wade down to DeepWaterHeight.</summary>
-    public static float FloorFor(Heightmap.Biome biome) =>
-        biome == Heightmap.Biome.Swamp ? RoadConstants.DeepWaterHeight : LandingFloor;
 
     /// <summary>
     /// The steepest ground a road may climb, as rise over run; 0 for no cap.
@@ -419,14 +412,15 @@ public class RoadPathfinder
     {
         long began = SearchStats.Enabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         m_lastIterations = 0;
-        List<Vector2>? path = FindPathToNetworkCore(start, reach, hints, targetAllowed);
+        List<Vector2>? path = FindPathToNetworkCore(start, reach, hints, targetAllowed, served);
         FoldSqueezes();
         if (SearchStats.Enabled)
             SearchStats.Record(SearchStats.Joining, path != null || AlreadyOnNetwork, m_lastIterations >= MaxIterations, m_lastIterations, began);
         return path;
     }
 
-    private List<Vector2>? FindPathToNetworkCore(Vector2 start, float reach, IReadOnlyList<Vector2>? hints, System.Func<Vector2, bool>? targetAllowed)
+    private List<Vector2>? FindPathToNetworkCore(Vector2 start, float reach, IReadOnlyList<Vector2>? hints, System.Func<Vector2, bool>? targetAllowed,
+        System.Func<bool>? served)
     {
         using var activity = new RoadSearchActivity(Activity);
         LastPathCost = 0;
@@ -487,7 +481,7 @@ public class RoadPathfinder
             !RoadSpatialGrid.TryGetRoadHeightWithin(junction, 1f, out float surface)
             || Mathf.Abs(surface - Ground(before)) <= 2f * JunctionStep;
 
-        if (Join(startGrid, out _))
+        if (served != null ? served() : Join(startGrid, out _))
         {
             // Already within reach. This is not a failure, and returning null
             // for it made the caller build a road to a place the network
@@ -926,25 +920,10 @@ public class RoadPathfinder
     /// </summary>
     internal static float SqueezeCorridor = 12f;
 
-    /// <summary>Whether <paramref name="p"/> lies between a place's footprint
-    /// and water less than <see cref="SqueezeCorridor"/> apart. Inside a
-    /// footprint it is not: the search's own ends reach their centres there,
-    /// and every other footprint is refused anyway.</summary>
-    internal bool SiteShoreSqueeze(Vector2 p)
-    {
-        if (SqueezeCorridor <= 0f) return false;
-        float gap = RoadSiteProtection.EdgeDistance(p, SqueezeCorridor);
-        if (gap < 0f || gap >= SqueezeCorridor) return false;
-        float reach = SqueezeCorridor - gap;
-        for (int i = 0; i < 8; i++)
-        {
-            float a = i * Mathf.PI / 4f;
-            var dir = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
-            for (float r = reach * 0.5f; r <= reach + 0.01f; r += reach * 0.5f)
-                if (Wet(p + dir * r)) return true;
-        }
-        return false;
-    }
+    /// <summary>Whether <paramref name="p"/> lies between a place's footprint and water less than
+    /// <see cref="SqueezeCorridor"/> apart, water the road can build out not counted
+    /// (<see cref="RoadShoreFill"/>).</summary>
+    internal bool SiteShoreSqueeze(Vector2 p) => RoadShoreFill.Squeezed(m_worldGen, p, buildable: true, out _, Fords);
 
     /// <summary>Whether a crossing's line runs over water within <see cref="SqueezeCorridor"/> of a
     /// place's footprint (sampled every 4 m, 8 m clear of each bank).</summary>
@@ -975,8 +954,26 @@ public class RoadPathfinder
     {
         if (SqueezeCorridor <= 0f) return false;
         if (!m_squeezed.TryGetValue(cell, out bool squeezed))
-            m_squeezed[cell] = squeezed = SiteShoreSqueeze(GridToWorld(cell));
+        {
+            Vector2 p = GridToWorld(cell);
+            m_squeezed[cell] = squeezed = SiteShoreSqueeze(p);
+            // Let through only because the shallows beside it are built out: counted once per cell.
+            if (!squeezed && RoadShoreFill.FillDepth > 0f && RoadShoreFill.Squeezed(m_worldGen, p, buildable: false, out _, Fords))
+                RecordShoreFill(p);
+        }
         return squeezed;
+    }
+
+    /// <summary>Where the squeeze let the search through on shallows a road builds out, by the place beside
+    /// them: (centre x, centre z) -> cells. Folded once per search, as <see cref="SqueezeHits"/> is.</summary>
+    internal static readonly System.Collections.Concurrent.ConcurrentDictionary<(int x, int z), int> ShoreFillCells = new();
+    private readonly Dictionary<(int x, int z), int> m_shoreFills = new();
+    private void RecordShoreFill(Vector2 p)
+    {
+        if (!RoadSiteProtection.NearestFootprint(p, SqueezeCorridor, out var f)) return;
+        var key = (Mathf.RoundToInt(f.Centre.x), Mathf.RoundToInt(f.Centre.y));
+        m_shoreFills.TryGetValue(key, out int n);
+        m_shoreFills[key] = n + 1;
     }
 
     /// <summary>Where the squeeze refused something this generation, by the
@@ -994,21 +991,16 @@ public class RoadPathfinder
     }
     private void FoldSqueezes()
     {
+        foreach (var fill in m_shoreFills) ShoreFillCells.AddOrUpdate(fill.Key, fill.Value, (_, n) => n + fill.Value);
+        m_shoreFills.Clear();
         if (m_squeezeHits.Count == 0) return;
         foreach (var hit in m_squeezeHits)
             SqueezeHits.AddOrUpdate(hit.Key, hit.Value, (_, n) => (n.steps + hit.Value.steps, n.landings + hit.Value.landings));
         m_squeezeHits.Clear();
     }
 
-    /// <summary>Water the search would not walk: a river, or ground under the
-    /// shallows (swamp shallows are waded, so there the deep line).</summary>
-    private bool Wet(Vector2 p)
-    {
-        m_worldGen.GetRiverWeight(p.x, p.y, out float river, out _);
-        if (river > RoadConstants.RiverImpassableThreshold) return true;
-        float h = m_worldGen.GetHeight(p.x, p.y);
-        return h < (m_worldGen.GetBiome(p.x, p.y) == Heightmap.Biome.Swamp ? RoadConstants.DeepWaterHeight : RoadConstants.ShallowWaterHeight);
-    }
+    /// <summary>Water the search would not walk (<see cref="RoadWater.Walked"/>).</summary>
+    private bool Wet(Vector2 p) => !RoadWater.Walked(m_worldGen, p, Fords);
 
     /// <summary>The road's price for a step, or the staircase's where that is
     /// cheaper (<paramref name="stair"/> is then +1 for a step up, -1 down);
@@ -1046,19 +1038,14 @@ public class RoadPathfinder
         float slope = Mathf.Abs(h2 - h1) / dist;
 
         float riverWeight = m_terrain.River(to);
-        if (riverWeight > RoadConstants.RiverImpassableThreshold)
-            return RiverPenalty;
-
-        float biomeHeight = h2;
-        if (biomeHeight < RoadConstants.DeepWaterHeight)
-            return WaterPenalty * 2f;
-        // With fords on, swamp shallows are waded at a price.
+        // The one water test (RoadWater); with fords on, swamp shallows are waded at a price.
         float wadeCost = 0f;
-        if (biomeHeight < RoadConstants.ShallowWaterHeight)
+        switch (RoadWater.Of(h2, riverWeight, m_worldGen, toWorld, Fords))
         {
-            if (!Fords || m_worldGen.GetBiome(toWorld.x, toWorld.y) != Heightmap.Biome.Swamp)
-                return WaterPenalty;
-            wadeCost = SwampShallowWaterPenalty;
+            case RoadWater.Kind.River: return RiverPenalty;
+            case RoadWater.Kind.Deep: return WaterPenalty * 2f;
+            case RoadWater.Kind.Shallow: return WaterPenalty;
+            case RoadWater.Kind.Waded: wadeCost = SwampShallowWaterPenalty; break;
         }
 
         if (SqueezedCell(to))
@@ -1261,7 +1248,7 @@ public class RoadPathfinder
             var check = new Vector2i(from.x + step.x * s, from.y + step.y * s);
             if (m_terrain.River(check) > 0f) return null;   // a river is a bridge's crossing
             float h = m_terrain.Height(check);
-            if (h < LandingFloor) return null;
+            if (h < RoadWater.LandingFloor) return null;
             if (h < rim - RoadConstants.MaxBridgeBankDelta) continue;
             if (h > rim + RoadConstants.MaxBridgeBankDelta) return null;
             Vector2 a = GridToWorld(from), b = GridToWorld(check);
@@ -1310,8 +1297,8 @@ public class RoadPathfinder
             Vector2 world = GridToWorld(check);
             float height = m_terrain.Height(check);
             float riverWeight = m_terrain.River(check);
-            bool water = height < LandingFloor;
-            bool riverCore = riverWeight > RoadConstants.RiverImpassableThreshold;
+            bool water = height < RoadWater.LandingFloor;
+            bool riverCore = RoadWater.River(riverWeight);
 
             // Keep scanning over water and over the river band (its dry
             // shores included: a road cannot stand there either).
@@ -1461,8 +1448,10 @@ public static class SearchStats
     /// tally lines. Off by default.</summary>
     internal static readonly bool Enabled = DebugSwitches.Flag("TIMINGS", false);
 
-    public const int Pricing = 0, Building = 1, Joining = 2, StairLayout = 3;
-    private static readonly string[] Names = { "pricing searches", "build searches", "join searches", "stair layouts" };
+    /// <summary>Kinds; a landing entry (the way onto a placed place's landing, every start tried) includes the
+    /// stair layouts it ran, which are also counted as stair layouts.</summary>
+    public const int Pricing = 0, Building = 1, Joining = 2, StairLayout = 3, LandingEntry = 4;
+    private static readonly string[] Names = { "pricing searches", "build searches", "join searches", "stair layouts", "landing entries" };
     private static readonly long[] s_count = new long[Names.Length], s_found = new long[Names.Length], s_maxed = new long[Names.Length], s_iterations = new long[Names.Length];
     private static readonly long[] s_ticks = new long[Names.Length], s_maxedTicks = new long[Names.Length];
 
