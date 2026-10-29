@@ -18,6 +18,10 @@ public enum RockClearingMode
 /// <summary>Known natural boulders only, never ore, fragments or arbitrary destructibles.</summary>
 public static class RoadRockPolicy
 {
+    /// <summary>Height of the clearance over a walking surface: a player's
+    /// (<see cref="PlayerHeight"/>) with a little room over the head.</summary>
+    public const float ClearanceHeight = 2f;
+
     /// <summary>The player's collision capsule, read from the Player prefab:
     /// 1.85 m tall, 0.49 m radius, standing on its feet.</summary>
     public const float PlayerHeight = 1.85f;
@@ -46,6 +50,19 @@ public static class RoadRockPolicy
     /// (NetworkCutoff), where the rocks are the players' landscape.
     /// </summary>
     public static bool MayTouch(UnityEngine.Vector3 position) => !NetworkCutoff.Excludes(ZoneSystem.GetZone(position));
+
+    /// <summary>A zone is 64 m across: 46 m from its centre reaches its corners.</summary>
+    public const float ZoneReach = 46f;
+
+    /// <summary>
+    /// Whether the pass looks at a zone at all: it has road, or ANY structure (a bridge or viaduct deck, wooden or Dvergr,
+    /// a staircase, a spanned ford) within the reach of its probe -- the same question the probe then asks
+    /// (<see cref="StructurePlans.ClearancesNear"/>), so no structure is left to be "reached from its banks" -- and the
+    /// zone is not one NetworkCutoff leaves as the players found it.
+    /// </summary>
+    public static bool ZoneNeedsLook(Vector2s zone, UnityEngine.Vector3 zoneCentre) =>
+        MayTouch(zoneCentre) &&
+        (RoadSpatialGrid.GetRoadPointsInZone(zone).Count > 0 || StructurePlans.AnyStructureNear(zoneCentre, ZoneReach));
 
     /// <summary>Whether this setting carves rocks rather than removing them whole.</summary>
     public static bool Carves(RockClearingMode mode) => mode == RockClearingMode.Carve;
