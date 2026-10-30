@@ -39,9 +39,15 @@ public sealed class StructurePiece
     /// debris on the riverbed does not count). Null: the piece never holds a structure back.
     /// See StructurePlans.BuildablePlanFor.</summary>
     public HashSet<Vector2s>? StructureZones;
+    /// <summary>The piece's own structure as the plan laid it, a bridge or a staircase (one per structure, shared by its
+    /// pieces), which its first build saves (StructureSites.KeepFirstBuilt). Plans only: not saved.</summary>
+    public PlannedSite? Site;
     /// <summary>The crossing whose bridge the piece is part of, null for any other structure: its kit is chosen when its
     /// first piece is built (BridgeStructures.ChooseKit). Plans only: not saved.</summary>
     public RoadCrossing? Crossing;
+    /// <summary>The kit the crossing's pieces were solved in (BridgeStructures.Solve), saved on the crossing when its first
+    /// piece is built, so a bridge is built in the kit its plan has. Null for any other structure. Plans only: not saved.</summary>
+    public BridgeStructures.Kit? Kit;
     /// <summary>A staircase's piece held out from a face, or what holds it (StairPiece.Cantilevered): its pillars are
     /// clipped into the face, not a column carried down to the ground. Generation only: not saved.</summary>
     public bool Cantilevered;

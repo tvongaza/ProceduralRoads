@@ -18,6 +18,8 @@ public sealed class StairRun
     /// <summary>The kit it was laid in, decided once when laid (StairKit.ForSite / ForLine); null for a run read from a
     /// record without it, whose pieces name their kit.</summary>
     public StairKit? Kit;
+    /// <summary>The <see cref="StairLayout.LayoutVersion"/> that laid it; 0 for a run read from a record without it.</summary>
+    public int Layout = StairLayout.LayoutVersion;
     public readonly List<StructurePiece> Pieces = new();
 
     /// <summary>The kit's name for listings: the stored kit, else the one its first step names.</summary>
@@ -25,6 +27,9 @@ public sealed class StairRun
 
     public override string ToString() => System.FormattableString.Invariant($"{KitName} staircase {From} -> {To}, {Pieces.Count} pieces");
     public readonly List<StairClearance> Clearances = new();
+    /// <summary>The finished ground the run was settled on (<see cref="StairStructures.Settle"/>), which every terrain write
+    /// levels to under it (<see cref="StructureGround.Held"/>); empty until it is settled.</summary>
+    public readonly List<GroundPin> Ground = new();
 
     /// <summary>A run from a finished plan. The plan's cuts are not kept here:
     /// they go into the network as cut-only road points, which the road terrain
@@ -53,11 +58,15 @@ public sealed class StairRun
 }
 
 /// <summary>
-/// Staircases as a structure source. Unlike a bridge, a staircase is not
+/// Staircases as a structure source. Unlike a bridge, a staircase's layout is not
 /// recomputed from the network on demand: a valley-to-summit plan takes seconds,
-/// which a zone load cannot wait for. So each run's plan is made once, when the
-/// run is added, and its pieces and clearances are saved with the network
-/// (<see cref="Serialize"/>). Pure logic.
+/// which a zone load cannot wait for. So each run's layout is made once, when the
+/// run is added, and saved with the network with its clearances and the ground it
+/// was settled on (<see cref="Serialize"/>). Its kit's pieces are laid over the
+/// layout when its first zone is built, as a bridge's are solved, and saved then
+/// (<see cref="Build"/>, <see cref="BuiltStairs"/>): every later zone lays the saved
+/// pieces, and a staircase nobody has reached takes the kits of the build that
+/// reaches it. Pure logic.
 /// </summary>
 public sealed class StairStructures : IStructureSource
 {
@@ -71,11 +80,13 @@ public sealed class StairStructures : IStructureSource
     /// being added to.</summary>
     public static IReadOnlyList<StairRun> Runs { get { lock (s_runs) return s_runs.ToArray(); } }
 
+    /// <summary>No staircases: the network's are gone, and the pieces their first builds saved with them.</summary>
     public static void Reset()
     {
         lock (s_runs) s_runs.Clear();
         s_cells.Clear();
         s_standing.Clear();
+        BuiltStairs.Reset();
     }
 
     /// <summary>Mark the pathfinding cells (world / <see cref="RoadPathfinder.CellSize"/>, rounded) a road climbed on a staircase.</summary>
@@ -129,6 +140,8 @@ public sealed class StairStructures : IStructureSource
         {
             int i = s_runs.IndexOf(standing);
             if (i < 0) return false;
+            // The ground it stands on stays the ground it was settled on.
+            if (trimmed.Ground.Count == 0) trimmed.Ground.AddRange(standing.Ground);
             s_runs[i] = trimmed;
             var stillStanding = new HashSet<(int, int)>();
             foreach (StairRun run in s_runs) stillStanding.UnionWith(StandingCells(run));
@@ -136,6 +149,8 @@ public sealed class StairStructures : IStructureSource
                 if (!stillStanding.Contains(cell)) s_standing.TryRemove(cell, out _);
             MarkStanding(trimmed);
         }
+        // Pieces saved for the run as it stood are not the trimmed run's: it is laid from its own layout.
+        if (BuiltStairs.Of(standing) is BuiltStair saved) BuiltStairs.Store.Forget(new[] { saved });
         StructurePlans.InvalidatePlans();
         return true;
     }
@@ -227,9 +242,8 @@ public sealed class StairStructures : IStructureSource
     }
 
     /// <summary>
-    /// Every run settled on the finished ground (<see cref="BuriedPieces"/>): its columns carried on down where the
-    /// earthwork lowered the ground under them, then its pieces wholly under the ground dropped, which the game breaks as
-    /// soon as it weighs them. Returns how many pillars were added and pieces dropped, adding each dropped to <paramref name="byPrefab"/>.
+    /// Every run settled on the finished ground (<see cref="Settle"/>). Returns how many pillars were added and pieces
+    /// dropped, adding each dropped to <paramref name="byPrefab"/>.
     /// </summary>
     public static (int carried, int dropped) SettleOnFinishedGround(Func<int, int, float> vertex, IDictionary<string, int>? byPrefab = null)
     {
@@ -237,10 +251,26 @@ public sealed class StairStructures : IStructureSource
         lock (s_runs)
             foreach (StairRun run in s_runs)
             {
-                carried += BuriedPieces.CarryColumns(run, vertex);
-                dropped += BuriedPieces.Drop(run, vertex, byPrefab);
+                var (c, d) = Settle(run, vertex, byPrefab);
+                carried += c;
+                dropped += d;
             }
         if (carried + dropped > 0) StructurePlans.InvalidatePlans();
+        return (carried, dropped);
+    }
+
+    /// <summary>
+    /// A run settled on the finished ground (<see cref="BuriedPieces"/>): its columns carried on down where the earthwork
+    /// lowered the ground under them, then its pieces wholly under the ground dropped, which the game breaks as soon as it
+    /// weighs them; then the ground it stands on saved with it and held (<see cref="StructureGround.Measure"/>).
+    /// </summary>
+    public static (int carried, int dropped) Settle(StairRun run, Func<int, int, float> vertex, IDictionary<string, int>? byPrefab = null)
+    {
+        int carried = BuriedPieces.CarryColumns(run, vertex);
+        int dropped = BuriedPieces.Drop(run, vertex, byPrefab);
+        run.Ground.Clear();
+        run.Ground.AddRange(StructureGround.Measure(run.Pieces, vertex));
+        StructureGround.Hold(run.Ground);
         return (carried, dropped);
     }
 
@@ -270,8 +300,48 @@ public sealed class StairStructures : IStructureSource
     public IEnumerable<StructurePiece> Plan(WorldGenerator world, int seed)
     {
         foreach (StairRun run in Runs)
-            foreach (StructurePiece piece in run.Pieces)
+        {
+            List<StructurePiece> pieces = PiecesOf(run);
+            StairRun saved = run;
+            var planned = new PlannedSite(pieces, () => BuiltStairs.Of(saved) != null, w => Build(saved, w, pieces));
+            foreach (StructurePiece piece in pieces)
+            {
+                piece.Site = planned;
                 yield return piece;
+            }
+        }
+    }
+
+    /// <summary>Whether a piece kind is one a staircase's layout holds (steps, floors, fillers, columns and brackets): any
+    /// other a kit adds over it (<see cref="StairKit.Dress"/>).</summary>
+    internal static bool IsLayoutKind(StructurePieceKind kind) =>
+        kind is StructurePieceKind.StairStep or StructurePieceKind.StairFloor or StructurePieceKind.StairFiller or StructurePieceKind.StairSupport;
+
+    /// <summary>The kit a staircase is laid in: the one its layout was made for (<see cref="StairRun.Kit"/>), else the one its
+    /// steps name; stone for neither.</summary>
+    public static StairKit KitOf(StairRun run) => run.Kit ?? StairKit.Named(run.KitName) ?? StairKit.Stone;
+
+    /// <summary>A staircase's kit laying its pieces over its layout now: this build's kits (<see cref="StairKit.Dress"/>).
+    /// A later build's kits stand here; so may a test's.</summary>
+    internal static Func<StairRun, List<StructurePiece>> Dresser = run => KitOf(run).Dress(run);
+
+    /// <summary>The pieces of a staircase as they are laid: those saved when its first zone was built
+    /// (<see cref="BuiltStairs"/>), else its kit's laid over its layout now (<see cref="Dresser"/>): a staircase nobody has
+    /// reached, or one a world built zones of before staircases were saved, which is laid zone by zone so.</summary>
+    public static List<StructurePiece> PiecesOf(StairRun run) => BuiltStairs.Of(run)?.PiecesForPlan() ?? Dresser(run);
+
+    /// <summary>
+    /// The pieces of a staircase whose first zone is built now: <paramref name="planned"/>, the pieces of the plan being
+    /// laid, else its kit's laid over its layout now (<see cref="Dresser"/>), with this build's kits; saved with the ground its
+    /// layout was settled on (<see cref="BuiltStairs.Keep"/>), so every later zone, on this build or a later one, lays the
+    /// same pieces on the same ground. A staircase saved already keeps its pieces.
+    /// </summary>
+    public static List<StructurePiece> Build(StairRun run, WorldGenerator? world, List<StructurePiece>? planned = null)
+    {
+        if (BuiltStairs.Of(run) is BuiltStair built) return built.PiecesForPlan();
+        List<StructurePiece> pieces = planned ?? Dresser(run);
+        if (pieces.Count > 0) BuiltStairs.Keep(run, KitOf(run), pieces, world);
+        return pieces;
     }
 
     /// <summary>Vegetation kept off every walked piece: a circle round its 2 m footprint.</summary>
@@ -289,14 +359,15 @@ public sealed class StairStructures : IStructureSource
         foreach (StairRun run in Runs)
             foreach (StairClearance box in run.Clearances)
                 if (Vector2.Distance(new Vector2(box.Centre.x, box.Centre.z), c) <= reach)
-                    clearances.Add(new StructureClearance(box.Centre, box.Half, box.YawDegrees, box.Surface));
+                    clearances.Add(new StructureClearance(box.Centre, box.Half, box.YawDegrees, box.Surface, run.KeepsSiteRocks));
     }
 
-    /// <summary>The format the staircase record is written in, 3: per run its ends, width, whether it keeps a place's rocks
-    /// and its kit; per piece its kind, prefab, position, yaw and whether it is cantilevered; then its clearances. A number
-    /// no earlier build wrote, so an earlier build refuses the record whole instead of misreading it. Records 1 (without the
-    /// kept-rocks flag) and 2 (without the kit and the cantilever flag) are read as before.</summary>
-    private const int FormatVersion = 3;
+    /// <summary>The format the staircase record is written in, 5: per run its ends, width, whether it keeps a place's rocks,
+    /// its kit and the layout that laid it; per piece its kind, prefab, position, yaw and whether it is cantilevered; then its clearances; then the
+    /// ground it stands on (<see cref="GroundPin"/>). A number no earlier build wrote, so an earlier build refuses the record
+    /// whole instead of misreading it. Records 1 (without the kept-rocks flag), 2 (without the kit and the cantilever flag)
+    /// 3 (without the ground) and 4 (without the layout, read as layout 0) are read as before.</summary>
+    private const int FormatVersion = 5;
 
     public static byte[] Serialize()
     {
@@ -312,6 +383,7 @@ public sealed class StairStructures : IStructureSource
             writer.Write(run.Width);
             writer.Write(run.KeepsSiteRocks);
             writer.Write(run.Kit?.Name ?? "");
+            writer.Write(run.Layout);
             writer.Write(run.Pieces.Count);
             foreach (StructurePiece p in run.Pieces)
             {
@@ -327,6 +399,7 @@ public sealed class StairStructures : IStructureSource
                 writer.Write(b.Half.x); writer.Write(b.Half.y); writer.Write(b.Half.z);
                 writer.Write(b.YawDegrees); writer.Write(b.Surface);
             }
+            GroundPin.WriteAll(writer, run.Ground);
         }
         return stream.ToArray();
     }
@@ -345,6 +418,7 @@ public sealed class StairStructures : IStructureSource
         // A saved staircase stands for the roads planned on the loaded network (a manual road's search) as a laid one does.
         s_standing.Clear();
         foreach (StairRun run in runs) MarkStanding(run);
+        StructureGround.Rebuild();
         StructurePlans.InvalidatePlans();
     }
 
@@ -372,6 +446,8 @@ public sealed class StairStructures : IStructureSource
                 };
                 string kit = version >= 3 ? reader.ReadString() : "";
                 if (kit.Length > 0) run.Kit = StairKit.Named(kit) ?? throw new InvalidDataException("Unknown stair kit.");
+                run.Layout = version >= 5 ? reader.ReadInt32() : 0;
+                if (run.Layout < 0) throw new InvalidDataException("Invalid stair layout.");
                 int pieces = reader.ReadInt32();
                 if (pieces < 0 || (total += pieces) > 500000) throw new InvalidDataException("Invalid stair piece count.");
                 for (int j = 0; j < pieces; j++)
@@ -399,6 +475,7 @@ public sealed class StairStructures : IStructureSource
                         throw new InvalidDataException("Invalid stair clearance.");
                     run.Clearances.Add(new StairClearance(centre, half, yaw, surface));
                 }
+                if (version >= 4) GroundPin.ReadAll(reader, run.Ground);
                 loaded.Add(run);
             }
             if (stream.Position != stream.Length) throw new InvalidDataException("Trailing stair run data.");

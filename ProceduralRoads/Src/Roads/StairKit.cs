@@ -102,12 +102,34 @@ public sealed class StairKit
     /// kit has no such pieces: then it stands on <see cref="Support"/> columns as ever.</summary>
     public readonly CantileverKit? Cantilever;
 
-    private StairKit(string name, string stair, string floor, float floorTop, float floorThickness, FillerKind[] fillers, string support, float supportHeight,
-        CantileverKit? cantilever = null)
+    /// <summary>The kit's number in the built staircases' record (<see cref="BuiltStairs"/>): fixed, never reused; 0 names no
+    /// kit.</summary>
+    public readonly int Number;
+
+    private StairKit(int number, string name, string stair, string floor, float floorTop, float floorThickness, FillerKind[] fillers, string support,
+        float supportHeight, CantileverKit? cantilever = null)
     {
-        Name = name; Stair = stair; Floor = floor; FloorTop = floorTop; FloorThickness = floorThickness;
+        Number = number; Name = name; Stair = stair; Floor = floor; FloorTop = floorTop; FloorThickness = floorThickness;
         Fillers = fillers; Support = support; SupportHeight = supportHeight; Cantilever = cantilever;
     }
+
+    /// <summary>The version of the kits' laying over a staircase's layout (<see cref="Dress"/>), stamped on every staircase
+    /// it lays (<see cref="BuiltSite.Layout"/>): raised with any change to the pieces a kit lays.</summary>
+    public const int DressingVersion = 1;
+
+    /// <summary>
+    /// The pieces this kit lays over a staircase's layout, when its first zone is built (<see cref="StairStructures.Build"/>):
+    /// the network saved the layout (its steps, floors, the fillers of its turns and joins, and the columns and brackets down to
+    /// the ground it was settled on), and the kit's own pieces are chosen here, with this build's kits, and saved then. Every
+    /// layout element is laid as the kit's piece for it, as the layout named it; a kit with rails, flair or supports of its
+    /// own adds or replaces them here, and raises <see cref="DressingVersion"/>.
+    /// </summary>
+    public List<StructurePiece> Dress(StairRun run) => run.Pieces.ConvertAll(p => new StructurePiece
+    {
+        Kind = p.Kind, Prefab = p.Prefab, Position = p.Position,
+        YawDegrees = p.YawDegrees, PitchDegrees = p.PitchDegrees, RollDegrees = p.RollDegrees,
+        HealthFraction = p.HealthFraction, Cantilevered = p.Cantilevered,
+    });
 
     /// <summary>Highest a flat run of any kit stands over the ground under it, on its columns: a short walkway joining
     /// stairs, crossing a valley within it level instead of down and up again; deeper, the staircase climbs or goes round,
@@ -115,7 +137,7 @@ public sealed class StairKit
     /// support sideways and black marble half, so a tall column leaves its top nearly unsupported.</summary>
     public const float WalkwayCap = 5f;
 
-    public static readonly StairKit Stone = new("stone", "stone_stair", "stone_floor_2x2", 0.5f, 1f,
+    public static readonly StairKit Stone = new(1, "stone", "stone_stair", "stone_floor_2x2", 0.5f, 1f,
         new[] { new FillerKind("stone_wall_2x1", 2f, 1f), new FillerKind("stone_wall_1x1", 1f, 1f), new FillerKind("stone_floor_2x2", 2f, 2f) },
         "stone_pillar", 2f,
         new CantileverKit("stone_pillar", 2f, "stone_arch", 2f, 1f, 1f, "stone_wall_2x1", 2f, maxDepth: 8f));
@@ -124,7 +146,7 @@ public sealed class StairKit
     /// the 1 m column stacks where stone stacks a 2 m pillar. Its cantilever (cli_piece_geometry):
     /// blackmarble_arch is 2 m long, 2 m tall at its local -x end (snaps top and bottom
     /// there, only the top at +x), a metre deep; two 1 m columns per metre clip into the face.</summary>
-    public static readonly StairKit BlackMarble = new("blackmarble", "blackmarble_stair", "blackmarble_floor", 0.5f, 1f,
+    public static readonly StairKit BlackMarble = new(2, "blackmarble", "blackmarble_stair", "blackmarble_floor", 0.5f, 1f,
         new[] { new FillerKind("blackmarble_2x1x1", 2f, 1f), new FillerKind("blackmarble_1x1", 1f, 1f), new FillerKind("blackmarble_floor", 2f, 2f) },
         "blackmarble_column_1", 1f,
         new CantileverKit("blackmarble_column_1", 1f, "blackmarble_arch", 2f, 2f, -1f, "blackmarble_2x1x1", 2f, maxDepth: 6f));
@@ -134,7 +156,7 @@ public sealed class StairKit
     /// flights stand on poles as ever. A wood floor is a 13 cm
     /// board whose origin is its walking surface (it snaps level with the
     /// stair's top edge); wood has no 2 x 1 floor, so wedges take 1 x 1s.</summary>
-    public static readonly StairKit Wood = new("wood", "wood_stair", "wood_floor", 0f, 0.13f,
+    public static readonly StairKit Wood = new(3, "wood", "wood_stair", "wood_floor", 0f, 0.13f,
         new[] { new FillerKind("wood_floor_1x1", 1f, 1f), new FillerKind("wood_floor", 2f, 2f) },
         "wood_pole2", 2f);
 
@@ -144,6 +166,9 @@ public sealed class StairKit
     /// <summary>The walking surface of a floor piece over its origin, by the kit its prefab names (stone and black marble
     /// floors stand half a metre under their surface, wood floors at it): the one owner every caller asks.</summary>
     public static float FloorTopOf(string prefab) => (Named(prefab.Split('_')[0]) ?? Stone).FloorTop;
+
+    /// <summary>The kit with this record number (<see cref="Number"/>), null for none this build has.</summary>
+    public static StairKit? Numbered(int number) => Array.Find(All, k => k.Number == number);
 
     public static StairKit? Named(string name) => name switch
     {
