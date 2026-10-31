@@ -68,8 +68,7 @@ public class StairStructuresTests : IDisposable
         Assert.Equal(run.Pieces.Count, StructurePlans.TotalPlannedPieces);
         // The kit's pieces laid over the layout: today each layout element as it is (StairKit.Dress).
         foreach (StructurePiece piece in run.Pieces)
-            Assert.Contains(StructurePlans.PlanFor(ZoneSystem.GetZone(piece.Position))!,
-                q => q.Prefab == piece.Prefab && q.Position.Equals(piece.Position) && q.YawDegrees == piece.YawDegrees);
+            Assert.Contains(StructureAppendQueue.Key(piece), StructurePlans.PlanFor(ZoneSystem.GetZone(piece.Position))!.Select(StructureAppendQueue.Key));
         Assert.Contains(run.Pieces, p => p.Kind == StructurePieceKind.StairStep && p.Prefab == StairKit.Stone.Stair);
         Assert.Contains(run.Pieces, p => p.Kind == StructurePieceKind.StairSupport && p.Prefab == StairKit.Stone.Support);
     }
