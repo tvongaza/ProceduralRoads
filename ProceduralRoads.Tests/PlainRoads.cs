@@ -45,6 +45,9 @@ internal static class PlainRoads
         ("decline tall climbs", () => RoadCrossingDetector.DeclineTallClimbs, v => RoadCrossingDetector.DeclineTallClimbs = (bool)v, false),
         ("viaducts", () => RoadPathfinder.ConfiguredViaducts, v => RoadPathfinder.ConfiguredViaducts = (bool)v, false),
         ("viaduct raise", () => DvergrViaduct.RaisedShare, v => DvergrViaduct.RaisedShare = (float)v, 0f),
+        // Not a feature: the suite's worlds hold their land near the centre, so generation scans them for islands within
+        // this bound, and scans the whole world where it would cut land off (IslandDetector.ScanRadius): the same islands.
+        ("island scan", () => IslandDetector.ScanRadius, v => IslandDetector.ScanRadius = (float)v, 2560f),
     };
 
     /// <summary>The mod's own values, captured before the plain ones replaced them.</summary>

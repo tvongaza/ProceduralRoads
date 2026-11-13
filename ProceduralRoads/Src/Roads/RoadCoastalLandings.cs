@@ -13,6 +13,8 @@ public static class RoadCoastalLandings
     public const float AreaPerLanding = 5_000_000;
     public const float Separation = 400;
     public const float Radius = 16;
+    /// <summary>The farthest from a shore cell the coast's checks read the detector's raster (its water approach).</summary>
+    internal const float RasterReach = 150;
     /// <summary>Its selection weight and place in the connection order: below a custom location, above the default. The one owner of automatic destinations (docs/OWNERS.md).</summary>
     public const int Priority = 60;
     private const float Sea = RoadConstants.SeaLevel;
@@ -58,7 +60,7 @@ public static class RoadCoastalLandings
                 bool deep = false, wet = false;
                 float waterLength = 0;
                 float step = spacing * (d.x != 0 && d.z != 0 ? 1.41421356f : 1);
-                for (int i = 1; i * step <= 150; i++)
+                for (int i = 1; i * step <= RasterReach; i++)
                 {
                     if(preparation.Checkpoint(0)) yield return true;
                     float water = H(cell.x + d.x*i, cell.y + d.z*i);

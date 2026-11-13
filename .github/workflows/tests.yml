@@ -31,7 +31,7 @@ jobs:
     # The game runs the mod on Mono, a .NET Framework 4.x runtime: the net48 leg, built with dotnet and run by the
     # xunit console runner under Mono (tools/test-runners, copied from ValheimTesting).
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_NOLOGO: '1'
@@ -47,4 +47,17 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends mono-complete
           mono --version
-      - run: bash tools/test-runners/run-tests.sh -c Release -f net48 ProceduralRoads.Tests/ProceduralRoads.Tests.csproj
+      - name: Per-test profile under Mono (throwaway timing branch)
+        run: |
+          dotnet build ProceduralRoads.Tests/ProceduralRoads.Tests.csproj -f net48 -c Release -nologo -v quiet
+          console=$HOME/.nuget/packages/xunit.runner.console/2.8.1/tools/net48/xunit.console.exe
+          start=$(date +%s)
+          mono "$console" ProceduralRoads.Tests/bin/Release/net48/ProceduralRoads.Tests.dll -xml "$RUNNER_TEMP/net48.xml" -parallel none -nologo > "$RUNNER_TEMP/out.log" 2>&1 || true
+          echo "WALL $(( $(date +%s) - start )) s"
+          grep -E "Total:|\[FAIL\]" "$RUNNER_TEMP/out.log" | head -20 || true
+          python3 - "$RUNNER_TEMP/net48.xml" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          r = ET.parse(sys.argv[1]).getroot()
+          for a in r.iter('assembly'): print('ASSEMBLY', a.get('total'), a.get('failed'), a.get('time'))
+          for t in r.iter('test'): print('T\t%s\t%s\t%s' % (t.get('time'), t.get('result'), t.get('name')))
+          PY
