@@ -105,4 +105,48 @@ public class StairRailingWalkTests
         // The inner edges cross at (-6593.40, -3489.40): a post closes the inside there.
         Assert.Contains(laid, p => p.Prefab == BridgeLayout.RailPostPrefab && Vector2.Distance(Flat(p.Position), new Vector2(-6593.40f, -3489.402f)) < 0.1f);
     }
+
+    /// <summary>The black marble staircase's head of flight in game at 5265.3,3269.7 (pieces 18 to 23): a floor, a floor jogged
+    /// right of it, then the next flight in line with the first floor. That floor's front corner and the stair's back corner are in
+    /// line (no turn), so no wedge stands between them: no rail crosses the walk and none is laid twice, while the real wedge
+    /// between the jogged floor and the stair stays closed.</summary>
+    [Fact]
+    public void AJogsInLineFloorTwoBackIsNotClosedAcrossTheWalk()
+    {
+        StructurePiece P(StructurePieceKind kind, string prefab, float x, float y, float z, float yaw) =>
+            new() { Kind = kind, Prefab = prefab, Position = new Vector3(x, y, z), YawDegrees = yaw };
+        StructurePiece Stair(float x, float y, float z, float yaw) => P(StructurePieceKind.StairStep, "blackmarble_stair", x, y, z, yaw);
+        StructurePiece FloorAt(float x, float y, float z, float yaw) => P(StructurePieceKind.StairFloor, "blackmarble_floor", x, y, z, yaw);
+        StructurePiece Filler(float x, float y, float z, float yaw) => P(StructurePieceKind.StairFiller, "blackmarble_2x1x1", x, y, z, yaw);
+        var walking = new List<StructurePiece>
+        {
+            Stair(5261.81f, 37.39f, 3266.32f, 225f),
+            FloorAt(5263.23f, 37.89f, 3267.73f, 45f),
+            FloorAt(5264.23f, 37.89f, 3268.14f, 90f),
+            Filler(5265.73f, 37.89f, 3268.14f, 270f),
+            Filler(5265.58f, 37.89f, 3268.08f, 225f),
+            Stair(5266.64f, 38.39f, 3269.14f, 225f),
+        };
+        List<StructurePiece> laid = StairRailing.Lay(StairKit.BlackMarble, walking, Array.Empty<StairEnd>(), (x, z) => 30f);
+        var walks = walking.Where(p => p.Kind != StructurePieceKind.StairFiller).Select(p => StairSupport.WalkOf(p, StairKit.BlackMarble)!.Value).ToList();
+        bool InAWalk(Vector2 p) => walks.Exists(w => StairLayout.OnFootprint(w.Back, w.Dir, w.Right, w.Depth, w.Across, p, -0.3f));
+        Vector2 Flat(Vector3 v) => new(v.x, v.z);
+
+        var level = laid.Where(p => p.Prefab is StairRailing.LevelRailPrefab or StairRailing.ShortRailPrefab).ToList();
+        foreach (StructurePiece rail in level)
+        {
+            float half = rail.Prefab == StairRailing.ShortRailPrefab ? 0.5f : 1f;
+            Vector2 along = StairLayout.Right(rail.YawDegrees), c = Flat(rail.Position);
+            Assert.False(InAWalk(c) || InAWalk(c + along * half * 0.5f) || InAWalk(c - along * half * 0.5f),
+                $"{rail.Prefab} at {rail.Position} yaw {rail.YawDegrees} lies across the walk");
+        }
+        var keys = laid.Select(p => (p.Prefab, (int)Mathf.Round(p.Position.x * 100f), (int)Mathf.Round(p.Position.y * 100f),
+            (int)Mathf.Round(p.Position.z * 100f), (int)Mathf.Round(p.YawDegrees * 10f))).ToList();
+        Assert.Equal(keys.Count, keys.Distinct().Count());
+        // The real wedge, floor 20's front corner to the stair's back corner, keeps its two 1 m runs.
+        Assert.Contains(level, p => p.Prefab == StairRailing.ShortRailPrefab
+            && Vector2.Distance(Flat(p.Position), new Vector2(5265.73f, 3267.14f)) < 0.05f && Mathf.Abs(StairLayout.Wrap(p.YawDegrees)) < 0.5f);
+        Assert.Contains(level, p => p.Prefab == StairRailing.ShortRailPrefab
+            && Vector2.Distance(Flat(p.Position), new Vector2(5266.29f, 3267.38f)) < 0.05f && Mathf.Abs(StairLayout.Wrap(p.YawDegrees - 135f)) < 0.5f);
+    }
 }
