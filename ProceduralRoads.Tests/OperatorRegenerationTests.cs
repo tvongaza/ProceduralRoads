@@ -168,8 +168,14 @@ public class OperatorRegenerationTests : IDisposable
         /// <summary>The mesa's top's middle; its faces' feet are <see cref="Half"/> from it either way, on x and on z.</summary>
         public static readonly Vector2 Top = new(250f, 170f);
         public const float Half = 40f;
+        /// <summary>The synthetic mountain ridge runs the world's length; here it ends this far out along z, the sea floor
+        /// beyond at the synthetic terrain's own height off its island, so the world's land lies near its centre as the suite's
+        /// other worlds' does and its island scan is bounded to it (IslandDetector.BoundedScan). Every test's network (its road
+        /// points and staircases) is the same as with the ridge running on.</summary>
+        public const float RidgeEnds = 1600f;
         public override float GetHeight(float x, float z)
         {
+            if (Mathf.Abs(z) > RidgeEnds) return 20f;
             float inside = Half - Mathf.Max(Mathf.Abs(x - Top.x), Mathf.Abs(z - Top.y));
             return base.GetHeight(x, z) + Mathf.Clamp(inside * 1.2f, 0f, MesaRises * StairLayout.PieceRise);
         }
