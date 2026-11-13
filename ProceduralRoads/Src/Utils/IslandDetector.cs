@@ -106,12 +106,22 @@ public static class IslandDetector
         using var preparation=new RoadPreparation(p=>DetectRoadIslandsSteps(WorldGenerator.instance,RoadNetworkGenerator.NetworkOptions,p,value=>result=value));
         preparation.Drain(); return result!;
     }
+    /// <summary>How far from the world's centre generation looks for islands: the whole world
+    /// (<see cref="RoadConstants.WorldRadius"/>), which the game never changes. The unit suite's small worlds bound it to their
+    /// land (PlainRoads); a bounded scan that would cut any land off scans the whole world after all
+    /// (<see cref="RoadIslandDetector.DetectSteps"/>'s wholeOrNone), so the islands are the world's either way.</summary>
+    internal static float ScanRadius = RoadConstants.WorldRadius;
+
     internal static IEnumerable<bool> DetectRoadIslandsSteps(WorldGenerator world,RoadNetworkOptions options,
         RoadPreparation preparation,System.Action<List<Island>> complete)
     {
         var clock=System.Diagnostics.Stopwatch.StartNew();
         List<Island>? islands=null;
-        foreach(var step in RoadIslandDetector.DetectSteps(world,preparation,value=>islands=value,options:options)) yield return step;
+        float bound=ScanRadius;
+        if (bound < RoadConstants.WorldRadius)
+            foreach(var step in RoadIslandDetector.DetectSteps(world,preparation,value=>islands=value,worldRadius:bound,options:options,wholeOrNone:true)) yield return step;
+        if (islands == null)
+            foreach(var step in RoadIslandDetector.DetectSteps(world,preparation,value=>islands=value,options:options)) yield return step;
         Log.LogInfo($"Road island detection: {islands!.Count} groups at {RoadIslandDetector.SampleSpacing} m in {clock.Elapsed.TotalSeconds:F1}s");
         complete(islands);
     }
