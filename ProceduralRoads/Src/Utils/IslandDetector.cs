@@ -36,6 +36,19 @@ public class Island
     }
     
     public bool ContainsPoint(Vector3 worldPos) => ContainsPoint(worldPos.x, worldPos.z);
+
+    /// <summary>The zones holding any of the island's cells (each cell is far smaller than a zone, so it lies in one): the
+    /// land road_regen_island builds in, every other zone being off the island.</summary>
+    public HashSet<Vector2s> Zones()
+    {
+        var zones = new HashSet<Vector2s>();
+        foreach (Vector2Int cell in Cells)
+        {
+            Vector2 p = CellToWorld(cell);
+            zones.Add(ZoneSystem.GetZone(new Vector3(p.x, 0f, p.y)));
+        }
+        return zones;
+    }
     
     public Vector2 GetEdgePoint()
     {

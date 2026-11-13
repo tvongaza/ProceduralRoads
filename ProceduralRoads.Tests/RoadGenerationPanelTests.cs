@@ -88,8 +88,8 @@ public sealed class RoadGenerationPanelTests
     [Fact]
     public void RowTextSaysWhatTheIslandIsDoingWhatItHasDoneAndHowLong()
     {
-        // 252 s over 18 places, 22 left: 308 s, about 5 minutes.
-        Assert.Equal("Island 3 · Building roads to Crypt4 (340 m)\n<size=85%>18 of 40 places · 15 reached · 3 unreached\n12.4 km · 6 bridges · 9 staircases · 4m 12s · ~5m left</size>",
+        // 252 s over 18 locations, 22 left: 308 s, about 5 minutes.
+        Assert.Equal("Island 3 · Building roads to Crypt4 (340 m)\n<size=85%>18 of 40 locations · 15 reached · 3 unreached\n12.4 km · 6 bridges · 9 staircases · 4m 12s · ~5m left</size>",
             RoadGenerationPanel.RowText(Row()));
     }
 
@@ -105,7 +105,7 @@ public sealed class RoadGenerationPanelTests
     [Theory]
     [InlineData(0)]
     [InlineData(2)]
-    public void NoEstimateUntilEnoughPlacesAreSettled(int processed)
+    public void NoEstimateUntilEnoughLocationsAreSettled(int processed)
     {
         var row = Row(processed: processed);
         Assert.Null(RoadGenerationPanel.RemainingSeconds(row));
@@ -113,7 +113,7 @@ public sealed class RoadGenerationPanelTests
     }
 
     [Fact]
-    public void EstimateAppearsAtThreeSettledPlaces()
+    public void EstimateAppearsAtThreeSettledLocations()
     {
         var left = RoadGenerationPanel.RemainingSeconds(Row(processed: 3, destinations: 13, seconds: 30));
         Assert.Equal(100, left!.Value, 6);
@@ -153,12 +153,12 @@ public sealed class RoadGenerationPanelTests
     [Fact]
     public void TheEstimateIgnoresTimeSpentPlanningRoutes()
     {
-        // 60 s on the island, 9 s of it connecting 3 places: 3 s a place, 10 left.
+        // 60 s on the island, 9 s of it connecting 3 locations: 3 s a location, 10 left.
         Assert.Equal(30, RoadGenerationPanel.RemainingSeconds(Row(processed: 3, destinations: 13, seconds: 69, settling: 9))!.Value, 6);
     }
 
     [Fact]
-    public void TheBarFractionIsSettledOverPlaces()
+    public void TheBarFractionIsSettledOverLocations()
     {
         Assert.Equal(.45f, RoadGenerationPanel.Fraction(Row()), 3);
         Assert.Equal(0f, RoadGenerationPanel.Fraction(Row(processed: 0, destinations: 0)));

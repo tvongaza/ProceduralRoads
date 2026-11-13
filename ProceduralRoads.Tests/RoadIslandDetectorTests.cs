@@ -106,7 +106,7 @@ public class RoadIslandDetectorTests
     /// <summary>A point at an island's tip is on it: the membership test takes a point into the cell nearest it, half a cell
     /// either side of the cell's centre, and its bounding box reaches as far. The box was the outermost cells' centres, so a
     /// point in the last half cell at each of the island's four extreme extents was refused though its cell is the island's
-    /// (a place centred there was no destination).</summary>
+    /// (a location centred there was no destination).</summary>
     [Fact]
     public void APointInTheHalfCellPastTheOutermostCellCentreIsOnTheIsland()
     {

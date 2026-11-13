@@ -69,7 +69,7 @@ public class LyingVegetationTests
     }
 
     [Fact]
-    public void ALogIsNeverTurnedOntoGroundAStaircaseOrAPlaceKeepsClear()
+    public void ALogIsNeverTurnedOntoGroundAStaircaseOrALocationKeepsClear()
     {
         // As the first test, but everything east of the log's middle kept clear (a staircase's clear area, say): every
         // turn that clears the road lays part of it there, so it goes.

@@ -43,11 +43,6 @@ internal static class RoadEarthworkNoise
     internal static float FlatGround = 0.15f;
     internal static bool Enabled => Amplitude > 0f;
 
-    /// <summary>The most the noise and fill spread can add to a side slope's
-    /// reach, for padding the zone gather.</summary>
-    internal static float MaxExtraReach =>
-        (Enabled ? RoadConstants.TerrainBlendMargin * WidthVariation : 0f) + (FillSpread > 0f ? FillSpreadMax : 0f);
-
     /// <summary>How much wider or narrower the side slope is at this road point.</summary>
     internal static float MarginFactor(Vector2 roadPoint) =>
         Enabled ? 1f + WidthVariation * (2f * Perlin01((roadPoint.x + 1013f) / 32f, (roadPoint.y - 2027f) / 32f) - 1f) : 1f;

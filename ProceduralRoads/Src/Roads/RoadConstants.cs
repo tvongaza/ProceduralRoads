@@ -124,6 +124,14 @@ public static class RoadConstants
     /// bought over a stepped one wherever there is a choice.</summary>
     public const float DefaultViaductEndStairCostPerMeter = 100f;
 
+    /// <summary>How far from a viaduct's ends the road's own steps are priced at <see cref="DefaultViaductApproachFactor"/>:
+    /// the last metres up to its near bank and the first from its far bank, along the search's own steps, so the search takes a
+    /// viaduct route more often (RoadPathfinder.ApproachAfterJump, ApproachToJump). A price only: every road is judged by the
+    /// same rules.</summary>
+    public const float DefaultViaductApproachReach = 50f;
+    /// <summary>What a step within <see cref="DefaultViaductApproachReach"/> of a viaduct's end costs, of its price.</summary>
+    public const float DefaultViaductApproachFactor = 0.5f;
+
     // A ford may also be SPANNED: a short low footbridge
     // with a step at each end, where the crossing is at least
     // FordSpanMinWidth wide; its deck stands FordSpanDeckClearance above
@@ -156,7 +164,7 @@ public static class RoadConstants
     // longer approach, a bridge that is still there next week.
     public static float MaxBridgePierHeight => BridgeSupport.MaxPierHeight();
 
-    // The steepest a road may climb, as rise over run, or 0 for no cap.
+    // The steepest a road may climb, as rise over run (RoadGrade.Configured).
     // Without a cap every steep step is a large but finite price and never a
     // refusal, so when a destination sits on a cliff the cheapest expensive
     // line is the direct climb: RoadPathfinder refuses a step over the cap,
@@ -201,10 +209,15 @@ public static class RoadConstants
     public const float HeightFitRidgeMetres = 0.02f;
     public const float HeightFitMaxGradient = 1.5f;
     
-    /// <summary>The radius of the land the world generates: where the island scan stops and a typed point is refused.</summary>
+    /// <summary>The radius of the world (the game's world size; past it to the game's edge is sea): where the island scan
+    /// stops, and the edge of <see cref="InWorld"/>.</summary>
     public const float WorldRadius = 10000f;
-    /// <summary>The edge of the game's world, past <see cref="WorldRadius"/>: how far out a saved crossing's point may lie.</summary>
-    public const float WorldEdge = 10500f;
+
+    /// <summary>Whether a point (x, z) is in the world: finite, and strictly inside <see cref="WorldRadius"/>. The one rule
+    /// for where anything may stand: a typed mark, every saved coordinate (road points, crossings, structures, pending
+    /// pieces, held ground) and every built structure, whole (<see cref="StructureSites.SpatialFault"/>). The one owner of
+    /// the world's edge (docs/OWNERS.md).</summary>
+    public static bool InWorld(Vector2 p) => ManualRoadDraft.IsFinite(p.x) && ManualRoadDraft.IsFinite(p.y) && p.sqrMagnitude < WorldRadius * WorldRadius;
 
     public const float SpatialGridSize = ZoneSize;
     public const float DefaultRoadWidth = 4f;
@@ -215,7 +228,6 @@ public static class RoadConstants
     public const float OverlapBlendRadiusMultiplier = 0.8f;
     
     public const float TerrainBlendMargin = 2.0f;
-    public const float PaintDedupeInterval = 1.5f;
     public const float MinHeightDeltaThreshold = 0.01f;
     public const float MinBlendForModification = 0.5f;
     

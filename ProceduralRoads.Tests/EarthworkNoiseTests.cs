@@ -90,9 +90,9 @@ public class EarthworkNoiseTests
         Assert.Equal(0f, RoadEarthworkNoise.FillExtra(new Vector2(0, 0), 6f, (x, z) => 10f));
         Assert.Equal(0f, RoadEarthworkNoise.FillExtra(new Vector2(0, 0), 10.8f, (x, z) => 10f));
         Assert.True(RoadTerrainModifier.GatherRadius(4f) >= RoadTerrainModifier.MaxInfluenceRadius(4f) + RoadEarthworkNoise.FillSpreadMax - 1e-4f);
-        // With neither the spread nor the noise the gather pads by the influence radius alone.
+        // With no spread the gather uses the fit reach, including its rounding allowance.
         RoadEarthworkNoise.FillSpread = 0f; RoadEarthworkNoise.Amplitude = 0f;
-        Assert.Equal(RoadTerrainModifier.MaxInfluenceRadius(4f), RoadTerrainModifier.GatherRadius(4f));
+        Assert.Equal(RoadTerrainModifier.FitReach(4f), RoadTerrainModifier.GatherRadius(4f));
     }
 
     [Fact]

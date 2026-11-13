@@ -41,7 +41,6 @@ public static partial class BridgeLayout
     public const float StairRise = StairLayout.PieceRise;   // read only by the offline maps overlay (vs-overlay Program.cs)
     public const float StairHalfRun = StairLayout.PieceRun / 2f;     // origin at the foot: its LOW snaps are this far OUTWARD
     public const float StairHalfWidth = StairLayout.PieceRun / 2f;   // ... and this far to either side
-    public const float StairFootTolerance = 0.15f; // a foot this far above the dirt still counts as landed
 
     /// <summary>Bumped whenever the emitted geometry changes shape. Persisted
     /// with the spawned-zone record, so a world built by an older layout is
@@ -456,7 +455,7 @@ public static partial class BridgeLayout
 
     /// <summary>A wooden deck from its walking surface to its underside, as the ship's way measures it: beams
     /// <see cref="BeamBelowDeck"/> under the surface and as deep again under that, deeper than the railed kits' stringers
-    /// (<see cref="RailHalfDepth"/> under it), so a ship that clears it clears them.</summary>
+    /// (<see cref="BeamTop"/> under it), so a ship that clears it clears them.</summary>
     public const float DeckDepth = 2f * BeamBelowDeck;
 
     /// <summary>The wooden deck's ship's way: <see cref="NavigationChannel"/> for its deck
@@ -532,7 +531,7 @@ public static partial class BridgeLayout
         if ((last - first) * step < shipWay)
             return new ShipWay((first + last) * 0.5f * step, deckWidth, shipWay);
 
-        // The centreline: the middle of a run of equal highest weights, or a single peak narrowed to its place.
+        // The centreline: the middle of a run of equal highest weights, or a single peak narrowed to its location.
         int peak = first;
         for (int i = first; i <= last; i++) if (weights[i] > weights[peak]) peak = i;
         float centreline;
@@ -814,25 +813,23 @@ public static partial class BridgeLayout
         string stairPrefab = StairPrefab, string postPrefab = PostPrefab, int? count = null, float postSegment = PostSegment,
         bool carry = true)
     {
-        float stepYaw = YawDegrees(inward) + 180f; // the stair prefab rises toward local -z
+        float stepYaw = EndStepYaw(inward);
         float yaw = YawDegrees(inward);
         Vector2 outward = -inward;
         bool landed = false;
         System.Func<int, int, float> vertex = (x, z) => ground(new Vector2(x, z));
-        // A run of a given count (StructureEnds decided it; the road's apron is levelled to its foot) is laid whole, but a
-        // step wholly in the ground (BuriedPieces), which the game breaks.
+        // A run of a given count (StructureEnds decided it; the road's apron is levelled to its foot) is laid whole; a step
+        // wholly in the ground is left out with the rest of its structure's where it stands without it (LeaveOutBuried).
         for (int k = 0; count.HasValue ? k < count.Value : k < MaxStairSteps && !landed; k++)
         {
-            Vector2 c = StructureEnds.StepCentre(anchor, inward, k);
-            float foot = StructureEnds.StepFoot(deckH, k);
             bool bothLanded = true;
             foreach (int lane in new[] { Ruin.Left, Ruin.Right })
             {
-                Vector2 p = c + side * (lane * LaneOffset);
+                Vector3 at = EndStep(anchor, inward, side, deckH, k, lane);
+                Vector2 p = new(at.x, at.z);
+                float foot = at.y;
                 float health = r.Health(bayKey, lane, Ruin.RoleStairHealth, k);
-                var at = new Vector3(p.x, foot, p.y);
-                if (!count.HasValue || !BuriedPieces.Buried(stairPrefab, at, stepYaw, vertex))
-                    pieces.Add(new StructurePiece
+                pieces.Add(new StructurePiece
                     {
                         Kind = StructurePieceKind.Stair,
                         Prefab = stairPrefab,
@@ -840,16 +837,16 @@ public static partial class BridgeLayout
                         YawDegrees = stepYaw,
                         HealthFraction = health,
                     });
-                // Two separate questions. Is the step itself carried? (if not,
-                // a post carries it.) And has the run ARRIVED -- is the edge a
-                // walker steps off onto in the dirt? A run ends only when both
-                // are true of both lanes: the old rule asked the first alone
-                // and stopped with the exit edge in the air.
+                // Two separate questions, both terrain contact (SupportGraph.Against: the game's support growth). Is the
+                // step itself carried? Its foot over the ground where its carrier would stand (its middle) by more than the
+                // growth: a post carries it, down to that same ground. And has the run ARRIVED: is the edge a walker steps
+                // off onto within the growth of the ground, or in it, all along it (ExitEdgeLands)? A run ends only when
+                // both are true of both lanes: the old rule asked the first alone and stopped with the exit edge in the air.
                 float under = ground(p);
-                bool centreGrounded = foot <= under + StairFootTolerance;
-                if (!centreGrounded && carry)
+                bool centreOver = SupportGraph.Against(under, under, foot, foot) == SupportGraph.Terrain.Over;
+                if (centreOver && carry)
                     EmitColumn(pieces, p, under, foot, yaw, health, postPrefab, postSegment);
-                if (!centreGrounded || !FootEdgeIsGrounded(ground, p, outward, side, foot))
+                if (centreOver || !ExitEdgeLands(vertex, p, outward, side, foot))
                     bothLanded = false;
             }
             landed = bothLanded;
@@ -878,19 +875,43 @@ public static partial class BridgeLayout
         return end.Steps;
     }
 
+    /// <summary>A bridge's pieces wholly in its finished ground (<paramref name="ground"/> at the whole-metre vertices, what
+    /// burial reads) left out where the rest of the bridge stands without them, the bridge read by the support rule as its
+    /// check reads it (<see cref="ViaductSupport.Of(RoadCrossing, WorldGenerator, IReadOnlyList{StructurePiece})"/>):
+    /// BuriedPieces.Omit, the one owner, as the viaduct (DvergrViaduct.LeaveOutBuried) and the staircases leave theirs out.
+    /// Only <paramref name="candidate"/>'s pieces: those the kit laid where they may be buried (its end stairs, the stone
+    /// kit's pieces laid in its frame).</summary>
+    internal static void LeaveOutBuried(List<StructurePiece> pieces, System.Func<Vector2, float> ground, RoadCrossing crossing,
+        WorldGenerator world, System.Func<StructurePiece, bool> candidate) =>
+        BuriedPieces.Omit(pieces, (x, z) => ground(new Vector2(x, z)), laid => ViaductSupport.Of(crossing, world, laid), candidate);
+
+    /// <summary>Step <paramref name="k"/> (0 at the anchor) of a structure's end stairs in <paramref name="lane"/>
+    /// (<see cref="Ruin.Left"/>, <see cref="Ruin.Right"/>): its origin, at its foot, down from <paramref name="anchor"/>
+    /// outward of <paramref name="inward"/>, <paramref name="deckH"/> the walking surface at the anchor. The one placement of
+    /// end steps: every kit lays them there (<see cref="EmitSteps"/>) and the viaduct's are cut for there
+    /// (RoadNetworkGenerator.GroundOf).</summary>
+    internal static Vector3 EndStep(Vector2 anchor, Vector2 inward, Vector2 side, float deckH, int k, int lane)
+    {
+        Vector2 p = StructureEnds.StepCentre(anchor, inward, k) + side * (lane * LaneOffset);
+        return new Vector3(p.x, StructureEnds.StepFoot(deckH, k), p.y);
+    }
+
+    /// <summary>An end step's yaw (<see cref="EndStep"/>): the stair prefab rises toward its local -z, so it is turned to
+    /// face out of <paramref name="inward"/>.</summary>
+    internal static float EndStepYaw(Vector2 inward) => YawDegrees(inward) + 180f;
+
     /// <summary>The generator's ground, which a structure's ends are decided on (the road's levelling is made from them).</summary>
     internal static System.Func<Vector2, float> Generator(WorldGenerator world) => p => BiomeBlendedHeight.GetBlendedHeight(p.x, p.y, world);
 
-    /// <summary>Both corners of one step's foot edge, in the dirt.</summary>
-    private static bool FootEdgeIsGrounded(System.Func<Vector2, float> ground, Vector2 stepPos, Vector2 outward, Vector2 side, float foot)
+    /// <summary>Whether one step's exit edge (its foot edge, from corner to corner) has landed: every point of it within the
+    /// game's support growth of the ground or in it (<see cref="SupportGraph.Against"/>, decision 6k: the support growth, not a
+    /// walker's step), read at the lowest of the ground's mesh along the whole edge (<see cref="BuriedPieces.RangeOver"/>, so a
+    /// dip between the corners counts). Ground not known: not landed.</summary>
+    private static bool ExitEdgeLands(System.Func<int, int, float> vertex, Vector2 stepPos, Vector2 outward, Vector2 side, float foot)
     {
-        foreach (float lat in new[] { -StairHalfWidth, StairHalfWidth })
-        {
-            Vector2 corner = stepPos + outward * StairHalfRun + side * lat;
-            if (foot > ground(corner) + StairFootTolerance)
-                return false;
-        }
-        return true;
+        Vector2 edge = stepPos + outward * StairHalfRun;
+        float lowest = BuriedPieces.RangeOver(new[] { edge - side * StairHalfWidth, edge + side * StairHalfWidth }, vertex).lowest;
+        return SupportGraph.Against(lowest, lowest, foot, foot) is SupportGraph.Terrain.Meets or SupportGraph.Terrain.Under;
     }
 
     /// <summary>
@@ -944,13 +965,16 @@ public static partial class BridgeLayout
 
     /// <summary>A column of <paramref name="segment"/>-long posts (origin at their centre) from topHeight down until one
     /// is buried in the ground (grounded by construction).
-    /// <para><paramref name="toFoot"/>: stop instead at the first post whose foot is in the ground (within
-    /// <see cref="SupportGraph.Reach"/> of it, where the game grounds it), and lay none where the top already is; the
-    /// railed kits' columns (<see cref="RailedKit"/>) stand on the ground as the hand-built reference's do.</para></summary>
+    /// <para><paramref name="toFoot"/>: stop instead at the first post whose foot is in the ground (within the game's support
+    /// growth of it, where the game grounds it: <see cref="SupportGraph.Against"/>), and lay none where the top already is; the
+    /// railed kits' columns (<see cref="RailedKit"/>) stand on the ground as the hand-built reference's do.</para>
+    /// <para>Over ground not known (NaN, <see cref="StructureGround"/>) none: no post reaches it, and the solve that read it
+    /// lays nothing (<see cref="BridgeStructures.Solve"/>).</para></summary>
     private static void EmitColumn(List<StructurePiece> pieces, Vector2 pos, float ground, float topHeight, float yaw, float health,
         string postPrefab = PostPrefab, float segment = PostSegment, bool toFoot = false)
     {
-        if (toFoot ? topHeight <= ground + SupportGraph.Reach : topHeight <= ground - segment)
+        if (float.IsNaN(ground)) return;
+        if (toFoot ? SupportGraph.Against(ground, ground, topHeight, topHeight) != SupportGraph.Terrain.Over : topHeight <= ground - segment)
             return;
         for (float top = topHeight; ; top -= segment)
         {
@@ -963,7 +987,7 @@ public static partial class BridgeLayout
                 YawDegrees = yaw,
                 HealthFraction = health,
             });
-            if (toFoot ? top - segment <= ground + SupportGraph.Reach : center <= ground)
+            if (toFoot ? SupportGraph.Against(ground, ground, top - segment, top - segment) != SupportGraph.Terrain.Over : center <= ground)
                 break;
         }
     }
@@ -1016,6 +1040,20 @@ public static partial class BridgeLayout
 
     public static float SnapHeadingDegrees(float yawDegrees) =>
         Mathf.Round(yawDegrees / PlaceableHeadingStep) * PlaceableHeadingStep;
+
+    /// <summary>A structure's line between <paramref name="a"/> and <paramref name="b"/> on the hammer's nearest heading
+    /// (<see cref="SnapHeadingDegrees"/>), turned about its middle at its own length: each end moves at most
+    /// length/2 x sin(half a step) across the line. A line already on a heading is kept. The search's one turn for a jump on a
+    /// knight's heading (4.1 degrees off the hammer's nearest; the grid's eight are on it): a bridge's and a viaduct's.</summary>
+    public static (Vector2 from, Vector2 to) TurnedOntoPlaceableHeading(Vector2 a, Vector2 b)
+    {
+        float length = Vector2.Distance(a, b);
+        if (length < 1e-3f) return (a, b);
+        float yaw = YawDegrees((b - a) * (1f / length));
+        if (HeadingIsPlaceable(yaw)) return (a, b);
+        Vector2 middle = (a + b) * 0.5f, along = HeadingDirection(SnapHeadingDegrees(yaw)) * (length * 0.5f);
+        return (middle - along, middle + along);
+    }
 
     /// <summary>Whether a heading is one the hammer can produce. Rounding to
     /// the nearest step already puts the difference in +-half a step, so there

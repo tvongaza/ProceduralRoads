@@ -49,6 +49,7 @@ public class OwnerLiteralTests
         new("dry road floor 30.5", "RoadConstants.DryRoadFloor", Float(@"30\.50*"), null),
         new("deep water 28", "RoadConstants.DeepWaterHeight", Float(@"28(?:\.0+)?"), null),
         new("paint edge ratio 0.85", "RoadConstants.RoadPaintOuterRatio", Float(@"0?\.850*"), null),
+        new("support growth 0.15 m", "SupportGraph.Reach", Float(@"0?\.150*"), R(@"ground|landed|foot|support|grown|tolerance|reach|contact")),
     };
 
     private static readonly Entry[] Allowed =
@@ -66,10 +67,11 @@ public class OwnerLiteralTests
         new("dry road floor 30.5", "Roads/RoadConstants.cs", "ShallowWaterHeight = 30.5f", Why.Owner, "the shallow-water line, which is also the dry road floor"),
         new("deep water 28", "Roads/RoadConstants.cs", "DeepWaterHeight = 28f", Why.Owner, "the deep-water line"),
         new("paint edge ratio 0.85", "Roads/RoadConstants.cs", "RoadPaintOuterRatio = 0.85f", Why.Owner, "the painted share of the half width"),
+        new("support growth 0.15 m", "Roads/SupportGraph.cs", "Reach = 0.15f", Why.Owner, "the game's support growth: WearNTear grows each collider box 0.15 m a side"),
 
         // ---- Another fact that shares the number ----
-        new("run 2 m", "Roads/RoadSiteApproach.cs", "oldWorst < 2f", Why.Unrelated, "an approach's worst grade mismatch score, not a stair run"),
-        new("run 2 m", "Roads/RoadSiteApproach.cs", "Mathf.Max(2f, oldWorst", Why.Unrelated, "the same score's floor, not a stair run"),
+        new("run 2 m", "Roads/RoadLocationApproach.cs", "oldWorst < 2f", Why.Unrelated, "an approach's worst grade mismatch score, not a stair run"),
+        new("run 2 m", "Roads/RoadLocationApproach.cs", "Mathf.Max(2f, oldWorst", Why.Unrelated, "the same score's floor, not a stair run"),
         new("paint edge ratio 0.85", "Patches/ExistingWorldChoicePanel.cs", "new Color(.85f", Why.Unrelated, "a grey in the question panel"),
         new("paint edge ratio 0.85", "Patches/RoadGenerationPanel.cs", "new Color(.85f", Why.Unrelated, "a colour of the progress bar"),
         new("paint edge ratio 0.85", "Roads/BridgeLayout.cs", "BankSurvival = 0.85f", Why.Unrelated, "a chance that a bank stub survives weathering"),
@@ -77,26 +79,28 @@ public class OwnerLiteralTests
         new("paint edge ratio 0.85", "Roads/BridgeLayout.cs", "supportShare: 0.85f", Why.Unrelated, "a share of the bridge's pieces, not a road's paint"),
         new("sea level 30", "Patches/RoadGenerationPanel.Layout.cs", "viewportHeight / 30f", Why.Unrelated, "a font size from the screen height"),
         new("sea level 30", "Roads/BridgeLayout.cs", "Ruin.RoleDebris, 5) * 30f", Why.Unrelated, "a roll in degrees"),
-        new("sea level 30", "Roads/RoadNetworkGenerator.cs", "StandOffPastRing = 30f", Why.Unrelated, "a distance from a place's ring"),
+        new("sea level 30", "Roads/RoadNetworkGenerator.cs", "StandOffPastRing = 30f", Why.Unrelated, "a distance from a location's ring"),
         new("sea level 30", "Roads/RoadNetworkGenerator.cs", "TrunkNear = 30f", Why.Unrelated, "a distance from the trunk network"),
         new("sea level 30", "Roads/RoadRockClearing.cs", "RetryDelay, 30f) : RetryDelay", Why.Unrelated, "the longest wait, in seconds"),
         new("sea level 30", "Roads/RoadRockClearing.cs", "RetryDelay, 30f):F1}", Why.Unrelated, "the same wait in the log line"),
         new("sea level 30", "Roads/RoadRockProbe.cs", "radius + 30f", Why.Unrelated, "how far past a rock's radius the probe looks for what it drops onto"),
-        new("sea level 30", "Roads/RoadStairRuns.PlacedSites.cs", "Mathf.Abs(sweep) / 30f", Why.Unrelated, "an angle step in degrees"),
+        new("sea level 30", "Roads/RoadStairRuns.PlacedLocations.cs", "Mathf.Abs(sweep) / 30f", Why.Unrelated, "an angle step in degrees"),
         new("sea level 30", "Roads/ServerTerrainBake.cs", "GhostLogEverySeconds = 30f", Why.Unrelated, "a log interval in seconds"),
         new("rise 1 m", "Roads/DvergrViaduct.cs", "ArchRise = 1f", Why.Unrelated, "the viaduct arch's own rise, not a stair piece's"),
         new("rise 1 m", "Roads/DvergrViaduct.cs", "deck + ArchRise, ArchTurn(a), 1f", Why.Unrelated, "the last argument is a piece scale"),
         new("rise 1 m", "Roads/RoadConstants.cs", "FordSpanDeckRise = 1f", Why.Unrelated, "how far a ford's deck stands over the bed"),
-        new("rise 1 m", "Roads/RoadSiteEntry.cs", "OtherRoadRise = 1f", Why.Unrelated, "how far another road may stand above or below an approach"),
+        new("rise 1 m", "Roads/RoadLocationEntry.cs", "OtherRoadRise = 1f", Why.Unrelated, "how far another road may stand above or below an approach"),
         new("rise 1 m", "Roads/StairChain.cs", "CrestRise = 1f", Why.Unrelated, "how far a crest or valley must clear both ends to be climbed and come down again"),
         new("rise 1 m", "Roads/StairChain.cs", "> 1f ||", Why.Unrelated, "a distance in metres behind a piece; the rise on the same line reads PieceRise"),
-        new("run 2 m", "Roads/BridgeStructures.cs", "piece.Position) < 2f", Why.Unrelated, "how close two bridge pieces are before one is dropped"),
         new("run 2 m", "Roads/RoadCrossing.cs", "const float step = 2f", Why.Unrelated, "the sampling step along a crossing"),
         new("run 2 m", "Roads/RoadPathfinder.cs", "StairHeldFromGrade = 2f", Why.Unrelated, "a grade (rise over run), not a length"),
         new("run 2 m", "Roads/RoadStairRuns.cs", "piece.Position.y) < 2f", Why.Unrelated, "vertical closeness of two pieces, in metres of height (two lines)"),
         new("run 2 m", "Utils/StairCommands.cs", "step < 2f", Why.Unrelated, "the console command's sampling step"),
-        new("headroom 2 m", "Roads/PlacedSiteReader.cs", "box.MaxY + 2f", Why.Unrelated, "how far above a rock's box the downward probe starts"),
+        new("headroom 2 m", "Roads/PlacedLocationReader.cs", "box.MaxY + 2f", Why.Unrelated, "how far above a rock's box the downward probe starts"),
         new("clearance lift 0.1 m", "Roads/StairRailing.cs", "- bottom) < 0.1f", Why.Unrelated, "a tolerance between a walk's surface and a rail's bottom"),
+        new("support growth 0.15 m", "Roads/BridgeLayout.cs", "deckShare: 0.15f", Why.Unrelated, "a share of a ruined bridge's deck pieces, not a height"),
+        new("support growth 0.15 m", "Roads/BridgeLayout.RailedKits.cs", "* 0.15f, toFoot: true", Why.Unrelated, "a ruined column stub's random health share"),
+        new("support growth 0.15 m", "Roads/RoadEarthworkNoise.cs", "FlatGround = 0.15f", Why.Unrelated, "a natural slope (rise over run) that counts as flat for the fill spread"),
 
         // ---- Known duplicates: the number is written again; fold each onto its owner and delete its entry ----
     };

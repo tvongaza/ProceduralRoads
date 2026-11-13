@@ -170,17 +170,24 @@ public sealed class ShipGapTests : IDisposable
         for (int i = 1; i < floors.Count; i++)
             Assert.Equal(DvergrViaduct.Module, floors[i] - floors[i - 1], 3);
 
-        // A railed wooden bridge as high: a whole deck, no column in the way, built or repaired.
+        // A railed wooden bridge as high: each railed kit lays a whole deck, no column in the way, built or repaired. The
+        // support rule breaks it (its deck carried over the pier opening, 16 m over the bed), so the builder builds it in
+        // neither railed kit and, in the Meadows, in none (BridgeStructures.KitFor): the layout is what is read here.
         var (wc, ww) = Make(new Channel { Bank = 42f });
         BridgeLayout.ShipWay wood = BridgeLayout.NavigationGap(wc, ww)!.Value;
         Assert.Equal(0f, wood.DeckWidth);
         Assert.Equal(Ships.NarrowestWay, wood.PierWidth, 3);
         Assert.False(BridgeLayout.InNavigationGap(wc, ww, wood.Centre));
-        var complete = BridgeStructures.SolveComplete(wc, ww, 1);
-        Assert.DoesNotContain(complete, p => p.Prefab == BridgeLayout.PostPrefab && p.Kind == StructurePieceKind.Post && BridgeLayout.InPierOpening(wood, Along(wc, p)));
-        Assert.Contains(complete, p => p.Kind == StructurePieceKind.Deck && Mathf.Abs(Along(wc, p) - wood.Centre) < 1.5f);
-        for (int s = 1; s <= 10; s++)
-            Assert.DoesNotContain(BridgeStructures.Solve(wc, ww, s), p => p.Prefab == BridgeLayout.PostPrefab && p.Kind == StructurePieceKind.Post && BridgeLayout.InPierOpening(wood, Along(wc, p)));
+        foreach (BridgeLayout.RailedKit kit in new[] { BridgeLayout.Rail, BridgeLayout.Braced })
+        {
+            var complete = BridgeLayout.SolveRailedComplete(wc, ww, 1, kit);
+            Assert.DoesNotContain(complete, p => p.Prefab == BridgeLayout.PostPrefab && p.Kind == StructurePieceKind.Post && BridgeLayout.InPierOpening(wood, Along(wc, p)));
+            Assert.Contains(complete, p => p.Kind == StructurePieceKind.Deck && Mathf.Abs(Along(wc, p) - wood.Centre) < 1.5f);
+            for (int s = 1; s <= 10; s++)
+                Assert.DoesNotContain(BridgeLayout.SolveRailed(wc, ww, s, kit), p => p.Prefab == BridgeLayout.PostPrefab && p.Kind == StructurePieceKind.Post && BridgeLayout.InPierOpening(wood, Along(wc, p)));
+        }
+        Assert.All(new[] { BridgeStructures.Kit.WoodRail, BridgeStructures.Kit.WoodBraced }, kit => Assert.True(BridgeStructures.CheckSupport(wc, ww, kit).Breaks));
+        Assert.Null(BridgeStructures.KitFor(wc, ww));
 
         // The Dvergr wood bridge as high: whole bays of its grid without bents, their deck carried over.
         var (dc, dw) = Make(new Channel { Bank = 43.5f, Biome = Heightmap.Biome.Mistlands }); // its stringers hang 1.3 m under the planks
@@ -253,7 +260,7 @@ public sealed class ShipGapTests : IDisposable
             Assert.True(count * BridgeLayout.BayLength(kit) - BridgeLayout.PoleWidth >= yard, $"{kit.Name}: {count} bays");
         }
         // Every kit measures its own top: the stone kit's railing, the Dvergr wood kit's piles, the viaduct's parapet.
-        Assert.Equal(BridgeLayout.RailHeight + BridgeLayout.RailHalfDepth, BridgeStructures.TopOverDeck(BridgeStructures.Kit.WoodBraced), 4);
+        Assert.Equal(BridgeLayout.RailHeight + 0.2f, BridgeStructures.TopOverDeck(BridgeStructures.Kit.WoodBraced), 4);   // the handrail beam's measured top
         Assert.Equal(1f, BridgeStructures.TopOverDeck(BridgeStructures.Kit.Stone), 4);
         Assert.True(BridgeStructures.TopOverDeck(BridgeStructures.Kit.DvergrWood) > DvergrWoodBridge.PileAboveDeck);
         Assert.Equal(2f, BridgeStructures.TopOverDeck(BridgeStructures.Kit.DvergrViaduct), 4);

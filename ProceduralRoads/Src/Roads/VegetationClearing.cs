@@ -17,16 +17,18 @@ namespace ProceduralRoads;
 /// off the road, by the same rule (<see cref="Judge"/>) over the same clear areas
 /// (<see cref="ZoneAreas"/>): objects of the game's own vegetation prefabs inside
 /// the roads' and structures' clear areas, tested the way the game tests them
-/// (ZoneSystem.InsideClearArea, an axis-aligned square), the grown trees whose
-/// trunks reach the road (<see cref="TrunkReachesRoad"/>), and what lies across it.
+/// (ZoneSystem.InsideClearArea, an axis-aligned square), what stands on a structure's walking surface or reaches its
+/// headroom (<see cref="ZoneAreas.Walks"/>), the grown trees whose trunks reach the road or a structure's walk
+/// (<see cref="TrunkReachesRoad"/>), and what lies across either.
 /// Nothing off the road is touched: a location's own clear area is kept ground, as
 /// in generation. Anything that is not a vegetation prefab -- player
 /// builds, containers, bridge pieces -- is never touched, and objects within a
 /// location's exterior radius that may be its own parts are not judged. The game's vegetation
 /// list also holds the large rocks; on a road those the rock clearing takes
 /// there belong to it (<see cref="LeftToRockClearing"/>), so the
-/// rock clearing carves them, and a structure's
-/// clear areas keep every rock out. Small stones (the pickable ones) are
+/// rock clearing carves them, and a staircase's clear areas leave them to it too;
+/// a structure's walk leaves every rock to the rock clearing (a deck's clearance
+/// takes any rock it meets, RoadRockPolicy.DeckTakes). Small stones (the pickable ones) are
 /// vegetation and go with the trees.
 ///
 /// Pure logic; ServerTerrainBake finds and removes the objects.
@@ -37,33 +39,36 @@ public static class VegetationClearing
     /// The clear areas a zone's vegetation is judged against, as generation hands them to PlaceVegetation, in its order:
     /// the game's own first (the zone's location's, where it clears its area: ZoneSystem.PlaceLocations adds a square of its
     /// exterior radius when it places it), then the roads' from <see cref="FirstRoad"/>, then the staircases' from
-    /// <see cref="FirstStructure"/>, then the bridges' from <see cref="FirstRockKeeping"/> (none given: no staircases'). The
-    /// server builds the same list for a zone generated before its roads (RoadClearAreaManager.AddRoadAreas), so both judge
-    /// alike (<see cref="Judge"/>).
+    /// <see cref="FirstStructure"/>; and the structures' walking surfaces near the zone (<see cref="Walks"/>, a bridge's
+    /// deck and end steps, a staircase's walking boxes: StructurePlans.WalksNear). The server builds the same for a zone generated before its roads
+    /// (RoadClearAreaManager.AddRoadAreas), so both judge alike (<see cref="Judge"/>).
     /// </summary>
     public readonly struct ZoneAreas
     {
         public readonly List<ZoneSystem.ClearArea> All;
         public readonly int FirstRoad, FirstStructure;
-        public readonly int? FirstRockKeeping;
+        /// <summary>The structures' walking surfaces (StairSupport.Walk): what stands on one, reaching it or its headroom, is
+        /// removed (<see cref="OnWalk"/>).</summary>
+        public readonly IReadOnlyList<StairSupport.Walk> Walks;
 
-        public ZoneAreas(List<ZoneSystem.ClearArea> all, int firstRoad = 0, int firstStructure = int.MaxValue, int? firstRockKeeping = null)
+        public ZoneAreas(List<ZoneSystem.ClearArea> all, int firstRoad = 0, int firstStructure = int.MaxValue,
+            IReadOnlyList<StairSupport.Walk>? walks = null)
         {
             All = all;
             FirstRoad = firstRoad;
             FirstStructure = firstStructure;
-            FirstRockKeeping = firstRockKeeping;
+            Walks = walks ?? Array.Empty<StairSupport.Walk>();
         }
 
-        /// <summary>Where the roads' start, the structures' start and the rock-keeping structures' (bridges') start, within the list.</summary>
-        internal (int roadStart, int roadEnd, int leftEnd) Bounds()
+        /// <summary>Where the roads' start and the structures' start, within the list.</summary>
+        internal (int roadStart, int roadEnd) Bounds()
         {
-            int count = All.Count, roadStart = Mathf.Min(FirstRoad, count), roadEnd = Mathf.Clamp(FirstStructure, roadStart, count);
-            return (roadStart, roadEnd, Mathf.Clamp(FirstRockKeeping ?? roadEnd, roadEnd, count));
+            int count = All.Count, roadStart = Mathf.Min(FirstRoad, count);
+            return (roadStart, Mathf.Clamp(FirstStructure, roadStart, count));
         }
 
         /// <summary>Whether the roads or structures added any: the game's own alone owe the server nothing.</summary>
-        public bool AnyRoadOrStructure => All.Count > Mathf.Min(FirstRoad, All.Count);
+        public bool AnyRoadOrStructure => All.Count > Mathf.Min(FirstRoad, All.Count) || Walks.Count > 0;
     }
 
     /// <summary>A location's footprint, for telling its own parts (<see cref="PartAt"/>): a circle of its exterior radius; a
@@ -74,8 +79,8 @@ public static class VegetationClearing
         public readonly float Radius;
         /// <summary>For a location: whether an object standing at a point is one of its own parts
         /// (LocationPrefabLevelling.IsPart), null where that is not known. Without it, or where it is not known, the server
-        /// cannot tell vegetation from the place within the footprint, and judges nothing there (Decide). Not ground kept
-        /// from the road: a place keeps ground only by its clear area, as in generation (ZoneAreas).</summary>
+        /// cannot tell vegetation from the location within the footprint, and judges nothing there (Decide). Not ground kept
+        /// from the road: a location keeps ground only by its clear area, as in generation (ZoneAreas).</summary>
         public readonly Func<Vector3, bool?>? PartAt;
 
         public Footprint(Vector2 centre, float radius, Func<Vector3, bool?>? partAt = null)
@@ -96,18 +101,89 @@ public static class VegetationClearing
     public const float PlayerGroundRadius = 8f;
 
     /// <summary>A road point as the grown-tree rule reads it: its centre and half its width, and the road's height there
-    /// (NaN where it is not known; only the armour a road runs through reads it, <see cref="Lie"/>).</summary>
+    /// (NaN where it is not known; only the armour a road runs through reads it, <see cref="Lie"/>). A structure's walk is
+    /// read as road centres too (<see cref="CentresOf"/>), standing between <see cref="Bottom"/> and <see cref="Top"/>: only
+    /// what reaches that band is in its way (<see cref="Reaches"/>). A road's is every height (NaN).</summary>
     public readonly struct RoadCentre
     {
         public readonly Vector2 Centre;
         public readonly float HalfWidth;
         public readonly float Height;
+        public readonly float Bottom, Top;
 
-        public RoadCentre(Vector2 centre, float halfWidth, float height = float.NaN)
+        public RoadCentre(Vector2 centre, float halfWidth, float height = float.NaN, float bottom = float.NaN, float top = float.NaN)
         {
             Centre = centre;
             HalfWidth = halfWidth;
             Height = height;
+            Bottom = bottom;
+            Top = top;
+        }
+
+        /// <summary>Whether vegetation of <paramref name="body"/> reaches this point's band: always for a road's, and for a body
+        /// not known (<see cref="Body.Of"/>).</summary>
+        public bool Reaches(Body? body) => Within(Bottom, Top, body);
+    }
+
+    /// <summary>How high a piece of vegetation stands, from the lowest to the highest of its prefab's solid colliders at its
+    /// scale over its origin (<see cref="Of"/>).</summary>
+    public readonly struct Body
+    {
+        public readonly float Bottom, Top;
+
+        public Body(float bottom, float top)
+        {
+            Bottom = bottom;
+            Top = top;
+        }
+
+        /// <summary>The body of vegetation whose prefab's solid colliders' box in its root's frame is <paramref name="box"/>
+        /// (PlacedLocationReader.LocalBox), its origin at <paramref name="origin"/>, at <paramref name="scale"/> (a placed piece's
+        /// scale replaces the prefab's own). Its tilt is not counted. Null for a prefab with no collider: its height is not
+        /// known, and it is judged by where it stands alone, as a clear area judges it.</summary>
+        public static Body? Of(Bounds box, float origin, float scale) =>
+            box.size.x == 0f && box.size.y == 0f && box.size.z == 0f ? null : new Body(origin + box.min.y * scale, origin + box.max.y * scale);
+    }
+
+    /// <summary>Whether <paramref name="body"/> reaches the band from <paramref name="bottom"/> to <paramref name="top"/>: any
+    /// body an unbounded band (NaN), a body not known any band.</summary>
+    private static bool Within(float bottom, float top, Body? body) =>
+        body is not Body b || float.IsNaN(bottom) || b.Top > bottom && b.Bottom < top;
+
+    /// <summary>A structure's walk's band (<see cref="ZoneAreas.Walks"/>): from its underside up to a walker's headroom over its
+    /// highest walk (<see cref="RockClearances.Top"/>), so vegetation under a deck that reaches neither stays.</summary>
+    private static (float bottom, float top) BandOf(StairSupport.Walk walk) => (walk.Underside, RockClearances.Top(walk.Walking(walk.Depth)));
+
+    /// <summary>Whether vegetation standing at <paramref name="at"/> stands on one of <paramref name="walks"/> (strictly inside its
+    /// footprint) and reaches its band (<see cref="BandOf"/>). The one owner of vegetation clearing and lying logs (docs/OWNERS.md).</summary>
+    public static bool OnWalk(IReadOnlyList<StairSupport.Walk> walks, Vector2 at, Body? body)
+    {
+        for (int i = 0; i < walks.Count; i++)
+        {
+            StairSupport.Walk w = walks[i];
+            Vector2 d = at - w.Back;
+            float along = Vector2.Dot(d, w.Dir), across = Vector2.Dot(d, w.Right);
+            if (!(along > 0f && along < w.Depth && across > -w.Across / 2f && across < w.Across / 2f)) continue;
+            var (bottom, top) = BandOf(w);
+            if (Within(bottom, top, body)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>A structure's walk as road centres (<see cref="RoadCentre"/>), so the grown-tree and lying rules read it as they
+    /// read a road: along its longer side, as many as its narrower side fits, each half that side wide, at its walking surface
+    /// there, in its band (<see cref="BandOf"/>).</summary>
+    public static void CentresOf(StairSupport.Walk walk, List<RoadCentre> into)
+    {
+        var (bottom, top) = BandOf(walk);
+        bool alongLonger = walk.Depth >= walk.Across;
+        float longer = alongLonger ? walk.Depth : walk.Across, narrower = alongLonger ? walk.Across : walk.Depth;
+        int n = Mathf.Max(1, Mathf.CeilToInt(longer / narrower));
+        for (int i = 0; i < n; i++)
+        {
+            float t = longer * (i + 0.5f) / n;
+            float along = alongLonger ? t : walk.Depth / 2f, across = alongLonger ? 0f : t - walk.Across / 2f;
+            into.Add(new RoadCentre(walk.At(along, across), narrower / 2f, walk.Walking(along), bottom, top));
         }
     }
 
@@ -383,9 +459,10 @@ public static class VegetationClearing
     /// besides the road (a staircase's or bridge's clear area, a location's own clear area, a player's ground: Judge): turned off the road, a 40 m
     /// log could otherwise swing across a staircase's foot. Armour laid at <paramref name="lean"/> is first turned, the
     /// least turn first, so the road runs through its opening (<see cref="RunsThrough"/>), and only then beside the road;
-    /// with no lean known it is only turned beside it.</summary>
+    /// with no lean known it is only turned beside it. A structure's walk it does not reach (<paramref name="body"/>,
+    /// <see cref="RoadCentre.Reaches"/>: lying under a deck) is not in its way.</summary>
     public static Lying Lie(int prefab, Vector2 position, float yaw, float scale, IReadOnlyList<RoadCentre> road, out float turned,
-        Func<Vector2, bool>? kept = null, Lean? lean = null)
+        Func<Vector2, bool>? kept = null, Lean? lean = null, Body? body = null)
     {
         turned = yaw;
         if (!s_lyingByHash.TryGetValue(prefab, out var lying)) return Lying.NotLying;
@@ -397,7 +474,7 @@ public static class VegetationClearing
         foreach (RoadCentre point in road)
         {
             float wide = point.HalfWidth + LyingMargin, along = lying.along * scale + wide, across = lying.across * scale + wide;
-            if ((point.Centre - position).sqrMagnitude < along * along + across * across) near.Add(point);
+            if ((point.Centre - position).sqrMagnitude < along * along + across * across && point.Reaches(body)) near.Add(point);
         }
         if (near.Count == 0 || OffRoad(boxes, position, yaw, scale, near)) return Lying.Clear;
         // The openings were measured at the armour's only scale, 1.
@@ -473,18 +550,18 @@ public static class VegetationClearing
     /// run through or removed one's prefab, place, verdict and yaws, the first <see cref="NotedMost"/>; read with cli_call
     /// ProceduralRoads.VegetationClearing.get_LyingNoted.</summary>
     public static IReadOnlyList<string> LyingNoted { get { lock (s_noted) return s_noted.ToArray(); } }
-    public static int LyingTurned, LyingThrough, LyingRemoved;
+    public static int LyingTurned, LyingThrough;
     private const int NotedMost = 200;
     private static readonly List<string> s_noted = new();
 
-    /// <summary>Counts a turned, run-through or removed lying one, and notes the first <see cref="NotedMost"/>. Called where a verdict is
+    /// <summary>Counts a turned or run-through lying one, and notes the first <see cref="NotedMost"/>. Called where a verdict is
     /// carried out (generation's placing, the server's clearing), never by a count or a preview.</summary>
     internal static void Note(int prefab, Vector2 position, Lying verdict, float yaw, float turned)
     {
         if (verdict != Lying.Turned && verdict != Lying.Through && verdict != Lying.Remove || !s_lyingByHash.TryGetValue(prefab, out var lying)) return;
         lock (s_noted)
         {
-            if (verdict == Lying.Turned) LyingTurned++; else if (verdict == Lying.Through) LyingThrough++; else LyingRemoved++;
+            if (verdict == Lying.Turned) LyingTurned++; else if (verdict == Lying.Through) LyingThrough++;
             if (s_noted.Count >= NotedMost) return;
             s_noted.Add(FormattableString.Invariant($"{lying.name} at ({position.x:F1}, {position.y:F1}) {verdict} yaw {yaw:F0} -> {turned:F0}"));
         }
@@ -492,8 +569,8 @@ public static class VegetationClearing
 
     /// <inheritdoc cref="Lie(int, Vector2, float, float, IReadOnlyList{RoadCentre}, out float, Func{Vector2, bool}?, Lean?)"/>
     public static Lying Lie(string prefab, Vector2 position, float yaw, float scale, IReadOnlyList<RoadCentre> road, out float turned,
-        Func<Vector2, bool>? kept = null, Lean? lean = null) =>
-        Lie(prefab.GetStableHashCode(), position, yaw, scale, road, out turned, kept, lean);
+        Func<Vector2, bool>? kept = null, Lean? lean = null, Body? body = null) =>
+        Lie(prefab.GetStableHashCode(), position, yaw, scale, road, out turned, kept, lean, body);
 
     /// <summary>Whether no road point lies on the footprint widened by its road's half-width and <see cref="LyingMargin"/>.
     /// Its local z (length) lies along the yaw's forward, (sin, cos), and its local x along (cos, -sin), as the game turns it.</summary>
@@ -532,9 +609,10 @@ public static class VegetationClearing
 
     /// <summary>
     /// Whether a grown tree's trunk, <paramref name="trunkReach"/> at scale 1, reaches the road: the tree stands nearer
-    /// a road point than half its width plus the trunk's reach at <paramref name="scale"/> plus TrunkMargin.
+    /// a road point than half its width plus the trunk's reach at <paramref name="scale"/> plus TrunkMargin, and reaches its
+    /// band (<paramref name="body"/>, <see cref="RoadCentre.Reaches"/>: a tree under a high deck does not reach its walk).
     /// </summary>
-    public static bool TrunkReachesRoad(IReadOnlyList<RoadCentre> road, Vector2 position, float trunkReach, float scale)
+    public static bool TrunkReachesRoad(IReadOnlyList<RoadCentre> road, Vector2 position, float trunkReach, float scale, Body? body = null)
     {
         float reach = trunkReach * scale + TrunkMargin;
         // By index: a foreach over the interface would box its enumerator for every tree generation places.
@@ -542,7 +620,7 @@ public static class VegetationClearing
         {
             RoadCentre point = road[i];
             float within = point.HalfWidth + reach;
-            if ((position - point.Centre).sqrMagnitude < within * within)
+            if ((position - point.Centre).sqrMagnitude < within * within && point.Reaches(body))
                 return true;
         }
         return false;
@@ -572,20 +650,17 @@ public static class VegetationClearing
     /// rock the rock clearing takes there (<see cref="LeftToRockClearing"/>, in the biome <paramref name="biomeAt"/> gives):
     /// that one is left to the rock clearing, which carves it. A rock the rock clearing would leave is kept off the road as
     /// vegetation is. The staircases' leave such a rock to the rock clearing as the roads' do: it clears a staircase's
-    /// walking box (StairLayout.AddClearance), and a rock its supports or handrails stand in stays. The bridges' keep every
-    /// rock out. The game's own areas are not the road's: see <see cref="InGameArea"/>.
+    /// walking box (StairLayout.AddClearance), and a rock its supports or handrails stand in stays. A structure's walk is
+    /// not a clear area (<see cref="OnWalk"/>). The game's own areas are not the road's: see <see cref="InGameArea"/>.
     /// The one owner of vegetation clearing and lying logs (docs/OWNERS.md).
     /// </summary>
     public static bool InsideClearArea(ZoneAreas areas, Vector3 point, int prefab, Func<Vector3, Heightmap.Biome>? biomeAt)
     {
-        var (roadStart, roadEnd, leftEnd) = areas.Bounds();
-        int count = areas.All.Count;
+        int roadStart = areas.Bounds().roadStart, count = areas.All.Count;
         if (roadStart >= count) return false;
-        bool leftToRocks = roadStart < leftEnd && IsRock(prefab) &&
-            LeftToRockClearing(prefab, biomeAt?.Invoke(point) ?? Heightmap.Biome.None);
+        if (IsRock(prefab) && LeftToRockClearing(prefab, biomeAt?.Invoke(point) ?? Heightmap.Biome.None)) return false;
         for (int i = roadStart; i < count; i++)
         {
-            if (leftToRocks && i < leftEnd) continue;
             ZoneSystem.ClearArea area = areas.All[i];
             if (InSquare(point.x, point.z, area.m_center.x, area.m_center.z, area.m_radius))
                 return true;
@@ -616,9 +691,11 @@ public static class VegetationClearing
 
     /// <summary>
     /// What the road makes of one piece of vegetation at <paramref name="point"/> (its x and z; the biome is asked there):
-    /// removed (inside the roads' or structures' clear areas, <see cref="InsideClearArea"/>; a grown tree whose trunk reaches
-    /// <paramref name="road"/>; one lying across it whichever way it lies), turned off it or so the road runs through it (to
-    /// <paramref name="turned"/>), or left. A turn may not lie on kept ground: the game's own clear areas and the
+    /// removed (inside the roads' or staircases' clear areas, <see cref="InsideClearArea"/>; standing on a structure's walk
+    /// and reaching it or its headroom, <see cref="OnWalk"/>, a rock left to the rock clearing; a grown tree whose trunk
+    /// reaches <paramref name="road"/>; one lying across it whichever way it lies), turned off it or so the road runs through
+    /// it (to <paramref name="turned"/>), or left. <paramref name="body"/>: how high it stands (<see cref="Body.Of"/>); a
+    /// structure's walk it does not reach (under a high deck) is not in its way; not known, it is judged by where it stands. A turn may not lie on kept ground: the game's own clear areas and the
     /// structures', and whatever <paramref name="alsoKept"/> says (the server's: ground a player built on). Generation asks
     /// it of every candidate PlaceVegetation draws (RoadClearAreaManager.OnRoad), and the server of every saved piece of
     /// vegetation in a zone generated before its roads (<see cref="Decide"/>), with the same <paramref name="areas"/> and
@@ -626,21 +703,24 @@ public static class VegetationClearing
     /// The one owner of vegetation clearing and lying logs (docs/OWNERS.md).
     /// </summary>
     public static Lying Judge(int prefab, Vector3 point, float scale, float yaw, Lean? lean, ZoneAreas areas,
-        IReadOnlyList<RoadCentre> road, Func<Vector3, Heightmap.Biome>? biomeAt, out float turned, Func<Vector2, bool>? alsoKept = null)
+        IReadOnlyList<RoadCentre> road, Func<Vector3, Heightmap.Biome>? biomeAt, out float turned, Func<Vector2, bool>? alsoKept = null,
+        Body? body = null)
     {
         turned = yaw;
         var at = new Vector2(point.x, point.z);
         if (InsideClearArea(areas, point, prefab, biomeAt)) return Lying.Remove;
-        Lying lying = Lie(prefab, at, yaw, scale, road, out turned, IsLying(prefab) ? KeptBy(areas, alsoKept) : null, lean);
+        // A rock on a structure's walk is the rock clearing's (RockClearances: a deck's clearance takes it whole).
+        if (!IsRock(prefab) && OnWalk(areas.Walks, at, body)) return Lying.Remove;
+        Lying lying = Lie(prefab, at, yaw, scale, road, out turned, IsLying(prefab) ? KeptBy(areas, alsoKept) : null, lean, body);
         if (lying != Lying.NotLying) return lying;
-        return IsGrownTree(prefab, out float trunkReach) && TrunkReachesRoad(road, at, trunkReach, scale) ? Lying.Remove : Lying.Clear;
+        return IsGrownTree(prefab, out float trunkReach) && TrunkReachesRoad(road, at, trunkReach, scale, body) ? Lying.Remove : Lying.Clear;
     }
 
     /// <summary>The kept ground of a turn (<see cref="Judge"/>): the game's own clear areas and the structures', not the
     /// roads'; and <paramref name="alsoKept"/>.</summary>
     private static Func<Vector2, bool> KeptBy(ZoneAreas areas, Func<Vector2, bool>? alsoKept) => p =>
     {
-        var (roadStart, roadEnd, _) = areas.Bounds();
+        var (roadStart, roadEnd) = areas.Bounds();
         for (int i = 0; i < areas.All.Count; i++)
         {
             if (i >= roadStart && i < roadEnd) continue;
@@ -674,9 +754,9 @@ public static class VegetationClearing
         IReadOnlyList<Footprint> locations, IReadOnlyList<Footprint> playerGround,
         IReadOnlyList<RoadCentre>? road = null, float scale = 1f,
         Func<Vector3, Heightmap.Biome>? biomeAt = null, float yaw = 0f,
-        Lean? lean = null) =>
+        Lean? lean = null, Body? body = null) =>
         Decide(prefab, position, playerCreated, vegetationPrefabs, areas, locations, playerGround, road, scale,
-            biomeAt, yaw, out _, lean) == Lying.Remove;
+            biomeAt, yaw, out _, lean, body) == Lying.Remove;
 
     /// <summary>
     /// The server's judgement of a saved object in a zone generated before its roads: <see cref="Judge"/>, the rule
@@ -693,7 +773,7 @@ public static class VegetationClearing
         ICollection<int> vegetationPrefabs, ZoneAreas areas,
         IReadOnlyList<Footprint> locations, IReadOnlyList<Footprint> playerGround,
         IReadOnlyList<RoadCentre>? road, float scale,
-        Func<Vector3, Heightmap.Biome>? biomeAt, float yaw, out float turned, Lean? lean = null)
+        Func<Vector3, Heightmap.Biome>? biomeAt, float yaw, out float turned, Lean? lean = null, Body? body = null)
     {
         turned = yaw;
         // Somebody's own object, whatever it is: never ours to take.
@@ -701,7 +781,7 @@ public static class VegetationClearing
             return Lying.Clear;
         var point = new Vector3(position.x, lean is Lean laid ? laid.Origin : 0f, position.y);
         Lying verdict = Judge(prefab, point, scale, yaw, lean, areas, road ?? Array.Empty<RoadCentre>(), biomeAt, out turned,
-            IsLying(prefab) && playerGround.Count > 0 ? OnPlayerGround(playerGround) : null);
+            IsLying(prefab) && playerGround.Count > 0 ? OnPlayerGround(playerGround) : null, body);
         // Asked only of what the road would take: a location's parts are read from its prefab.
         if (verdict != Lying.Clear && (MayBePart(locations, position, lean) || Inside(playerGround, position)))
         {
@@ -717,8 +797,8 @@ public static class VegetationClearing
 
     /// <summary>Whether the object at <paramref name="position"/>, its origin at <paramref name="lean"/>'s height, may be one of
     /// a location's own parts (<see cref="Footprint.PartAt"/>, LocationPrefabLevelling.IsPart). Where the parts cannot be
-    /// known (no test, no height, or the test does not know), the server cannot tell vegetation from the place within its
-    /// exterior radius, and takes it to be the place's: this is not ground kept from the road, only an object it cannot
+    /// known (no test, no height, or the test does not know), the server cannot tell vegetation from the location within its
+    /// exterior radius, and takes it to be the location's: this is not ground kept from the road, only an object it cannot
     /// judge.</summary>
     private static bool MayBePart(IReadOnlyList<Footprint> locations, Vector2 position, Lean? lean)
     {
@@ -782,23 +862,107 @@ public static class VegetationClearing
     private static bool StillCurrent(Vector2s zone, int version) =>
         version == RoadSpatialGrid.RoadNetworkVersion && RoadTerrainModifier.CarriesCurrentRoads(zone, Version);
 
-    /// <summary>The zones explored before the network whose lying vegetation has been judged, by the network version
-    /// (<see cref="ServerBakePlanner.LyingOwed"/>). Not saved: judging again leaves what was turned or removed as it is.</summary>
-    private static readonly Dictionary<Vector2s, int> s_lyingJudged = new();
-
-    public static bool LyingJudged(Vector2s zone, int version) => s_lyingJudged.TryGetValue(zone, out int judged) && judged == version;
-
-    public static void MarkLyingJudged(Vector2s zone, int version) => s_lyingJudged[zone] = version;
-
+    /// <summary>
+    /// The zone's clearing is done for the work gathered at network <paramref name="version"/>: the version its areas and
+    /// road points were read at, its upper bound. Gathered at the network as it is (or at another network, whose record
+    /// then starts afresh), the zone is cleared. Gathered at an earlier version of this network, with appends published
+    /// since, it is cleared through that version's appends only: a later append that reaches it
+    /// (<see cref="RoadSpatialGrid.ZoneChangedSince"/>) stays owed (<see cref="OwedSince"/>), so an earlier completion
+    /// never certifies it. Called once the work is done (generation's placement, the server bake's pass), never before.
+    /// The one owner of the clearing history (docs/OWNERS.md).
+    /// </summary>
     public static void MarkCleared(Vector2s zone, int version)
     {
         if (version == 0)
             return;
-        CarryOver(version);
-        s_cleared.Add(zone);
-        s_clearedThrough.Remove(zone);
+        int through = version == RoadSpatialGrid.RoadNetworkVersion ? -1 : RoadSpatialGrid.AppendsCarriedBy(version);
+        if (through < 0)
+        {
+            CarryOver(version);
+            s_cleared.Add(zone);
+            s_clearedThrough.Remove(zone);
+            s_unknown.Remove(zone);
+            return;
+        }
+        CarryOver(RoadSpatialGrid.RoadNetworkVersion);
+        // Certified already by work gathered later.
+        if (s_cleared.Contains(zone)) return;
         s_unknown.Remove(zone);
+        if (!RoadSpatialGrid.ZoneChangedSince(zone, version))
+        {
+            s_cleared.Add(zone);
+            s_clearedThrough.Remove(zone);
+            return;
+        }
+        s_clearedThrough[zone] = s_clearedThrough.TryGetValue(zone, out int was) ? Math.Max(was, through) : through;
     }
+
+    /// <summary>
+    /// An append was published over network <paramref name="parent"/> (RoadSpatialGrid.PublishAppend): the record moves to
+    /// the new network version at once, before a bake or a save reads it. A zone the append reaches
+    /// (<see cref="RoadSpatialGrid.ZonesChangedSince"/>) that was cleared, or whose clearing was unknown, owes the appends
+    /// from then on (<see cref="OwedSince"/>); one owed already keeps its oldest bound, so two appends before a bake both
+    /// stay owed; a zone it does not reach stays cleared.
+    /// </summary>
+    internal static void AppendPublished(int parent)
+    {
+        bool ours = Version != 0 && Version == parent;
+        // No record yet, or another network's: it starts afresh at this version (CarryOver).
+        if (!ours) CarryOver(RoadSpatialGrid.RoadNetworkVersion);
+        HashSet<Vector2s>? reached = RoadSpatialGrid.ZonesChangedSince(parent);
+        if (reached != null) OweAgain(reached, ours);
+        if (!ours) return;
+        Version = RoadSpatialGrid.RoadNetworkVersion;
+        s_versionAppends = RoadSpatialGrid.AppendCount;
+    }
+
+    /// <summary>Each of <paramref name="zones"/> cleared for this network (<paramref name="ours"/>), or whose clearing is unknown,
+    /// owes the appends from the record's version on (<see cref="Owe"/>); one owed already keeps its oldest bound; any other
+    /// is as it was. An append's reach (<see cref="AppendPublished"/>) and a reach outside a publish (<see cref="Reached"/>) alike.</summary>
+    private static void OweAgain(IEnumerable<Vector2s> zones, bool ours)
+    {
+        foreach (Vector2s zone in zones)
+        {
+            if (ours && s_cleared.Remove(zone)) Owe(zone, s_versionAppends);
+            if (s_unknown.Remove(zone)) Owe(zone, s_unknownAppends);
+        }
+    }
+
+    /// <summary>
+    /// Zones owed their clearing outside an append's publish: those a manual road's structures' walks reach
+    /// (RoadNetworkGenerator.AppendManualRoad), and a zone generated
+    /// without the road's own test (ZoneSystem_PlaceVegetation_Patch, its transpiler not applied). Owed as an append's reach
+    /// is (<see cref="OweAgain"/>, at the network as it is: they owe no road appended, only the structures' clear areas and
+    /// walks, which a zone owed anything always gathers), and held for the server bake, which takes them
+    /// (<see cref="TakeReached"/>) into its queue as an append's zones, and has the live rock pass look at its loaded zones
+    /// again. Session only: a reload bakes every network zone again, and the record, saved, keeps what each owes.
+    /// </summary>
+    internal static void Reached(IEnumerable<Vector2s> zones)
+    {
+        var list = new List<Vector2s>(zones);
+        if (list.Count == 0) return;
+        if (Version != RoadSpatialGrid.RoadNetworkVersion) CarryOver(RoadSpatialGrid.RoadNetworkVersion);
+        OweAgain(list, Version != 0);
+        lock (s_reached) s_reached.UnionWith(list);
+    }
+
+    /// <summary>The zones <see cref="Reached"/> holds for the server bake, taken: null when there are none.</summary>
+    internal static List<Vector2s>? TakeReached()
+    {
+        lock (s_reached)
+        {
+            if (s_reached.Count == 0) return null;
+            var taken = new List<Vector2s>(s_reached);
+            s_reached.Clear();
+            return taken;
+        }
+    }
+
+    private static readonly HashSet<Vector2s> s_reached = new();
+
+    /// <summary>The zone owes the appends after <paramref name="through"/>, or after the earlier bound it owes already.</summary>
+    private static void Owe(Vector2s zone, int through) =>
+        s_clearedThrough[zone] = s_clearedThrough.TryGetValue(zone, out int was) ? Math.Min(was, through) : through;
 
     /// <summary>Zones cleared for an earlier network that appends then changed, by how many appends the network had when
     /// they were cleared: such a zone owes only the clearing of the roads appended since (<see cref="OwedSince"/>), so the
@@ -813,21 +977,19 @@ public static class VegetationClearing
         s_clearedThrough.TryGetValue(zone, out int through) ? through : s_unknown.Contains(zone) ? s_unknownAppends : -1;
 
     /// <summary>
-    /// Move the record to <paramref name="version"/>. A zone a manual road left unchanged
-    /// (RoadTerrainModifier.CarriesCurrentRoads, the terrain's own test) stays cleared; any other network starts afresh.
+    /// Move the record to another network <paramref name="version"/>: it starts afresh, but for a zone the new network puts
+    /// no road point in (RoadTerrainModifier.CarriesCurrentRoads, the terrain's own test). An append moves the record when it
+    /// is published (<see cref="AppendPublished"/>), not here.
     /// </summary>
     public static void CarryOver(int version)
     {
         if (version == Version) return;
         if (Version != 0)
-            s_cleared.RemoveWhere(zone =>
-            {
-                if (StillCurrent(zone, version)) return false;
-                // Changed by an append: it was cleared for every road up to then.
-                if (version == RoadSpatialGrid.RoadNetworkVersion && RoadSpatialGrid.AppendCount > s_versionAppends)
-                    s_clearedThrough[zone] = s_clearedThrough.TryGetValue(zone, out int was) ? Math.Min(was, s_versionAppends) : s_versionAppends;
-                return true;
-            });
+        {
+            s_cleared.RemoveWhere(zone => !StillCurrent(zone, version));
+            // What the zones owed was the other network's appends.
+            s_clearedThrough.Clear();
+        }
         Version = version;
         s_versionAppends = RoadSpatialGrid.AppendCount;
     }
@@ -860,8 +1022,8 @@ public static class VegetationClearing
 
     public static void Reset()
     {
+        lock (s_reached) s_reached.Clear();
         s_unknown.Clear();
-        s_lyingJudged.Clear();
         s_unknownVersion = s_unknownAppends = 0;
         s_cleared.Clear();
         s_clearedThrough.Clear();

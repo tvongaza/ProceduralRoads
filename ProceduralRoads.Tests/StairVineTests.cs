@@ -190,7 +190,7 @@ public class StairVineTests
         List<StructurePiece> vines = Vines(walking, out List<StructurePiece> supports);
         Assert.NotEmpty(vines);
         var all = walking.Concat(supports).Concat(vines).ToList();
-        Assert.DoesNotContain(StairSupport.Holding(all, Slope, (x, z) => Slope(x, z)), h => h.Piece.Kind == StructurePieceKind.Flair);
+        Assert.DoesNotContain(StairSupport.Holding(all, (x, z) => Slope(x, z)), h => h.Piece.Kind == StructurePieceKind.Flair);
         // The same supports with vines asked for or not.
         Assert.Equal(supports.Count, StairSupport.Lay(Marble, walking, Slope, (x, z) => Slope(x, z)).Count);
         // Stone lays no cornices: no vines.
