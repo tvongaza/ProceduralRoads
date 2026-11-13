@@ -101,7 +101,7 @@ public static class VegetationClearing
     public const float PlayerGroundRadius = 8f;
 
     /// <summary>A road point as the grown-tree rule reads it: its centre and half its width, and the road's height there
-    /// (NaN where it is not known; only the armour a road runs through reads it, <see cref="Lie"/>). A structure's walk is
+    /// (NaN where it is not known; read by the lying rule, <see cref="Lie"/>: the armour a road runs through, and the walking box a lying box must reach). A structure's walk is
     /// read as road centres too (<see cref="CentresOf"/>), standing between <see cref="Bottom"/> and <see cref="Top"/>: only
     /// what reaches that band is in its way (<see cref="Reaches"/>). A road's is every height (NaN).</summary>
     public readonly struct RoadCentre
@@ -268,46 +268,55 @@ public static class VegetationClearing
     // game drew crosses the road, the nearest yaw that keeps it off the road is taken instead, so the road seems to pass
     // beside it (LyingYawStep at a time, up to half a turn either way); where none does, it is removed. The lean the game
     // gives a log (up to its entry's m_randTilt) is not counted: it only shortens the footprint. Each comes with the largest
-    // scale the game's vegetation lists give it.
-    private static readonly Dictionary<string, (float largestScale, (float zLo, float zHi, float xLo, float xHi)[] boxes)> s_lying = new()
+    // scale the game's vegetation lists give it. A box may also carry how high its collider stands over the origin
+    // (LyingBox.yLo, yHi): it lies on a road point only where that band reaches the point's walking box (OffRoad).
+    private static readonly Dictionary<string, (float largestScale, LyingBox[] boxes)> s_lying = new()
     {
         // The swamp's giant dead tree lying down (indestructible; scale 1.5 to 2: 36 to 48 m long), trunk and branches.
-        ["SwampTree2_log"] = (2f, new[]
+        ["SwampTree2_log"] = (2f, new LyingBox[]
         {
             (-14.5f, -12.5f, -3.3f, 0.4f), (-12.5f, -10.5f, -2.4f, 1.8f), (-10.5f, -8.5f, -1.9f, 0.4f), (-8.5f, -6.4f, -5.4f, 1.3f),
             (-6.4f, -4.4f, -4.2f, 1.7f), (-4.4f, -2.4f, -1.0f, 1.9f), (-2.4f, -0.4f, -0.8f, 1.5f), (-0.4f, 1.6f, -1.3f, 2.0f),
             (1.6f, 3.6f, -0.2f, 2.6f), (3.6f, 5.6f, 0.2f, 2.6f), (5.6f, 7.6f, -1.5f, 2.9f), (7.6f, 9.7f, -2.6f, 4.0f),
         }),
         // An old fallen fir (the swamp and the Black Forest; scale 1 to 1.2): 7 m by 1.2 m.
-        ["FirTree_oldLog"] = (1.2f, new[] { (-3.5f, 3.5f, -0.6f, 0.6f) }),
+        ["FirTree_oldLog"] = (1.2f, new LyingBox[] { (-3.5f, 3.5f, -0.6f, 0.6f) }),
         // The swamp's rotten stump and its roots (scale 1 to 2).
-        ["stubbe"] = (2f, new[] { (-3.1f, -1.9f, -0.1f, 0.6f), (-1.9f, -0.6f, -0.5f, 0.9f), (-0.6f, 0.6f, -3.0f, 3.9f), (0.6f, 1.8f, -0.3f, 2.9f) }),
-        // The Mistlands' ancient root, the one sap is drawn from (indestructible; scale 1 to 1.5), 28 m by up to 14 m with
-        // the branch to one side. Its ends dive up to 11 m into the ground: what lies more than 2 m below the ground at its
-        // origin is left out, buried wherever the ground beside a road does not fall away steeply.
-        ["YggdrasilRoot"] = (1.5f, new[]
+        ["stubbe"] = (2f, new LyingBox[] { (-3.1f, -1.9f, -0.1f, 0.6f), (-1.9f, -0.6f, -0.5f, 0.9f), (-0.6f, 0.6f, -3.0f, 3.9f), (0.6f, 1.8f, -0.3f, 2.9f) }),
+        // The Mistlands' ancient root, the one sap is drawn from (indestructible; scale 1 to 1.5): 44 m long at scale 1, up to
+        // 18 m across with the branch to one side, its ends diving up to 11 m below its origin. Its whole mesh collider (its
+        // only collider, on the child root1, through that child's transform: at (-1, -2.07, 0), scale 1.5), cut into 2 m
+        // slices along its length (its local x, the end slices ending where the mesh does); each box is the slice's
+        // triangles clipped to it, across (zLo, zHi) and from the lowest to the highest point (yLo, yHi) over the origin, at
+        // scale 1, rounded outward to 0.1 m. The game never tilts it (its entry's m_randTilt is 0, and it does not lie on the
+        // ground's tilt) and sets it on the ground (m_groundOffset 0), so its origin and scale give each box's height exactly.
+        ["YggdrasilRoot"] = (1.5f, new LyingBox[]
         {
-            (-2.6f, 2.2f, -15.9f, -13.9f), (-2.6f, 3.2f, -13.9f, -11.9f), (-3.1f, 2.9f, -11.9f, -9.9f), (-4.1f, 2.6f, -9.9f, -7.9f),
-            (-4.8f, 2.2f, -7.9f, -5.9f), (-4.8f, 1.9f, -5.9f, -3.9f), (-4.7f, 2.0f, -3.9f, -1.9f), (-5.9f, 2.1f, -1.9f, 0.1f),
-            (-8.5f, 2.0f, 0.1f, 2.1f), (-10.5f, 1.9f, 2.1f, 4.1f), (-10.6f, 2.3f, 4.1f, 6.1f), (-10.3f, 2.7f, 6.1f, 8.1f),
-            (-2.8f, 2.9f, 8.1f, 10.1f), (-2.7f, 1.8f, 10.1f, 12.1f),
+            (-0.6f, 1.1f, -25.2f, -23.9f, -11.1f, -9.3f), (-2.0f, 2.2f, -23.9f, -21.9f, -10.6f, -6.4f), (-2.9f, 2.9f, -21.9f, -19.9f, -10.0f, -4.0f),
+            (-3.2f, 3.1f, -19.9f, -17.9f, -9.3f, -2.8f), (-3.5f, 3.2f, -17.9f, -15.9f, -7.8f, -1.9f), (-3.4f, 6.6f, -15.9f, -13.9f, -6.5f, -1.2f),
+            (-3.2f, 6.3f, -13.9f, -11.9f, -5.7f, -0.5f), (-3.1f, 4.5f, -11.9f, -9.9f, -5.0f, 0.9f), (-4.1f, 2.7f, -9.9f, -7.9f, -4.0f, 2.3f),
+            (-4.8f, 2.2f, -7.9f, -5.9f, -2.7f, 3.4f), (-4.8f, 1.9f, -5.9f, -3.9f, -1.5f, 3.8f), (-4.8f, 2.0f, -3.9f, -1.9f, -1.0f, 4.0f),
+            (-6.0f, 2.1f, -1.9f, 0.1f, -0.5f, 4.1f), (-8.6f, 2.0f, 0.1f, 2.1f, -0.9f, 3.9f), (-10.5f, 1.9f, 2.1f, 4.1f, -2.6f, 3.6f),
+            (-11.0f, 2.3f, 4.1f, 6.1f, -3.8f, 2.9f), (-11.3f, 2.7f, 6.1f, 8.1f, -4.0f, 2.0f), (-2.9f, 2.9f, 8.1f, 10.1f, -5.2f, 0.8f),
+            (-3.2f, 2.7f, 10.1f, 12.1f, -6.9f, -0.4f), (-3.5f, 2.3f, 12.1f, 14.1f, -8.1f, -1.8f), (-3.4f, 1.9f, 14.1f, 16.1f, -8.1f, -3.4f),
+            (-2.7f, 0.4f, 16.1f, 18.1f, -8.4f, -5.7f), (-1.9f, -1.0f, 18.1f, 18.8f, -8.5f, -7.7f),
         }),
         // The Mistlands' ancient armour (scale 1): two giant helmets, up to 10 m tall, and a rib cage 19 m long.
         // The game tilts each by up to its entry's m_randTilt about its x and z (33 degrees for the helmets, 10 for the
         // ribs), so each footprint is the union over every tilt the game can draw (a 2.75 degree grid for the helmets,
         // 0.83 for the ribs, each widened by what a tilt between grid points can move: 0.5 m, 0.2 m), of what stands
         // higher than half a metre below the ground at its origin.
-        ["giant_helmet1"] = (1f, new[]
+        ["giant_helmet1"] = (1f, new LyingBox[]
         {
             (-7.9f, -6f, -4.6f, 4.6f), (-6f, -4f, -6.1f, 6.1f), (-4f, -2f, -6.6f, 6.1f), (-2f, 0f, -6.6f, 6.1f),
             (0f, 2f, -6.6f, 5.9f), (2f, 4f, -6.6f, 5.9f), (4f, 6f, -5.9f, 5.4f), (6f, 8.1f, -4.1f, 4.1f),
         }),
-        ["giant_helmet2"] = (1f, new[]
+        ["giant_helmet2"] = (1f, new LyingBox[]
         {
             (-4.9f, -3f, -5.6f, 5.6f), (-3f, -1f, -5.9f, 6.6f), (-1f, 1f, -6.1f, 6.6f), (1f, 3f, -5.9f, 6.6f),
             (3f, 5f, -5.1f, 5.4f), (5f, 6.4f, -3.4f, 3.4f),
         }),
-        ["giant_ribs"] = (1f, new[]
+        ["giant_ribs"] = (1f, new LyingBox[]
         {
             (-10.1f, -8f, -5.8f, 5.8f), (-8f, -6f, -7.6f, 7.6f), (-6f, -4f, -8.1f, 8.1f), (-4f, -2f, -8.6f, 8.6f),
             (-2f, 0f, -8.8f, 8.8f), (0f, 2f, -8.8f, 8.8f), (2f, 4f, -8.8f, 8.8f), (4f, 6f, -8.6f, 8.6f),
@@ -423,12 +432,42 @@ public static class VegetationClearing
         return Mathf.Clamp(Mathf.FloorToInt((signed + range) / (2f * range / TiltCells)), 0, TiltCells - 1);
     }
 
+    /// <summary>One box of a lying one's footprint (<see cref="s_lying"/>), in metres at scale 1 in its own frame: along its
+    /// local z (<see cref="zLo"/> to <see cref="zHi"/>) and x (<see cref="xLo"/> to <see cref="xHi"/>), and from the lowest to
+    /// the highest point of its collider in the box over its origin (<see cref="yLo"/> to <see cref="yHi"/>; NaN where not
+    /// measured: it reaches every height).</summary>
+    private readonly struct LyingBox
+    {
+        public readonly float zLo, zHi, xLo, xHi, yLo, yHi;
+
+        private LyingBox(float zLo, float zHi, float xLo, float xHi, float yLo, float yHi)
+        {
+            this.zLo = zLo;
+            this.zHi = zHi;
+            this.xLo = xLo;
+            this.xHi = xHi;
+            this.yLo = yLo;
+            this.yHi = yHi;
+        }
+
+        public static implicit operator LyingBox((float zLo, float zHi, float xLo, float xHi) b) =>
+            new(b.zLo, b.zHi, b.xLo, b.xHi, float.NaN, float.NaN);
+
+        public static implicit operator LyingBox((float zLo, float zHi, float xLo, float xHi, float yLo, float yHi) b) =>
+            new(b.zLo, b.zHi, b.xLo, b.xHi, b.yLo, b.yHi);
+
+        /// <summary>How high the box stands, its piece's origin at <paramref name="origin"/> and at <paramref name="scale"/>; null
+        /// where its height or the origin's is not known.</summary>
+        public Body? At(float origin, float scale) =>
+            float.IsNaN(yLo) || float.IsNaN(origin) ? null : new Body(origin + yLo * scale, origin + yHi * scale);
+    }
+
     /// <summary>Each by its prefab's hash, with the furthest its footprint reaches from its origin along and across, at scale 1.</summary>
-    private static readonly Dictionary<int, (string name, (float zLo, float zHi, float xLo, float xHi)[] boxes, float along, float across)> s_lyingByHash =
+    private static readonly Dictionary<int, (string name, LyingBox[] boxes, float along, float across)> s_lyingByHash =
         s_lying.ToDictionary(lying => lying.Key.GetStableHashCode(),
             lying => (lying.Key, lying.Value.boxes, lying.Value.boxes.Max(b => Mathf.Max(-b.zLo, b.zHi)), lying.Value.boxes.Max(b => Mathf.Max(-b.xLo, b.xHi))));
 
-    private static float Furthest((float zLo, float zHi, float xLo, float xHi)[] boxes) =>
+    private static float Furthest(LyingBox[] boxes) =>
         boxes.Max(b => Mathf.Sqrt(Mathf.Max(b.zLo * b.zLo, b.zHi * b.zHi) + Mathf.Max(b.xLo * b.xLo, b.xHi * b.xHi)));
 
     /// <summary>How far past the road's edge a lying one is kept.</summary>
@@ -460,13 +499,17 @@ public static class VegetationClearing
     /// log could otherwise swing across a staircase's foot. Armour laid at <paramref name="lean"/> is first turned, the
     /// least turn first, so the road runs through its opening (<see cref="RunsThrough"/>), and only then beside the road;
     /// with no lean known it is only turned beside it. A structure's walk it does not reach (<paramref name="body"/>,
-    /// <see cref="RoadCentre.Reaches"/>: lying under a deck) is not in its way.</summary>
+    /// <see cref="RoadCentre.Reaches"/>: lying under a deck) is not in its way, nor a box of its footprint that stands wholly
+    /// under or over a road point's walking box, its origin at <paramref name="lean"/>'s (<see cref="OffRoad"/>: an ancient
+    /// root's ends buried under the road, or standing in it down a slope or in a cut). A turn keeps its whole footprint off
+    /// kept ground, at every height.</summary>
     public static Lying Lie(int prefab, Vector2 position, float yaw, float scale, IReadOnlyList<RoadCentre> road, out float turned,
         Func<Vector2, bool>? kept = null, Lean? lean = null, Body? body = null)
     {
         turned = yaw;
         if (!s_lyingByHash.TryGetValue(prefab, out var lying)) return Lying.NotLying;
         var boxes = lying.boxes;
+        float origin = lean is Lean at ? at.Origin : float.NaN;
         // The furthest a road point OffRoad finds on it can stand: its footprint at this scale along and across, each
         // widened by the road's half-width and the margin, the corner of the two.
         List<RoadCentre> near = s_near ??= new List<RoadCentre>();
@@ -476,7 +519,7 @@ public static class VegetationClearing
             float wide = point.HalfWidth + LyingMargin, along = lying.along * scale + wide, across = lying.across * scale + wide;
             if ((point.Centre - position).sqrMagnitude < along * along + across * across && point.Reaches(body)) near.Add(point);
         }
-        if (near.Count == 0 || OffRoad(boxes, position, yaw, scale, near)) return Lying.Clear;
+        if (near.Count == 0 || OffRoad(boxes, position, yaw, scale, origin, near)) return Lying.Clear;
         // The openings were measured at the armour's only scale, 1.
         if (lean is Lean laid && Mathf.Abs(scale - 1f) < 0.001f && WalkThrough(prefab, laid, out var walk, out float ground))
         {
@@ -496,7 +539,7 @@ public static class VegetationClearing
             for (int side = 1; side >= -1; side -= 2)
             {
                 float y = ((yaw + side * k * LyingYawStep) % 360f + 360f) % 360f;
-                if (!OffRoad(boxes, position, y, scale, near) || kept != null && OnKept(boxes, position, y, scale, kept)) continue;
+                if (!OffRoad(boxes, position, y, scale, origin, near) || kept != null && OnKept(boxes, position, y, scale, kept)) continue;
                 turned = y;
                 return Lying.Turned;
             }
@@ -509,7 +552,7 @@ public static class VegetationClearing
     /// does. The walk's offsets are across the direction phi in the piece's frame: its local z along the yaw's forward. Road
     /// points stand a quarter of the road's width apart, nearer than the half-width the footprint is widened by, so the
     /// road's centre line between any two that reach the piece stays inside the walk with them.</summary>
-    private static bool RunsThrough((float zLo, float zHi, float xLo, float xHi)[] boxes, Vector2 position, float yaw,
+    private static bool RunsThrough(LyingBox[] boxes, Vector2 position, float yaw,
         (float phi, float sLo, float sHi) walk, float ground, List<RoadCentre> road)
     {
         float r = yaw * Mathf.Deg2Rad, sin = Mathf.Sin(r), cos = Mathf.Cos(r);
@@ -531,7 +574,7 @@ public static class VegetationClearing
     [ThreadStatic] private static List<RoadCentre>? s_near;
 
     /// <summary>Whether any corner or middle of the footprint at <paramref name="yaw"/> stands on kept ground.</summary>
-    private static bool OnKept((float zLo, float zHi, float xLo, float xHi)[] boxes, Vector2 position, float yaw, float scale,
+    private static bool OnKept(LyingBox[] boxes, Vector2 position, float yaw, float scale,
         Func<Vector2, bool> kept)
     {
         float r = yaw * Mathf.Deg2Rad, sin = Mathf.Sin(r), cos = Mathf.Cos(r);
@@ -573,26 +616,39 @@ public static class VegetationClearing
         Lie(prefab.GetStableHashCode(), position, yaw, scale, road, out turned, kept, lean, body);
 
     /// <summary>Whether no road point lies on the footprint widened by its road's half-width and <see cref="LyingMargin"/>.
-    /// Its local z (length) lies along the yaw's forward, (sin, cos), and its local x along (cos, -sin), as the game turns it.</summary>
-    private static bool OffRoad((float zLo, float zHi, float xLo, float xHi)[] boxes, Vector2 position, float yaw, float scale,
+    /// Its local z (length) lies along the yaw's forward, (sin, cos), and its local x along (cos, -sin), as the game turns it.
+    /// A box lies on a point only where it reaches the point's walking box (<see cref="WalkingBox"/>), its piece's origin at
+    /// <paramref name="origin"/>; where the box's height, the origin's or the point's is not known, at every height.</summary>
+    private static bool OffRoad(LyingBox[] boxes, Vector2 position, float yaw, float scale, float origin,
         List<RoadCentre> road)
     {
         float r = yaw * Mathf.Deg2Rad, sin = Mathf.Sin(r), cos = Mathf.Cos(r);
         foreach (RoadCentre point in road)
         {
             Vector2 d = point.Centre - position;
-            if (OnFootprint(boxes, d.x * sin + d.y * cos, d.x * cos - d.y * sin, scale, point.HalfWidth + LyingMargin))
+            var (bottom, top) = WalkingBox(point);
+            if (OnFootprint(boxes, d.x * sin + d.y * cos, d.x * cos - d.y * sin, scale, point.HalfWidth + LyingMargin, origin, bottom, top))
                 return false;
         }
         return true;
     }
 
+    /// <summary>The band a lying one's box must reach to lie on <paramref name="point"/>: a road point's walking box over its
+    /// height (<see cref="RockClearances.Bottom"/> to <see cref="RockClearances.Top"/>, NaN where its height is not known), a
+    /// structure's walk's own band (<see cref="CentresOf"/>, <see cref="BandOf"/>).</summary>
+    private static (float bottom, float top) WalkingBox(RoadCentre point) =>
+        float.IsNaN(point.Bottom) ? (RockClearances.Bottom(point.Height), RockClearances.Top(point.Height)) : (point.Bottom, point.Top);
+
     /// <summary>Whether a point <paramref name="along"/> and <paramref name="across"/> the footprint's frame lies on it at
-    /// <paramref name="scale"/>, widened by <paramref name="wide"/>.</summary>
-    private static bool OnFootprint((float zLo, float zHi, float xLo, float xHi)[] boxes, float along, float across, float scale, float wide)
+    /// <paramref name="scale"/>, widened by <paramref name="wide"/>: on a box that reaches the band <paramref name="bottom"/> to
+    /// <paramref name="top"/> (<see cref="Within"/>), its piece's origin at <paramref name="origin"/> (<see cref="LyingBox.At"/>);
+    /// any box where either is not known.</summary>
+    private static bool OnFootprint(LyingBox[] boxes, float along, float across, float scale, float wide,
+        float origin = float.NaN, float bottom = float.NaN, float top = float.NaN)
     {
         foreach (var b in boxes)
-            if (along > b.zLo * scale - wide && along < b.zHi * scale + wide && across > b.xLo * scale - wide && across < b.xHi * scale + wide)
+            if (along > b.zLo * scale - wide && along < b.zHi * scale + wide && across > b.xLo * scale - wide && across < b.xHi * scale + wide
+                && Within(bottom, top, b.At(origin, scale)))
                 return true;
         return false;
     }
