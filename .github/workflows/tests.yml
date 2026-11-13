@@ -47,4 +47,4 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends mono-complete
           mono --version
-      - run: bash tools/test-runners/run-tests.sh -c Release -f net48 ProceduralRoads.Tests/ProceduralRoads.Tests.csproj
+      - run: bash tools/test-runners/run-tests.sh -c Release -f net48 --netfx-parallel collections ProceduralRoads.Tests/ProceduralRoads.Tests.csproj

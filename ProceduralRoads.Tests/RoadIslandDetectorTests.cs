@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Xunit;
 
@@ -148,4 +150,58 @@ public class RoadIslandDetectorTests
     [Fact]
     public void MinimumAreaFiltersSmallGroups() =>
         Assert.Empty(RoadIslandDetector.Detect(new ChannelWorld(),worldRadius:128,minArea:1000000));
+
+    /// <summary>Round islands of low land (<see cref="Land"/> m, a shore landings can be read on) in deep water.</summary>
+    private sealed class Archipelago : WorldGenerator
+    {
+        public readonly List<(Vector2 centre, float radius)> Islands = new();
+        public const float Land = 33f;
+        public override float GetHeight(float x, float z) => Islands.Any(i => (new Vector2(x, z) - i.centre).sqrMagnitude < i.radius * i.radius) ? Land : -50f;
+    }
+
+    private static List<Island> Generations(WorldGenerator world)
+    {
+        List<Island>? islands = null;
+        using var preparation = new RoadPreparation(p => IslandDetector.DetectRoadIslandsSteps(world, new RoadNetworkOptions(), p, value => islands = value));
+        preparation.Drain();
+        return islands!;
+    }
+
+    private static List<Island> WholeWorlds(WorldGenerator world)
+    {
+        List<Island>? islands = null;
+        using var preparation = new RoadPreparation(p => RoadIslandDetector.DetectSteps(world, p, value => islands = value, options: new RoadNetworkOptions()));
+        preparation.Drain();
+        return islands!;
+    }
+
+    /// <summary>Everything an island tells its readers, its cells by where they stand in the world.</summary>
+    private static string Read(List<Island> islands) => string.Join("\n", islands.Select(i => FormattableString.Invariant(
+        $"{i.Id} {i.CellCount} {i.Center.x:R},{i.Center.y:R} {i.Min.x:R},{i.Min.y:R} {i.Max.x:R},{i.Max.y:R} {i.ApproxArea:R} {i.CellSize:R} | ")
+        + string.Join(" ", i.Cells.Select(c => { Vector2 w = i.CellToWorld(c); return FormattableString.Invariant($"{w.x:R},{w.y:R}"); }))
+        + " | " + string.Join(" ", i.CoastalLandings.Select(l => FormattableString.Invariant($"{l.x:R},{l.y:R},{l.z:R}")))));
+
+    /// <summary>
+    /// Generation's island scan bounded under the world's radius (the suite's, IslandDetector.ScanRadius) finds exactly the
+    /// whole world's islands, cells, ids, centres and shore landings: within its bound when all the land is well inside it,
+    /// and by scanning the whole world when land stands outside the bound or nearer its edge than the grouping reads (a
+    /// bridge's span, the coast's raster). The game scans the whole world (ScanRadius is the world's radius).
+    /// </summary>
+    [Theory]
+    [InlineData(0f, 0f, false)]       // a second island beside the first: the bound holds all of it
+    [InlineData(6000f, 0f, true)]     // a second island far outside the bound
+    [InlineData(-2200f, 0f, true)]    // a second island inside the bound, within a bridge's span and the coast's reach of its edge
+    public void ABoundedIslandScanFindsTheWholeWorldsIslands(float farX, float farZ, bool wholeWorld)
+    {
+        Assert.Equal(RoadConstants.WorldRadius, (float)PlainRoads.ModDefaults["island scan"]);
+        Assert.True(IslandDetector.ScanRadius < RoadConstants.WorldRadius);
+        var world = new Archipelago();
+        world.Islands.Add((new Vector2(-150f, 40f), 300f));
+        world.Islands.Add(farX == 0f ? (new Vector2(420f, -60f), 240f) : (new Vector2(farX, farZ), 240f));
+        List<Island> bounded = Generations(world), whole = WholeWorlds(world);
+        Assert.Equal(2, whole.Count);
+        Assert.NotEmpty(whole.SelectMany(i => i.CoastalLandings));
+        Assert.Equal(Read(whole), Read(bounded));
+        Assert.All(bounded, i => Assert.Equal(wholeWorld ? RoadConstants.WorldRadius : IslandDetector.ScanRadius, i.WorldOffset));
+    }
 }

@@ -757,6 +757,9 @@ public static class StairRailing
                 float turn = below < 0 || above < 0 ? 0f
                     : down ? Apart(StairLayout.Wrap(walks[below].Heading + 180f), walks[above].Heading) : Apart(walks[below].Heading, walks[above].Heading);
                 bool square = Mathf.Abs(turn - 90f) < SameHeading;
+                // Two pieces in line have no turn, so no wedge between them: a jog's floor two back and the next flight stand in line
+                // across the jog's own floors (their edges are railed by the edge pass, not closed across the walk).
+                if (below >= 0 && above >= 0 && turn < SameHeading) continue;
                 // A walked piece stops a rail only where it stands at the rail's heights: not a switchback's other leg
                 // passing over or under the turn (in game: run on under the upper leg at -1858.5,261.7,6889.9 and back over
                 // the lower leg at -1858.0,240.7,6911.4; the wedge at -6894.6,-3680.4 over a lower leg).
