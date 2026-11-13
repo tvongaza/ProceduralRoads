@@ -415,8 +415,7 @@ public class StairSupportTests
     [Fact]
     public void OnARealFaceEveryPieceNotOnTheGroundIsHeldAndNoSupportIsWhollyBuried()
     {
-        Func<float, float, float> ground = StairLayoutTests.FixtureGround("mountain-face-2m.txt");
-        StairPlan plan = StairLayout.Build(new Vector2(-2061.41f, 1504.82f), new Vector2(-2125f, 1460f), ground);
+        var (plan, ground) = StairLayoutTests.Face.Value;
         Assert.True(plan.Reached, plan.Reason);
         StairRun run = StairRun.FromPlan(new Vector2(-2061.41f, 1504.82f), new Vector2(-2125f, 1460f), 2f, plan, Stone);
         List<StructurePiece> dressed = Stone.Dress(run, ground, (x, z) => ground(x, z));

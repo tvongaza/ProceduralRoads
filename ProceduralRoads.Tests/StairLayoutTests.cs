@@ -23,9 +23,10 @@ public class StairLayoutTests
     }
 
     /// <summary>The climb up the real Mountain face (<see cref="LongClimbUpARealMountainFaceIsReached"/>), laid once for the
-    /// five tests that read it, each of which took 2 s to lay it again: StairLayout.Build reads its arguments and the layout's
-    /// settings, which every test here puts back, and the tests only read the plan.</summary>
-    private static readonly Lazy<(StairPlan plan, Func<float, float, float> ground)> Face = new(() =>
+    /// tests that read it here, in StairSupportTests and in StairSupportAnswersTests, each of which took 2 s (10 s under Mono)
+    /// to lay it again: StairLayout.Build reads its arguments and the layout's settings, which every test puts back, and the
+    /// tests only read the plan.</summary>
+    internal static readonly Lazy<(StairPlan plan, Func<float, float, float> ground)> Face = new(() =>
     {
         Func<float, float, float> ground = FixtureGround("mountain-face-2m.txt");
         return (StairLayout.Build(new Vector2(-2061.41f, 1504.82f), new Vector2(-2125f, 1460f), ground), ground);

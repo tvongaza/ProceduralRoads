@@ -27,11 +27,10 @@ jobs:
           dotnet-version: '10.0.x'
       # The unit tests also target net48; that leg runs in the net48 job below.
       - run: dotnet test ProceduralRoads.Tests/ProceduralRoads.Tests.csproj -c Release -f net10.0
-  net48:
-    # The game runs the mod on Mono, a .NET Framework 4.x runtime: the net48 leg, built with dotnet and run by the
-    # xunit console runner under Mono (tools/test-runners, copied from ValheimTesting).
+  net48-processes:
+    # Throwaway timing job: four Mono processes at once on one runner, each a class shard run serially.
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_NOLOGO: '1'
@@ -47,4 +46,38 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends mono-complete
           mono --version
-      - run: bash tools/test-runners/run-tests.sh -c Release -f net48 ProceduralRoads.Tests/ProceduralRoads.Tests.csproj
+      - run: dotnet build ProceduralRoads.Tests/ProceduralRoads.Tests.csproj -f net48 -c Release -nologo -v quiet
+      - name: Four shards at once
+        run: |
+          nproc
+          start=$(date +%s)
+          for k in 1 2 3 4; do bash .github/net48-shard.sh $k "$RUNNER_TEMP/s$k.xml" > "$RUNNER_TEMP/s$k.out" 2>&1 & done
+          fail=0; for job in $(jobs -p); do wait $job || fail=1; done
+          cat "$RUNNER_TEMP"/s*.out
+          echo "ALL SHARDS wall=$(( $(date +%s) - start ))s"
+          exit $fail
+  net48-matrix:
+    # Throwaway timing job: one class shard per runner.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install Mono
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends mono-complete
+          mono --version
+      - run: dotnet build ProceduralRoads.Tests/ProceduralRoads.Tests.csproj -f net48 -c Release -nologo -v quiet
+      - run: bash .github/net48-shard.sh ${{ matrix.shard }} "$RUNNER_TEMP/s.xml"
