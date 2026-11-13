@@ -998,30 +998,50 @@ public sealed class StoneBridgeTests : IDisposable
     /// From the Black Forest on (every biome but the Meadows and the Mistlands) a crossing the stone kit fits draws it, WoodRail
     /// or WoodBraced at even odds by the seed, every visit the same; a Meadows crossing never draws it, a Mistlands one is
     /// Dvergr wood. A crossing it does not fit draws the railed kits as the two-kit pick always did.
+    /// <para>The odds are counted over 240 seeds in the Black Forest, each kit within 30 % of a third (about 3.3 standard
+    /// deviations of an even draw). The draw reads the biome only through the kits that fit (<see cref="BridgeStructures.KitsThatFit"/>),
+    /// so each other biome from the Black Forest on fits the same three kits and draws the Black Forest's kit seed by seed over
+    /// the first 60 seeds (each kit about 20 times), and the Meadows fits only the railed kits: each of the 1680 draws the
+    /// six other biomes' counts took, each a support reading, was the Black Forest's again.</para>
     /// </summary>
     [Fact]
     public void FromTheBlackForestOnTheStoneKitIsDrawnAtEvenOddsWithTheRailedKits()
     {
         var (c, w) = Reference();
-        const int n = 240;
-        foreach (Heightmap.Biome b in new[] { Heightmap.Biome.BlackForest, Heightmap.Biome.Swamp, Heightmap.Biome.Mountain, Heightmap.Biome.Plains,
+        const int n = 240, perBiome = 60;
+        w.Biome = Heightmap.Biome.BlackForest;
+        var three = new[] { BridgeStructures.Kit.WoodRail, BridgeStructures.Kit.WoodBraced, BridgeStructures.Kit.Stone };
+        Assert.Equal(three.OrderBy(k => k), BridgeStructures.KitsThatFit(c, w).OrderBy(k => k));
+        var drawn = new BridgeStructures.Kit[n];
+        var count = new Dictionary<BridgeStructures.Kit, int>();
+        for (int i = 0; i < n; i++)
+        {
+            w.Seed = 1000 + i;
+            BridgeStructures.Kit k = BridgeStructures.KitFor(c, w)!.Value;
+            Assert.Equal(k, BridgeStructures.KitFor(c, w));
+            drawn[i] = k;
+            count[k] = count.TryGetValue(k, out int v) ? v + 1 : 1;
+        }
+        foreach (var kit in three)
+            Assert.InRange(count.TryGetValue(kit, out int m) ? m : 0, n / 3 * 0.7f, n / 3 * 1.3f);
+        Assert.Equal(n, count.Values.Sum());
+        Assert.Equal(three.OrderBy(k => k), drawn.Take(perBiome).Distinct().OrderBy(k => k));
+        foreach (Heightmap.Biome b in new[] { Heightmap.Biome.Swamp, Heightmap.Biome.Mountain, Heightmap.Biome.Plains,
             Heightmap.Biome.AshLands, Heightmap.Biome.DeepNorth, Heightmap.Biome.Ocean })
         {
             w.Biome = b;
-            var count = new Dictionary<BridgeStructures.Kit, int>();
-            for (int i = 0; i < n; i++)
+            w.Seed = 1000;
+            Assert.Equal(three.OrderBy(k => k), BridgeStructures.KitsThatFit(c, w).OrderBy(k => k));
+            for (int i = 0; i < perBiome; i++)
             {
                 w.Seed = 1000 + i;
-                BridgeStructures.Kit k = BridgeStructures.KitFor(c, w)!.Value;
-                Assert.Equal(k, BridgeStructures.KitFor(c, w));
-                count[k] = count.TryGetValue(k, out int v) ? v + 1 : 1;
+                Assert.True(drawn[i] == BridgeStructures.KitFor(c, w), $"{b}, seed {w.Seed}: not the Black Forest's {drawn[i]}");
             }
-            foreach (var kit in new[] { BridgeStructures.Kit.WoodRail, BridgeStructures.Kit.WoodBraced, BridgeStructures.Kit.Stone })
-                Assert.InRange(count.TryGetValue(kit, out int m) ? m : 0, n / 3 * 0.7f, n / 3 * 1.3f);
-            Assert.Equal(n, count.Values.Sum());
         }
         w.Biome = Heightmap.Biome.Meadows;
-        for (int i = 0; i < n; i++)
+        w.Seed = 1000;
+        Assert.Equal(new[] { BridgeStructures.Kit.WoodRail, BridgeStructures.Kit.WoodBraced }.OrderBy(k => k), BridgeStructures.KitsThatFit(c, w).OrderBy(k => k));
+        for (int i = 0; i < perBiome; i++)
         {
             w.Seed = 1000 + i;
             Assert.Contains(BridgeStructures.KitFor(c, w), new BridgeStructures.Kit?[] { BridgeStructures.Kit.WoodRail, BridgeStructures.Kit.WoodBraced });

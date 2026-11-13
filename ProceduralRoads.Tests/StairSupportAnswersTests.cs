@@ -42,6 +42,7 @@ public class StairSupportAnswersTests : IDisposable
         _scope.Dispose();
     }
 
+    /// <summary>The ends of the shared climb (StairLayoutTests.Face, the plan laid with no answers).</summary>
     private static readonly Vector2 FaceFoot = new(-2061.41f, 1504.82f), FaceTop = new(-2125f, 1460f);
 
     /// <summary>
@@ -52,8 +53,7 @@ public class StairSupportAnswersTests : IDisposable
     [Fact]
     public void ALayoutAskingAnotherLayoutsAnswersIsTheLayoutChosenAfresh()
     {
-        Func<float, float, float> ground = StairLayoutTests.FixtureGround("mountain-face-2m.txt");
-        StairPlan fresh = StairLayout.Build(FaceFoot, FaceTop, ground);
+        var (fresh, ground) = StairLayoutTests.Face.Value;
         Assert.True(fresh.Reached, fresh.Reason);
 
         var answers = new StairSupport.Answers();
@@ -72,8 +72,7 @@ public class StairSupportAnswersTests : IDisposable
     [Fact]
     public void ALayoutLaidAgainOnItsOwnAnswersIsTheSameAndChoosesNothing()
     {
-        Func<float, float, float> ground = StairLayoutTests.FixtureGround("mountain-face-2m.txt");
-        StairPlan fresh = StairLayout.Build(FaceFoot, FaceTop, ground);
+        var (fresh, ground) = StairLayoutTests.Face.Value;
         var answers = new StairSupport.Answers();
         StairPlan first = StairLayout.Build(FaceFoot, FaceTop, ground, answers: answers);
         int chosen = answers.On(null, StairKit.Stone).Chosen;
