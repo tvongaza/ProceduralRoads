@@ -68,7 +68,7 @@ public class ApproachReplayTests
     /// The approach aims first at the edge where the slope meets the shelf, then at its level landings. On the game's ground
     /// (two triangles a cell, <see cref="BuriedPieces.BetweenVertices"/>) that edge is the east one. The west, where the
     /// landing was finished by hand, is not joined: the lip cell nearest the hand-built finish, (-2311, 1538), looks out to the
-    /// south west, and 2 m out its ground is 2.70 m lower (1.35 in 1, past <see cref="PlacedSiteShape.JoinGrade"/>). That point
+    /// south west, and 2 m out its ground is 2.70 m lower (1.35 in 1, past <see cref="PlacedLocationShape.JoinGrade"/>). That point
     /// lies past the diagonal of a cell whose low corner, (-2313, 1537) at 291.1, sits on the diagonal. Read bilinearly (before
     /// 6 Nov 2026), the four corners were averaged, the drop was 2.49, and the edge was joined by 1 cm. Every other sample the
     /// rule reads is at a vertex, so no other edge moved.
@@ -92,16 +92,22 @@ public class ApproachReplayTests
         Assert.InRange(east.x, 14f, 18f);
         Assert.InRange(east.y, 2f, 6f);
         // The west lip cell nearest the hand-finished landing falls too steeply in its first JoinStep to be joined.
-        PlacedSiteShape shape = file.Shape();
+        PlacedLocationShape shape = file.Shape();
         var (at, outward) = shape.ConnectedLanding(file.Ground, 1f).Lip
             .OrderBy(l => Vector2.Distance(InCaveFrame(l.at, file.Yaw), HandFinishedLanding)).First();
         Assert.Equal(new Vector2(-2311f, 1538f), at);
-        Vector2 out2 = at + outward * PlacedSiteShape.JoinStep;
+        Vector2 out2 = at + outward * PlacedLocationShape.JoinStep;
         float drop = file.Ground(at.x, at.y) - file.Ground(out2.x, out2.y);
         Assert.InRange(drop, 2.65f, 2.75f);
-        Assert.True(drop > PlacedSiteShape.JoinGrade * PlacedSiteShape.JoinStep);
+        Assert.True(drop > PlacedLocationShape.JoinGrade * PlacedLocationShape.JoinStep);
         Assert.DoesNotContain(aims, a => a.name == "joined edge" && Vector2.Distance(InCaveFrame(a.at, file.Yaw), HandFinishedLanding) <= 4f);
     }
+
+    /// <summary>The search-cost guard's margin over the facing pass's own allowance (RoadStairRuns.FacingStalls x the stall): the
+    /// steps the approach may spend laid not facing in once that allowance is spent. 10000, approved by the owner on 18 Nov 2026
+    /// ("for now"), in place of a fixed 25000 cap that the ring's off-square price (SkewWeight = TurnWeight, 17 Nov) passed by
+    /// 558 steps.</summary>
+    private const int SearchMargin = 10000;
 
     [Fact]
     public void AimedAtTheJoinedEdgeARoadsStaircaseAllowanceClimbsOntoTheShelf()
@@ -117,9 +123,11 @@ public class ApproachReplayTests
         Vector2 top = new(joined.Plan.End.x, joined.Plan.End.z);
         Assert.Contains(file.Aims(), a => Vector2.Distance(a.at, top) <= RoadStairRuns.LedgeReach + RoadStairRuns.FinishReach);
         Assert.Contains(file.Landings(), l => Mathf.Abs(l.height - joined.Plan.End.y) <= StairLayout.StairFitsFrom);
-        // 8046 steps, laid at the east edge on its first try (21757 with the ground read bilinearly: the east edge's first layout
-        // had no way off its top, and the west edge was searched as well).
-        Assert.True(file.Steps <= 25000, $"{file.Steps} steps");
+        // The facing pass spends its whole allowance (FacingStalls x the stall, 16000): its first layout at the east edge reaches
+        // but has no way off its top, and the second is not reached within what is left. Laid not facing in, the east edge is then
+        // reached: 9558 steps under the ring's off-square price (SkewWeight = TurnWeight), 5494 before it, 25558 in all.
+        Assert.True(file.Steps <= RoadStairRuns.FacingStalls * stall + SearchMargin,
+            $"{file.Steps} steps, against the facing allowance {RoadStairRuns.FacingStalls * stall} + {SearchMargin}");
         // Aimed at the landings in front only, the same allowance searches the face under the overhang: once stalled there,
         // aimed now at the lip nearest each (LandingRegion.AtLip), it climbs on round to the lip in several times the steps
         // (about 43600 against 14600 once the search refuses wedge fillers and floors nothing holds up, 2 Nov 2026).

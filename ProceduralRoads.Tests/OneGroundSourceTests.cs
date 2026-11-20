@@ -10,8 +10,8 @@ namespace ProceduralRoads.Tests;
 
 /// <summary>
 /// The ground the game renders has one owner: <see cref="BiomeBlendedHeight"/> for the natural ground, and
-/// <see cref="PlacedSites.GroundAt(float, float, WorldGenerator)"/> (through <see cref="RoadWater.Ground"/>) for the ground
-/// as places will leave it. WorldGenerator.GetHeight is the height of the biome at the point alone, which the game does not
+/// <see cref="PlacedLocations.GroundAt(float, float, WorldGenerator)"/> (through <see cref="RoadWater.Ground"/>) for the ground
+/// as locations will leave it. WorldGenerator.GetHeight is the height of the biome at the point alone, which the game does not
 /// render where a zone's heightmap corners are another biome: read in production it puts cliffs and water where the world
 /// has neither. The world doubles cannot catch such a read (their GetBiomeHeight returns GetHeight, so blended and raw agree
 /// on them), so this scans the mod's sources instead.
@@ -19,13 +19,13 @@ namespace ProceduralRoads.Tests;
 public class OneGroundSourceTests
 {
     /// <summary>The files allowed to read the raw point-biome height, and how many reads each has. BiomeBlendedHeight is the
-    /// owner; the others are dev and debug commands that show the raw height beside the rendered one on purpose, each
-    /// commented "Raw on purpose". A new raw read anywhere, these files included, fails until it is listed here.</summary>
+    /// owner; NaturalGround.PointBiomeFormula is the one door the dev and debug commands read the raw height through, to show it
+    /// beside the rendered one. Both are also banned at compile time elsewhere (BannedSymbols.txt). A new raw read anywhere, these
+    /// files included, fails until it is listed here.</summary>
     private static readonly Dictionary<string, (int getHeight, int getBiomeHeight)> Allowed = new()
     {
         ["Utils/BiomeBlendedHeight.cs"] = (1, 9),
-        ["Utils/ConsoleCommands.cs"] = (6, 0),
-        ["Debug/RoadPointDebugMarker.cs"] = (1, 0),
+        ["Roads/NaturalGround.cs"] = (1, 0),
     };
 
     // A call or method group named GetHeight, except Heightmap.GetHeight (the live heightmap the game renders).
@@ -74,7 +74,7 @@ public class OneGroundSourceTests
             .ToList();
         var missing = Allowed.Keys.Where(k => !found.ContainsKey(k)).ToList();
         Assert.True(unexpected.Count == 0 && missing.Count == 0,
-            "Read the ground through BiomeBlendedHeight or PlacedSites.GroundAt, not WorldGenerator.GetHeight / GetBiomeHeight.\n"
+            "Read the ground through BiomeBlendedHeight or PlacedLocations.GroundAt, not WorldGenerator.GetHeight / GetBiomeHeight.\n"
             + string.Join("\n", unexpected.Concat(missing.Select(m => $"{m}: listed but has no raw reads (update the list)")))
             + "\nReads found:\n" + string.Join("\n", lines));
     }
